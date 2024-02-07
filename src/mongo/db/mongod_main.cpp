@@ -231,6 +231,7 @@
 #include "mongo/db/storage/storage_parameters_gen.h"
 #include "mongo/db/storage/write_unit_of_work.h"
 #include "mongo/db/system_index.h"
+#include "mongo/db/telemetry/telemetry_thread.h"
 #include "mongo/db/timeseries/timeseries_op_observer.h"
 #include "mongo/db/transaction/session_catalog_mongod_transaction_interface_impl.h"
 #include "mongo/db/transaction/transaction_participant.h"
@@ -1218,6 +1219,9 @@ ExitCode _initAndListen(ServiceContext* serviceContext, int listenPort) {
         quickExit(ExitCode::fail);
     }
 
+    // Initialize Percona telemetry
+    initPerconaTelemetry(serviceContext);
+
     serviceContext->notifyStorageStartupRecoveryComplete();
 
 #ifndef _WIN32
@@ -1670,6 +1674,9 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
                                                    &shutdownTimeElapsedBuilder,
                                                    &shutdownInfoBuilder);
         });
+
+    // stop Percona telemetry
+    shutdownPerconaTelemetry(serviceContext);
 
     // If we don't have shutdownArgs, we're shutting down from a signal, or other clean shutdown
     // path.

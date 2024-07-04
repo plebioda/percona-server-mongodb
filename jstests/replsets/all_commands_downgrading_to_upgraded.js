@@ -270,6 +270,9 @@ const allCommands = {
         isAdminCommand: true,
         isShardSvrOnly: true,
     },
+    auditGetOptions: {
+        command: {auditGetOptions: 1},
+    },
     authenticate: {
         // Skipping command because it requires additional authentication setup.
         skip: "requires additional authentication setup"
@@ -582,6 +585,7 @@ const allCommands = {
             assert.commandWorked(conn.getDB(dbName).runCommand({drop: collName}));
         },
     },
+    createBackup: {skip: "requires additional setup to execute backup"},
     createIndexes: {
         setUp: function(conn) {
             assert.commandWorked(conn.getDB(dbName).runCommand({create: collName}));

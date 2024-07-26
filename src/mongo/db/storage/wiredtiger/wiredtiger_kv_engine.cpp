@@ -993,7 +993,7 @@ WiredTigerKVEngine::WiredTigerKVEngine(
 
     {
         char buf[(2 * 8 /*bytes in hex*/) + 1 /*nul terminator*/];
-        invariantWTOK(_conn->query_timestamp(_conn, buf, "get=oldest"), nullptr);
+        invariantWTOK(_conn->query_timestamp(_conn, buf, "get=oldest_timestamp"), nullptr);
         std::uint64_t tmp;
         fassert(5380107, NumberParser().base(16)(buf, &tmp));
 

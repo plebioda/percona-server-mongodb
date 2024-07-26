@@ -114,9 +114,8 @@ public:
         SerializationContext serializationCtx = opMsgRequest.getSerializationContext();
 
         const auto aggregationRequest = aggregation_request_helper::parseFromBSON(
-            opCtx,
-            opMsgRequest.parseDbName(),
             opMsgRequest.body,
+            opMsgRequest.validatedTenancyScope,
             explainVerbosity,
             APIParameters::get(opCtx).getAPIStrict().value_or(false),
             serializationCtx);
@@ -227,14 +226,17 @@ public:
                                                       externalDataSourcesIter->getDataSources());
             }
 
+            uassert(7239302,
+                    "The external data source cannot be used for write operations",
+                    isReadOperation());
+        }
+
+        bool isReadOperation() const override {
             if (auto&& pipeline = _aggregationRequest.getPipeline(); !pipeline.empty()) {
-                // An external data source does not support writes and thus cannot be used as a
-                // target for $merge / $out stages.
                 auto&& lastStage = pipeline.back();
-                uassert(7239302,
-                        "The external data source cannot be used for $merge or $out stage",
-                        !lastStage.hasField("$out"_sd) && !lastStage.hasField("$merge"_sd));
+                return !lastStage.hasField("$out"_sd) && !lastStage.hasField("$merge"_sd);
             }
+            return true;
         }
 
     private:

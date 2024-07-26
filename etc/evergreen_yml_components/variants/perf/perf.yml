@@ -109,7 +109,7 @@ buildvariants:
     storageEngine: wiredTiger
     compile_variant: amazon2-arm64-compile
   run_on:
-    - rhel70-small
+    - "rhel70-perf-single"
   tasks: &1nodetasks
     - *schedule_patch_auto_tasks_task
     - *schedule_variant_auto_tasks_task
@@ -168,7 +168,7 @@ buildvariants:
     storageEngine: wiredTiger
     compile_variant: amazon2-x86-compile
   run_on:
-    - amazon2
+    - "rhel70-perf-single"
   tasks: &classic_engine_tasks
     - *schedule_patch_auto_tasks_task
     - *schedule_variant_auto_tasks_task
@@ -515,7 +515,7 @@ buildvariants:
 - <<: *amazon_linux2_arm64_compile_variant_dependency
   name: perf-standalone-sampling-bonsai.arm.aws.2023-11
   display_name: Bonsai with Sampling CE Standalone ARM AWS 2023-11
-  cron: "0 0 * * 0"  # Run it only on Sunday.
+  cron: *cron_query_perf_schedule
   modules: *perf_modules
   expansions:
     mongodb_setup_release: 2022-11
@@ -557,7 +557,7 @@ buildvariants:
 - <<: *amazon_linux2_arm64_compile_variant_dependency
   name: perf-standalone-heuristic-bonsai.arm.aws.2023-11
   display_name: Bonsai with Heuristic CE Standalone ARM AWS 2023-11
-  cron: "0 0 * * 0"  # Run it only on Sunday.
+  cron: *cron_query_perf_schedule
   modules: *perf_modules
   expansions:
     mongodb_setup_release: 2022-11
@@ -1756,7 +1756,7 @@ buildvariants:
 - <<: *amazon_linux2_arm64_compile_variant_dependency
   name: perf-mongo-perf-standalone-heuristic-bonsai.arm.aws.2023-11
   display_name: Mongo-Perf Standalone inMemory Bonsai with Heuristic CE ARM AWS 2023-11
-  cron: "0 0 * * 0"  # Run it only on Sunday.
+  cron: *cron_query_perf_schedule
   modules: *perf_modules
   expansions:
     mongodb_setup_release: 2022-11
@@ -2004,6 +2004,48 @@ buildvariants:
     - name: tsbs_query_medium_cardinality
 
 - <<: *amazon_linux2_arm64_compile_variant_dependency
+  name: perf-1-node-replSet-m60-like-large-volume.arm.aws.2023-11
+  display_name: M60-like Large Volume 1-Node ReplSet ARM AWS 2023-11
+  cron: "0 0 * * *"  # 00:00 everyday
+  modules: *perf_modules
+  expansions:
+    mongodb_setup_release: 2022-11
+    mongodb_setup: single-replica
+    infrastructure_provisioning_release: 2023-09
+    infrastructure_provisioning: M60-like-single-large-volume.2023-02
+    workload_setup: 2022-11
+    platform: linux
+    project_dir: *perf_project_dir
+    authentication: enabled
+    storageEngine: wiredTiger
+    compile_variant: amazon2-arm64-compile
+  run_on:
+    - "rhel70-perf-single"
+  tasks:
+    - name: tsbs_high_cardinality_short
+
+- <<: *amazon_linux2_arm64_compile_variant_dependency
+  name: perf-1-node-replSet-all-feature-flags-m60-like-large-volume.arm.aws.2023-11
+  display_name: M60-like Large Volume all feature flags 1-Node ReplSet ARM AWS 2023-11
+  cron: "0 0 * * *"  # 00:00 everyday
+  modules: *perf_modules
+  expansions:
+    mongodb_setup_release: 2022-11
+    mongodb_setup: single-replica-all-feature-flags
+    infrastructure_provisioning_release: 2023-09
+    infrastructure_provisioning: M60-like-single-large-volume.2023-02
+    workload_setup: 2022-11
+    platform: linux
+    project_dir: *perf_project_dir
+    authentication: enabled
+    storageEngine: wiredTiger
+    compile_variant: amazon2-arm64-compile
+  run_on:
+    - "rhel70-perf-single"
+  tasks:
+    - name: tsbs_high_cardinality_short
+
+- <<: *amazon_linux2_arm64_compile_variant_dependency
   name: perf-arm-3-shard-resharding.arm.aws.2023-11
   display_name: Resharding 3-Shard ARM AWS 2023-11
   cron: "0 0 * * 4"  # 00:00 on Thursday
@@ -2207,7 +2249,7 @@ buildvariants:
     storageEngine: wiredTiger
     compile_variant: amazon2-arm64-compile
   run_on:
-    - rhel70-small
+    - "rhel70-perf-single"
   # Not using 1nodetasks because some need to be temporarily disabled.
   tasks: *1nodetasks
 

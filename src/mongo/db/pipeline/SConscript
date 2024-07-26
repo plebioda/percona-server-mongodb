@@ -71,6 +71,7 @@ env.Library(
         'query_request_conversion.cpp',
     ],
     LIBDEPS=[
+        '$BUILD_DIR/mongo/db/auth/security_token',
         '$BUILD_DIR/mongo/db/exec/document_value/document_value',
         '$BUILD_DIR/mongo/db/query/command_request_response',
         '$BUILD_DIR/mongo/db/query/common_query_enums_and_helpers',
@@ -292,6 +293,13 @@ env.Library(
         'pipeline_visitor',
     ],
 )
+
+env.Library(
+    target='docs_needed_bounds', source=['visitors/document_source_visitor_docs_needed_bounds.cpp'],
+    LIBDEPS_PRIVATE=[
+        'change_stream_pipeline', 'document_source_internal_apply_oplog_update', 'pipeline',
+        'pipeline_visitor'
+    ])
 
 pipelineEnv = env.Clone()
 pipelineEnv.InjectThirdParty(libraries=['snappy'])
@@ -782,6 +790,7 @@ env.CppUnitTest(
         'sharded_union_test.cpp',
         'skip_and_limit_test.cpp',
         'tee_buffer_test.cpp',
+        'visitors/document_source_visitor_docs_needed_bounds_test.cpp',
         'visitors/document_source_walker_test.cpp',
         'window_function/partition_iterator_test.cpp',
         'window_function/spillable_cache_test.cpp',
@@ -839,6 +848,7 @@ env.CppUnitTest(
         'change_stream_pipeline',
         'change_stream_preimage',
         'change_stream_test_helpers',
+        'docs_needed_bounds',
         'document_source_internal_apply_oplog_update',
         'document_source_mock',
         'document_sources_idl',

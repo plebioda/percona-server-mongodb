@@ -51,6 +51,11 @@ public:
      */
     void walk(const Pipeline& pipeline);
 
+    /**
+     * Same as walk(), but traverses the pipeline in reverse (back-to-front).
+     */
+    void reverseWalk(const Pipeline& pipeline);
+
 private:
     const DocumentSourceVisitorRegistry& _registry;
     DocumentSourceVisitorContextBase* _visitorCtx;

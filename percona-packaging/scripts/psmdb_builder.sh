@@ -412,7 +412,7 @@ install_deps() {
         
       fi
       if [ x"$RHEL" = x2023 ]; then
-          sudo /usr/bin/pip install scons --root-user-action=ignore
+          /usr/bin/pip install scons --root-user-action=ignore
       fi
       wget https://curl.se/download/curl-7.77.0.tar.gz -O curl-7.77.0.tar.gz
       tar -xvzf curl-7.77.0.tar.gz

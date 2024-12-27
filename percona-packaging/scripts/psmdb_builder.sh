@@ -176,6 +176,8 @@ get_sources(){
     go mod edit \
 	    -replace golang.org/x/text@v0.3.0=golang.org/x/text@v0.3.8 \
 	    -replace golang.org/x/text@v0.3.7=golang.org/x/text@v0.3.8
+    go mod edit \
+	    -replace golang.org/x/crypto@v0.25.0=golang.org/x/crypto@v0.31.0
     go mod tidy
     go mod vendor
 
@@ -405,6 +407,7 @@ install_deps() {
         yum -y install cmake cyrus-sasl-devel make openssl-devel zlib-devel libcurl-devel git
         yum -y install python3 python3-pip python3-devel
         yum -y install python3-scons 
+
         yum -y install redhat-rpm-config which e2fsprogs-devel expat-devel lz4-devel
         yum -y install openldap-devel krb5-devel xz-devel
         /usr/bin/pip install --upgrade pip setuptools --ignore-installed

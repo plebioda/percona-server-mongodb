@@ -387,7 +387,7 @@ install_deps() {
         pip3.8 install --user typing pyyaml regex Cheetah3
         pip2.7 install --user typing pyyaml regex Cheetah Cheetah3
       elif [ x"$RHEL" = x8 ]; then
- yum-config-manager --enable ol8_codeready_builder
+        yum-config-manager --enable ol8_codeready_builder
         yum -y install epel-release
         yum -y install bzip2-devel libpcap-devel snappy-devel rpm-build rpmlint
         yum -y install cmake cyrus-sasl-devel make openssl-devel zlib-devel libcurl-devel git
@@ -405,13 +405,20 @@ install_deps() {
         yum -y install oracle-epel-release-el9
         yum -y install bzip2-devel libpcap-devel snappy-devel gcc gcc-c++ rpm-build rpmlint
         yum -y install cmake cyrus-sasl-devel make openssl-devel zlib-devel libcurl-devel git
-        yum -y install python3 python3-scons python3-pip python3-devel
         yum -y install python3 python3-pip python3-devel
+        yum -y install python3-scons 
+
         yum -y install redhat-rpm-config which e2fsprogs-devel expat-devel lz4-devel
         yum -y install openldap-devel krb5-devel xz-devel
         /usr/bin/pip install --upgrade pip setuptools --ignore-installed
         /usr/bin/pip install --user typing pyyaml==5.3.1 regex Cheetah3
         
+      fi
+      if [ x"$RHEL" = x2023 ]; then
+          /usr/bin/pip install scons --root-user-action=ignore
+          ln -sf /usr/local/bin/scons /usr/bin/scons
+          ls -lah /usr/bin/scons
+          which scons
       fi
       wget https://curl.se/download/curl-7.77.0.tar.gz -O curl-7.77.0.tar.gz
       tar -xvzf curl-7.77.0.tar.gz

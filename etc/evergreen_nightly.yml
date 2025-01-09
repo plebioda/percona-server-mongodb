@@ -173,6 +173,7 @@ buildvariants:
     compile_flags: --ssl MONGO_DISTMOD=rhel80 -j$(grep -c ^processor /proc/cpuinfo) --variables-files=etc/scons/mongodbtoolchain_v3_gcc.vars --link-model=dynamic
     crypt_task_compile_flags: SHLINKFLAGS_EXTRA="-Wl,-Bsymbolic -Wl,--no-gnu-unique" CCFLAGS="-fno-gnu-unique"
     multiversion_platform: rhel80
+    multiversion_platform_50_or_later: rhel8
     multiversion_edition: enterprise
     has_packages: false
     scons_cache_scope: shared
@@ -214,6 +215,7 @@ buildvariants:
   - name: .auth
   - name: buildscripts_test
   - name: resmoke_end2end_tests
+  - name: resmoke_validation_tests
   - name: unittest_shell_hang_analyzer_gen
   - name: .causally_consistent !.sharding
   - name: .change_streams
@@ -386,6 +388,7 @@ buildvariants:
   - name: test_api_version_compatibility
   - name: validate_commit_message
   - name: check_feature_flag_tags
+  - name: resmoke_validation_tests
 
 # Temporary variant to stress a component and gather more data.
 - <<: *enterprise-rhel-8-64-bit-dynamic-required-template
@@ -422,6 +425,7 @@ buildvariants:
       --variables-files=etc/scons/mongodbtoolchain_v3_gcc.vars
       --link-model=dynamic
     multiversion_platform: rhel80
+    multiversion_platform_50_or_later: rhel8
     multiversion_edition: enterprise
     repo_edition: enterprise
     scons_cache_mode: all
@@ -490,6 +494,7 @@ buildvariants:
     additional_package_targets: archive-mongocryptd archive-mongocryptd-debug archive-mh archive-mh-debug
     compile_flags: --ssl MONGO_DISTMOD=rhel80 -j$(grep -c ^processor /proc/cpuinfo) --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars --link-model=dynamic
     multiversion_platform: rhel80
+    multiversion_platform_50_or_later: rhel8
     multiversion_edition: enterprise
     has_packages: false
     scons_cache_scope: shared

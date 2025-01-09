@@ -219,7 +219,7 @@ function assertExpectedResults(results,
         sum: NumberLong(expectedDocsReturnedSum),
         max: NumberLong(expectedDocsReturnedMax),
         min: NumberLong(expectedDocsReturnedMin),
-        sumOfSquares: NumberLong(expectedDocsReturnedSumOfSq)
+        sumOfSquares: expectedDocsReturnedSumOfSq
     },
                  metrics.docsReturned);
 
@@ -251,7 +251,7 @@ function assertExpectedResults(results,
                 // possible for the min or max to be equal.
                 assert.gte(totalExecMicros[field], firstResponseExecMicros[field]);
             } else {
-                assert.gt(totalExecMicros[field], firstResponseExecMicros[field]);
+                assert(bsonWoCompare(totalExecMicros[field], firstResponseExecMicros[field]) > 0);
             }
         } else {
             // If there are no getMore calls, totalExecMicros fields should be equal to
@@ -448,8 +448,8 @@ function checkChangeStreamEntry({queryStatsEntry, db, collectionName, numExecs, 
     assert.eq(collectionName, queryStatsEntry.key.queryShape.cmdNs.coll);
 
     // Confirm entry is a change stream request.
-    let stringifiedPipeline = JSON.stringify(queryStatsEntry.key.queryShape.pipeline, null, 0);
-    assert(stringifiedPipeline.includes("_internalChangeStream"));
+    const pipelineShape = queryStatsEntry.key.queryShape.pipeline;
+    assert(pipelineShape[0].hasOwnProperty("$changeStream"), pipelineShape);
 
     // TODO SERVER-76263 Support reporting 'collectionType' on a sharded cluster.
     if (!FixtureHelpers.isMongos(db)) {

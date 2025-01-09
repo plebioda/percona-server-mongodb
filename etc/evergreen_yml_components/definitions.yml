@@ -1332,16 +1332,36 @@ functions:
 
   "do jepsen setup":
   - *f_expansions_write
+  - command: github.generate_token
+    params:
+      owner: 10gen
+      repo: libfaketime
+      expansion_name: github_token
+      permissions:
+        metadata: read
+        contents: read
   - command: subprocess.exec
     params:
       binary: bash
       args:
-      - "./src/evergreen/do_jepsen_setup/build_libfaketime.sh"
+        - "./src/evergreen/do_jepsen_setup/build_libfaketime.sh"
+      include_expansions_in_env:
+        - github_token
+  - command: github.generate_token
+    params:
+      owner: 10gen
+      repo: jepsen
+      expansion_name: github_token
+      permissions:
+        metadata: read
+        contents: read
   - command: subprocess.exec
     params:
       binary: bash
       args:
       - "./src/evergreen/do_jepsen_setup/install_jepsen.sh"
+      include_expansions_in_env:
+        - github_token
   - command: subprocess.exec
     params:
       binary: bash
@@ -1355,12 +1375,22 @@ functions:
 
   "do jepsen docker setup":
   - *f_expansions_write
+  - command: github.generate_token
+    params:
+      owner: 10gen
+      repo: jepsen-io-mongodb
+      expansion_name: github_token
+      permissions:
+        metadata: read
+        contents: read
   - command: subprocess.exec
     type: system
     params:
       binary: bash
       args:
-      - "./src/evergreen/jepsen_docker/setup.sh"
+        - "./src/evergreen/jepsen_docker/setup.sh"
+      include_expansions_in_env:
+        - github_token
   "run jepsen docker test":
   - *f_expansions_write
   - command: subprocess.exec
@@ -1435,11 +1465,22 @@ functions:
 
   "setup jstestfuzz":
   - *f_expansions_write
+  - command: github.generate_token
+    params:
+      owner: 10gen
+      repo: jstestfuzz
+      expansion_name: github_token
+      permissions:
+        metadata: read
+        contents: read
   - command: subprocess.exec
+    display_name: "jstestfuzz setup sh"
     params:
       binary: bash
       args:
-      - "./src/evergreen/jstestfuzz_setup.sh"
+        - "./src/evergreen/jstestfuzz_setup.sh"
+      include_expansions_in_env:
+        - github_token
 
   "lint fuzzer sanity patch":
   - *f_expansions_write
@@ -1472,11 +1513,21 @@ functions:
   # Used by generator
   "run jstestfuzz":
   - *f_expansions_write
+  - command: github.generate_token
+    params:
+      owner: 10gen
+      repo: QA
+      expansion_name: github_token
+      permissions:
+        metadata: read
+        contents: read
   - command: subprocess.exec
     params:
       binary: bash
       args:
       - "./src/evergreen/run_jstestfuzz/clone_repos.sh"
+      include_expansions_in_env:
+        - github_token
   - *f_expansions_write
   - command: subprocess.exec
     type: test
@@ -1562,7 +1613,9 @@ functions:
     params:
       files:
       - wiki_page_running_minimized_test_location.json
+      file: src/compile_expansions.yml
 
+  # Used by generator
   "run idl tests":
   - *f_expansions_write
   - command: subprocess.exec
@@ -1638,7 +1691,7 @@ functions:
     params:
       provider: ec2
       distro: ${distro_id}
-      timeout_teardown_secs: 604800 # 7 days
+      timeout_teardown_secs: 86400 # 24 hours
       security_group_ids:
       - sg-097bff6dd0d1d31d0
 
@@ -3659,6 +3712,7 @@ tasks:
       num_files: 5
       num_tasks: 5
       resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
+      jstestfuzz_vars: --numPipelines=3000
       npm_command: agg-fuzzer
       run_no_feature_flag_tests: "true"
 
@@ -3690,7 +3744,7 @@ tasks:
       <<: *jstestfuzz_config_vars
       num_files: 5
       num_tasks: 5
-      jstestfuzz_vars: --diffTestingMode optimization
+      jstestfuzz_vars: --diffTestingMode optimization --numPipelines=3000
       suite: generational_fuzzer
       resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
       npm_command: agg-expr-fuzzer
@@ -3705,7 +3759,7 @@ tasks:
       <<: *jstestfuzz_config_vars
       num_files: 5
       num_tasks: 5
-      jstestfuzz_vars: --diffTestingMode optimization
+      jstestfuzz_vars: --diffTestingMode optimization --numPipelines=3000
       suite: generational_fuzzer
       resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
       npm_command: agg-fuzzer
@@ -3720,7 +3774,7 @@ tasks:
       <<: *jstestfuzz_config_vars
       num_files: 5
       num_tasks: 5
-      jstestfuzz_vars: --diffTestingMode wildcard
+      jstestfuzz_vars: --diffTestingMode wildcard --numPipelines=3000
       npm_command: agg-fuzzer
       suite: generational_fuzzer
       resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
@@ -3735,7 +3789,7 @@ tasks:
       <<: *jstestfuzz_config_vars
       num_files: 5
       num_tasks: 5
-      jstestfuzz_vars: --diffTestingMode timeseries
+      jstestfuzz_vars: --diffTestingMode timeseries --numPipelines=750
       npm_command: agg-fuzzer
       suite: generational_fuzzer
       resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
@@ -3750,7 +3804,7 @@ tasks:
       <<: *jstestfuzz_config_vars
       num_files: 5
       num_tasks: 5
-      jstestfuzz_vars: --diffTestingMode optimization
+      jstestfuzz_vars: --diffTestingMode optimization --numPipelines=3000
       npm_command: change-stream-fuzzer
       suite: generational_fuzzer
       resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
@@ -4430,6 +4484,7 @@ tasks:
 
 - name: sync_repo_with_copybara
   tags: []
+  patchable: false
   commands:
   - command: manifest.load
   - func: "git get project and add git tag"
@@ -6564,14 +6619,14 @@ tasks:
       task_names: >-
         powercycle_smoke_skip_compile
       num_tasks: 20
-      exec_timeout_secs: 604800 # 7 days
-      timeout_secs: 604800 # 7 days
+      exec_timeout_secs: 86400 # 24 hours
+      timeout_secs: 86400 # 24 hours
       set_up_retry_count: 1800
       run_powercycle_args: --sshAccessRetryCount=1800
 
 - name: powercycle_sentinel
   tags: []
-  exec_timeout_secs: 604800 # 7 days
+  exec_timeout_secs: 86400 # 24 hours
   commands:
   - func: "run powercycle sentinel"
     vars:
@@ -6878,6 +6933,14 @@ tasks:
   tags: []
   commands:
   - func: "do setup"
+  - func: "run tests"
+
+- <<: *task_template
+  name: resmoke_validation_tests
+  tags: []
+  depends_on: []
+  commands:
+  - func: "do non-compile setup"
   - func: "run tests"
 
 - name: package

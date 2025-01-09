@@ -45,8 +45,9 @@ def generate_releases_file():
     with open(RELEASES_YAML, "wb") as file:
         response = requests.get(MASTER_RELEASES_REMOTE_FILE)
         if response.status_code != http.HTTPStatus.OK:
-            raise RuntimeError("Http response for releases yml file was not 200 but was " +
-                               response.status_code)
+            raise RuntimeError(
+                f"Fetching releases.yml file returned unsuccessful status: {response.status_code}, "
+                f"response body: {response.text}\n")
         file.write(response.content)
 
 
@@ -108,6 +109,8 @@ REQUIRES_FCV_TAG_LATEST = version_constants.get_latest_tag()
 # Generate tags for all FCVS in (lastLTS, latest], or (lowerBoundOverride, latest] if requested.
 # All multiversion tests should be run with these tags excluded.
 REQUIRES_FCV_TAG = version_constants.get_fcv_tag_list()
+
+REQUIRES_FCV_TAGS_LESS_THAN_LATEST = version_constants.get_fcv_tags_less_than_latest()
 
 # Generate evergreen project names for all FCVs less than latest.
 EVERGREEN_PROJECTS = ['mongodb-mongo-master']

@@ -329,9 +329,9 @@ aws_sdk_build(){
                 CMAKE_C_FLAGS=" -Wno-error=maybe-uninitialized -Wno-error=maybe-uninitialized -Wno-error=uninitialized "
             fi
             if [ -z "${CC}" -a -z "${CXX}" ]; then
-                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON || exit $?
+                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DAUTORUN_UNIT_TESTS=OFF || exit $?
             else
-                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON || exit $?
+                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DAUTORUN_UNIT_TESTS=OFF || exit $?
             fi
             make -j${NCPU} || exit $?
             make install
@@ -1086,9 +1086,9 @@ build_tarball(){
                 CMAKE_CMD="cmake3"
             fi
             if [ -z "${CC}" -a -z "${CXX}" ]; then
-                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" || exit $?
+                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" -DAUTORUN_UNIT_TESTS=OFF || exit $?
             else
-                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" || exit $?
+                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" -DAUTORUN_UNIT_TESTS=OFF || exit $?
             fi
             make -j${NCPU} || exit $?
             make install

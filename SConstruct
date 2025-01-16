@@ -1839,6 +1839,14 @@ if unknown_vars:
 
 install_actions.setup(env, get_option('install-action'))
 
+if env.TargetOSIs("windows") and os.path.exists(
+        env.File("#/src/mongo/db/modules/enterprise/SConscript").abspath):
+    # the sasl zip can be rebuilt by following the instructions at:
+    # https://github.com/mongodb-forks/cyrus-sasl/blob/mongo-sasl-2-1-28/README.md
+    import mongo.download_windows_sasl
+
+    mongo.download_windows_sasl.download_sasl(env)
+
 
 def set_config_header_define(env, varname, varval=1):
     env['CONFIG_HEADER_DEFINES'][varname] = varval
@@ -2036,26 +2044,6 @@ if env.get('ENABLE_OOM_RETRY'):
     else:
         env['OOM_RETRY_ATTEMPTS'] = 10
         env['OOM_RETRY_MAX_DELAY_SECONDS'] = 120
-
-        if env.ToolchainIs('clang', 'gcc'):
-            env['OOM_RETRY_MESSAGES'] = [
-                ': out of memory',
-                'virtual memory exhausted: Cannot allocate memory',
-                ': fatal error: Killed signal terminated program cc1',
-                # TODO: SERVER-77322 remove this non memory related ICE.
-                r'during IPA pass: cp.+g\+\+: internal compiler error',
-                'ld terminated with signal 9',
-            ]
-        elif env.ToolchainIs('msvc'):
-            env['OOM_RETRY_MESSAGES'] = [
-                'LNK1102: out of memory',
-                'C1060: compiler is out of heap space',
-                'c1xx : fatal error C1063: INTERNAL COMPILER ERROR',
-                r'LNK1171: unable to load mspdbcore\.dll',
-                "LNK1201: error writing to program database ''",
-            ]
-            env['OOM_RETRY_RETURNCODES'] = [1102]
-
         env.Tool('oom_auto_retry')
 
 if env.ToolchainIs('clang'):

@@ -182,9 +182,10 @@ get_sources(){
     go mod vendor
 
     # Dirty hack for mongo-tools 100.7.3 and aarch64 builds. Should fail once Mongo fixes OS detection https://jira.mongodb.org/browse/TOOLS-3318
-    if [ x"$ARCH" = "xaarch64" ]; then
+    # Use rhel93 selector for all builds, no fix by this time(20.01.2025)
+#    if [ x"$ARCH" = "xaarch64" ]; then
         sed -i '131 {/\(GetByOsAndArch("ubuntu1804", archName)\)/ s/\bubuntu1804\b/rhel93/; t; q1}' release/platform/platform.go || exit 1
-    fi
+#    fi
 
     cd ${WORKDIR}
     source percona-server-mongodb-60.properties

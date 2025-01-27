@@ -995,7 +995,7 @@ build_tarball(){
         set_compiler
     fi
     #
-    if [ -f /etc/redhat-release ]; then
+    if [ -f /etc/redhat-release -o -f /etc/amazon-linux-release ]; then
         if [ x"$RHEL" = x7 ]; then
             if [ -f /opt/rh/devtoolset-9/enable ]; then
               source /opt/rh/devtoolset-9/enable

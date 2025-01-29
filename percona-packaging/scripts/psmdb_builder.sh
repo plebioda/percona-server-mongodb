@@ -242,7 +242,7 @@ install_golang() {
       GO_ARCH="arm64"
     fi
     for i in {1..3}; do
-        wget https://go.dev/dl/go1.22.8.linux-${GO_ARCH}.tar.gz -O /tmp/go1.22.tar.gz && break
+        wget https://go.dev/dl/go1.22.8.linux-${GO_ARCH}.tar.gz -O /tmp/golang1.22.tar.gz && break
         echo "Failed to download GOLang, retrying in 10 seconds..."
         sleep 10
     done

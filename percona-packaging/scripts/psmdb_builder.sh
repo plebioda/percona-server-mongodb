@@ -257,6 +257,7 @@ install_golang() {
         #if wget --spider "$GO_URL" && wget --spider "$SHA_URL"; then
 	if wget --spider "$GO_URL"; then
             wget -q "$GO_URL" -O "$DL_PATH"
+	    break
             #wget -q "$SHA_URL" -O "$SHA_PATH"
 
             #EXPECTED_SHA=$(awk '{print $1}' "$SHA_PATH")

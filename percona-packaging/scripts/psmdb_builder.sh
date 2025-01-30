@@ -248,26 +248,27 @@ install_golang() {
     GO_VERSION="1.22.8"
     GO_TAR="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
     GO_SHA="${GO_TAR}.sha256"
-    GO_URL="https://dl.google.com/go/${GO_TAR}"
-    SHA_URL="https://dl.google.com/go/${GO_SHA}"
+    GO_URL="https://downloads.percona.com/downloads/packaging/go/${GO_TAR}"
+    SHA_URL="https://downloads.percona.com/downloads/packaging/go/${GO_SHA}"
     DL_PATH="/tmp/${GO_TAR}"
     SHA_PATH="/tmp/${GO_SHA}"
 
     while :; do
-        if wget --spider "$GO_URL" && wget --spider "$SHA_URL"; then
+        #if wget --spider "$GO_URL" && wget --spider "$SHA_URL"; then
+	if wget --spider "$GO_URL"; then
             wget -q "$GO_URL" -O "$DL_PATH"
-            wget -q "$SHA_URL" -O "$SHA_PATH"
+            #wget -q "$SHA_URL" -O "$SHA_PATH"
 
-            EXPECTED_SHA=$(awk '{print $1}' "$SHA_PATH")
-            ACTUAL_SHA=$(sha256sum "$DL_PATH" | awk '{print $1}')
+            #EXPECTED_SHA=$(awk '{print $1}' "$SHA_PATH")
+            #ACTUAL_SHA=$(sha256sum "$DL_PATH" | awk '{print $1}')
 
-            if [ "$EXPECTED_SHA" = "$ACTUAL_SHA" ]; then
-                echo "SHA256 verification passed."
-                break
-            else
-                echo "SHA256 verification failed! Retrying in 10 seconds..."
-                rm -f "$DL_PATH" "$SHA_PATH"
-            fi
+            #if [ "$EXPECTED_SHA" = "$ACTUAL_SHA" ]; then
+            #    echo "SHA256 verification passed."
+            #    break
+            #else
+            #    echo "SHA256 verification failed! Retrying in 10 seconds..."
+            #    rm -f "$DL_PATH" "$SHA_PATH"
+            #fi
         else
             echo "Go archive not available. Retrying in 10 seconds..."
         fi

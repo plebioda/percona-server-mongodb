@@ -667,11 +667,13 @@ build_rpm(){
 #        export CC=/usr/bin/gcc
 #        export CXX=/usr/bin/g++
     fi
-#        PATH=/opt/mongodbtoolchain/v4/bin/:$PATH
+        PATH=/opt/mongodbtoolchain/v4/bin/:$PATH
         pip install --upgrade pip
 
     # PyYAML pkg installation fix, more info: https://github.com/yaml/pyyaml/issues/724
     pip install pyyaml==5.4.1 --no-build-isolation
+    pip install 'referencing<0.30.0' --no-build-isolation
+    pip install 'jsonschema-specifications<=2023.07.1' --no-build-isolation
 
     pip install --user -r etc/pip/dev-requirements.txt
     pip install --user -r etc/pip/evgtest-requirements.txt
@@ -768,7 +770,9 @@ build_source_deb(){
     pip install --upgrade pip
 
     # PyYAML pkg installation fix, more info: https://github.com/yaml/pyyaml/issues/724
-    pip install pyyaml==5.4.1 --no-build-isolation
+    pip install pyyaml==5.4.1 --no-build-isolatioin
+    pip install 'referencing<0.30.0' --no-build-isolation
+    pip install 'jsonschema-specifications<=2023.07.1' --no-build-isolation
 
     pip install -r etc/pip/dev-requirements.txt
     pip install -r etc/pip/evgtest-requirements.txt
@@ -866,6 +870,8 @@ build_deb(){
 
     # PyYAML pkg installation fix, more info: https://github.com/yaml/pyyaml/issues/724
     pip install pyyaml==5.4.1 --no-build-isolation
+    pip install 'referencing<0.30.0' --no-build-isolation
+    pip install 'jsonschema-specifications<=2023.07.1' --no-build-isolation
 
     pip install -r etc/pip/dev-requirements.txt
     pip install -r etc/pip/evgtest-requirements.txt
@@ -988,6 +994,9 @@ build_tarball(){
             echo "CC and CXX should be modified once correct compiller would be installed on Centos"
             export CC=/opt/mongodbtoolchain/v4/bin/clang
             export CXX=/opt/mongodbtoolchain/v4/bin/clang++
+        else
+            export CC=/usr/bin/gcc
+            export CXX=/usr/bin/g++
         fi
     fi
     #
@@ -1026,6 +1035,8 @@ build_tarball(){
     fi
     # PyYAML pkg installation fix, more info: https://github.com/yaml/pyyaml/issues/724
     pip install pyyaml==5.4.1 --no-build-isolation
+    pip install 'referencing<0.30.0' --no-build-isolation
+    pip install 'jsonschema-specifications<=2023.07.1' --no-build-isolation
 
     pip install --user -r etc/pip/dev-requirements.txt
     pip install --user -r etc/pip/evgtest-requirements.txt

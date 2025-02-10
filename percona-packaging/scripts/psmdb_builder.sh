@@ -1011,7 +1011,6 @@ build_tarball(){
             echo "CC and CXX should be modified once correct compiller would be installed on Centos"
             export CC=/opt/mongodbtoolchain/v4/bin/clang
             export CXX=/opt/mongodbtoolchain/v4/bin/clang++
-        fi
         else
             export CC=/usr/bin/gcc
             export CXX=/usr/bin/g++

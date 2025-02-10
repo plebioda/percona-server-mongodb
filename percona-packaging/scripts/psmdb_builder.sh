@@ -173,9 +173,9 @@ get_sources(){
     go mod vendor
 
     # Dirty hack for mongo-tools 100.7.3 and aarch64 builds. Should fail once Mongo fixes OS detection https://jira.mongodb.org/browse/TOOLS-3318
-    if [ x"$ARCH" = "xaarch64" ]; then
+    #if [ x"$ARCH" = "xaarch64" ]; then
         sed -i '131 {/\(GetByOsAndArch("ubuntu1804", archName)\)/ s/\bubuntu1804\b/rhel93/; t; q1}' release/platform/platform.go || exit 1
-    fi
+    #fi
 
     cd ${WORKDIR}
     source percona-server-mongodb-80.properties
@@ -245,7 +245,7 @@ install_golang() {
       GO_ARCH="arm64"
     fi
     for i in {1..3}; do
-        wget https://go.dev/dl/go1.22.8.linux-${GO_ARCH}.tar.gz -O /tmp/golang1.22.tar.gz && break
+        wget https://downloads.percona.com/downloads/packaging/go/go1.22.8.linux-${GO_ARCH}.tar.gz -O /tmp/golang1.22.tar.gz && break
         echo "Failed to download GOLang, retrying in 10 seconds..."
         sleep 10
     done
@@ -310,9 +310,9 @@ aws_sdk_build(){
                 CMAKE_C_FLAGS=" -Wno-error=maybe-uninitialized -Wno-error=maybe-uninitialized -Wno-error=uninitialized "
             fi
             if [ -z "${CC}" -a -z "${CXX}" ]; then
-                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON || exit $?
+                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DAUTORUN_UNIT_TESTS=OFF || exit $?
             else
-                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON || exit $?
+                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DAUTORUN_UNIT_TESTS=OFF || exit $?
             fi
             make -j${NCPU} || exit $?
             make install
@@ -357,7 +357,7 @@ install_deps() {
         yum -y install devtoolset-9
         yum -y install devtoolset-11-elfutils devtoolset-11-dwz
 
-       PATH=/opt/mongodbtoolchain/v4/bin/:$PATH
+        PATH=/opt/mongodbtoolchain/v4/bin/:$PATH
 
         pip install --upgrade pip
         pip install --user setuptools --upgrade
@@ -652,6 +652,8 @@ build_rpm(){
         source /opt/rh/gcc-toolset-9/enable
         source /opt/rh/gcc-toolset-11/enable
       fi
+    elif [ x"$RHEL" = x9 ]; then
+      mv /usr/bin/python3 /usr/bin/python3_old
     fi
     if [ "x${RHEL}" == "x2023" ]; then
         pip install --upgrade pip
@@ -662,11 +664,13 @@ build_rpm(){
 #        export CC=/usr/bin/gcc
 #        export CXX=/usr/bin/g++
     fi
-#        PATH=/opt/mongodbtoolchain/v4/bin/:$PATH
+        PATH=/opt/mongodbtoolchain/v4/bin/:$PATH
         pip install --upgrade pip
 
     # PyYAML pkg installation fix, more info: https://github.com/yaml/pyyaml/issues/724
     pip install pyyaml==5.4.1 --no-build-isolation
+    pip install 'referencing<0.30.0' --no-build-isolation
+    pip install 'jsonschema-specifications<=2023.07.1' --no-build-isolation
 
     pip install 'poetry==1.5.1' 'pyproject-hooks==1.0.0'
     pip install 'mongo_tooling_metrics==1.0.8' 'retry' 'psutil' 'Cheetah3'
@@ -770,6 +774,8 @@ build_source_deb(){
 
     # PyYAML pkg installation fix, more info: https://github.com/yaml/pyyaml/issues/724
     pip install pyyaml==5.4.1 --no-build-isolation
+    pip install 'referencing<0.30.0' --no-build-isolation
+    pip install 'jsonschema-specifications<=2023.07.1' --no-build-isolation
 
     pip install 'poetry==1.5.1' 'pyproject-hooks==1.0.0'
     pip install 'mongo_tooling_metrics==1.0.8' 'retry' 'psutil' 'Cheetah3'
@@ -873,6 +879,8 @@ build_deb(){
 
     # PyYAML pkg installation fix, more info: https://github.com/yaml/pyyaml/issues/724
     pip install pyyaml==5.4.1 --no-build-isolation
+    pip install 'referencing<0.30.0' --no-build-isolation
+    pip install 'jsonschema-specifications<=2023.07.1' --no-build-isolation
 
     pip install 'poetry==1.5.1' 'pyproject-hooks==1.0.0'
     pip install 'mongo_tooling_metrics==1.0.8' 'retry' 'psutil' 'Cheetah3'
@@ -1004,6 +1012,10 @@ build_tarball(){
             export CC=/opt/mongodbtoolchain/v4/bin/clang
             export CXX=/opt/mongodbtoolchain/v4/bin/clang++
         fi
+        else
+            export CC=/usr/bin/gcc
+            export CXX=/usr/bin/g++
+        fi
     fi
     #
     ARCH=$(uname -m 2>/dev/null||true)
@@ -1041,12 +1053,14 @@ build_tarball(){
     fi
     # PyYAML pkg installation fix, more info: https://github.com/yaml/pyyaml/issues/724
     pip install pyyaml==5.4.1 --no-build-isolation
+    pip install 'referencing<0.30.0' --no-build-isolation
+    pip install 'jsonschema-specifications<=2023.07.1' --no-build-isolation
 
     pip install 'poetry==1.5.1' 'pyproject-hooks==1.0.0'
     pip install 'mongo_tooling_metrics==1.0.8' 'retry' 'psutil' 'Cheetah3'
 
     #update toolchain pathes to know about installed poetry
-    if [ "x${RHEL}" 1= "x2023" ]; then
+    if [ "x${RHEL}" != "x2023" ]; then
     toolchain_revision=$(tar -ztf /tmp/mongodbtoolchain.tar.gz | head -1 | sed 's/\/$//')
         /opt/mongodbtoolchain/revisions/${toolchain_revision}/scripts/install.sh
         poetry env use /opt/mongodbtoolchain/v4/bin/python3
@@ -1082,9 +1096,9 @@ build_tarball(){
 #                CMAKE_CMD="cmake3"
 #            fi
             if [ -z "${CC}" -a -z "${CXX}" ]; then
-                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" || exit $?
+                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" -DAUTORUN_UNIT_TESTS=OFF || exit $?
             else
-                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" || exit $?
+                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" -DAUTORUN_UNIT_TESTS=OFF || exit $?
             fi
             make -j${NCPU} || exit $?
             make install

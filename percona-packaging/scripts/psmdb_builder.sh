@@ -651,6 +651,7 @@ build_rpm(){
       if [ -f /opt/rh/gcc-toolset-9/enable ]; then
         source /opt/rh/gcc-toolset-9/enable
         source /opt/rh/gcc-toolset-11/enable
+        mv /usr/bin/python3 /usr/bin/python3_old
       fi
     elif [ x"$RHEL" = x9 ]; then
       mv /usr/bin/python3 /usr/bin/python3_old
@@ -661,10 +662,13 @@ build_rpm(){
         pip install --user -r etc/pip/dev-requirements.txt
         pip install --user -r etc/pip/evgtest-requirements.txt
         pip install --user -r etc/pip/compile-requirements.txt
+        export PYTHONPATH="/usr/local/lib64/python3.11/site-packages:/usr/local/lib/python3.11/site-packages:$PYTHONPATH"
 #        export CC=/usr/bin/gcc
 #        export CXX=/usr/bin/g++
+    else
+         PATH=/opt/mongodbtoolchain/v4/bin/:$PATH
     fi
-        PATH=/opt/mongodbtoolchain/v4/bin/:$PATH
+#        PATH=/opt/mongodbtoolchain/v4/bin/:$PATH
         pip install --upgrade pip
 
     # PyYAML pkg installation fix, more info: https://github.com/yaml/pyyaml/issues/724

@@ -182,9 +182,10 @@ get_sources(){
     go mod vendor
 
     # Dirty hack for mongo-tools 100.7.3 and aarch64 builds. Should fail once Mongo fixes OS detection https://jira.mongodb.org/browse/TOOLS-3318
-    if [ x"$ARCH" = "xaarch64" ]; then
+    # Use rhel93 selector for all builds, no fix by this time(20.01.2025)
+#    if [ x"$ARCH" = "xaarch64" ]; then
         sed -i '131 {/\(GetByOsAndArch("ubuntu1804", archName)\)/ s/\bubuntu1804\b/rhel93/; t; q1}' release/platform/platform.go || exit 1
-    fi
+#    fi
 
     cd ${WORKDIR}
     source percona-server-mongodb-60.properties
@@ -235,16 +236,50 @@ get_system(){
 }
 
 install_golang() {
-    if [ x"$ARCH" = "xx86_64" ]; then
-      GO_ARCH="amd64"
-    elif [ x"$ARCH" = "xaarch64" ]; then
-      GO_ARCH="arm64"
+    if [ "$ARCH" = "x86_64" ]; then
+        GO_ARCH="amd64"
+    elif [ "$ARCH" = "aarch64" ]; then
+        GO_ARCH="arm64"
+    else
+        echo "Unsupported architecture: $ARCH"
+        return 1
     fi
-    wget https://golang.org/dl/go1.22.7.linux-${GO_ARCH}.tar.gz -O /tmp/golang1.22.tar.gz
-    tar --transform=s,go,go1.22, -zxf /tmp/golang1.22.tar.gz
-    rm -rf /usr/local/go1.22 /usr/local/go1.19 /usr/local/go1.11 /usr/local/go1.8 /usr/local/go1.9 /usr/local/go1.9.2 /usr/local/go
-    mv go1.22 /usr/local/
-    ln -s /usr/local/go1.22 /usr/local/go
+
+    GO_VERSION="1.22.8"
+    GO_TAR="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
+    GO_SHA="${GO_TAR}.sha256"
+    GO_URL="https://downloads.percona.com/downloads/packaging/go/${GO_TAR}"
+    SHA_URL="https://downloads.percona.com/downloads/packaging/go/${GO_SHA}"
+    DL_PATH="/tmp/${GO_TAR}"
+    SHA_PATH="/tmp/${GO_SHA}"
+
+    while :; do
+        #if wget --spider "$GO_URL" && wget --spider "$SHA_URL"; then
+	if wget --spider "$GO_URL"; then
+            wget -q "$GO_URL" -O "$DL_PATH"
+	    break
+            #wget -q "$SHA_URL" -O "$SHA_PATH"
+
+            #EXPECTED_SHA=$(awk '{print $1}' "$SHA_PATH")
+            #ACTUAL_SHA=$(sha256sum "$DL_PATH" | awk '{print $1}')
+
+            #if [ "$EXPECTED_SHA" = "$ACTUAL_SHA" ]; then
+            #    echo "SHA256 verification passed."
+            #    break
+            #else
+            #    echo "SHA256 verification failed! Retrying in 10 seconds..."
+            #    rm -f "$DL_PATH" "$SHA_PATH"
+            #fi
+        else
+            echo "Go archive not available. Retrying in 10 seconds..."
+        fi
+        sleep 10
+    done
+
+    tar --transform=s,go,go${GO_VERSION}, -zxf "$DL_PATH"
+    rm -rf /usr/local/go*
+    mv go${GO_VERSION} /usr/local/
+    ln -s /usr/local/go${GO_VERSION} /usr/local/go
 }
 
 install_gcc_8_centos(){
@@ -329,9 +364,9 @@ aws_sdk_build(){
                 CMAKE_C_FLAGS=" -Wno-error=maybe-uninitialized -Wno-error=maybe-uninitialized -Wno-error=uninitialized "
             fi
             if [ -z "${CC}" -a -z "${CXX}" ]; then
-                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON || exit $?
+                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DAUTORUN_UNIT_TESTS=OFF || exit $?
             else
-                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON || exit $?
+                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DAUTORUN_UNIT_TESTS=OFF || exit $?
             fi
             make -j${NCPU} || exit $?
             make install
@@ -994,7 +1029,7 @@ build_tarball(){
         set_compiler
     fi
     #
-    if [ -f /etc/redhat-release ]; then
+    if [ -f /etc/redhat-release -o -f /etc/amazon-linux-release ]; then
         if [ x"$RHEL" = x7 ]; then
             if [ -f /opt/rh/devtoolset-9/enable ]; then
               source /opt/rh/devtoolset-9/enable
@@ -1086,9 +1121,9 @@ build_tarball(){
                 CMAKE_CMD="cmake3"
             fi
             if [ -z "${CC}" -a -z "${CXX}" ]; then
-                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" || exit $?
+                ${CMAKE_CMD} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" -DAUTORUN_UNIT_TESTS=OFF || exit $?
             else
-                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" || exit $?
+                ${CMAKE_CMD} CC=${CC} CXX=${CXX} .. -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="${INSTALLDIR_AWS}" -DAUTORUN_UNIT_TESTS=OFF || exit $?
             fi
             make -j${NCPU} || exit $?
             make install

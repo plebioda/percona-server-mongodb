@@ -49,13 +49,11 @@ mongod --auditDestination=file --auditFormat=BSON
 ### --auditPath
 
 This is the fully qualified path to the file you want the server to create.
-If this parameter is not specified then `auditLog.json` file will be created in server's configured log path.
+This parameter is mandatory if `auditDestination` is `file`.
 
 ```
-mongod --auditDestination=file --auditPath /var/log/tokumx/audit.json
+mongod --auditDestination=file --auditPath=/var/log/tokumx/audit.json
 ```
-
-If log path is not configured then `auditLog.json` will be created in the current directory.
 
 **Note:** This file will rotate in the same manner as the system logpath, either on server reboot or 
 using the logRotate command. The time of the rotation will be added to old file’s name.

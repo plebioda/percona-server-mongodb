@@ -38,7 +38,6 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 
 #include "mongo/base/status.h"
 #include "mongo/db/audit/audit_options_gen.h"
-#include "mongo/db/server_options.h"
 #include "mongo/db/json.h"
 #include "mongo/util/options_parser/startup_option_init.h"
 #include "mongo/util/options_parser/startup_options.h"
@@ -67,6 +66,12 @@ namespace mongo {
             auditOptions.destination =
                 params["auditLog.destination"].as<std::string>();
         }
+
+        if (params.count("auditLog.path")) {
+            auditOptions.path =
+                params["auditLog.path"].as<std::string>();
+        }
+
         if (auditOptions.destination != "") {
             if (auditOptions.destination != "file" &&
                 auditOptions.destination != "console" &&
@@ -74,6 +79,11 @@ namespace mongo {
                 return Status(ErrorCodes::BadValue,
                               "Supported audit log destinations are 'file', 'console', 'syslog'");
             }
+        }
+
+        if (auditOptions.destination == "file" && auditOptions.path.empty()) {
+            return Status(ErrorCodes::BadValue,
+                          "auditLog.path must be specified when auditLog.destination is to a file");
         }
 
         if (params.count("auditLog.format")) {
@@ -102,11 +112,6 @@ namespace mongo {
                           + auditOptions.filter);
         }
 
-        if (params.count("auditLog.path")) {
-            auditOptions.path =
-                params["auditLog.path"].as<std::string>();
-        }
-
         return Status::OK();
     }
 
@@ -130,13 +135,6 @@ namespace mongo {
                            "Could not open a file for writing at the given auditPath: " +
                                auditOptions.path));
             }
-        } else if (!serverGlobalParams.logWithSyslog && !serverGlobalParams.logpath.empty()) {
-            auditOptions.path = (boost::filesystem::path(serverGlobalParams.logpath).parent_path() /
-                                 "auditLog.json")
-                                    .native();
-        } else {
-            auditOptions.path =
-                (boost::filesystem::path(serverGlobalParams.cwd) / "auditLog.json").native();
         }
     }
 } // namespace mongo

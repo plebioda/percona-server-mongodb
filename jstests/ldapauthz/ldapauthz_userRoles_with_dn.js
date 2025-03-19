@@ -34,11 +34,6 @@
         mechanism: 'PLAIN'
     }));
 
-    // ensure user have got correct set of privileges
-    print("\n\n\n\n\n############KEITH TEST#################\n\n\n\n\n")
-    print(db.adminCommand({ getParameter: 1, "queryFramework.queryTemplate": 1 }))
-    print("\n\n\n\n\n############KEITH TEST#################\n\n\n\n\n")
-
     var authenticatedUserRoles = JSON.stringify(db.runCommand({connectionStatus: 1}).authInfo.authenticatedUserRoles[0])
     assert(authenticatedUserRoles == '{"role":"cn=testreaders,dc=percona,dc=com","db":"admin"}')
 

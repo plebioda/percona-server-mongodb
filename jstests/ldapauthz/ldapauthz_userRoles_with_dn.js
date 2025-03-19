@@ -11,8 +11,8 @@
         ldapTransportSecurity: 'none',
         ldapBindMethod: 'simple',
         ldapQueryUser: 'cn=admin,dc=percona,dc=com',
-        ldapQueryPassword: 'password'
-        ldapAuthzQueryTemplate: 'dc=percona,dc=com?dn?sub?(&(objectClass=groupOfNames)(member={USER}))'
+        ldapQueryPassword: 'password',
+        ldapAuthzQueryTemplate: 'dc=percona,dc=com?dn?sub?(&(objectClass=groupOfNames)(member={USER}))',
         setParameter: {authenticationMechanisms: 'PLAIN,SCRAM-SHA-256,SCRAM-SHA-1'}
     });
 

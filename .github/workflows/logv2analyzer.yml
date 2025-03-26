@@ -1,0 +1,16 @@
+name: logv2analyzer
+
+on: [pull_request]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    name: logv2analyzer job
+    steps:
+      -name: Checkout logv2analyzer
+       uses: actions/checkout@v4
+       with:
+         repository: Percona-Lab/logv2analyzer
+         path: build
+      -name: Checkout
+       uses: actions/checkout@v4

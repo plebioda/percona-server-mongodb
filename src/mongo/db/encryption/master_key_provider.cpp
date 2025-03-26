@@ -153,7 +153,7 @@ void KeyStateMonitor::operator()([[maybe_unused]] Client* client) const try {
         return;
     }
     if (!state) {
-        LOGV2_ERROR_OPTIONS(29121,
+        LOGV2_ERROR_OPTIONS(29124,
                             logv2::LogOptions(_logComponent),
                             "Master encryption key is absent on the key management facility.",
                             "keyManagementFacilityType"_attr = _getState->facilityType(),

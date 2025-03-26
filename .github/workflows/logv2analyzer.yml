@@ -1,0 +1,30 @@
+name: logv2analyzer
+
+on: [pull_request]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    name: logv2analyzer job
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout logv2analyzer
+        uses: actions/checkout@v4
+        with:
+          repository: Percona-Lab/logv2analyzer
+          path: build
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r build/requirements.txt
+
+      - name: Run logv2analyzer
+        id: run_analysis
+        run: python build/logv2analyzer.py -q --github-annotations
+

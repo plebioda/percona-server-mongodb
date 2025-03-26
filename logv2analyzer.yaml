@@ -1,0 +1,8 @@
+paths: src/
+ignore:
+  - src/third_party
+duplicates: true
+range:
+  - 29000
+  - 30000
+

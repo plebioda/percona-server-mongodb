@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -37,6 +38,8 @@
 
 #include "mongo/base/status_with.h"
 #include "mongo/base/string_data.h"
+#include "mongo/db/auth/oidc_protocol_gen.h"
+#include "mongo/db/auth/role_name.h"
 #include "mongo/db/auth/sasl_mechanism_policies.h"
 #include "mongo/db/auth/sasl_mechanism_registry.h"
 #include "mongo/db/auth/user.h"
@@ -49,18 +52,23 @@ public:
         : MakeServerMechanism<OidcPolicy>(std::move(authenticationDatabase)) {}
 
     boost::optional<unsigned int> currentStep() const override {
-        return 1u;
+        return _step;
     }
 
     boost::optional<unsigned int> totalSteps() const override {
-        return 1u;
+        return 2u;
     }
+
+    UserRequest getUserRequest() const override;
 
 private:
     StatusWith<std::tuple<bool, std::string>> stepImpl(OperationContext* opCtx,
-                                                       StringData input) final {
-        return std::tuple(true, std::string());
-    }
+                                                       StringData input) final;
+    StatusWith<std::tuple<bool, std::string>> step1(const auth::OIDCMechanismClientStep1& request);
+    StatusWith<std::tuple<bool, std::string>> step2(const auth::OIDCMechanismClientStep2& request);
+
+    unsigned int _step{0};
+    std::set<RoleName> _roles;
 };
 
 class OidcServerFactory : public MakeServerFactory<SaslOidcServerMechanism> {

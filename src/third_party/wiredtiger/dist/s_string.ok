@@ -603,6 +603,7 @@ bitstring
 bitwise
 blk
 blkcache
+blkincr
 blkmod
 bm
 bnd
@@ -1426,7 +1427,6 @@ sp
 sparc
 spinlock
 spinlocks
-sprintf
 src
 srch
 ss

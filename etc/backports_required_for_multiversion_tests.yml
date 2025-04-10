@@ -21,6 +21,8 @@
 #
 last-continuous:
   all:
+  - test_file: jstests/change_streams/change_streams_dynamic_match_expressions.js
+    ticket: SERVER-100345
   - test_file: jstests/replsets/dbcheck_skip_applying_batch_on_secondary_parameter.js
     ticket: SERVER-88885
   - test_file: jstests/replsets/ignore_dbcheck_in_initial_sync.js
@@ -383,9 +385,15 @@ last-continuous:
     ticket: SERVER-92193
   - test_file: jstests/core/query/find_all_values_at_path_expression.js
     ticket: SERVER-95670
+  - test_file: jstests/change_streams/change_streams_namespace_match_expressions.js
+    ticket: SERVER-100489
+  - test_file: jstests/core/upsert_duplicate_key_retry_collation.js
+    ticket: SERVER-84089
   suites: null
 last-lts:
   all:
+  - test_file: jstests/change_streams/change_streams_dynamic_match_expressions.js
+    ticket: SERVER-100345
   - test_file: jstests/replsets/dbcheck_skip_applying_batch_on_secondary_parameter.js
     ticket: SERVER-88885
   - test_file: jstests/replsets/ignore_dbcheck_in_initial_sync.js
@@ -814,4 +822,8 @@ last-lts:
     ticket: SERVER-92193
   - test_file: jstests/core/query/find_all_values_at_path_expression.js
     ticket: SERVER-95670
+  - test_file: jstests/change_streams/change_streams_namespace_match_expressions.js
+    ticket: SERVER-100489
+  - test_file: jstests/core/upsert_duplicate_key_retry_collation.js
+    ticket: SERVER-84089
   suites: null

@@ -85,6 +85,8 @@ const char* BalancerSettingsType::kBalancerModes[] = {"full", "autoSplitOnly", "
 
 const char ChunkSizeSettingsType::kKey[] = "chunksize";
 const uint64_t ChunkSizeSettingsType::kDefaultMaxChunkSizeBytes{128 * 1024 * 1024};
+const int ChunkSizeSettingsType::kConfigSessionsDefaultMaxChunkSizeBytes{
+    200 * 1000};  // average doc size * desired no. docs per chunk
 
 const char AutoSplitSettingsType::kKey[] = "autosplit";
 
@@ -182,22 +184,30 @@ bool BalancerConfiguration::attemptToBalanceJumboChunks() const {
 }
 
 Status BalancerConfiguration::refreshAndCheck(OperationContext* opCtx) {
-    // Balancer configuration
-    Status balancerSettingsStatus = _refreshBalancerSettings(opCtx);
-    if (!balancerSettingsStatus.isOK()) {
-        return balancerSettingsStatus.withContext("Failed to refresh the balancer settings");
-    }
+    try {
+        Lock::ExclusiveLock settingsRefreshLock(opCtx->lockState(), _settingsRefreshMutex);
 
-    // Chunk size settings
-    Status chunkSizeStatus = _refreshChunkSizeSettings(opCtx);
-    if (!chunkSizeStatus.isOK()) {
-        return chunkSizeStatus.withContext("Failed to refresh the chunk sizes settings");
-    }
+        // Balancer configuration
+        Status balancerSettingsStatus = _refreshBalancerSettings(opCtx);
+        if (!balancerSettingsStatus.isOK()) {
+            return balancerSettingsStatus.withContext("Failed to refresh the balancer settings");
+        }
 
-    // Global AutoSplit settings
-    Status autoSplitStatus = _refreshAutoSplitSettings(opCtx);
-    if (!autoSplitStatus.isOK()) {
-        return autoSplitStatus.withContext("Failed to refresh the autoSplit settings");
+        // Chunk size settings
+        Status chunkSizeStatus = _refreshChunkSizeSettings(opCtx);
+        if (!chunkSizeStatus.isOK()) {
+            return chunkSizeStatus.withContext("Failed to refresh the chunk sizes settings");
+        }
+
+        // Global AutoSplit settings
+        Status autoSplitStatus = _refreshAutoSplitSettings(opCtx);
+        if (!autoSplitStatus.isOK()) {
+            return autoSplitStatus.withContext("Failed to refresh the autoSplit settings");
+        }
+
+    } catch (DBException& e) {
+        e.addContext("Failed to refresh the balancer configuration settings");
+        return e.toStatus();
     }
 
     return Status::OK();

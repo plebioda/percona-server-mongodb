@@ -33,6 +33,7 @@
 #include <boost/optional.hpp>
 #include <cstdint>
 
+#include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/platform/mutex.h"
 #include "mongo/s/request_types/migration_secondary_throttle_options.h"
@@ -144,6 +145,10 @@ public:
     // Default value to use for the max chunk size if one is not specified in the balancer
     // configuration
     static const uint64_t kDefaultMaxChunkSizeBytes;
+
+    // Default value to use for the max chunk size for the config.system.settings collection in FCV
+    // 60 if one is not provided.
+    static const int kConfigSessionsDefaultMaxChunkSizeBytes;
 
     /**
      * Constructs a settings object with the default values. To be used when no chunk size settings
@@ -309,6 +314,10 @@ private:
     // is read on the critical path after each write operation, that's why it is cached.
     AtomicWord<unsigned long long> _maxChunkSizeBytes;
     AtomicWord<bool> _shouldAutoSplit;
+
+    // Mutex used to serialize the balancer configuration refreshes. It should be taken in exclusive
+    // mode to prevent having more than one refresh happening at the same time.
+    Lock::ResourceMutex _settingsRefreshMutex{"BalancerConfiguration::_settingsRefreshMutex"};
 };
 
 }  // namespace mongo

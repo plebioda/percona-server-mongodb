@@ -46,6 +46,7 @@ env.Library(
         "query_settings_utils.cpp",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/query/canonical_query",
         "$BUILD_DIR/mongo/db/query/query_shape/query_shape",
         "manager",

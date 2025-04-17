@@ -4,6 +4,7 @@ Import(
     [
         "env",
         "get_option",
+        "has_option",
     ]
 )
 
@@ -59,6 +60,7 @@ env.Library(
         "rate_limiting",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/auth/auth",
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/service_context",

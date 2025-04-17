@@ -1,6 +1,11 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
@@ -63,6 +68,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/bson/util/bson_column",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/query/bucket_predicate_generator",
     ],
 )
@@ -100,6 +106,9 @@ env.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/query_expressions",
+    ],
+    LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
     ],
 )
 

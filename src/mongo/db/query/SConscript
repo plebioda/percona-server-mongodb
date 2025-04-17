@@ -4,6 +4,7 @@ Import(
     [
         "env",
         "get_option",
+        "has_option",
     ]
 )
 
@@ -62,6 +63,7 @@ env.Library(
         "sort_pattern",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "common_query_enums_and_helpers",
     ],
 )
@@ -98,6 +100,7 @@ env.Library(
         "query_knobs",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/commands/server_status_core",
         "$BUILD_DIR/mongo/db/fts/base_fts",
         "$BUILD_DIR/mongo/db/index/index_access_method",
@@ -118,6 +121,9 @@ env.Library(
     LIBDEPS=[
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/db/query_expressions",
+    ],
+    LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
     ],
 )
 
@@ -148,6 +154,9 @@ env.Library(
         "memory_util",
         "query_settings/utils",
     ],
+    LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
+    ],
 )
 
 env.Library(
@@ -161,6 +170,7 @@ env.Library(
         "$BUILD_DIR/mongo/db/query_expressions",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/server_base",
     ],
 )
@@ -188,6 +198,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/bson/util/bson_column",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/timeseries/timeseries_options",
     ],
 )
@@ -210,6 +221,7 @@ env.Library(
         "query_request",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/curop_failpoint_helpers",
         "$BUILD_DIR/mongo/db/server_base",
@@ -392,6 +404,9 @@ env.Library(
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/db/exec/document_value/document_value",
         "$BUILD_DIR/mongo/db/query_expressions",
+    ],
+    LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
     ],
 )
 
@@ -632,6 +647,7 @@ env.Benchmark(
         "plan_cache_parse_encode_pipeline_bm.cpp",
     ],
     LIBDEPS=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/bonsai_query_bm_fixture",
         "$BUILD_DIR/mongo/db/pipeline/pipeline",
         "$BUILD_DIR/mongo/db/query/canonical_query",

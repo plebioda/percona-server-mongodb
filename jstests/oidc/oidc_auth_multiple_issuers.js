@@ -77,7 +77,7 @@ const expectedLog = {
     msg: "Failed to authenticate",
     attr: {
         mechanism: "MONGODB-OIDC",
-        error: "BadValue: No identity provider found matching principal name `user3`"
+        error: "BadValue: No identity provider found for principal name `user3`"
     }
 };
 

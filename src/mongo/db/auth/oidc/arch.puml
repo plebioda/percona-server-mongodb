@@ -1,0 +1,132 @@
+@startuml oidc_arch
+
+class OidcServerFactory {
+
+}
+
+class SaslOidcServerMechanism {
+
+}
+
+class OidcIdentityProviderConfig {
+    +getIssuer(): string
+    +getAudience(): variant
+    +getAuthNamePrefix(): string
+    +getPrincipalName(): string
+
+}
+
+package "crypto" {
+    class JWKSFetcher {
+        +JWKSFetcher(issuer: string)
+        +fetch(): JWKSet
+    }
+
+    class JWSValidator {
+        +validate(algorithm: string, payload: string, signature: string): Status
+    }
+
+    note top of JWSValidator
+        Validates the token signature
+        using the public key provided by the JWKManager
+    end note
+
+    class JWKManager {
+        +JWKManager(fetcher: JWKSFetcher)
+        +getValidator(keyId: string): JWSValidator
+        +loadKeys(): Status
+    }
+
+    note top of JWKManager
+        Fetches OIDC configuration and keys
+        from the JWKS endpoint,
+        caches them for later use.
+
+        When a key is requested:
+        - checks if the key is in the cache
+        - if not, fetches the keys from the JWKS endpoint
+        - if the key is not found, returns an error
+        - if the key is found, returns the key
+    end note
+
+    class JWSValidatedToken {
+
+        +JWSValidatedToken(keyMngr: JWKManager, token: string)
+
+        +extractIssuerAndAudienceFromCompactSerialization(token: string): <pair<string, string>>
+
+        +getHeaderBSON(): BSONObj
+        +getHeader(): JWSHeader
+        +getBodyBSON(): BSONObj
+        +getBody(): JWT
+    }
+
+    note top of JWSValidatedToken
+        Validates and parses the token
+        provides all claims from the body
+    end note
+
+}
+
+entity OidcInitializer {
+    +initialize()
+}
+
+entity JWKPollThread {
+    +jwkManager: JWKManager
+}
+
+note top of JWKPollThread
+    Background task that polls the JWK endpoint
+    and updates the keys in the JWKManager
+end note
+
+class OidcTokenIntrospector {
+    +OidcTokenIntrospector(issuer: string, clientId: string)
+    +introspect(token: string): Status
+}
+note top of OidcTokenIntrospector
+    Introspects the token
+    using the introspection endpoint
+end note
+
+class OidcIdentityProviderRegistry {
+    +register(oidcConfig: OidcIdentityProviderConfig)
+    +getConfig(issuer: string, audience: string): StatusWith<OidcIdentityProviderConfig>
+    +getJWKManager(issuer: string): StatusWith<JWKManager>
+    +getIntrospector(issuer: string): StatusWith<OidcTokenIntrospector>
+}
+
+note top of OidcIdentityProviderRegistry
+    Registry of OIDC identity providers:
+    - provides configurations
+    - provides JWK managers
+    - provides token introspectors
+    - spawns background tasks if JWKPollSecs is set
+end note
+
+OidcServerFactory ..> SaslOidcServerMechanism : creates
+JWKManager ..> JWSValidator : creates
+JWKManager *-- JWKSFetcher : owns
+JWSValidatedToken ..> JWKManager : gets validator / loads keys
+JWSValidatedToken ..> JWSValidator : uses validate()
+
+SaslOidcServerMechanism ..> JWKManager : uses
+SaslOidcServerMechanism ..> OidcTokenIntrospector : uses
+SaslOidcServerMechanism ..> OidcIdentityProviderConfig : uses
+SaslOidcServerMechanism ..> JWSValidatedToken: creates
+SaslOidcServerMechanism ..> OidcIdentityProviderRegistry: gets config
+SaslOidcServerMechanism ..> OidcIdentityProviderRegistry: gets JWKManager
+SaslOidcServerMechanism ..> OidcIdentityProviderRegistry: gets Introspector
+
+
+
+OidcIdentityProviderRegistry ..> JWKManager: creates
+OidcIdentityProviderRegistry ..> OidcTokenIntrospector: creates
+OidcIdentityProviderRegistry ..> JWKPollThread: spawns
+
+JWKPollThread ..> JWKManager: loads keys
+
+OidcInitializer ..> OidcIdentityProviderRegistry: registers configs
+
+@enduml

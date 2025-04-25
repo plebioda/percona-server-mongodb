@@ -66,8 +66,10 @@ public:
 private:
     StatusWith<std::tuple<bool, std::string>> stepImpl(OperationContext* opCtx,
                                                        StringData input) final;
-    StatusWith<std::tuple<bool, std::string>> step1(const auth::OIDCMechanismClientStep1& request);
-    StatusWith<std::tuple<bool, std::string>> step2(const auth::OIDCMechanismClientStep2& request);
+    StatusWith<std::tuple<bool, std::string>> step1(ServiceContext* serviceContext,
+                                                    const auth::OIDCMechanismClientStep1& request);
+    StatusWith<std::tuple<bool, std::string>> step2(ServiceContext* serviceContext,
+                                                    const auth::OIDCMechanismClientStep2& request);
 
     unsigned int _step{0};
     boost::optional<std::set<RoleName>> _roles;

@@ -34,7 +34,7 @@ assert(test.auth(conn, "user"), "Failed to authenticate");
 idp.assert_config_requested();
 idp.assert_token_requested(oidcProvider.clientId, oidcProvider.requestScopes);
 test.assert_authenticated(conn, "test/user", ["test/group1", "test/group2"]);
-idp.clear();
+idp.clear_output();
 
 sleep(200);
 

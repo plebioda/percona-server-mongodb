@@ -1159,7 +1159,6 @@ env.Library(
         "admission/execution_control",
         "auth/auth_op_observer",
         "auth/oidc/oidc",
-        "auth/oidc/oidc_server_parameters",
         "catalog/catalog_helpers",
         "catalog/catalog_impl",
         "catalog/collection_crud",

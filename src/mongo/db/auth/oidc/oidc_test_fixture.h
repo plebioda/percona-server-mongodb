@@ -320,6 +320,11 @@ public:
         return _jwkManager;
     }
 
+    void visitJWKManagers(JWKManagerVisitor visitor) const override {
+        invariant(visitor);
+        FAIL("OidcIdentityProvidersRegistryMock::visitJWKManagers not implemented");
+    }
+
 protected:
     boost::optional<OidcIdentityProviderConfig> _config;
     size_t _numOfIdpsWithHumanFlowsSupport{0};

@@ -24,6 +24,21 @@ env.Library(
     ],
 )
 
+env.Library(
+    target='oidc_commands',
+    source=[
+        'oidc_commands.cpp',
+    ],
+    LIBDEPS_PRIVATE=[
+        '$BUILD_DIR/mongo/db/auth/auth',
+        '$BUILD_DIR/mongo/db/auth/authprivilege',
+        '$BUILD_DIR/mongo/db/commands',
+        '$BUILD_DIR/mongo/db/commands/test_commands_enabled',
+        '$BUILD_DIR/mongo/util/namespace_string_database_name_util',
+        'oidc',
+    ],
+)
+
 env.CppUnitTest(
     target='oidc_test',
     source=[

@@ -580,5 +580,30 @@ TEST_F(OidcIdentityProvidersRegistryTest, JWKSFetchedOnInit) {
     ASSERT_EQ(_jwksFetcherFactoryMock.getFetchCount(issuer2), 1);
 }
 
+// Test for visiting all JWKManagers in the registry
+TEST_F(OidcIdentityProvidersRegistryTest, VisitAllJWKManagers) {
+    std::vector configs{
+        create_config("https://issuer1", "prefix", "audience1"),
+        create_config("https://issuer1", "prefix", "audience2"),  // same issuer
+        create_config("https://issuer2", "prefix", "audience3"),
+        create_config("https://issuer3", "prefix", "audience4"),
+    };
+
+    auto registry = create_registry(configs);
+
+    std::set<std::string> visitedIssuers;
+    registry->visitJWKManagers([&visitedIssuers](const auto& issuer, const auto& manager) {
+        ASSERT_FALSE(visitedIssuers.contains(issuer));
+        ASSERT_NE(manager, nullptr);
+
+        visitedIssuers.insert(issuer);
+    });
+
+    ASSERT_TRUE(visitedIssuers.contains("https://issuer1"));
+    ASSERT_TRUE(visitedIssuers.contains("https://issuer2"));
+    ASSERT_TRUE(visitedIssuers.contains("https://issuer3"));
+    ASSERT_EQ(visitedIssuers.size(), 3);
+}
+
 }  // namespace
 }  // namespace mongo

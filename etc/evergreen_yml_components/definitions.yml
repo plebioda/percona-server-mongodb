@@ -5616,72 +5616,6 @@ tasks:
   - func: "run tests"
 
 - <<: *gen_task_template
-  name: tenant_migration_jscore_passthrough_gen
-  tags: ["serverless"]
-  commands:
-  - func: "generate resmoke tasks"
-    vars:
-      use_large_distro: "true"
-
-- <<: *gen_task_template
-  name: tenant_migration_causally_consistent_jscore_passthrough_gen
-  tags: ["serverless"]
-  commands:
-  - func: "generate resmoke tasks"
-    vars:
-      use_large_distro: "true"
-
-- <<: *gen_task_template
-  name: tenant_migration_multi_stmt_txn_jscore_passthrough_gen
-  tags: ["serverless", "txn"]
-  commands:
-  - func: "generate resmoke tasks"
-    vars:
-      use_large_distro: "true"
-
-- <<: *gen_task_template
-  name: tenant_migration_stepdown_jscore_passthrough_gen
-  tags: ["serverless"]
-  commands:
-  - func: "generate resmoke tasks"
-    vars:
-      use_large_distro: "true"
-
-- <<: *gen_task_template
-  name: tenant_migration_terminate_primary_jscore_passthrough_gen
-  tags: ["serverless"]
-  commands:
-  - func: "generate resmoke tasks"
-    vars:
-      use_large_distro: "true"
-      fallback_num_sub_suites: 10
-
-- <<: *gen_task_template
-  name: tenant_migration_kill_primary_jscore_passthrough_gen
-  tags: ["serverless"]
-  commands:
-  - func: "generate resmoke tasks"
-    vars:
-      use_large_distro: "true"
-      fallback_num_sub_suites: 10
-
-- <<: *gen_task_template
-  name: talk_directly_to_shardsvrs_jscore_passthrough_gen
-  tags: ["serverless"]
-  commands:
-  - func: "generate resmoke tasks"
-    vars:
-      use_large_distro: "true"
-
-- <<: *gen_task_template
-  name: talk_directly_to_shardsvrs_kill_primary_jscore_passthrough_gen
-  tags: ["serverless"]
-  commands:
-  - func: "generate resmoke tasks"
-    vars:
-      use_large_distro: "true"
-
-- <<: *gen_task_template
   name: clustered_collection_passthrough_gen
   tags: ["large", "clustered_collections"]
   commands:
@@ -6167,13 +6101,6 @@ tasks:
 - <<: *task_template
   name: sasl
   tags: []
-  commands:
-  - func: "do setup"
-  - func: "run tests"
-
-- <<: *task_template
-  name: serverless
-  tags: ["serverless"]
   commands:
   - func: "do setup"
   - func: "run tests"
@@ -7445,6 +7372,28 @@ tasks:
       content_type: text/plain
       remote_file: ${push_path}/mongodb-${push_name}-${push_arch}-${suffix}-signed.msi.md5
       skip_existing: ${is_release}
+  #Trace artifacts (binaries, cryptd, debug, MSI) using Papertrail
+  - command: subprocess.exec
+    params:
+      binary: bash
+      env:
+        IS_RELEASE: ${is_release}
+      args:
+        - "./src/evergreen/papertrail_generate_expansions.sh"
+  - command: expansions.update
+    params:
+      file: src/papertrail-expansions.yml
+  - func: "f_expansions_write"
+  - command: papertrail.trace
+    params:
+      key_id: ${papertrail_key_id}
+      secret_key: ${papertrail_secret_key}
+      product: ${product_for_papertrail}
+      version: ${release_version}
+      filenames:
+        - "src/mongodb-${push_name}-${push_arch}*"
+        - "src/mongodb-cryptd-${push_name}-${push_arch}*"
+        - "src/mh-${push_name}-${push_arch}*"
 
 - name: crypt_push
   run_on: rhel8.7-small
@@ -7552,6 +7501,26 @@ tasks:
       content_type: text/plain
       remote_file: ${push_path}/mongo_crypt_shared_v1-${push_name}-${push_arch}-${suffix}.${ext|tgz}.md5
       skip_existing: ${is_release}
+  #Trace artifacts (crypt) using Papertrail
+  - command: subprocess.exec
+    params:
+      binary: bash
+      env:
+        IS_RELEASE: ${is_release}
+      args:
+        - "./src/evergreen/papertrail_generate_expansions.sh"
+  - command: expansions.update
+    params:
+      file: src/papertrail-expansions.yml
+  - func: "f_expansions_write"
+  - command: papertrail.trace
+    params:
+      key_id: ${papertrail_key_id}
+      secret_key: ${papertrail_secret_key}
+      product: ${product_for_papertrail}
+      version: ${release_version}
+      filenames:
+        - "src/mongo_crypt_shared_v1-${push_name}-${push_arch}*"
 
 - <<: *task_template
   name: search

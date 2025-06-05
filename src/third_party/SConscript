@@ -64,7 +64,6 @@ thirdPartyEnvironmentModifications = {
             'curl',
         ],
     },
-    'jwt-cpp': {'CPPPATH': ['#/src/third_party/jwt-cpp/include']},
 }
 
 def injectMozJS(thisEnv):

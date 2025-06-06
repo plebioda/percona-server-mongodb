@@ -98,6 +98,7 @@ protected:
     static constexpr StringData kConfigSvr = "config_svr"_sd;
     static constexpr StringData kUptime = "uptime"_sd;
     static constexpr StringData kSource = "source"_sd;
+    static constexpr StringData kOIDCEnabled = "oidc_enabled"_sd;
 
     // instance id stored in kTelemetryFileName
     OID _instid;

@@ -58,6 +58,10 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/util/time_support.h"
 #include "mongo/util/version.h"
 
+#ifdef PERCONA_OIDC_ENABLED
+#include "mongo/db/auth/oidc/oidc_server_parameters_gen.h"
+#endif
+
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kDefault
 
 namespace mongo {
@@ -98,6 +102,19 @@ void stopTelemetryThread_inlock(ServiceContext* serviceContext) {
         telemetryThread->shutdown();
         TelemetryThreadBase::set(serviceContext, {});
     }
+}
+
+// check if OIDC authentication is enabled by checking the server parameters
+bool isOIDCEnabled() {
+#ifdef PERCONA_OIDC_ENABLED
+    const auto config = ServerParameterSet::getNodeParameterSet()
+               ->getIfExists<OidcIdentityProvidersServerParameter>("oidcIdentityProviders");
+    if (config) {
+        return !config->_data.empty();
+    }
+#endif
+
+    return false;
 }
 
 }  // namespace
@@ -233,6 +250,8 @@ Status TelemetryThreadBase::_initParameters(ServiceContext* serviceContext) try 
     if (_dbid.isSet()) {
         pfx.append(kDbInternalId, _dbid.toString());
     }
+
+    pfx.append(kOIDCEnabled, boolName(isOIDCEnabled()));
 
     _prefix = pfx.obj();
 

@@ -58,6 +58,7 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/util/time_support.h"
 #include "mongo/util/version.h"
 
+#include "mongo/db/ldap_options.h"
 #ifdef PERCONA_OIDC_ENABLED
 #include "mongo/db/auth/oidc/oidc_server_parameters_gen.h"
 #endif
@@ -107,14 +108,24 @@ void stopTelemetryThread_inlock(ServiceContext* serviceContext) {
 // check if OIDC authentication is enabled by checking the server parameters
 bool isOIDCEnabled() {
 #ifdef PERCONA_OIDC_ENABLED
-    const auto config = ServerParameterSet::getNodeParameterSet()
-               ->getIfExists<OidcIdentityProvidersServerParameter>("oidcIdentityProviders");
+    const auto config =
+        ServerParameterSet::getNodeParameterSet()
+            ->getIfExists<OidcIdentityProvidersServerParameter>("oidcIdentityProviders");
     if (config) {
         return !config->_data.empty();
     }
 #endif
 
     return false;
+}
+
+// check if LDAP authorization is enabled by checking the global LDAP parameters
+bool isLDAPAuthzEnabled() {
+    return !ldapGlobalParams.ldapQueryTemplate->empty();
+}
+
+bool isLDAPAuthenticationEnabled() {
+    return !ldapGlobalParams.ldapUserToDNMapping->empty();
 }
 
 }  // namespace

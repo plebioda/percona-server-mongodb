@@ -609,54 +609,6 @@ TEST_F(ReshardingRecipientServiceTest, StepDownStepUpEachTransition) {
     }
 }
 
-TEST_F(ReshardingRecipientServiceTest, ReportForCurrentOpAfterCompletion) {
-    const auto recipientState = RecipientStateEnum::kCreatingCollection;
-
-    PauseDuringStateTransitions stateTransitionsGuard{controller(), recipientState};
-    auto doc = makeStateDocument(false /* isAlsoDonor */);
-    auto instanceId =
-        BSON(ReshardingRecipientDocument::kReshardingUUIDFieldName << doc.getReshardingUUID());
-    auto opCtx = makeOperationContext();
-
-    auto recipient = [&] {
-        RecipientStateMachine::insertStateDocument(opCtx.get(), doc);
-        return RecipientStateMachine::getOrCreate(opCtx.get(), _service, doc.toBSON());
-    }();
-
-    notifyToStartCloning(opCtx.get(), *recipient, doc);
-
-    // Step down before the transition to state can complete.
-    stateTransitionsGuard.wait(recipientState);
-    stepDown();
-
-    // At this point, the resharding metrics will have been unregistered from the cumulative metrics
-    ASSERT_EQ(recipient->getCompletionFuture().getNoThrow(), ErrorCodes::CallbackCanceled);
-
-    // Now call step up. The old recipient object has not yet been destroyed because we still hold
-    // a shared pointer to it ('recipient') - this can happen in production after a failover if a
-    // state machine is slow to clean up.
-    stepUp(opCtx.get());
-
-    // Assert that the old recipient object will return a currentOp report, because the resharding
-    // metrics still exist on the coordinator object itelf.
-    ASSERT(
-        recipient->reportForCurrentOp(MongoProcessInterface::CurrentOpConnectionsMode::kExcludeIdle,
-                                      MongoProcessInterface::CurrentOpSessionsMode::kIncludeIdle));
-
-    // Ensure the new recipient started up successfully (and thus, registered new resharding
-    // metrics), despite the "zombie" state machine still existing.
-    auto [maybeRecipient, isPausedOrShutdown] =
-        RecipientStateMachine::lookup(opCtx.get(), _service, instanceId);
-    ASSERT_TRUE(maybeRecipient);
-    ASSERT_FALSE(isPausedOrShutdown);
-    auto newRecipient = *maybeRecipient;
-    ASSERT_NE(recipient, newRecipient);
-
-    // No need to finish the resharding op, so we just cancel the op.
-    stepDown();
-    ASSERT_EQ(newRecipient->getCompletionFuture().getNoThrow(), ErrorCodes::CallbackCanceled);
-}
-
 TEST_F(ReshardingRecipientServiceTest, OpCtxKilledWhileRestoringMetrics) {
     for (bool isAlsoDonor : {false, true}) {
         LOGV2(5992701,
@@ -1164,6 +1116,7 @@ TEST_F(ReshardingRecipientServiceTest, RestoreMetricsAfterStepUpWithMissingProgr
 }
 
 TEST_F(ReshardingRecipientServiceTest, AbortAfterStepUpWithAbortReasonFromCoordinator) {
+    repl::primaryOnlyServiceTestStepUpWaitForRebuildComplete.setMode(FailPoint::alwaysOn);
     const auto abortErrMsg = "Recieved abort from the resharding coordinator";
 
     for (bool isAlsoDonor : {false, true}) {
@@ -1208,8 +1161,8 @@ TEST_F(ReshardingRecipientServiceTest, AbortAfterStepUpWithAbortReasonFromCoordi
         ASSERT_EQ(recipient->getCompletionFuture().getNoThrow(), ErrorCodes::CallbackCanceled);
         recipient.reset();
 
-        removeRecipientDocFailpoint->setMode(FailPoint::off);
         stepUp(opCtx.get());
+        removeRecipientDocFailpoint->waitForTimesEntered(timesEnteredFailPoint + 2);
 
         auto [maybeRecipient, isPausedOrShutdown] =
             RecipientStateMachine::lookup(opCtx.get(), _service, instanceId);
@@ -1217,6 +1170,7 @@ TEST_F(ReshardingRecipientServiceTest, AbortAfterStepUpWithAbortReasonFromCoordi
         ASSERT_FALSE(isPausedOrShutdown);
         recipient = *maybeRecipient;
 
+        removeRecipientDocFailpoint->setMode(FailPoint::off);
         ASSERT_OK(recipient->getCompletionFuture().getNoThrow());
         checkStateDocumentRemoved(opCtx.get());
     }

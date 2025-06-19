@@ -47,8 +47,7 @@ export class QuerySettingsIndexHintsTests {
         // Clear the plan cache before running any queries.
         db[collName].getPlanCache().clear();
 
-        // Take the newest plan cache entry (based on 'timeOfCreation' sorting) and ensure that it
-        // contains the 'settings'.
+        // Take the plan cache entries and ensure that they contain the 'settings'.
         assert.commandWorked(db.runCommand(command));
         const planCacheStatsAfterRunningCmd = db[collName].getPlanCache().list();
         assert.gte(planCacheStatsAfterRunningCmd.length,
@@ -75,9 +74,10 @@ export class QuerySettingsIndexHintsTests {
         }
     }
 
-    assertIndexScanStage(cmd, expectedIndex) {
+    assertIndexScanStage(cmd, expectedIndex, ns) {
         return this.assertIndexUse(cmd, expectedIndex, (explain) => {
             return getQueryPlanners(explain)
+                .filter(queryPlanner => queryPlanner.namespace == `${ns.db}.${ns.coll}`)
                 .map(getWinningPlan)
                 .flatMap(winningPlan => getPlanStages(winningPlan, "IXSCAN"));
         });
@@ -142,8 +142,8 @@ export class QuerySettingsIndexHintsTests {
         for (const index of [this.indexA, this.indexB, this.indexAB]) {
             const settings = {indexHints: {ns, allowedIndexes: [index]}};
             this.qsutils.withQuerySettings(querySettingsQuery, settings, () => {
-                this.assertIndexScanStage(query, index);
-                this.assertQuerySettingsInCacheForCommand(query, settings);
+                this.assertIndexScanStage(query, index, ns);
+                this.assertQuerySettingsInCacheForCommand(query, settings, ns.coll);
             });
         }
     }
@@ -195,9 +195,9 @@ export class QuerySettingsIndexHintsTests {
             };
 
             this.qsutils.withQuerySettings(querySettingsQuery, settings, () => {
-                this.assertIndexScanStage(query, mainCollIndex);
+                this.assertIndexScanStage(query, mainCollIndex, mainNs);
                 this.assertLookupJoinStage(query, secondaryCollIndex, isSecondaryCollAView);
-                this.assertQuerySettingsInCacheForCommand(query, settings);
+                this.assertQuerySettingsInCacheForCommand(query, settings, mainNs.coll);
             });
         }
     }
@@ -232,9 +232,34 @@ export class QuerySettingsIndexHintsTests {
             };
 
             this.qsutils.withQuerySettings(querySettingsQuery, settings, () => {
-                this.assertIndexScanStage(query, mainCollIndex);
+                this.assertIndexScanStage(query, mainCollIndex, mainNs);
                 this.assertLookupPipelineStage(query, secondaryCollIndex);
-                this.assertQuerySettingsInCacheForCommand(query, settings);
+                this.assertQuerySettingsInCacheForCommand(query, settings, mainNs.coll);
+                this.assertQuerySettingsInCacheForCommand(query, settings, secondaryNs.coll);
+            });
+        }
+    }
+
+    /**
+     * Ensure query settings are applied for both collections, resulting in index scans using the
+     * hinted indexes.
+     */
+    assertQuerySettingsIndexApplications(querySettingsQuery, mainNs, secondaryNs) {
+        const query = this.qsutils.withoutDollarDB(querySettingsQuery);
+        for (const [mainCollIndex, secondaryCollIndex] of selfCrossProduct(
+                 [this.indexA, this.indexB, this.indexAB])) {
+            const settings = {
+                indexHints: [
+                    {ns: mainNs, allowedIndexes: [mainCollIndex]},
+                    {ns: secondaryNs, allowedIndexes: [secondaryCollIndex]},
+                ]
+            };
+
+            this.qsutils.withQuerySettings(querySettingsQuery, settings, () => {
+                this.assertIndexScanStage(query, mainCollIndex, mainNs);
+                this.assertIndexScanStage(query, secondaryCollIndex, secondaryNs);
+                this.assertQuerySettingsInCacheForCommand(query, settings, mainNs.coll);
+                this.assertQuerySettingsInCacheForCommand(query, settings, secondaryNs.coll);
             });
         }
     }
@@ -246,7 +271,10 @@ export class QuerySettingsIndexHintsTests {
      * - Only backward scans allowed.
      * - Both forward and backward scans allowed.
      */
-    assertQuerySettingsNaturalApplication(querySettingsQuery, ns, additionalHints = []) {
+    assertQuerySettingsNaturalApplication(querySettingsQuery,
+                                          ns,
+                                          additionalHints = [],
+                                          additionalAssertions = () => {}) {
         const query = this.qsutils.withoutDollarDB(querySettingsQuery);
         const naturalForwardScan = {$natural: 1};
         const naturalForwardSettings = {
@@ -255,6 +283,7 @@ export class QuerySettingsIndexHintsTests {
         this.qsutils.withQuerySettings(querySettingsQuery, naturalForwardSettings, () => {
             this.assertCollScanStage(query, ["forward"]);
             this.assertQuerySettingsInCacheForCommand(query, naturalForwardSettings);
+            additionalAssertions();
         });
 
         const naturalBackwardScan = {$natural: -1};
@@ -264,6 +293,7 @@ export class QuerySettingsIndexHintsTests {
         this.qsutils.withQuerySettings(querySettingsQuery, naturalBackwardSettings, () => {
             this.assertCollScanStage(query, ["backward"]);
             this.assertQuerySettingsInCacheForCommand(query, naturalBackwardSettings);
+            additionalAssertions();
         });
 
         const naturalAnyDirectionSettings = {
@@ -275,6 +305,7 @@ export class QuerySettingsIndexHintsTests {
         this.qsutils.withQuerySettings(querySettingsQuery, naturalAnyDirectionSettings, () => {
             this.assertCollScanStage(query, ["forward", "backward"]);
             this.assertQuerySettingsInCacheForCommand(query, naturalAnyDirectionSettings);
+            additionalAssertions();
         });
     }
 
@@ -381,13 +412,52 @@ export class QuerySettingsIndexHintsTests {
             });
     }
 
-    testAggregateQuerySettingsNaturalHintDirectionWhenSecondaryHinted(query, mainNs, secondaryNs) {
-        // Verify main collection scan direction is not affected by hint for secondary collection.
-        for (const hint
-                 of [[{"$natural": 1}], [{"$natural": -1}], [{"$natural": 1}, {"$natural": -1}]]) {
+    testAggregateQuerySettingsNaturalHintDirectionWhenSecondaryHinted(
+        query, mainNs, secondaryNs, lookupResultExtractor = (doc) => doc.output) {
+        let params = [
+            {hint: [{"$natural": 1}], cmp: (a, b) => a <= b},
+            {hint: [{"$natural": -1}], cmp: (a, b) => a >= b},
+            {hint: [{"$natural": 1}, {"$natural": -1}], cmp: () => true},
+        ];
+
+        for (const {hint, cmp} of params) {
             this.assertQuerySettingsNaturalApplication(
-                query, mainNs, [{ns: secondaryNs, allowedIndexes: hint}]);
+                query, mainNs, [{ns: secondaryNs, allowedIndexes: hint}], () => {
+                    // The order of the documents in output should correspond to the $natural hint
+                    // direction set for the secondary collection.
+                    const res =
+                        assert.commandWorked(db.runCommand(this.qsutils.withoutDollarDB(query)));
+                    const docs = getAllDocuments(db, res);
+
+                    for (const doc of docs) {
+                        for (const [a, b] of pairwise(lookupResultExtractor(doc))) {
+                            assert(cmp(a, b), {
+                                msg: "$lookup result not in expected order",
+                                docs: docs,
+                                doc: doc
+                            });
+                        }
+                    }
+                });
         }
+    }
+}
+
+function getAllDocuments(db, commandResult) {
+    return (new DBCommandCursor(db, commandResult)).toArray();
+}
+
+function* pairwise(iterable) {
+    const iterator = iterable[Symbol.iterator]();
+    let a = iterator.next();
+    if (a.done) {
+        return;
+    }
+    let b = iterator.next();
+    while (!b.done) {
+        yield [a.value, b.value];
+        a = b;
+        b = iterator.next();
     }
 }
 

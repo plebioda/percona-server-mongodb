@@ -274,9 +274,8 @@ TEST_F(BSONColumnMaterializerTest, SBEMaterializer) {
         oid, {value::TypeTags::bsonObjectId, value::bitcastFrom<const char*>(oidStorage)});
 
     // Test a string and BSONCode of every size from 0 to 4097.
+    std::string longStr;
     for (size_t strSize = 0; strSize < 4097; ++strSize) {
-        std::string longStr("a", strSize);
-
         {
             StringData sd{longStr};
             obj = BSON("" << sd);
@@ -298,6 +297,9 @@ TEST_F(BSONColumnMaterializerTest, SBEMaterializer) {
                 code,
                 {value::TypeTags::bsonJavascript, value::bitcastFrom<const char*>(codeStorage)});
         }
+
+        invariant(longStr.size() == strSize);
+        longStr.push_back('a');
     }
 }
 

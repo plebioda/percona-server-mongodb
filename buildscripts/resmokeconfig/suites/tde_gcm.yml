@@ -1,14 +1,14 @@
 # Section that is ignored by resmoke.py.
 config_variables:
-- &keyFileGood jstests/percona/tde/ekf
-- &keyFileWrong jstests/percona/tde/ekfw
-- &cipherMode AES256-GCM
+  - &keyFileGood jstests/percona/tde/ekf
+  - &keyFileWrong jstests/percona/tde/ekfw
+  - &cipherMode AES256-GCM
 
 test_kind: js_test
 
 selector:
   roots:
-  - jstests/percona/tde/*.js
+    - jstests/percona/tde/*.js
 
 # these tests start their own instances
 executor:
@@ -19,4 +19,4 @@ executor:
           keyFileGood: *keyFileGood
           keyFileWrong: *keyFileWrong
           cipherMode: *cipherMode
-      nodb: ''
+      nodb: ""

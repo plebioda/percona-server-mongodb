@@ -522,6 +522,7 @@ env.Library(
         'default_max_time_ms_cluster_parameter.cpp',
     ],
     LIBDEPS_PRIVATE=[
+        '$BUILD_DIR/mongo/db/auth/auth',
         '$BUILD_DIR/mongo/idl/cluster_server_parameter',
         'query/query_request',
         'server_base',
@@ -1087,6 +1088,7 @@ env.Library(
         's/global_user_write_block_state.cpp',
         's/operation_sharding_state.cpp',
         's/range_arithmetic.cpp',
+        's/replica_set_endpoint_feature_flag.cpp',
         's/scoped_collection_metadata.cpp',
         's/shard_key_index_util.cpp',
         's/sharding_api_d_params.idl',

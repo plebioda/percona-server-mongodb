@@ -128,46 +128,50 @@ void ThroughputProbing::appendStats(BSONObjBuilder& builder) const {
 }
 
 void ThroughputProbing::_run(Client* client) {
-    auto opCtx = client->makeOperationContext();
-    auto numFinishedProcessing =
-        _readTicketHolder->numFinishedProcessing() + _writeTicketHolder->numFinishedProcessing();
-    invariant(numFinishedProcessing >= _prevNumFinishedProcessing);
+    try {
+        auto opCtx = client->makeOperationContext();
+        auto numFinishedProcessing = _readTicketHolder->numFinishedProcessing() +
+            _writeTicketHolder->numFinishedProcessing();
+        invariant(numFinishedProcessing >= _prevNumFinishedProcessing);
 
-    // Initialize on first iteration.
-    if (_prevNumFinishedProcessing < 0) {
-        _prevNumFinishedProcessing = numFinishedProcessing;
+        // Initialize on first iteration.
+        if (_prevNumFinishedProcessing < 0) {
+            _prevNumFinishedProcessing = numFinishedProcessing;
+            _timer.reset();
+            return;
+        }
+
+        Microseconds elapsed = _timer.elapsed();
+        if (elapsed == Microseconds{0}) {
+            // The clock used to sleep between iterations may not be reliable, and thus the timer
+            // may report that no time has elapsed. If this occurs, just wait for the next
+            // iteration.
+            return;
+        }
+
+        auto throughput = (numFinishedProcessing - _prevNumFinishedProcessing) /
+            static_cast<double>(elapsed.count());
+
+        switch (_state) {
+            case ProbingState::kStable:
+                _probeStable(opCtx.get(), throughput);
+                break;
+            case ProbingState::kUp:
+                _probeUp(opCtx.get(), throughput);
+                break;
+            case ProbingState::kDown:
+                _probeDown(opCtx.get(), throughput);
+                break;
+        }
+
+        // Reset these with fresh values after we've made our adjustment to establish a better
+        // cause-effect relationship.
+        _prevNumFinishedProcessing = _readTicketHolder->numFinishedProcessing() +
+            _writeTicketHolder->numFinishedProcessing();
         _timer.reset();
-        return;
+    } catch (const DBException& e) {
+        LOGV2_WARNING(9999993, "Throughput Probing: shutting down", "error"_attr = e.toStatus());
     }
-
-    Microseconds elapsed = _timer.elapsed();
-    if (elapsed == Microseconds{0}) {
-        // The clock used to sleep between iterations may not be reliable, and thus the timer
-        // may report that no time has elapsed. If this occurs, just wait for the next
-        // iteration.
-        return;
-    }
-
-    auto throughput =
-        (numFinishedProcessing - _prevNumFinishedProcessing) / static_cast<double>(elapsed.count());
-
-    switch (_state) {
-        case ProbingState::kStable:
-            _probeStable(opCtx.get(), throughput);
-            break;
-        case ProbingState::kUp:
-            _probeUp(opCtx.get(), throughput);
-            break;
-        case ProbingState::kDown:
-            _probeDown(opCtx.get(), throughput);
-            break;
-    }
-
-    // Reset these with fresh values after we've made our adjustment to establish a better
-    // cause-effect relationship.
-    _prevNumFinishedProcessing =
-        _readTicketHolder->numFinishedProcessing() + _writeTicketHolder->numFinishedProcessing();
-    _timer.reset();
 }
 
 namespace {
@@ -388,13 +392,16 @@ ThroughputProbingTicketHolderManager::ThroughputProbingTicketHolderManager(
     : TicketHolderManager(std::move(read), std::move(write)) {
     _monitor = std::make_unique<admission::ThroughputProbing>(
         svcCtx, _readTicketHolder.get(), _writeTicketHolder.get(), interval);
-    _monitor->start();
 }
 
 void ThroughputProbingTicketHolderManager::_appendImplStats(BSONObjBuilder& b) const {
     BSONObjBuilder bbb(b.subobjStart("monitor"));
     _monitor->appendStats(bbb);
     bbb.done();
+}
+
+void ThroughputProbingTicketHolderManager::startThroughputProbe() {
+    _monitor->start();
 }
 
 }  // namespace admission

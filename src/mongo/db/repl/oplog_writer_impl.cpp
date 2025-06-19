@@ -34,6 +34,7 @@
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/change_stream_change_collection_manager.h"
 #include "mongo/db/change_stream_serverless_helpers.h"
+#include "mongo/db/commands/fsync.h"
 #include "mongo/db/commands/server_status_metric.h"
 #include "mongo/db/repl/initial_syncer.h"
 #include "mongo/db/storage/control/journal_flusher.h"
@@ -193,10 +194,6 @@ void OplogWriterImpl::_run() {
             rsSyncApplyStop.pauseWhileSet(opCtx);
         }
 
-        // Transition to SECONDARY state, if possible.
-        // TODO (SERVER-88447): investigate if this should be called here.
-        _replCoord->finishRecoveryIfEligible(opCtx);
-
         auto batch = _batcher.getNextBatch(opCtx, Seconds(1));
 
         // Signal the apply buffer to enter or exit drain mode if it is not.
@@ -220,6 +217,8 @@ void OplogWriterImpl::_run() {
         auto ops = batch.releaseBatch();
         auto lastOpTimeAndWallTime =
             invariantStatusOK(OpTimeAndWallTime::parseOpTimeAndWallTimeFromOplogEntry(ops.back()));
+
+        stdx::lock_guard<SimpleMutex> fsynclk(oplogWriterLockedFsync);
 
         {
             LOGV2_DEBUG(8352100, 2, "Oplog write batch size", "size"_attr = ops.size());

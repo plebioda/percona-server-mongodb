@@ -677,10 +677,10 @@ size_t homogeneousTopBottomHelper(bool isAscending,
         // All values in the bitset were false, so we don't need to update the state.
         return bitsetVals.size();
     }
-    auto keyLess = HomogeneousSortPattern<Less, int64_t>(isAscending);
+    auto keyLess = HomogeneousSortPattern<Less, T>(isAscending);
     size_t bestIdx = firstPresent;
     for (size_t i = firstPresent; i < keyVals.size(); ++i) {
-        if (value::bitcastTo<bool>(bitsetVals[i]) && keyLess(keyVals[bestIdx], keyVals[i])) {
+        if (value::bitcastTo<bool>(bitsetVals[i]) && keyLess(keyVals[i], keyVals[bestIdx])) {
             bestIdx = i;
         }
     }
@@ -2610,13 +2610,16 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinValueBlockConver
             inputTag == value::TypeTags::valueBlock);
     auto* valueBlockIn = value::bitcastTo<value::ValueBlock*>(inputVal);
 
-    auto target = getFromStack(1);
+    auto [targetOwned, targetTag, targetVal] = getFromStack(1);
+    tassert(8907000, "Expected targetTag to be int32", targetTag == value::TypeTags::NumberInt32);
+    auto convertTag = static_cast<sbe::value::TypeTags>(value::bitcastTo<int32_t>(targetVal));
+
     // Numeric convert expects always a numeric type as target. However, it does not check for it
     // and throws if the value is not numeric. We let genericNumConvert do this check and we do not
     // make any checks here.
     const auto cmpOp = value::makeColumnOp<ColumnOpType::kNoFlags>(
         [&](value::TypeTags tag, value::Value val) -> std::pair<value::TypeTags, value::Value> {
-            auto [_, resTag, resVal] = value::genericNumConvert(tag, val, target.b);
+            auto [_, resTag, resVal] = value::genericNumConvert(tag, val, convertTag);
             return {resTag, resVal};
         });
 

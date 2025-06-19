@@ -125,6 +125,7 @@
 #include "mongo/db/query/optimizer/explain_interface.h"
 #include "mongo/db/query/plan_cache.h"
 #include "mongo/db/query/plan_cache_key_factory.h"
+#include "mongo/db/query/plan_executor.h"
 #include "mongo/db/query/plan_executor_express.h"
 #include "mongo/db/query/plan_executor_factory.h"
 #include "mongo/db/query/plan_explainer.h"
@@ -555,7 +556,8 @@ public:
 
         // Force multiplanning (and therefore caching) if forcePlanCache is set. We could
         // manually update the plan cache instead without multiplanning but this is simpler.
-        if (1 == solutions.size() && !_cq->getExpCtxRaw()->forcePlanCache) {
+        if (1 == solutions.size() && !_cq->getExpCtxRaw()->forcePlanCache &&
+            !internalQueryPlannerUseMultiplannerForSingleSolutions) {
             // Only one possible plan. Build the stages from the solution.
             solutions[0]->indexFilterApplied = _plannerParams.indexFiltersApplied;
             return buildSingleSolutionPlan(std::move(solutions[0]));
@@ -689,6 +691,7 @@ private:
                     "Using classic engine idhack",
                     "canonicalQuery"_attr = redact(_queryStringForDebugLog));
         planCacheCounters.incrementClassicSkippedCounter();
+        fastPathQueryCounters.incrementIdHackQueryCounter();
         auto result = releaseResult();
         result->runtimePlanner =
             std::make_unique<crp_classic::IdHackPlanner>(makePlannerData(), descriptor);
@@ -991,7 +994,9 @@ private:
             solution->indexFilterApplied = _plannerParams.indexFiltersApplied;
         }
 
-        if (solutions.size() > 1) {
+        if (solutions.size() > 1 ||
+            // Search queries are not supported in classic multi-planner.
+            (internalQueryPlannerUseMultiplannerForSingleSolutions && !_cq->isSearchQuery())) {
             auto result = releaseResult();
             result->runtimePlanner = std::make_unique<crp_sbe::MultiPlanner>(
                 makePlannerData(), std::move(solutions), PlanCachingMode::AlwaysCache);
@@ -1071,6 +1076,11 @@ std::unique_ptr<sbe::RuntimePlanner> makeRuntimePlannerIfNeeded(
     if (decisionWorks || hasHashLookup) {
         return std::make_unique<sbe::CachedSolutionPlanner>(
             opCtx, collections, *canonicalQuery, decisionWorks, yieldPolicy, remoteCursors);
+    }
+
+    if (internalQueryPlannerUseMultiplannerForSingleSolutions) {
+        return std::make_unique<sbe::MultiPlanner>(
+            opCtx, collections, *canonicalQuery, PlanCachingMode::AlwaysCache, yieldPolicy);
     }
 
     // Runtime planning is not required.
@@ -1225,37 +1235,6 @@ boost::optional<ScopedCollectionFilter> getScopedCollectionFilter(
     return boost::none;
 }
 
-PlanExecutorExpressParams getExpressIdPointParams(OperationContext* opCtx,
-                                                  const CanonicalQuery& canonicalQuery,
-                                                  const MultipleCollectionAccessor& collections,
-                                                  std::size_t plannerOptions) {
-    QueryPlannerParams plannerParams{
-        QueryPlannerParams::ArgsForExpress{opCtx, canonicalQuery, collections, plannerOptions}};
-    const bool isClusteredOnId = plannerParams.clusteredInfo
-        ? clustered_util::isClusteredOnId(plannerParams.clusteredInfo)
-        : false;
-    return PlanExecutorExpressParams::makeExecutorParamsForIdQuery(
-        opCtx,
-        collections.getMainCollectionPtrOrAcquisition(),
-        getScopedCollectionFilter(opCtx, collections, plannerParams),
-        isClusteredOnId);
-}
-
-boost::optional<PlanExecutorExpressParams> tryGetExpressIndexEqualityParams(
-    OperationContext* opCtx,
-    const MultipleCollectionAccessor& collections,
-    const CanonicalQuery& canonicalQuery,
-    const QueryPlannerParams& plannerParams) {
-    if (auto indexName = getIndexForExpressEquality(canonicalQuery, plannerParams)) {
-        return PlanExecutorExpressParams::makeExecutorParamsForIndexedEqualityQuery(
-            opCtx,
-            collections.getMainCollectionPtrOrAcquisition(),
-            getScopedCollectionFilter(opCtx, collections, plannerParams),
-            std::move(*indexName));
-    }
-    return boost::none;
-}
-
 boost::optional<ExecParams> tryGetBonsaiParams(OperationContext* opCtx,
                                                CanonicalQuery* canonicalQuery,
                                                const MultipleCollectionAccessor& collections) {
@@ -1369,10 +1348,24 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorFind
     const auto expressEligibility = isExpressEligible(opCtx, mainColl, *canonicalQuery);
     if (expressEligibility == ExpressEligibility::IdPointQueryEligible) {
         planCacheCounters.incrementClassicSkippedCounter();
-        auto expressParams =
-            getExpressIdPointParams(opCtx, *canonicalQuery, collections, plannerOptions);
-        auto expressExecutor =
-            PlanExecutorExpress::makeExecutor(std::move(canonicalQuery), std::move(expressParams));
+        QueryPlannerParams plannerParams{QueryPlannerParams::ArgsForExpress{
+            opCtx, *canonicalQuery, collections, plannerOptions}};
+        auto collectionFilter = getScopedCollectionFilter(opCtx, collections, plannerParams);
+        const bool isClusteredOnId = plannerParams.clusteredInfo
+            ? clustered_util::isClusteredOnId(plannerParams.clusteredInfo)
+            : false;
+
+        auto expressExecutor = isClusteredOnId
+            ? makeExpressExecutorForFindByClusteredId(
+                  opCtx,
+                  std::move(canonicalQuery),
+                  collections.getMainCollectionPtrOrAcquisition(),
+                  std::move(collectionFilter))
+            : makeExpressExecutorForFindById(opCtx,
+                                             std::move(canonicalQuery),
+                                             collections.getMainCollectionPtrOrAcquisition(),
+                                             std::move(collectionFilter));
+
         setCurOpQueryFramework(expressExecutor.get());
         return std::move(expressExecutor);
     }
@@ -1383,11 +1376,14 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorFind
     // the express index equality one fails.
     auto paramsForSingleCollectionQuery = makeQueryPlannerParams(plannerOptions);
     if (expressEligibility == ExpressEligibility::IndexedEqualityEligible) {
-        if (auto expressParams = tryGetExpressIndexEqualityParams(
-                opCtx, collections, *canonicalQuery, paramsForSingleCollectionQuery)) {
-            planCacheCounters.incrementClassicSkippedCounter();
-            auto expressExecutor = PlanExecutorExpress::makeExecutor(std::move(canonicalQuery),
-                                                                     std::move(*expressParams));
+        if (auto indexEntry =
+                getIndexForExpressEquality(*canonicalQuery, paramsForSingleCollectionQuery)) {
+            auto expressExecutor = makeExpressExecutorForFindByUserIndex(
+                opCtx,
+                std::move(canonicalQuery),
+                collections.getMainCollectionPtrOrAcquisition(),
+                *indexEntry,
+                getScopedCollectionFilter(opCtx, collections, paramsForSingleCollectionQuery));
             setCurOpQueryFramework(expressExecutor.get());
             return std::move(expressExecutor);
         }
@@ -1486,13 +1482,11 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getSearchMetada
     const MultipleCollectionAccessor& collections,
     const NamespaceString& nss,
     const CanonicalQuery& cq,
-    executor::TaskExecutorCursor metadataCursor) {
+    std::unique_ptr<executor::TaskExecutorCursor> metadataCursor) {
     // For metadata executor, we always have only one remote cursor, any id will work.
     const size_t metadataCursorId = 0;
     auto remoteCursors = std::make_unique<RemoteCursorMap>();
-    remoteCursors->insert(
-        {metadataCursorId,
-         std::make_unique<executor::TaskExecutorCursor>(std::move(metadataCursor))});
+    remoteCursors->insert({metadataCursorId, std::move(metadataCursor)});
 
     auto sbeYieldPolicy =
         PlanYieldPolicySBE::make(opCtx, PlanYieldPolicy::YieldPolicy::YIELD_AUTO, collections, nss);
@@ -1672,6 +1666,7 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorDele
                                                   ws.get(),
                                                   coll,
                                                   idHackStage.release());
+                fastPathQueryCounters.incrementIdHackQueryCounter();
                 return plan_executor_factory::make(expCtx,
                                                    std::move(ws),
                                                    std::move(root),
@@ -1826,6 +1821,7 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorUpda
 
                 // Working set 'ws' is discarded. InternalPlanner::updateWithIdHack() makes its own
                 // WorkingSet.
+                fastPathQueryCounters.incrementIdHackQueryCounter();
                 return InternalPlanner::updateWithIdHack(opCtx,
                                                          coll,
                                                          updateStageParams,

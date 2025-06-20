@@ -7,6 +7,7 @@
 buildvariants:
   - name: enterprise-amazon2-openssl111
     display_name: "Enterprise Amazon Linux 2 (openssl 1.1.1)"
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2-openssl111-small
@@ -48,11 +49,18 @@ buildvariants:
       - name: test_packages
         distros:
           - ubuntu2204-large
-      - name: .development_critical
-      - name: .release_critical !publish_packages
+      - name: .development_critical !.requires_large_host
+      - name: .development_critical .requires_large_host
+        distros:
+          - amazon2-openssl111-large
+      - name: .release_critical !.requires_large_host !publish_packages
+      - name: .release_critical .requires_large_host !publish_packages
+        distros:
+          - amazon2-openssl111-large
 
   - name: enterprise-amazon2-arm64-openssl111
     display_name: "Enterprise Amazon Linux 2 arm64 (openssl 1.1.1)"
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2-arm64-openssl111-small
@@ -96,13 +104,19 @@ buildvariants:
       - name: test_packages
         distros:
           - ubuntu1804-arm64-build
-      - name: .development_critical
-      - name: .release_critical !publish_packages
+      - name: .development_critical !.requires_large_host
+      - name: .development_critical .requires_large_host
+        distros:
+          - amazon2-arm64-openssl111-large
+      - name: .release_critical !.requires_large_host !publish_packages
+      - name: .release_critical .requires_large_host !publish_packages
+        distros:
+          - amazon2-arm64-openssl111-large
 
   - name: amazon2023
     display_name: Amazon Linux 2023
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     tags: ["bazel_check"]
+    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2023.0-small
     expansions:
@@ -134,11 +148,18 @@ buildvariants:
       - name: test_packages
         distros:
           - ubuntu2204-large
-      - name: .development_critical !.incompatible_community
-      - name: .release_critical !.incompatible_community
+      - name: .development_critical !.requires_large_host !.incompatible_community
+      - name: .development_critical .requires_large_host !.incompatible_community
+        distros:
+          - amazon2023.0-large
+      - name: .release_critical !.requires_large_host !.incompatible_community
+      - name: .release_critical .requires_large_host !.incompatible_community
+        distros:
+          - amazon2023.0-large
 
   - name: enterprise-amazon2023
     display_name: "Enterprise Amazon Linux 2023"
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2023.0-small
@@ -174,13 +195,20 @@ buildvariants:
       - name: test_packages
         distros:
           - ubuntu2204-large
-      - name: .development_critical
-      - name: .release_critical
+      - name: .development_critical !.requires_large_host
+      - name: .development_critical .requires_large_host
+        distros:
+          - amazon2023.0-large
+      - name: .release_critical !.requires_large_host
+      - name: .release_critical .requires_large_host
+        distros:
+          - amazon2023.0-large
 
   # This variant is a special variant to test LTO.
   # We just want it to bake for a while before considering that we turn it on by default.
   - name: enterprise-amazon2023-lto
     display_name: "Enterprise Amazon Linux 2023 LTO"
+    tags: []
     # TODO(SERVER-85904): Re-enable this to run in nightly once Bazel supports LTO.
     # cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     activate: false
@@ -219,13 +247,19 @@ buildvariants:
       # - name: test_packages
       #   distros:
       #   - amazon2023.0-large
-      - name: .development_critical
-      - name: .release_critical !publish_packages !push !crypt_push
+      - name: .development_critical !.requires_large_host
+      - name: .development_critical .requires_large_host
+        distros:
+          - amazon2023.0-large
+      - name: .release_critical !.requires_large_host !publish_packages !push !crypt_push
+      - name: .release_critical .requires_large_host !publish_packages !push !crypt_push
+        distros:
+          - amazon2023.0-large
 
   - name: amazon2023-arm64
     display_name: Amazon Linux 2023 arm64
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     tags: ["bazel_check"]
+    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2023.0-arm64-small
     expansions:
@@ -258,11 +292,18 @@ buildvariants:
       - name: test_packages
         distros:
           - ubuntu2204-arm64-large
-      - name: .development_critical !.incompatible_community
-      - name: .release_critical !.incompatible_community
+      - name: .development_critical !.requires_large_host !.incompatible_community
+      - name: .development_critical .requires_large_host !.incompatible_community
+        distros:
+          - amazon2023.0-arm64-large
+      - name: .release_critical !.requires_large_host !.incompatible_community
+      - name: .release_critical .requires_large_host !.incompatible_community
+        distros:
+          - amazon2023.0-arm64-large
 
   - name: enterprise-amazon2023-arm64
     display_name: "Enterprise Amazon Linux 2023 arm64"
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2023.0-arm64-small
@@ -298,13 +339,20 @@ buildvariants:
       - name: test_packages
         distros:
           - ubuntu2204-arm64-large
-      - name: .development_critical
-      - name: .release_critical
+      - name: .development_critical !.requires_large_host
+      - name: .development_critical .requires_large_host
+        distros:
+          - amazon2023.0-arm64-large
+      - name: .release_critical !.requires_large_host
+      - name: .release_critical .requires_large_host
+        distros:
+          - amazon2023.0-arm64-large
 
   # This variant is a special variant to test LTO.
   # We just want it to bake for a while before considering that we turn it on by default.
   - name: enterprise-amazon2023-arm64-lto
     display_name: "Enterprise Amazon Linux 2023 arm64 LTO"
+    tags: []
     # TODO(SERVER-85904): Re-enable this to run in nightly once Bazel supports LTO.
     # cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     activate: false
@@ -343,11 +391,18 @@ buildvariants:
       # - name: test_packages
       #   distros:
       #   - ubuntu2204-arm64-large
-      - name: .development_critical
-      - name: .release_critical !publish_packages !push !crypt_push
+      - name: .development_critical !.requires_large_host
+      - name: .development_critical .requires_large_host
+        distros:
+          - amazon2023.0-arm64-large
+      - name: .release_critical !.requires_large_host !publish_packages !push !crypt_push
+      - name: .release_critical .requires_large_host !publish_packages !push !crypt_push
+        distros:
+          - amazon2023.0-arm64-large
 
   - name: enterprise-amazon2-streams
     display_name: "Amazon Linux 2 enterprise build with streams"
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2-test
@@ -380,7 +435,13 @@ buildvariants:
       - name: compile_test_and_package_serial_no_unittests_TG
         distros:
           - amazon2-build
-      - name: .development_critical
-      - name: .release_critical !crypt_push
+      - name: .development_critical !.requires_large_host
+      - name: .development_critical .requires_large_host
+        distros:
+          - amazon2-large
+      - name: .release_critical !.requires_large_host !crypt_push
+      - name: .release_critical .requires_large_host !crypt_push
+        distros:
+          - amazon2-large
       - name: streams
       - name: streams_kafka

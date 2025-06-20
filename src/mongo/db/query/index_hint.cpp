@@ -29,6 +29,8 @@
 
 #include "mongo/db/query/index_hint.h"
 
+#include <boost/container_hash/extensions.hpp>
+
 #include "mongo/base/error_codes.h"
 #include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/bsonobjbuilder.h"
@@ -42,6 +44,26 @@
 namespace mongo {
 namespace {
 static constexpr auto kNaturalFieldName = "$natural"_sd;
+
+std::strong_ordering compare(const IndexKeyPattern& a, const IndexKeyPattern& b) {
+    return a.woCompare(b) <=> 0;
+}
+
+std::strong_ordering compare(const IndexName& a, const IndexName& b) {
+    // NOTE: spaceship operator is not available on macos for strings, therefore implementing one
+    // myself instead.
+    if (a < b) {
+        return std::strong_ordering::less;
+    } else if (a > b) {
+        return std::strong_ordering::greater;
+    } else {
+        return std::strong_ordering::equal;
+    }
+}
+
+std::strong_ordering compare(const NaturalOrderHint& a, const NaturalOrderHint& b) {
+    return a <=> b;
+}
 };  // namespace
 
 bool isForward(NaturalOrderHint::Direction dir) {
@@ -124,11 +146,34 @@ size_t IndexHint::hash() const {
             [&](const IndexKeyPattern& keyPattern) {
                 return SimpleBSONObjComparator::kInstance.hash(keyPattern);
             },
-            [&](const IndexName& indexName) { return absl::Hash<std::string>{}(indexName); },
+            [&](const IndexName& indexName) { return boost::hash<std::string>{}(indexName); },
             [&](const NaturalOrderHint& naturalOrderHint) {
-                return absl::Hash<NaturalOrderHint::Direction>{}(naturalOrderHint.direction);
+                return boost::hash<NaturalOrderHint::Direction>{}(naturalOrderHint.direction);
             }},
         _hint);
+}
+
+std::strong_ordering IndexHint::operator<=>(const IndexHint& other) const {
+    if (auto cmp = _hint.valueless_by_exception() <=> other._hint.valueless_by_exception();
+        !std::is_eq(cmp)) {
+        return cmp;
+    }
+
+    if (auto cmp = _hint.index() <=> other._hint.index(); !std::is_eq(cmp)) {
+        return cmp;
+    }
+
+    return std::visit(
+        [&other](auto&& a) { return compare(a, std::get<std::decay_t<decltype(a)>>(other._hint)); },
+        _hint);
+};
+
+bool IndexHint::operator==(const IndexHint& other) const {
+    return std::is_eq(*this <=> other);
+}
+
+size_t hash_value(const IndexHint& hint) {
+    return hint.hash();
 }
 
 };  // namespace mongo

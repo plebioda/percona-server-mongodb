@@ -146,7 +146,7 @@ public:
         return false;
     }
 
-    boost::optional<size_t> tryCount() const override {
+    size_t count() override {
         return _count;
     }
 
@@ -180,6 +180,21 @@ public:
     // Whether this TS block was decompressed. This is not a method on the block API.
     bool decompressed() const {
         return static_cast<bool>(_decompressedBlock);
+    }
+
+    boost::optional<size_t> argMin() override {
+        ensureDeblocked();
+        return _decompressedBlock->argMin();
+    }
+
+    boost::optional<size_t> argMax() override {
+        ensureDeblocked();
+        return _decompressedBlock->argMax();
+    }
+
+    std::pair<value::TypeTags, value::Value> at(size_t idx) override {
+        ensureDeblocked();
+        return _decompressedBlock->at(idx);
     }
 
     // Test-only helper.

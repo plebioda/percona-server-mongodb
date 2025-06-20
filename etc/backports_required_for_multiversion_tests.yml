@@ -35,10 +35,14 @@ last-continuous:
       ticket: SERVER-84796
     - test_file: jstests/sharding/retryable_upsert_single_write_shard.js
       ticket: SERVER-84796
+    - test_file: jstests/sharding/direct_connection_auth_transition.js
+      ticket: SERVER-77073
     - test_file: jstests/replsets/initial_sync_survives_restart.js
       ticket: SERVER-88447
     - test_file: jstests/core/query/bittest.js
       ticket: SERVER-88173
+    - test_file: jstests/core/query/query_settings/query_settings_index_application_aggregate.js
+      ticket: SERVER-88629
   suites: null
 last-lts:
   all:
@@ -56,8 +60,12 @@ last-lts:
       ticket: SERVER-84796
     - test_file: jstests/sharding/retryable_upsert_single_write_shard.js
       ticket: SERVER-84796
+    - test_file: jstests/sharding/direct_connection_auth_transition.js
+      ticket: SERVER-77073
     - test_file: jstests/replsets/initial_sync_survives_restart.js
       ticket: SERVER-88447
     - test_file: jstests/core/query/bittest.js
       ticket: SERVER-88173
+    - test_file: jstests/core/query/query_settings/query_settings_index_application_aggregate.js
+      ticket: SERVER-88629
   suites: null

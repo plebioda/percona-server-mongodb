@@ -804,7 +804,7 @@ bool tryFullMergeArrFastPath(TopBottomSense sense,
 template <typename Less>
 bool tryArgMinMaxFastPath(TopBottomSense sense,
                           bool isAscending,
-                          const ByteCode::multiAccState& stateTuple,
+                          const ByteCode::MultiAccState& stateTuple,
                           value::ValueBlock* bitsetBlock,
                           value::ValueBlock* sortKeyBlock,
                           value::ValueBlock* valBlock,
@@ -855,9 +855,9 @@ bool tryArgMinMaxFastPath(TopBottomSense sense,
                         int memDelta = updateWorstPair(
                             mergeArr, worstArr, bestTag, bestVal, bestOutTag, bestOutVal, keyLess);
                         memUsage = updateAndCheckMemUsage(state, memUsage, memDelta, memLimit);
-
-                        return true;
                     }
+
+                    return true;
                 }
             }
         }
@@ -887,7 +887,7 @@ private:
 };
 
 template <typename Less>
-void combineBlockNativeAggTopBottomN(const ByteCode::multiAccState& stateTuple,
+void combineBlockNativeAggTopBottomN(const ByteCode::MultiAccState& stateTuple,
                                      std::vector<TopBottomSortKeyAndIdx> newArr,
                                      value::ValueBlock* valBlock,
                                      Less less) {
@@ -953,7 +953,7 @@ bool tryHomogeneousFastPath(TopBottomSense sense,
                             bool isAscending,
                             value::TypeTags stateTag,
                             value::Value stateVal,
-                            const ByteCode::multiAccState& stateTuple,
+                            const ByteCode::MultiAccState& stateTuple,
                             const std::span<const value::Value>& bitsetVals,
                             const value::DeblockedTagVals& sortKeys,
                             value::ValueBlock* valBlock,
@@ -1051,7 +1051,7 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::blockNativeAggTopBottom
             valBlockTag == value::TypeTags::valueBlock);
     auto* valBlock = value::getValueBlock(valBlockVal);
 
-    multiAccState stateTuple = getMultiAccState(stateTag, stateVal);
+    MultiAccState stateTuple = getMultiAccState(stateTag, stateVal);
     auto [state, mergeArr, startIdx, maxSize, memUsage, memLimit, isGroupAccum] = stateTuple;
     invariant(maxSize > 0);
 
@@ -2473,7 +2473,7 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinCellFoldValues_P
     auto* cellBlock = value::bitcastTo<value::CellBlock*>(cellVal);
 
     const auto& positionInfo = cellBlock->filterPositionInfo();
-    tassert(7953901, "Only top-level cell values are supported", emptyPositionInfo(positionInfo));
+    uassert(7953901, "Only top-level cell values are supported", emptyPositionInfo(positionInfo));
     // Return the input unchanged.
     return moveFromStack(0);
 }

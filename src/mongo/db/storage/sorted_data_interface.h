@@ -457,14 +457,16 @@ public:
                            const char* typeBitsData,
                            int32_t typeBitsSize,
                            key_string::Version version,
-                           bool isRecordIdAtEndOfKeyString)
+                           bool isRecordIdAtEndOfKeyString,
+                           const RecordId* id = nullptr)
         : _ksData(ksData),
           _ridData(ridData),
           _tbData(typeBitsData),
           _ksSize(ksSize),
           _ridSize(ridSize),
           _tbSize(typeBitsSize),
-          _version(version) {
+          _version(version),
+          _id(id) {
         invariant(ksSize > 0 && ridSize > 0 && typeBitsSize >= 0);
         _ksOriginalSize = isRecordIdAtEndOfKeyString ? (ksSize + ridSize) : ksSize;
     }
@@ -494,6 +496,10 @@ public:
         return {_tbData, static_cast<StringData::size_type>(_tbSize)};
     }
 
+    StringData getRecordIdView() const {
+        return {_ridData, static_cast<StringData::size_type>(_ridSize)};
+    }
+
     key_string::Version getVersion() const {
         return _version;
     }
@@ -502,33 +508,16 @@ public:
         return _ksOriginalSize > _ksSize;
     }
 
-    RecordId decodeRecordId(KeyFormat ridFormat) const {
-        if (KeyFormat::Long == ridFormat) {
-            BufReader reader(_ridData, _ridSize);
-            return key_string::decodeRecordIdLong(&reader);
-        } else if (KeyFormat::String == ridFormat) {
-            return key_string::decodeRecordIdStrAtEnd(_ridData, _ridSize);
-        } else {
-            MONGO_UNREACHABLE;
-        }
+    const RecordId* getRecordId() const {
+        return _id;
     }
 
     /**
      * Create a Value copy from this view including all components.
      */
     key_string::Value getValueCopy() const {
-        const auto bufSize = _ksSize + _ridSize + (_tbSize > 0 ? _tbSize : 1);
-        BufBuilder buf(bufSize);
-        buf.appendBuf(_ksData, _ksSize);
-        buf.appendBuf(_ridData, _ridSize);
-        if (_tbSize == 0) {
-            buf.appendChar(0);
-        } else {
-            buf.appendBuf(_tbData, _tbSize);
-        }
-
-        invariant(bufSize == buf.len());
-        return {_version, _ksSize + _ridSize, SharedBufferFragment(buf.release(), bufSize)};
+        return std::move(*key_string::Value::makeValue(
+            _version, getKeyStringWithoutRecordIdView(), getRecordIdView(), getTypeBitsView()));
     }
 
     bool isEmpty() const {
@@ -558,6 +547,7 @@ private:
     int32_t _ridSize = 0;
     int32_t _tbSize = 0;
     key_string::Version _version;
+    const RecordId* _id = nullptr;
 };
 
 }  // namespace mongo

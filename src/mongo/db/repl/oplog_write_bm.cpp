@@ -73,8 +73,8 @@
 #include "mongo/db/repl/member_state.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/oplog_applier.h"
+#include "mongo/db/repl/oplog_applier_batcher.h"
 #include "mongo/db/repl/oplog_applier_impl.h"
-#include "mongo/db/repl/oplog_batcher.h"
 #include "mongo/db/repl/oplog_buffer.h"
 #include "mongo/db/repl/oplog_buffer_blocking_queue.h"
 #include "mongo/db/repl/oplog_entry.h"
@@ -211,7 +211,7 @@ public:
         repl::replWriterThreadCount = numThreads;  // Repl worker thread count
         repl::replWriterMinThreadCount = numThreads;
 
-        _oplogWriterPool = repl::makeReplWriterPool();
+        _oplogWriterPool = repl::makeReplWorkerPool();
 
         _oplogWriter = std::make_unique<repl::OplogWriterImpl>(
             nullptr,

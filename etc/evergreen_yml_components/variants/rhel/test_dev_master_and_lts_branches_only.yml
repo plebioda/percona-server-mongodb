@@ -7,6 +7,7 @@
 buildvariants:
   - name: enterprise-rhel-80-64-bit-inmem
     display_name: Enterprise RHEL 8.0 (inMemory)
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - rhel80-small
@@ -44,7 +45,7 @@ buildvariants:
       - name: .change_streams
       - name: .change_stream_fuzzer
       - name: .misc_js
-      - name: .concurrency !.no_txns !.kill_terminate !.requires_wt !.feature_flag_guarded
+      - name: .concurrency !.no_txns !.kill_terminate !.incompatible_inmemory !.feature_flag_guarded
         distros:
           - rhel80-medium # Some workloads require a lot of memory, use a bigger machine for this suite.
       - name: initial_sync_fuzzer_gen

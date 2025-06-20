@@ -105,6 +105,7 @@ env.Library(
 env.Library(
     target='common',
     source=[
+        'database_name.cpp',
         'field_ref.cpp',
         'field_ref_set.cpp',
         'field_parser.cpp',
@@ -769,7 +770,6 @@ env.Library(
     LIBDEPS_PRIVATE=[
         '$BUILD_DIR/mongo/util/processinfo',
         'server_base',
-        'storage/storage_change_lock',
         'storage/write_unit_of_work',
     ],
 )
@@ -1934,6 +1934,7 @@ env.Library(
         'exec/sbe/values/bson.cpp',
         'exec/sbe/values/bson_block.cpp',
         'exec/sbe/values/cell_interface.cpp',
+        'exec/sbe/values/key_string_entry.cpp',
         'exec/sbe/values/row.cpp',
         'exec/sbe/values/slot_printer.cpp',
         'exec/sbe/values/ts_block.cpp',

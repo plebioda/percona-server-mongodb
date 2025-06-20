@@ -7,6 +7,7 @@
 buildvariants:
   - name: macos
     display_name: macOS
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - macos-1100
@@ -30,11 +31,18 @@ buildvariants:
     tasks:
       - name: compile_test_and_package_serial_TG
       - name: compile_test_parallel_unittest_stream_TG
-      - name: .development_critical !.incompatible_community !.incompatible_mac
-      - name: .release_critical !.incompatible_community !.incompatible_mac !publish_packages
+      - name: .development_critical !.requires_large_host !.incompatible_community !.incompatible_mac
+      - name: .development_critical .requires_large_host !.incompatible_community !.incompatible_mac
+        distros:
+          - macos-1100
+      - name: .release_critical !.requires_large_host !.incompatible_community !.incompatible_mac !publish_packages
+      - name: .release_critical .requires_large_host !.incompatible_community !.incompatible_mac !publish_packages
+        distros:
+          - macos-1100
 
   - name: macos-arm64
     display_name: macOS arm64
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - macos-1100-arm64
@@ -58,13 +66,19 @@ buildvariants:
     tasks:
       - name: compile_test_and_package_serial_TG
       - name: compile_test_parallel_unittest_stream_TG
-      - name: .development_critical !.incompatible_community !.incompatible_mac
-      - name: .release_critical !.incompatible_community !.incompatible_mac !publish_packages
+      - name: .development_critical !.requires_large_host !.incompatible_community !.incompatible_mac
+      - name: .development_critical .requires_large_host !.incompatible_community !.incompatible_mac
+        distros:
+          - macos-1100-arm64
+      - name: .release_critical !.requires_large_host !.incompatible_community !.incompatible_mac !publish_packages
+      - name: .release_critical .requires_large_host !.incompatible_community !.incompatible_mac !publish_packages
+        distros:
+          - macos-1100-arm64
 
   - name: enterprise-macos
     display_name: Enterprise macOS
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     tags: ["bazel_check"]
+    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - macos-1100
     expansions:
@@ -87,13 +101,19 @@ buildvariants:
     tasks:
       - name: compile_test_and_package_serial_TG
       - name: compile_test_parallel_unittest_stream_TG
-      - name: .development_critical !.incompatible_mac
-      - name: .release_critical !.incompatible_mac !publish_packages
+      - name: .development_critical !.requires_large_host !.incompatible_mac
+      - name: .development_critical .requires_large_host !.incompatible_mac
+        distros:
+          - macos-1100
+      - name: .release_critical !.requires_large_host !.incompatible_mac !publish_packages
+      - name: .release_critical .requires_large_host !.incompatible_mac !publish_packages
+        distros:
+          - macos-1100
 
   - name: enterprise-macos-arm64
     display_name: Enterprise macOS arm64
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     tags: ["bazel_check"]
+    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - macos-1100-arm64
     expansions:
@@ -116,5 +136,11 @@ buildvariants:
     tasks:
       - name: compile_test_and_package_serial_TG
       - name: compile_test_parallel_unittest_stream_TG
-      - name: .development_critical !.incompatible_mac
-      - name: .release_critical !.incompatible_mac !publish_packages
+      - name: .development_critical !.requires_large_host !.incompatible_mac
+      - name: .development_critical .requires_large_host !.incompatible_mac
+        distros:
+          - macos-1100-arm64
+      - name: .release_critical !.requires_large_host !.incompatible_mac !publish_packages
+      - name: .release_critical .requires_large_host !.incompatible_mac !publish_packages
+        distros:
+          - macos-1100-arm64

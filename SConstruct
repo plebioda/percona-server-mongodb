@@ -516,7 +516,7 @@ for pack in [
     ('grpc', ),
     ('icu', 'ICU'),
     ('intel_decimal128', 'intel decimal128'),
-    ('libbson', ),
+    ('bson', ),
     ('libmongocrypt', ),
     ('pcre2', ),
     ('protobuf', "Protocol Buffers"),

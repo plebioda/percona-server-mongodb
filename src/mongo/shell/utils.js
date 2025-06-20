@@ -517,6 +517,8 @@ jsTestOptions = function() {
             nonClusteredConfigTransactions: TestData.nonClusteredConfigTransactions || false,
 
             embeddedRouter: TestData.embeddedRouter || false,
+
+            performTimeseriesCompressionIntermediateDataIntegrityCheckOnInsert: true,
         });
     }
     return _jsTestOptions;

@@ -2361,11 +2361,11 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinKeyStringToStrin
     auto [owned, tagInKey, valInKey] = getFromStack(0);
 
     // We operate only on keys.
-    if (tagInKey != value::TypeTags::ksValue) {
+    if (tagInKey != value::TypeTags::keyString) {
         return {false, value::TypeTags::Nothing, 0};
     }
 
-    auto key = value::getKeyStringView(valInKey);
+    auto key = value::getKeyString(valInKey);
 
     auto [tagStr, valStr] = value::makeNewString(key->toString());
 
@@ -2557,9 +2557,7 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::genericNewKeyString(
 
     kb.appendDiscriminator(ksDiscriminator);
 
-    return {true,
-            value::TypeTags::ksValue,
-            value::bitcastFrom<key_string::Value*>(new key_string::Value(kb.release()))};
+    return {true, value::TypeTags::keyString, value::makeKeyString(kb.release()).second};
 }
 
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinNewKeyString(ArityType arity) {
@@ -5468,9 +5466,8 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinGenerateSortKey(
     }();
 
     return {true,
-            value::TypeTags::ksValue,
-            value::bitcastFrom<key_string::Value*>(
-                new key_string::Value(sortSpec->generateSortKey(bsonObj, collator)))};
+            value::TypeTags::keyString,
+            value::makeKeyString(sortSpec->generateSortKey(bsonObj, collator)).second};
 }
 
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinSortKeyComponentVectorGetElement(
@@ -6108,7 +6105,7 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinArrayToObject(Ar
     return {true, objTag, objVal};
 }
 
-ByteCode::multiAccState ByteCode::getMultiAccState(value::TypeTags stateTag,
+ByteCode::MultiAccState ByteCode::getMultiAccState(value::TypeTags stateTag,
                                                    value::Value stateVal) {
     uassert(
         7548600, "The accumulator state should be an array", stateTag == value::TypeTags::Array);
@@ -9186,8 +9183,7 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinAggRemovableMinM
     ArityType arity) {
     auto [stateTag, stateVal] = moveOwnedFromStack(0);
     value::ValueGuard stateGuard{stateTag, stateVal};
-    auto [elTag, elVal] = moveOwnedFromStack(1);
-    value::ValueGuard elGuard{elTag, elVal};
+    auto [_, elTag, elVal] = getFromStack(1);
 
     if (value::isNullish(elTag)) {
         stateGuard.reset();
@@ -9208,7 +9204,6 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinAggRemovableMinM
     stateArr->setAt(static_cast<size_t>(AggAccumulatorNElems::kMemUsage),
                     value::TypeTags::NumberInt32,
                     value::bitcastFrom<int32_t>(memUsage - elSize));
-    elGuard.reset();
     tassert(8178116, "Element was not removed", accMultiSet->remove(elTag, elVal));
 
     stateGuard.reset();

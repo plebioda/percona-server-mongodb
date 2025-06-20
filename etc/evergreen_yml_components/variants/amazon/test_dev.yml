@@ -32,8 +32,6 @@ variables:
       --use-diagnostic-latches=on
 
   # THIS HAS COPIES IN:
-  # - etc/evergreen_yml_components/variants/perf/perf.yml
-  # - etc/evergreen_yml_components/variants/perf/perf_branching.yml
   # - etc/evergreen_yml_components/variants/amazon/test_dev_master_branch_only.yml
   # - etc/evergreen_yml_components/variants/amazon/test_dev.yml
   # ANY MODIFICATIONS HERE SHOULD ALSO BE MADE IN THOSE FILES
@@ -76,7 +74,7 @@ buildvariants:
   - <<: *linux-arm64-dynamic-compile-params
     name: &amazon-linux2-arm64-crypt-compile amazon-linux2-arm64-crypt-compile
     display_name: "! Amazon Linux 2 arm64 Crypt Compile"
-    tags: ["bazel_check"]
+    tags: ["required", "bazel_check"]
     expansions:
       <<: *linux-arm64-dynamic-enterprise-compile-expansions
       compile_variant: *amazon-linux2-arm64-crypt-compile
@@ -87,7 +85,7 @@ buildvariants:
   - <<: *linux-arm64-dynamic-compile-params
     name: &amazon-linux2-arm64-dynamic-compile amazon-linux2-arm64-dynamic-compile
     display_name: "! Amazon Linux 2 arm64 Enterprise Shared Library Compile & Static Analysis"
-    tags: ["bazel_check"]
+    tags: ["required", "bazel_check"]
     expansions:
       <<: *linux-arm64-dynamic-enterprise-compile-expansions
       clang_tidy_toolchain: v4
@@ -102,13 +100,20 @@ buildvariants:
       - name: .development_critical_single_variant .requires_large_host
         distros:
           - amazon2-arm64-xlarge
-      - name: .release_critical .requires_compile_variant !.incompatible_development_variant !.stitch !.crypt
-      - name: .default .requires_compile_variant !.incompatible_development_variant
+      - name: .release_critical .requires_compile_variant !.requires_large_host !.incompatible_development_variant !.stitch !.crypt
+      - name: .release_critical .requires_compile_variant .requires_large_host !.incompatible_development_variant !.stitch !.crypt
+        distros:
+          - amazon2-arm64-xlarge
+      - name: .default .requires_compile_variant !.requires_large_host !.incompatible_development_variant
+      - name: .default .requires_compile_variant .requires_large_host !.incompatible_development_variant
+        distros:
+          - amazon2-arm64-xlarge
 
   - &enterprise-amazon-linux2-arm64-template
     <<: *amazon_linux2_arm64_dynamic_compile_variant_dependency
     name: &enterprise-amazon-linux2-arm64 enterprise-amazon-linux2-arm64
     display_name: "* Amazon Linux 2 arm64 Enterprise"
+    tags: ["suggested"]
     cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
     run_on:
       - amazon2-arm64-small
@@ -127,14 +132,23 @@ buildvariants:
       test_flags: >-
         --excludeWithAnyTags=incompatible_with_amazon_linux,requires_external_data_source
     tasks:
-      - name: .development_critical !.requires_compile_variant !.incompatible_development_variant !.requires_all_feature_flags
-      - name: .release_critical !.requires_compile_variant !.incompatible_development_variant !.requires_all_feature_flags
-      - name: .default !.requires_compile_variant !.incompatible_development_variant !.requires_all_feature_flags
+      - name: .development_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.requires_all_feature_flags
+      - name: .development_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.requires_all_feature_flags
+        distros:
+          - amazon2-arm64-large
+      - name: .release_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.requires_all_feature_flags
+      - name: .release_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.requires_all_feature_flags
+        distros:
+          - amazon2-arm64-large
+      - name: .default !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.requires_all_feature_flags
+      - name: .default .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.requires_all_feature_flags
+        distros:
+          - amazon2-arm64-large
 
   - name: &commit-queue commit-queue
     display_name: "~ Commit Queue"
-    cron: "0 4 * * 0" # From the ${project_weekly_cron} parameter
     tags: ["bazel_check"]
+    cron: "0 4 * * 0" # From the ${project_weekly_cron} parameter
     run_on:
       - amazon2-arm64-small
     stepback: false
@@ -171,6 +185,10 @@ buildvariants:
         distros:
           - amazon2-arm64-xlarge-commitqueue
       - name: .development_critical_single_variant !.requires_large_host !.clang_tidy !libdeps_graph_linting
+      - name: .development_critical_single_variant .requires_large_host !.clang_tidy !libdeps_graph_linting
+        distros:
+          - amazon2-arm64-large
+      - name: .development_critical !.requires_large_host_commit_queue
       - name: .development_critical .requires_large_host_commit_queue
         distros:
           - amazon2-arm64-large
@@ -178,6 +196,7 @@ buildvariants:
   - <<: *amazon_linux2_arm64_dynamic_compile_variant_dependency
     name: amazon-linux2-arm64-try-sbe-engine
     display_name: "Amazon Linux 2 arm64 Enterprise Query Patch Only (trySbeEngine)"
+    tags: []
     cron: "0 4 * * 0" # From the ${project_weekly_cron} parameter # This is a patch-only variant but we run on mainline to pick up task history.
     run_on:
       - amazon2-arm64-small

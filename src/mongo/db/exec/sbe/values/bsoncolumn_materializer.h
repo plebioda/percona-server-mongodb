@@ -130,6 +130,10 @@ struct SBEColumnMaterializer {
         return {value::TypeTags::Nothing, value::Value{0}};
     }
 
+    static bool isMissing(const Element& elem) {
+        return elem.first == value::TypeTags::Nothing;
+    }
+
 private:
     /**
      * This helper method is used for both bsonJavascript and bsonString data. They both have
@@ -295,7 +299,7 @@ public:
         return _tags.size();
     }
 
-    boost::optional<size_t> tryCount() const override {
+    size_t count() override {
         return _vals.size();
     }
 

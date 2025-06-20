@@ -48,8 +48,6 @@ variables:
     #   variant: amazon-linux2-arm64-dynamic-compile
 
   # THIS HAS COPIES IN:
-  # - etc/evergreen_yml_components/variants/perf/perf.yml
-  # - etc/evergreen_yml_components/variants/perf/perf_branching.yml
   # - etc/evergreen_yml_components/variants/amazon/test_dev_master_branch_only.yml
   # - etc/evergreen_yml_components/variants/amazon/test_dev.yml
   # ANY MODIFICATIONS HERE SHOULD ALSO BE MADE IN THOSE FILES
@@ -76,7 +74,7 @@ buildvariants:
   - <<: *linux-arm64-dynamic-compile-params
     name: &amazon-linux2-arm64-stitch-compile amazon-linux2-arm64-stitch-compile
     display_name: "* Amazon Linux 2 arm64 Enterprise Stitch Compile"
-    tags: ["bazel_check"]
+    tags: ["suggested", "bazel_check"]
     expansions:
       <<: *linux-arm64-dynamic-enterprise-compile-expansions
       compile_variant: *amazon-linux2-arm64-stitch-compile
@@ -86,6 +84,7 @@ buildvariants:
   - <<: *linux-arm64-dynamic-compile-params
     name: &amazon-linux2-arm64-dev-compile amazon-linux2-arm64-dev-compile
     display_name: "* Amazon Linux 2 arm64 Enterprise Dev Compile"
+    tags: ["suggested"]
     expansions:
       <<: *linux-arm64-dynamic-enterprise-compile-expansions
       compile_variant: *amazon-linux2-arm64-dev-compile
@@ -96,6 +95,7 @@ buildvariants:
   # Caching is purposefully disabled on this variant so we can benchmark consistent build times.
   - name: &amazon-linux2-arm64-local-compile amazon-linux2-arm64-local-compile
     display_name: "Amazon Linux 2 arm64 Local Compile"
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2-arm64-large
@@ -118,8 +118,8 @@ buildvariants:
   # This will eventually become suggested, then required.
   - name: &amazon-linux-2023-arm64-bazel-compile amazon-linux-2023-arm64-bazel-compile
     display_name: "Amazon Linux 2023 Enterprise arm64 Bazel Compile"
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     tags: ["bazel_check"]
+    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2023.0-arm64-small
     stepback: false
@@ -134,8 +134,8 @@ buildvariants:
   # This will eventually become suggested, then required.
   - name: &rhel81-ppc64le-bazel-compile rhel81-ppc64le-bazel-compile
     display_name: "RHEL 8.1 PPC64LE Bazel Compile"
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     tags: ["bazel_check"]
+    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - rhel81-power8-small
     stepback: false
@@ -153,8 +153,8 @@ buildvariants:
   # This will eventually become suggested, then required.
   - name: &rhel83-s390x-bazel-compile rhel83-s390x-bazel-compile
     display_name: "RHEL 8.3 S390X Bazel Compile"
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     tags: ["bazel_check"]
+    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - rhel83-zseries-small
     stepback: false
@@ -174,6 +174,7 @@ buildvariants:
   # binary candidate passes their tests and is therefore safe to use in their pre-commit integration tests.
   - name: amazon-linux-2023-x86-mongot-integration-cron-only
     display_name: "AL2023 x86 mongot integration tasks cron only"
+    tags: []
     cron: "0 */4 * * *" # Run these tasks every 4 hours
     patchable: false
     run_on:
@@ -212,6 +213,7 @@ buildvariants:
   # binary candidate passes their tests and is therefore safe to use in their pre-commit integration tests.
   - name: amazon2023-arm64-mongot-integration-cron-only
     display_name: "AL2023 arm64 mongot integration tasks cron only"
+    tags: []
     cron: "0 */4 * * *" # Run these tasks every 4 hours
     patchable: false
     run_on:
@@ -254,6 +256,7 @@ buildvariants:
   # binary candidate passes their tests and is therefore safe to use in their pre-commit integration tests.
   - name: amazon-linux2-arm64-mongot-integration-cron-only
     display_name: "AL2 arm64 mongot integration tasks cron only"
+    tags: []
     cron: "0 */4 * * *" # Run these tasks every 4 hours
     patchable: false
     run_on:
@@ -292,6 +295,7 @@ buildvariants:
   # binary candidate passes their tests and is therefore safe to use in their pre-commit integration tests
   - name: amazon2-x86-mongot-integration-cron-only
     display_name: "AL2 x86 mongot integration tasks cron only"
+    tags: []
     cron: "0 */4 * * *" # Run these tasks every 4 hours
     patchable: false
     run_on:
@@ -329,6 +333,7 @@ buildvariants:
     <<: *amazon_linux2_arm64_dynamic_compile_variant_dependency
     name: &enterprise-amazon-linux2-arm64-all-feature-flags enterprise-amazon-linux2-arm64-all-feature-flags
     display_name: "! Amazon Linux 2 arm64 Enterprise (all feature flags)"
+    tags: ["required"]
     cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
     run_on:
       - amazon2-arm64-small
@@ -348,14 +353,24 @@ buildvariants:
         --runAllFeatureFlagTests
         --excludeWithAnyTags=incompatible_with_amazon_linux,requires_external_data_source
     tasks:
-      - name: .development_critical !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
-      - name: .release_critical !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
-      - name: .default !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
+      - name: .development_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
+      - name: .development_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
+        distros:
+          - amazon2-arm64-large
+      - name: .release_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
+      - name: .release_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
+        distros:
+          - amazon2-arm64-large
+      - name: .default !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
+      - name: .default .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
+        distros:
+          - amazon2-arm64-large
 
   - &enterprise-amazon-linux2-arm64-all-feature-flags-fuzzers
     <<: *enterprise-amazon-linux2-arm64-all-feature-flags-template
     name: enterprise-amazon-linux2-arm64-all-feature-flags-fuzzers
     display_name: "*| Amazon Linux 2 arm64 Enterprise (all feature flags) Fuzzers"
+    tags: ["suggested"]
     tasks:
       - name: .aggfuzzer
       - name: .change_stream_fuzzer
@@ -364,6 +379,7 @@ buildvariants:
 
   - name: &al2023-arm64-sep-benchmark al2023-arm64-sep-benchmark
     display_name: "! AL2023 arm64 Enterprise (SEP Benchmark)"
+    tags: ["required"]
     cron: "0 */4 * * *"
     run_on:
       - amazon2023.0-arm64-large

@@ -7,6 +7,7 @@
 buildvariants:
   - name: enterprise-suse15-64
     display_name: Enterprise SLES 15
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - suse15-test
@@ -36,6 +37,7 @@ buildvariants:
       # TODO SERVER-64479 remove external_auth_jobs_max once resolved
       external_auth_jobs_max: 1
       compile_variant: enterprise-suse15-64
+      core_analyzer_distro_name: suse15-large
     tasks:
       - name: compile_test_and_package_serial_no_unittests_TG
         distros:
@@ -43,13 +45,19 @@ buildvariants:
       - name: test_packages
         distros:
           - ubuntu2204-large
-      - name: .development_critical
-      - name: .release_critical
+      - name: .development_critical !.requires_large_host
+      - name: .development_critical .requires_large_host
+        distros:
+          - suse15-large
+      - name: .release_critical !.requires_large_host
+      - name: .release_critical .requires_large_host
+        distros:
+          - suse15-large
 
   - name: suse15
     display_name: SUSE 15
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     tags: ["bazel_check"]
+    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - suse15-test
     expansions:
@@ -83,5 +91,11 @@ buildvariants:
       - name: test_packages
         distros:
           - ubuntu2204-large
-      - name: .development_critical !.incompatible_community
-      - name: .release_critical !.incompatible_community
+      - name: .development_critical !.requires_large_host !.incompatible_community
+      - name: .development_critical .requires_large_host !.incompatible_community
+        distros:
+          - suse15-large
+      - name: .release_critical !.requires_large_host !.incompatible_community
+      - name: .release_critical .requires_large_host !.incompatible_community
+        distros:
+          - suse15-large

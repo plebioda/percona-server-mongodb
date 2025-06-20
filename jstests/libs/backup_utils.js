@@ -172,11 +172,6 @@ export function _copyFileHelper(absoluteFilePath, sourceDbPath, destinationDirec
 // needed.
 
 export class MagicRestoreUtils {
-    // These fields are set during the restore process.
-    backupCursor;
-    checkpointTimestamp;
-    pointInTimeTimestamp;
-
     constructor({backupSource, pipeDir, insertHigherTermOplogEntry}) {
         this.backupSource = backupSource;
         this.pipeDir = pipeDir;
@@ -186,6 +181,11 @@ export class MagicRestoreUtils {
         this.insertHigherTermOplogEntry = insertHigherTermOplogEntry;
         // Default high term value.
         this.restoreToHigherTermThan = 100;
+
+        // These fields are set during the restore process.
+        this.backupCursor = undefined;
+        this.checkpointTimestamp = undefined;
+        this.pointInTimeTimestamp = undefined;
     }
 
     /**

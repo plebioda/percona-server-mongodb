@@ -61,8 +61,8 @@
 #include "mongo/db/record_id.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/oplog_applier.h"
+#include "mongo/db/repl/oplog_applier_batcher.h"
 #include "mongo/db/repl/oplog_applier_impl.h"
-#include "mongo/db/repl/oplog_batcher.h"
 #include "mongo/db/repl/oplog_buffer.h"
 #include "mongo/db/repl/oplog_entry.h"
 #include "mongo/db/repl/oplog_interface.h"
@@ -758,7 +758,7 @@ Timestamp ReplicationRecoveryImpl::_applyOplogOperations(OperationContext* opCtx
                                  recoveryMode == RecoveryMode::kRollbackFromStableTimestamp)
         ? OplogApplication::Mode::kStableRecovering
         : OplogApplication::Mode::kUnstableRecovering;
-    auto writerPool = makeReplWriterPool();
+    auto workerPool = makeReplWorkerPool();
     auto* replCoord = ReplicationCoordinator::get(opCtx);
     OplogApplierImpl oplogApplier(nullptr,
                                   &oplogBuffer,
@@ -767,7 +767,7 @@ Timestamp ReplicationRecoveryImpl::_applyOplogOperations(OperationContext* opCtx
                                   _consistencyMarkers,
                                   _storageInterface,
                                   OplogApplier::Options(oplogApplicationMode),
-                                  writerPool.get());
+                                  workerPool.get());
 
     OplogApplier::BatchLimits batchLimits;
     batchLimits.bytes = getBatchLimitOplogBytes(opCtx, _storageInterface);
@@ -967,7 +967,7 @@ void ReplicationRecoveryImpl::_truncateOplogIfNeededAndThenClearOplogTruncateAft
 Timestamp ReplicationRecoveryImpl::_adjustStartPointIfNecessary(OperationContext* opCtx,
                                                                 Timestamp startPoint) {
     // Set up read on oplog collection.
-    AutoGetOplogFastPath oplogRead(opCtx, OplogAccessMode::kRead);
+    AutoGetOplog oplogRead(opCtx, OplogAccessMode::kRead);
     const auto& oplogCollection = oplogRead.getCollection();
     if (!oplogCollection) {
         LOGV2_FATAL_NOTRACE(

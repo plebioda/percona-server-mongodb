@@ -7,6 +7,7 @@
 buildvariants:
   - name: enterprise-rhel-79-64-bit
     display_name: "Enterprise RHEL 7.9"
+    tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - rhel7.9-small
@@ -46,5 +47,11 @@ buildvariants:
         distros:
           - ubuntu2204-large
       - name: selinux_rhel7_enterprise
-      - name: .development_critical
-      - name: .release_critical
+      - name: .development_critical !.requires_large_host
+      - name: .development_critical .requires_large_host
+        distros:
+          - rhel7.9-large
+      - name: .release_critical !.requires_large_host
+      - name: .release_critical .requires_large_host
+        distros:
+          - rhel7.9-large

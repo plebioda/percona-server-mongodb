@@ -5,7 +5,6 @@
 # https://wiki.corp.mongodb.com/pages/viewpage.action?pageId=133273894
 # for help navigating this document, or for help with our lint rules.
 
-
 #####################################################
 #               A note on expansions                #
 #####################################################
@@ -26,7 +25,6 @@
 # - 'task_id' (references the task id of the task the executor is working on).
 # - 'build_variant' (references the executing task's buildvariant).
 # - 'config_root' (references the root directory for the executor's configuration artifacts).
-
 
 #####################################################
 #          Setup environment in a new task          #
@@ -53,42 +51,74 @@
 # - func: "set up venv"
 
 include:
-- filename: etc/evergreen_yml_components/configuration.yml
-- filename: etc/evergreen_yml_components/definitions.yml
+  - filename: etc/evergreen_yml_components/configuration.yml
+  - filename: etc/evergreen_yml_components/definitions.yml
 
-- filename: etc/evergreen_yml_components/tasks/resmoke/server_divisions/clusters_and_integrations/tasks.yml
-- filename: etc/evergreen_yml_components/tasks/resmoke/server_divisions/durable_transactions_and_availability/tasks.yml
-- filename: etc/evergreen_yml_components/tasks/resmoke/server_divisions/query/tasks.yml
-- filename: etc/evergreen_yml_components/tasks/resmoke/non_server_teams/tasks.yml
-- filename: etc/evergreen_yml_components/tasks/compile_tasks.yml
-- filename: etc/evergreen_yml_components/tasks/misc_tasks.yml
+  - filename: etc/evergreen_yml_components/tasks/resmoke/server_divisions/clusters_and_integrations/tasks.yml
+  - filename: etc/evergreen_yml_components/tasks/resmoke/server_divisions/durable_transactions_and_availability/tasks.yml
+  - filename: etc/evergreen_yml_components/tasks/resmoke/server_divisions/query/tasks.yml
+  - filename: etc/evergreen_yml_components/tasks/resmoke/non_server_teams/tasks.yml
+  - filename: etc/evergreen_yml_components/tasks/compile_tasks.yml
+  - filename: etc/evergreen_yml_components/tasks/misc_tasks.yml
 
-- filename: etc/evergreen_yml_components/variants/misc/task_generation.yml
-- filename: etc/evergreen_yml_components/variants/misc/misc.yml
-- filename: etc/evergreen_yml_components/variants/misc/misc_master_branch_only.yml
+  - filename: etc/evergreen_yml_components/variants/misc/task_generation.yml
+  - filename: etc/evergreen_yml_components/variants/misc/misc.yml
+  - filename: etc/evergreen_yml_components/variants/misc/misc_master_branch_only.yml
 
-- filename: etc/evergreen_yml_components/variants/amazon/test_dev.yml
-- filename: etc/evergreen_yml_components/variants/amazon/test_dev_master_branch_only.yml
+  - filename: etc/evergreen_yml_components/variants/amazon/test_dev.yml
+  - filename: etc/evergreen_yml_components/variants/amazon/test_dev_master_branch_only.yml
 
-- filename: etc/evergreen_yml_components/variants/macos/test_dev_master_branch_only.yml
+  - filename: etc/evergreen_yml_components/variants/macos/test_dev_master_branch_only.yml
 
-- filename: etc/evergreen_yml_components/variants/rhel/test_dev.yml
-- filename: etc/evergreen_yml_components/variants/rhel/test_dev_master_and_lts_branches_only.yml
-- filename: etc/evergreen_yml_components/variants/rhel/test_dev_master_branch_only.yml
+  - filename: etc/evergreen_yml_components/variants/rhel/test_dev.yml
+  - filename: etc/evergreen_yml_components/variants/rhel/test_dev_master_and_lts_branches_only.yml
+  - filename: etc/evergreen_yml_components/variants/rhel/test_dev_master_branch_only.yml
 
-- filename: etc/evergreen_yml_components/variants/sanitizer/test_dev.yml
-- filename: etc/evergreen_yml_components/variants/sanitizer/test_dev_master_branch_only.yml
+  - filename: etc/evergreen_yml_components/variants/sanitizer/test_dev.yml
+  - filename: etc/evergreen_yml_components/variants/sanitizer/test_dev_master_branch_only.yml
 
-- filename: etc/evergreen_yml_components/variants/ubuntu/test_dev_master_branch_only.yml
+  - filename: etc/evergreen_yml_components/variants/ubuntu/test_dev_master_and_lts_branches_only.yml
+  - filename: etc/evergreen_yml_components/variants/ubuntu/test_dev_master_branch_only.yml
 
-- filename: etc/evergreen_yml_components/variants/windows/test_dev.yml
-- filename: etc/evergreen_yml_components/variants/windows/test_dev_master_and_lts_branches_only.yml
-- filename: etc/evergreen_yml_components/variants/windows/test_dev_master_branch_only.yml
+  - filename: etc/evergreen_yml_components/variants/windows/test_dev.yml
+  - filename: etc/evergreen_yml_components/variants/windows/test_dev_master_and_lts_branches_only.yml
+  - filename: etc/evergreen_yml_components/variants/windows/test_dev_master_branch_only.yml
 
-- filename: etc/evergreen_yml_components/variants/wiredtiger/test_dev_master_branch_only.yml
-
+  - filename: etc/evergreen_yml_components/variants/wiredtiger/test_dev_master_branch_only.yml
 
 parameters:
-- key: evergreen_config_file_path
-  value: "etc/evergreen.yml"
-  description: "path to this file"
+  - key: evergreen_config_file_path
+    value: "etc/evergreen.yml"
+    description: "path to this file"
+
+commit_queue_aliases:
+  - variant: "commit-queue"
+    task: "^(bazel_.*|run_.*|compile_.*|lint_.*|jsCore|version_gen_validation|validate_commit_message|resmoke_validation_tests)$"
+    variant_tags: []
+    task_tags: []
+  - variant: "^(amazon-linux2-arm64-dynamic-compile|linux-x86-dynamic-compile-required)$"
+    task: "clang_tidy.*"
+    variant_tags: []
+    task_tags: []
+
+patch_aliases:
+  - alias: required
+    variant_tags: ["required"]
+    task: ".*"
+  - alias: embedded
+    variant: ".*"
+    task: "embedded_.*"
+  - alias: query
+    variant: "^(.*query-patch-only|linux-x86-dynamic-compile-required)$"
+    task: ".*"
+  - alias: security
+    variant: "^(.*security-patch-only|linux-x86-dynamic-compile|windows-compile-required)$"
+    task: ".*"
+  - alias: bazel
+    description: "Runs bazel build system tests"
+    variant_tags: ["bazel_check"]
+    task_tags: ["bazel_check"]
+  - alias: bazel_variants
+    description: "Runs bazel build system tests"
+    variant_tags: ["bazel_check"]
+    task: ".*"

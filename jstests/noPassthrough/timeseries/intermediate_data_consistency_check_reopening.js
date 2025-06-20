@@ -13,12 +13,14 @@
 // Turn off the TestingProctor, since the data integrity check will invariant in testing
 // but not in production.
 TestData.testingDiagnosticsEnabled = false;
-const conn = MongoRunner.runMongod();
+const rst = new ReplSetTest({nodes: 1});
+rst.startSet();
+rst.initiate();
 
 const dbName = "test";
 const collName = "ts";
 const timeFieldName = "time";
-const testDB = conn.getDB(dbName);
+const testDB = rst.getPrimary().getDB(dbName);
 const coll = testDB[collName];
 
 const measurements = [
@@ -28,6 +30,8 @@ const measurements = [
 ];
 
 function testIntegrityCheck(turnFailpointOn) {
+    jsTestLog("turnFailpointOn {" + turnFailpointOn + "}");
+
     coll.drop();
     assert.commandWorked(
         testDB.createCollection(coll.getName(), {timeseries: {timeField: timeFieldName}}));
@@ -57,6 +61,8 @@ function testIntegrityCheck(turnFailpointOn) {
         assert.eq(stats.timeseries.numBucketsReopened, 1, tojson(stats.timeseries));
         assert.eq(stats.timeseries.numBucketsFrozen, 1, tojson(stats.timeseries));
         assert.eq(stats.timeseries.numBucketInserts, 3, tojson(stats.timeseries));
+        assert.eq(stats.timeseries.numBucketsFetched, 1, tojson(stats.timeseries));
+        assert.eq(stats.timeseries.numBucketsClosedDueToReopening, 1, tojson(stats.timeseries));
     } else {
         // Insert third measurement.
         assert.commandWorked(coll.insert(measurements[2]));
@@ -64,9 +70,11 @@ function testIntegrityCheck(turnFailpointOn) {
         assert.eq(stats.timeseries.numBucketsReopened, 1, tojson(stats.timeseries));
         assert.eq(stats.timeseries.numBucketsFrozen, 0, tojson(stats.timeseries));
         assert.eq(stats.timeseries.numBucketInserts, 2, tojson(stats.timeseries));
+        assert.eq(stats.timeseries.numBucketsFetched, 1, tojson(stats.timeseries));
+        assert.eq(stats.timeseries.numBucketsClosedDueToReopening, 1, tojson(stats.timeseries));
     }
 }
 
 testIntegrityCheck(/*turnFailpointOn=*/ false);
 testIntegrityCheck(/*turnFailPointOn=*/ true);
-MongoRunner.stopMongod(conn);
+rst.stopSet();

@@ -8,6 +8,7 @@ import {
     getQueryPlanners,
     getWinningPlanFromExplain
 } from "jstests/libs/analyze_plan.js";
+import {getCommandName, getExplainCommand} from "jstests/libs/cmd_object_utils.js";
 
 export class QuerySettingsUtils {
     /**
@@ -17,6 +18,30 @@ export class QuerySettingsUtils {
         this.db = db;
         this.adminDB = this.db.getSiblingDB("admin");
         this.collName = collName;
+    }
+
+    /**
+     * Returns 'true' if the given command name is supported by query settings.
+     */
+    static isSupportedCommand(commandName) {
+        return ["find", "aggregate", "distinct"].includes(commandName);
+    }
+
+    /**
+     * Makes an query instance for the given command if supported.
+     */
+    makeQueryInstance(cmdObj) {
+        const commandName = getCommandName(cmdObj);
+        switch (commandName) {
+            case "find":
+                return this.makeFindQueryInstance(cmdObj);
+            case "aggregate":
+                return this.makeAggregateQueryInstance(cmdObj);
+            case "distinct":
+                return this.makeDistinctQueryInstance(cmdObj);
+            default:
+                assert(false, "Cannot create query instance for command with name " + commandName);
+        }
     }
 
     /**
@@ -101,20 +126,24 @@ export class QuerySettingsUtils {
      * The settings list is not expected to be in any particular order.
      */
     assertQueryShapeConfiguration(expectedQueryShapeConfigurations, shouldRunExplain = true) {
+        const rewrittenExpectedQueryShapeConfigurations =
+            expectedQueryShapeConfigurations.map(config => {
+                return {...config, settings: this.wrapIndexHintsIntoArrayIfNeeded(config.settings)};
+            });
         assert.soon(
             () => {
                 let currentQueryShapeConfigurationWo = this.getQuerySettings();
                 currentQueryShapeConfigurationWo.sort(bsonWoCompare);
-                let expectedQueryShapeConfigurationWo = [...expectedQueryShapeConfigurations];
-                expectedQueryShapeConfigurationWo.sort(bsonWoCompare);
+                rewrittenExpectedQueryShapeConfigurations.sort(bsonWoCompare);
                 return bsonWoCompare(currentQueryShapeConfigurationWo,
-                                     expectedQueryShapeConfigurationWo) == 0;
+                                     rewrittenExpectedQueryShapeConfigurations) == 0;
             },
             "current query settings = " + tojson(this.getQuerySettings()) +
-                ", expected query settings = " + tojson(expectedQueryShapeConfigurations));
+                ", expected query settings = " + tojson(rewrittenExpectedQueryShapeConfigurations));
 
         if (shouldRunExplain) {
-            for (let {representativeQuery, settings} of expectedQueryShapeConfigurations) {
+            for (const {representativeQuery,
+                        settings} of rewrittenExpectedQueryShapeConfigurations) {
                 this.assertExplainQuerySettings(representativeQuery, settings);
             }
         }
@@ -126,21 +155,12 @@ export class QuerySettingsUtils {
     assertExplainQuerySettings(query, expectedQuerySettings) {
         // Pass query without the $db field to explain command, because it injects the $db field
         // inside the query before processing.
-        const queryWithoutDollarDb = this.withoutDollarDB(query);
-        const explain = (() => {
-            if (query.find || query.distinct) {
-                return assert.commandWorked(this.db.runCommand({explain: queryWithoutDollarDb}));
-            } else if (query.aggregate) {
-                return assert.commandWorked(
-                    this.db.runCommand({explain: {...queryWithoutDollarDb, cursor: {}}}));
-            } else {
-                assert(false,
-                       `Attempting to run explain for unknown query type. Query: ${tojson(query)}`);
-            }
-        })();
+        const explainCmd = getExplainCommand(this.withoutDollarDB(query));
+        const explain = assert.commandWorked(this.db.runCommand(explainCmd));
         if (explain) {
             getQueryPlanners(explain).forEach(queryPlanner => {
-                assert.docEq(expectedQuerySettings, queryPlanner.querySettings, queryPlanner);
+                this.assertEqualSettings(
+                    expectedQuerySettings, queryPlanner.querySettings, queryPlanner);
             });
         }
     }
@@ -149,14 +169,14 @@ export class QuerySettingsUtils {
      * Remove all query settings for the current tenant.
      */
     removeAllQuerySettings() {
-        let settingsArray = this.getQuerySettings();
+        let settingsArray = this.getQuerySettings({showQueryShapeHash: true});
         while (settingsArray.length > 0) {
             const setting = settingsArray.pop();
             assert.commandWorked(
-                this.adminDB.runCommand({removeQuerySettings: setting.representativeQuery}));
-            // Check that the given setting has indeed been removed.
-            this.assertQueryShapeConfiguration(settingsArray);
+                this.adminDB.runCommand({removeQuerySettings: setting.queryShapeHash}));
         }
+        // Check that all setting have indeed been removed.
+        this.assertQueryShapeConfiguration([]);
     }
 
     /**
@@ -171,7 +191,7 @@ export class QuerySettingsUtils {
                                    .queryShapeHash;
         assert.soon(() => (this.getQuerySettings({filter: {queryShapeHash}}).length === 1));
         const result = runTest();
-        assert.commandWorked(db.adminCommand({removeQuerySettings: representativeQuery}));
+        assert.commandWorked(this.db.adminCommand({removeQuerySettings: representativeQuery}));
         assert.soon(() => (this.getQuerySettings({filter: {queryShapeHash}}).length === 0));
         return result;
     }
@@ -179,6 +199,33 @@ export class QuerySettingsUtils {
     withoutDollarDB(cmd) {
         const {$db: _, ...rest} = cmd;
         return rest;
+    }
+
+    /**
+     * 'indexHints' as part of query settings may be passed as object or as array. On the server the
+     * indexHints will always be transformed into an array. For correct comparison, wrap
+     * 'indexHints' into array if they are not array already.
+     */
+    wrapIndexHintsIntoArrayIfNeeded(settings) {
+        if (!settings) {
+            return settings;
+        }
+
+        let result = Object.assign({}, settings);
+        if (result.indexHints && !Array.isArray(result.indexHints)) {
+            result.indexHints = [result.indexHints];
+        }
+        return result;
+    }
+
+    /**
+     * Asserts query settings by using wrapIndexHintsIntoArrayIfNeeded() helper method to ensure
+     * that the settings are in the same format as seen by the server.
+     */
+    assertEqualSettings(lhs, rhs, message) {
+        assert.docEq(this.wrapIndexHintsIntoArrayIfNeeded(lhs),
+                     this.wrapIndexHintsIntoArrayIfNeeded(rhs),
+                     message);
     }
 
     /**

@@ -522,7 +522,7 @@ for pack in [
     ('grpc', ),
     ('icu', 'ICU'),
     ('intel_decimal128', 'intel decimal128'),
-    ('libbson', ),
+    ('bson', ),
     ('libmongocrypt', ),
     ('pcre2', ),
     ('protobuf', "Protocol Buffers"),
@@ -2093,6 +2093,7 @@ if env.get('ENABLE_OOM_RETRY'):
                 'c1xx : fatal error C1063: INTERNAL COMPILER ERROR',
                 r'LNK1171: unable to load mspdbcore\.dll',
                 "LNK1201: error writing to program database ",
+                "The paging file is too small for this operation to complete.",
             ]
             env['OOM_RETRY_RETURNCODES'] = [1102]
 

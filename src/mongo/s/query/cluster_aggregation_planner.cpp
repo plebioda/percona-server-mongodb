@@ -337,6 +337,12 @@ BSONObj createCommandForMergingShard(Document serializedCommand,
                                   sii ? boost::make_optional(sii->getCollectionIndexes())
                                       : boost::none));
 
+    // Attach query settings to the command.
+    if (auto querySettingsBSON = mergeCtx->getQuerySettings().toBSON();
+        !querySettingsBSON.isEmpty()) {
+        mergeCmd[AggregateCommandRequest::kQuerySettingsFieldName] = Value(querySettingsBSON);
+    }
+
     // Attach the read and write concerns if needed, and return the final command object.
     return applyReadWriteConcern(mergeCtx->opCtx,
                                  !(txnRouter && mergingShardContributesData), /* appendRC */
@@ -556,13 +562,12 @@ BSONObj establishMergingMongosCursor(OperationContext* opCtx,
 
     if (exhausted) {
         opDebug.additiveMetrics.aggregateDataBearingNodeMetrics(ccc->takeRemoteMetrics());
-        collectQueryStatsMongos(opCtx, ccc->getKey());
+        collectQueryStatsMongos(opCtx, ccc->takeKey());
     } else {
         collectQueryStatsMongos(opCtx, ccc);
     }
 
     ccc->detachFromOperationContext();
-
     CursorId clusterCursorId = 0;
     if (!exhausted) {
         auto authUser = AuthorizationSession::get(opCtx->getClient())->getAuthenticatedUserName();

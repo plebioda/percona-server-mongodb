@@ -8,8 +8,8 @@ test_kind: fsm_workload_test
 
 selector:
   roots:
-  - jstests/concurrency/fsm_workloads/**/*.js
-  - src/mongo/db/modules/*/jstests/concurrency/fsm_workloads/*.js
+    - jstests/concurrency/fsm_workloads/**/*.js
+    - src/mongo/db/modules/*/jstests/concurrency/fsm_workloads/*.js
   exclude_files:
     ##
     # Disabled due to MongoDB restrictions and/or workload restrictions
@@ -36,14 +36,17 @@ selector:
     # TODO (SERVER-88469): CursorEstablisher::waitForResponse() is noexcept but its code can throw an
     # exception.
     - jstests/concurrency/fsm_workloads/multi_statement_transaction_all_commands_same_session.js
+    # TODO (SERVER-89363): Re-enable this test after investigating the undefined' error in the
+    # checkConsistency state.
+    - jstests/concurrency/fsm_workloads/multi_statement_transaction_atomicity_isolation_metrics_test.js
 
   exclude_with_any_tags:
-  - requires_sharding
+    - requires_sharding
 
 executor:
   archive:
     hooks:
-    - AggregateResourceConsumptionMetricsInBackground
+      - AggregateResourceConsumptionMetricsInBackground
     tests: true
   config:
     shell_options:

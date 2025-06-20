@@ -531,12 +531,8 @@ public:
          * Returns boost::none if this router is not a sub-router, or if the txnNumber or
          * retryCounter on this router do not match that on the opCtx.
          */
-        // TODO SERVER-85353 Remove commandName and nss parameters, which are used only for the
-        // failpoint
         boost::optional<StringMap<boost::optional<bool>>> getAdditionalParticipantsForResponse(
-            OperationContext* opCtx,
-            boost::optional<const std::string&> commandName = boost::none,
-            boost::optional<const NamespaceString&> nss = boost::none);
+            OperationContext* opCtx);
 
         /**
          * Commits the transaction.
@@ -611,6 +607,10 @@ public:
          */
         void annotateCreatedDatabase(DatabaseName dbName) {
             p().createdDatabases.insert(dbName);
+        }
+
+        void disallowSingleWriteShardCommit() {
+            p().disallowSingleWriteShardCommit = true;
         }
 
     private:
@@ -926,6 +926,10 @@ private:
 
         // Tracks databases that this transaction has attempted to create.
         std::set<DatabaseName> createdDatabases;
+
+        // Set true to prevent using the single write shard commit optimization. Only for updates to
+        // a document's shard key value that use the legacy protocol.
+        bool disallowSingleWriteShardCommit{false};
     } _p;
 };
 

@@ -31,6 +31,7 @@
 
 #include "mongo/bson/json.h"
 #include "mongo/db/admission/ticketholder_manager.h"
+#include "mongo/db/concurrency/lock_manager.h"
 #include "mongo/db/dump_lock_manager.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/storage/recovery_unit.h"
@@ -405,8 +406,8 @@ bool Locker::unlock(ResourceId resId) {
             _numResourcesToUnlockAtEndUnitOfWork++;
         }
         it->unlockPending++;
-        // unlockPending will be incremented if a lock is converted or acquired in the same mode
-        // recursively, and unlock() is called multiple times on one ResourceId.
+        // unlockPending will be incremented if a lock is acquired in the same mode recursively, and
+        // unlock() is called multiple times on one ResourceId.
         invariant(it->unlockPending <= it->recursiveCount);
         return false;
     }
@@ -433,8 +434,9 @@ void Locker::endWriteUnitOfWork() {
             _numResourcesToUnlockAtEndUnitOfWork--;
         }
         while (it->unlockPending > 0) {
-            // If a lock is converted, unlock() may be called multiple times on a resource within
-            // the same WriteUnitOfWork. All such unlock() requests must thus be fulfilled here.
+            // If a lock is acquired recursively, unlock() may be called multiple times on a
+            // resource within the same WriteUnitOfWork. All such unlock() requests must thus be
+            // fulfilled here.
             it->unlockPending--;
             unlock(it.key());
         }
@@ -627,7 +629,6 @@ void Locker::releaseWriteUnitOfWorkAndUnlock(LockSnapshot* stateOut) {
     // All locks should be pending to unlock.
     invariant(_requests.size() == _numResourcesToUnlockAtEndUnitOfWork);
     for (auto it = _requests.begin(); it; it.next()) {
-        // No converted lock so we don't need to unlock more than once.
         invariant(it->unlockPending == 1);
         it->unlockPending--;
     }
@@ -824,7 +825,7 @@ LockResult Locker::_lockBegin(OperationContext* opCtx, ResourceId resId, LockMod
         }
     }
 
-    // Making this call here will record lock re-acquisitions and conversions as well.
+    // Making this call here will record lock re-acquisitions as well.
     globalStats.recordAcquisition(_id, resId, mode);
     _stats.recordAcquisition(resId, mode);
 
@@ -1000,20 +1001,22 @@ bool Locker::_acquireTicket(OperationContext* opCtx, LockMode mode, Date_t deadl
         // hole.
         invariant(!shard_role_details::getRecoveryUnit(opCtx)->isTimestamped());
 
-        if (auto ticket = holder->waitForTicketUntil(
-                opCtx->uninterruptibleLocksRequested_DO_NOT_USE()  // NOLINT
-                    ? *Interruptible::notInterruptible()
-                    : *opCtx,
-                &ExecutionAdmissionContext::get(opCtx),
-                deadline)) {
-            // TODO(SERVER-88732): Remove `_timeQueuedForTicketMicros` when we only track admission
-            // context for waiting metrics.
-            _timeQueuedForTicketMicros =
-                ExecutionAdmissionContext::get(opCtx).totalTimeQueuedMicros();
-            _ticket = std::move(*ticket);
-        } else {
+        _ticket = [&]() {
+            ExecutionAdmissionContext* admCtx = &ExecutionAdmissionContext::get(opCtx);
+            if (opCtx->uninterruptibleLocksRequested_DO_NOT_USE()) {  // NOLINT
+                return holder->waitForTicketUntilNoInterrupt_DO_NOT_USE(opCtx, admCtx, deadline);
+            }
+
+            return holder->waitForTicketUntil(opCtx, admCtx, deadline);
+        }();
+
+        if (!_ticket) {
             return false;
         }
+
+        // TODO(SERVER-88732): Remove `_timeQueuedForTicketMicros` when we only track admission
+        // context for waiting metrics.
+        _timeQueuedForTicketMicros = ExecutionAdmissionContext::get(opCtx).totalTimeQueuedMicros();
         restoreStateOnErrorGuard.dismiss();
     }
 

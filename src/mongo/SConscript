@@ -197,6 +197,7 @@ baseEnv.Library(
         'platform/posix_fadvise.cpp',
         'platform/process_id.cpp',
         'platform/random.cpp',
+        'platform/rwmutex.cpp',
         'platform/shared_library.cpp',
         'platform/shared_library_${TARGET_OS_FAMILY}.cpp',
         'platform/stack_locator.cpp',
@@ -250,7 +251,6 @@ baseEnv.Library(
     ],
     LIBDEPS_PRIVATE=[
         '$BUILD_DIR/third_party/shim_intel_decimal128',
-        '$BUILD_DIR/third_party/shim_unwind' if use_libunwind else [],
         'stdx/stdx',
         'util/boost_assert_shim',
     ],

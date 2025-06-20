@@ -105,6 +105,7 @@ env.Library(
 env.Library(
     target='common',
     source=[
+        'database_name.cpp',
         'field_ref.cpp',
         'field_ref_set.cpp',
         'field_parser.cpp',
@@ -473,15 +474,21 @@ env.Library(
     LIBDEPS_PRIVATE=[
         'server_base',
     ],
+    LIBDEPS=[
+        '$BUILD_DIR/mongo/idl/idl_parser',
+    ],
 )
 
 env.Library(
     target='write_concern_options',
     source=[
+        'write_concern_idl.cpp',
+        'write_concern.idl',
         'write_concern_options.cpp',
         'write_concern_options.idl',
     ],
     LIBDEPS=[
+        '$BUILD_DIR/mongo/idl/idl_parser',
         'read_write_concern_provenance',
     ],
     LIBDEPS_PRIVATE=[
@@ -516,6 +523,7 @@ env.Library(
         'default_max_time_ms_cluster_parameter.cpp',
     ],
     LIBDEPS_PRIVATE=[
+        '$BUILD_DIR/mongo/db/auth/auth',
         '$BUILD_DIR/mongo/idl/cluster_server_parameter',
         'query/query_request',
         'server_base',
@@ -762,7 +770,6 @@ env.Library(
     LIBDEPS_PRIVATE=[
         '$BUILD_DIR/mongo/util/processinfo',
         'server_base',
-        'storage/storage_change_lock',
         'storage/write_unit_of_work',
     ],
 )
@@ -1081,6 +1088,7 @@ env.Library(
         's/global_user_write_block_state.cpp',
         's/operation_sharding_state.cpp',
         's/range_arithmetic.cpp',
+        's/replica_set_endpoint_feature_flag.cpp',
         's/scoped_collection_metadata.cpp',
         's/shard_key_index_util.cpp',
         's/sharding_api_d_params.idl',
@@ -1926,6 +1934,7 @@ env.Library(
         'exec/sbe/values/bson.cpp',
         'exec/sbe/values/bson_block.cpp',
         'exec/sbe/values/cell_interface.cpp',
+        'exec/sbe/values/key_string_entry.cpp',
         'exec/sbe/values/row.cpp',
         'exec/sbe/values/slot_printer.cpp',
         'exec/sbe/values/ts_block.cpp',

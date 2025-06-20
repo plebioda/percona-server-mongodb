@@ -2361,11 +2361,11 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinKeyStringToStrin
     auto [owned, tagInKey, valInKey] = getFromStack(0);
 
     // We operate only on keys.
-    if (tagInKey != value::TypeTags::ksValue) {
+    if (tagInKey != value::TypeTags::keyString) {
         return {false, value::TypeTags::Nothing, 0};
     }
 
-    auto key = value::getKeyStringView(valInKey);
+    auto key = value::getKeyString(valInKey);
 
     auto [tagStr, valStr] = value::makeNewString(key->toString());
 
@@ -2557,9 +2557,7 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::genericNewKeyString(
 
     kb.appendDiscriminator(ksDiscriminator);
 
-    return {true,
-            value::TypeTags::ksValue,
-            value::bitcastFrom<key_string::Value*>(new key_string::Value(kb.release()))};
+    return {true, value::TypeTags::keyString, value::makeKeyString(kb.release()).second};
 }
 
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinNewKeyString(ArityType arity) {
@@ -3655,12 +3653,10 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinBitTestPosition(
             // If position to test is longer than the data to test against, zero-extend.
             isBitSet = false;
         } else {
-            // Convert the bit position to a byte position within a byte. Note that byte positions
-            // start at position 0 in the document's value BinData array representation, and bit
-            // positions start at the least significant bit.
-            auto byteIdx = bitPosition / 8;
-            auto currentBit = bitPosition % 8;
-            auto currentByte = binData[byteIdx];
+            // Convert 'bitPosition' to 'currentByte' and 'currentBit'. Note that bit positions are
+            // 0-based starting at the right-most bit in 'binData'.
+            int currentByte = binData[(binDataSize - (bitPosition / 8)) - 1];
+            int currentBit = bitPosition % 8;
 
             isBitSet = currentByte & (1 << currentBit);
         }
@@ -5470,9 +5466,8 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinGenerateSortKey(
     }();
 
     return {true,
-            value::TypeTags::ksValue,
-            value::bitcastFrom<key_string::Value*>(
-                new key_string::Value(sortSpec->generateSortKey(bsonObj, collator)))};
+            value::TypeTags::keyString,
+            value::makeKeyString(sortSpec->generateSortKey(bsonObj, collator)).second};
 }
 
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinSortKeyComponentVectorGetElement(
@@ -6110,7 +6105,7 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinArrayToObject(Ar
     return {true, objTag, objVal};
 }
 
-ByteCode::multiAccState ByteCode::getMultiAccState(value::TypeTags stateTag,
+ByteCode::MultiAccState ByteCode::getMultiAccState(value::TypeTags stateTag,
                                                    value::Value stateVal) {
     uassert(
         7548600, "The accumulator state should be an array", stateTag == value::TypeTags::Array);
@@ -9188,8 +9183,7 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinAggRemovableMinM
     ArityType arity) {
     auto [stateTag, stateVal] = moveOwnedFromStack(0);
     value::ValueGuard stateGuard{stateTag, stateVal};
-    auto [elTag, elVal] = moveOwnedFromStack(1);
-    value::ValueGuard elGuard{elTag, elVal};
+    auto [_, elTag, elVal] = getFromStack(1);
 
     if (value::isNullish(elTag)) {
         stateGuard.reset();
@@ -9210,7 +9204,6 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinAggRemovableMinM
     stateArr->setAt(static_cast<size_t>(AggAccumulatorNElems::kMemUsage),
                     value::TypeTags::NumberInt32,
                     value::bitcastFrom<int32_t>(memUsage - elSize));
-    elGuard.reset();
     tassert(8178116, "Element was not removed", accMultiSet->remove(elTag, elVal));
 
     stateGuard.reset();

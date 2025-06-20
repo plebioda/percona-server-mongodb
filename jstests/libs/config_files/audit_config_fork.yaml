@@ -1,5 +1,5 @@
 auditLog:
   destination: file
-  path: 'auditLog.json'
+  path: "auditLog.json"
 processManagement:
   fork: true

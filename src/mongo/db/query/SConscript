@@ -516,7 +516,7 @@ env.CppUnitTest(
         'query_planner_tree_test.cpp',
         'query_planner_wildcard_index_test.cpp',
         'query_request_test.cpp',
-        'query_settings/query_framework_serialization_test.cpp',
+        'query_settings/query_settings_hash_test.cpp',
         'query_settings/query_settings_manager_test.cpp',
         'query_settings/query_settings_validation_test.cpp',
         'query_settings_test.cpp',
@@ -581,6 +581,19 @@ env.CppUnitTest(
         'query_settings/manager',
         'query_shape/query_shape',
         'query_test_service_context',
+    ],
+)
+
+env.CppUnitTest(
+    target='express_execution_test',
+    source=['express_plan_test.cpp'],
+    LIBDEPS=[
+        '$BUILD_DIR/mongo/db/catalog/catalog_test_fixture',
+        '$BUILD_DIR/mongo/db/catalog/collection_crud',
+        '$BUILD_DIR/mongo/db/record_id_helpers',
+        '$BUILD_DIR/mongo/db/shard_role',
+        '$BUILD_DIR/mongo/db/write_stage_common',
+        'query_planner',
     ],
 )
 

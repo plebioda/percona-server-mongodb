@@ -559,6 +559,7 @@ TEST_F(ReshardingDonorServiceTest, ReportForCurrentOpAfterCompletion) {
     // Step down before the transition to state can complete.
     stateTransitionsGuard.wait(donorState);
     stepDown();
+    stateTransitionsGuard.unset(donorState);
 
     // At this point, the resharding metrics will have been unregistered from the cumulative metrics
     ASSERT_EQ(donor->getCompletionFuture().getNoThrow(),
@@ -584,9 +585,8 @@ TEST_F(ReshardingDonorServiceTest, ReportForCurrentOpAfterCompletion) {
     ASSERT_NE(donor, newDonor);
 
     // No need to finish the resharding op, so we just cancel the op.
-    stepDown();
-    ASSERT_EQ(newDonor->getCompletionFuture().getNoThrow(),
-              ErrorCodes::InterruptedDueToReplStateChange);
+    newDonor->abort(false);
+    ASSERT_OK(newDonor->getCompletionFuture().getNoThrow());
 }
 
 DEATH_TEST_REGEX_F(ReshardingDonorServiceTest, CommitFn, "4457001.*tripwire") {
@@ -866,6 +866,7 @@ TEST_F(ReshardingDonorServiceTest, RestoreMetricsOnKBlockingWrites) {
 }
 
 TEST_F(ReshardingDonorServiceTest, AbortAfterStepUpWithAbortReasonFromCoordinator) {
+    repl::primaryOnlyServiceTestStepUpWaitForRebuildComplete.setMode(FailPoint::alwaysOn);
     const auto abortErrMsg = "Recieved abort from the resharding coordinator";
 
     for (bool isAlsoRecipient : {false, true}) {
@@ -911,8 +912,8 @@ TEST_F(ReshardingDonorServiceTest, AbortAfterStepUpWithAbortReasonFromCoordinato
                   ErrorCodes::InterruptedDueToReplStateChange);
         donor.reset();
 
-        removeDonorDocFailpoint->setMode(FailPoint::off);
         stepUp(opCtx.get());
+        removeDonorDocFailpoint->waitForTimesEntered(timesEnteredFailPoint + 2);
 
         auto [maybeDonor, isPausedOrShutdown] =
             DonorStateMachine::lookup(opCtx.get(), _service, instanceId);
@@ -920,6 +921,7 @@ TEST_F(ReshardingDonorServiceTest, AbortAfterStepUpWithAbortReasonFromCoordinato
         ASSERT_FALSE(isPausedOrShutdown);
         donor = *maybeDonor;
 
+        removeDonorDocFailpoint->setMode(FailPoint::off);
         ASSERT_OK(donor->getCompletionFuture().getNoThrow());
         checkStateDocumentRemoved(opCtx.get());
     }

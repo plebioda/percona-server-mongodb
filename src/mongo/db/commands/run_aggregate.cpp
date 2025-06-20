@@ -1148,14 +1148,18 @@ std::unique_ptr<Pipeline, PipelineDeleter> parsePipelineAndRegisterQueryStats(
         auto collectionType = determineCollectionType(
             ctx, resolvedView, liteParsedPipeline.hasChangeStream(), isCollectionless);
         NamespaceStringSet pipelineInvolvedNamespaces(liteParsedPipeline.getInvolvedNamespaces());
-        query_stats::registerRequest(opCtx, origNss, [&]() {
-            return std::make_unique<query_stats::AggKey>(requestForQueryStats,
-                                                         *pipeline,
-                                                         expCtx,
-                                                         std::move(pipelineInvolvedNamespaces),
-                                                         origNss,
-                                                         collectionType);
-        });
+        query_stats::registerRequest(
+            opCtx,
+            origNss,
+            [&]() {
+                return std::make_unique<query_stats::AggKey>(requestForQueryStats,
+                                                             *pipeline,
+                                                             expCtx,
+                                                             std::move(pipelineInvolvedNamespaces),
+                                                             origNss,
+                                                             collectionType);
+            },
+            liteParsedPipeline.hasChangeStream());
 
         if (request.getIncludeQueryStatsMetrics()) {
             CurOp::get(opCtx)->debug().queryStatsInfo.metricsRequested = true;
@@ -1166,7 +1170,7 @@ std::unique_ptr<Pipeline, PipelineDeleter> parsePipelineAndRegisterQueryStats(
     // TODO: SERVER-73632 Remove feature flag for PM-635.
     // Query settings will only be looked up on mongos and therefore should be part of command
     // body on mongod if present.
-    expCtx->setQuerySettings(
+    expCtx->setQuerySettingsIfNotPresent(
         query_settings::lookupQuerySettingsForAgg(expCtx,
                                                   requestForQueryStats,
                                                   *pipeline,

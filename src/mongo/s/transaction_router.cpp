@@ -99,7 +99,6 @@ using namespace fmt::literals;
 // TODO SERVER-39704: Remove this fail point once the router can safely retry within a transaction
 // on stale version and snapshot errors.
 MONGO_FAIL_POINT_DEFINE(enableStaleVersionAndSnapshotRetriesWithinTransactions);
-MONGO_FAIL_POINT_DEFINE(includeAdditionalParticipantInResponse);
 
 const char kCoordinatorField[] = "coordinator";
 const char kReadConcernLevelSnapshotName[] = "snapshot";
@@ -631,6 +630,19 @@ void TransactionRouter::Router::processParticipantResponse(OperationContext* opC
                     opCtx,
                     shardIdToUpdate,
                     Participant::ReadOnly::kOutstandingAdditionalParticipant);
+
+                if (!p().recoveryShardId) {
+                    LOGV2_DEBUG(
+                        89275,
+                        3,
+                        "Choosing outstanding additional participant shard as recovery shard",
+                        "sessionId"_attr = _sessionId(),
+                        "txnNumber"_attr = o().txnNumberAndRetryCounter.getTxnNumber(),
+                        "txnRetryCounter"_attr = o().txnNumberAndRetryCounter.getTxnRetryCounter(),
+                        "shardId"_attr = shardIdToUpdate);
+                    p().recoveryShardId = shardIdToUpdate;
+                }
+
                 return;
             }
 
@@ -786,39 +798,8 @@ const boost::optional<ShardId>& TransactionRouter::Router::getRecoveryShardId() 
 }
 
 boost::optional<StringMap<boost::optional<bool>>>
-TransactionRouter::Router::getAdditionalParticipantsForResponse(
-    OperationContext* opCtx,
-    boost::optional<const std::string&> commandName,
-    boost::optional<const NamespaceString&> nss) {
+TransactionRouter::Router::getAdditionalParticipantsForResponse(OperationContext* opCtx) {
     boost::optional<StringMap<boost::optional<bool>>> participants = boost::none;
-
-    // TODO SERVER-85353 Remove theis block that injects adding participants through the failpoint
-    // (Ignore FCV check): This feature doesn't have any upgrade/downgrade concerns.
-    if (gFeatureFlagAllowAdditionalParticipants.isEnabledAndIgnoreFCVUnsafe()) {
-        std::vector<BSONElement> shardIdsFromFpData;
-        boost::optional<bool> readOnly = boost::none;
-        if (MONGO_unlikely(
-                includeAdditionalParticipantInResponse.shouldFail([&](const BSONObj& data) {
-                    if (data.hasField("cmdName") && data.hasField("ns") &&
-                        data.hasField("shardId")) {
-                        shardIdsFromFpData = data.getField("shardId").Array();
-                        if (data.getField("readOnly")) {
-                            readOnly = boost::make_optional<bool>(data.getField("readOnly").Bool());
-                        }
-                        const auto fpNss = NamespaceStringUtil::parseFailPointData(data, "ns");
-                        return ((data.getStringField("cmdName") == *commandName) &&
-                                (fpNss == *nss));
-                    }
-                    return false;
-                }))) {
-            participants.emplace();
-            for (auto& element : shardIdsFromFpData) {
-                participants->try_emplace(element.valueStringData().toString(), readOnly);
-            }
-
-            return participants;
-        }
-    }
 
     if (!o().subRouter || (opCtx->getTxnNumber() != o().txnNumberAndRetryCounter.getTxnNumber()) ||
         (opCtx->getTxnRetryCounter() &&
@@ -1572,7 +1553,7 @@ BSONObj TransactionRouter::Router::_commitTransaction(
         return sendCommitDirectlyToShards(opCtx, {shardId});
     }
 
-    if (writeShards.size() == 1) {
+    if (writeShards.size() == 1 && !p().disallowSingleWriteShardCommit) {
         LOGV2_DEBUG(22894,
                     3,
                     "Committing single-write-shard transaction",
@@ -1805,10 +1786,13 @@ void TransactionRouter::Router::appendRecoveryToken(BSONObjBuilder* builder) con
     TxnRecoveryToken recoveryToken;
 
     // The recovery shard is chosen on the first statement that did a write (transactions that only
-    // did reads do not need to be recovered; they can just be retried).
+    // did reads do not need to be recovered; they can just be retried) or that returned an
+    // additional participant with an empty readOnly value.
     if (p().recoveryShardId) {
-        invariant(o().participants.find(*p().recoveryShardId)->second.readOnly ==
-                  Participant::ReadOnly::kNotReadOnly);
+        auto recoveryShardReadOnly = o().participants.find(*p().recoveryShardId)->second.readOnly;
+        invariant(recoveryShardReadOnly == Participant::ReadOnly::kNotReadOnly ||
+                  recoveryShardReadOnly ==
+                      Participant::ReadOnly::kOutstandingAdditionalParticipant);
         recoveryToken.setRecoveryShardId(*p().recoveryShardId);
     }
 

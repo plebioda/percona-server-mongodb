@@ -68,6 +68,13 @@ MultiPlanner::MultiPlanner(PlannerDataForSBE plannerData,
                                yieldPolicy(),
                                collections().getMainCollectionPtrOrAcquisition());
     uassertStatusOK(_multiPlanStage->pickBestPlan(trialPeriodYieldPolicy.get()));
+
+    if (!_shouldUseEofOptimization()) {
+        // Extend the winning solution with the agg pipeline. If using the EOF optimisation,
+        // plan_executor_factory::make(...) may later require the best solution to still be owned by
+        // `_multiPlanStage` (not yet extracted).
+        _winningSolution = extendSolutionWithPipeline(_multiPlanStage->extractBestSolution());
+    }
 }
 
 std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> MultiPlanner::makeExecutor(
@@ -100,18 +107,15 @@ std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> MultiPlanner::makeExecutor(
                                         nullptr /* querySolution */,
                                         cachedPlanHash()));
     }
+    // If we are not using the EOF optimization, we must have initialised _winningSolution in the
+    // constructor. extendSolutionWithPipeline() may throw, and must be caught in getExecutorFind
+    // to allow fallback (retry without query settings), and thus cannot be moved back hereinto
+    // makeExecutor().
+    invariant(_winningSolution);
 
-    std::unique_ptr<QuerySolution> winningSolution = _multiPlanStage->extractBestSolution();
-
-    // Extend the winning solution with the agg pipeline and build the execution tree.
-    if (!cq()->cqPipeline().empty()) {
-        winningSolution = QueryPlanner::extendWithAggPipeline(
-            *cq(), std::move(winningSolution), plannerParams().secondaryCollectionsInfo);
-    }
-
-    auto sbePlanAndData = _buildSbePlanAndUpdatePlanCache(winningSolution.get(), ranking);
+    auto sbePlanAndData = _buildSbePlanAndUpdatePlanCache(_winningSolution.get(), ranking);
     return prepareSbePlanExecutor(std::move(canonicalQuery),
-                                  std::move(winningSolution),
+                                  std::move(_winningSolution),
                                   std::move(sbePlanAndData),
                                   false /*isFromPlanCache*/,
                                   cachedPlanHash(),
@@ -138,8 +142,6 @@ bool MultiPlanner::_shouldUseEofOptimization() const {
         !cq()->getExpCtxRaw()->explain &&
         // We can't use EOF optimization if pipeline is present. Because we need to execute the
         // pipeline part in SBE, we have to rebuild and rerun the whole query.
-        // TODO SERVER-86061 Avoid rerunning find part of the query if it reached EOF during
-        // planning.
         cq()->cqPipeline().empty() &&
         // We want more coverage for SBE in debug builds.
         !kDebugBuild;

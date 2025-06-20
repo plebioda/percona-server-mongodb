@@ -364,13 +364,13 @@ StatusWith<User> AuthzManagerExternalStateLocal::getUserObject(
         return rolesStatus.getStatus();
     const auto& roles = rolesStatus.getValue();
 
-    auto rolesLock = _lockRoles(opCtx, userName.getTenant());
+    auto rolesLock = _lockRoles(opCtx, userName.tenantId());
 
     if (!roles) {
         // Normal path: Acquire a user from the local store by UserName.
         BSONObj userDoc;
         auto status =
-            findOne(opCtx, getUsersCollection(userName.getTenant()), userName.toBSON(), &userDoc);
+            findOne(opCtx, getUsersCollection(userName.tenantId()), userName.toBSON(), &userDoc);
         if (!status.isOK()) {
             if (status == ErrorCodes::NoMatchingDocument) {
                 return {ErrorCodes::UserNotFound,
@@ -381,7 +381,7 @@ StatusWith<User> AuthzManagerExternalStateLocal::getUserObject(
         }
 
         V2UserDocumentParser userDocParser;
-        userDocParser.setTenantId(userReq.name.getTenant());
+        userDocParser.setTenantId(userReq.name.tenantId());
         uassertStatusOK(userDocParser.initializeUserFromUserDocument(userDoc, &user));
         for (auto iter = user.getRoles(); iter.more();) {
             directRoles.push_back(iter.next());
@@ -398,7 +398,7 @@ StatusWith<User> AuthzManagerExternalStateLocal::getUserObject(
         user.setRoles(makeRoleNameIteratorForContainer(directRoles));
     }
 
-    if (auto tenant = userName.getTenant()) {
+    if (auto tenant = userName.tenantId()) {
         // Apply TenantID for user to all roles (which are assumed to be part of the same tenant).
         for (auto& role : directRoles) {
             role = RoleName(role.getRole(), role.getDB(), tenant);
@@ -439,12 +439,12 @@ Status AuthzManagerExternalStateLocal::getUserDescription(
         return rolesStatus.getStatus();
     const auto& roles = rolesStatus.getValue();
 
-    auto rolesLock = _lockRoles(opCtx, userName.getTenant());
+    auto rolesLock = _lockRoles(opCtx, userName.tenantId());
 
     if (!roles) {
         BSONObj userDoc;
         auto status =
-            findOne(opCtx, getUsersCollection(userName.getTenant()), userName.toBSON(), &userDoc);
+            findOne(opCtx, getUsersCollection(userName.tenantId()), userName.toBSON(), &userDoc);
         if (!status.isOK()) {
             if (status == ErrorCodes::NoMatchingDocument) {
                 return {ErrorCodes::UserNotFound,
@@ -455,11 +455,11 @@ Status AuthzManagerExternalStateLocal::getUserDescription(
         }
 
         directRoles = filterAndMapRole(
-            &resultBuilder, userDoc, ResolveRoleOption::kAll, false, userName.getTenant());
+            &resultBuilder, userDoc, ResolveRoleOption::kAll, false, userName.tenantId());
     } else {
         uassert(ErrorCodes::BadValue,
                 "Illegal combination of pre-defined roles with tenant identifier",
-                userName.getTenant() == boost::none);
+                userName.tenantId() == boost::none);
 
         // We are able to artifically construct the external user from the request
         resultBuilder.append("_id", str::stream() << userName.getDB() << '.' << userName.getUser());
@@ -475,7 +475,7 @@ Status AuthzManagerExternalStateLocal::getUserDescription(
         rolesBuilder.doneFast();
     }
 
-    if (auto tenant = userName.getTenant()) {
+    if (auto tenant = userName.tenantId()) {
         // Apply TenantID for user to all roles (which are assumed to be part of the same tenant).
         for (auto& role : directRoles) {
             role = RoleName(role.getRole(), role.getDB(), tenant);
@@ -500,7 +500,7 @@ Status AuthzManagerExternalStateLocal::rolesExist(OperationContext* opCtx,
     stdx::unordered_set<RoleName> unknownRoles;
     for (const auto& roleName : roleNames) {
         if (!auth::isBuiltinRole(roleName) &&
-            !hasOne(opCtx, getRolesCollection(roleName.getTenant()), roleName.toBSON())) {
+            !hasOne(opCtx, getRolesCollection(roleName.tenantId()), roleName.toBSON())) {
             unknownRoles.insert(roleName);
         }
     }
@@ -543,7 +543,7 @@ StatusWith<ResolvedRoleData> AuthzManagerExternalStateLocal::resolveRoles(
 
             BSONObj roleDoc;
             auto status =
-                findOne(opCtx, getRolesCollection(role.getTenant()), role.toBSON(), &roleDoc);
+                findOne(opCtx, getRolesCollection(role.tenantId()), role.toBSON(), &roleDoc);
             if (!status.isOK()) {
                 if (status.code() == ErrorCodes::NoMatchingDocument) {
                     LOGV2(5029200, "Role does not exist", "role"_attr = role);
@@ -561,7 +561,7 @@ StatusWith<ResolvedRoleData> AuthzManagerExternalStateLocal::resolveRoles(
                                 << "', expected an array but found " << typeName(elem.type())};
                 }
                 for (const auto& subroleElem : elem.Obj()) {
-                    auto subrole = RoleName::parseFromBSON(subroleElem, role.getTenant());
+                    auto subrole = RoleName::parseFromBSON(subroleElem, role.tenantId());
                     if (visited.count(subrole) || nextFrontier.count(subrole)) {
                         continue;
                     }
@@ -589,7 +589,7 @@ StatusWith<ResolvedRoleData> AuthzManagerExternalStateLocal::resolveRoles(
                     auto pp = auth::ParsedPrivilege::parse(idlctx, privElem.Obj());
                     Privilege::addPrivilegeToPrivilegeVector(
                         &inheritedPrivileges,
-                        Privilege::resolvePrivilegeWithTenant(role.getTenant(), pp));
+                        Privilege::resolvePrivilegeWithTenant(role.tenantId(), pp));
                 }
             }
 
@@ -695,7 +695,7 @@ Status AuthzManagerExternalStateLocal::getRolesDescription(
                 roleDoc = builtinBuilder.obj();
             } else {
                 auto status =
-                    findOne(opCtx, getRolesCollection(role.getTenant()), role.toBSON(), &roleDoc);
+                    findOne(opCtx, getRolesCollection(role.tenantId()), role.toBSON(), &roleDoc);
                 if (status.code() == ErrorCodes::NoMatchingDocument) {
                     continue;
                 }
@@ -703,7 +703,7 @@ Status AuthzManagerExternalStateLocal::getRolesDescription(
             }
 
             BSONObjBuilder roleBuilder;
-            auto subRoles = filterAndMapRole(&roleBuilder, roleDoc, option, true, role.getTenant());
+            auto subRoles = filterAndMapRole(&roleBuilder, roleDoc, option, true, role.tenantId());
             auto data = uassertStatusOK(resolveRoles(opCtx, subRoles, option));
             data.roles->insert(subRoles.cbegin(), subRoles.cend());
             serializeResolvedRoles(&roleBuilder, data, roleDoc);
@@ -861,7 +861,7 @@ public:
         return _type;
     }
 
-    const boost::optional<TenantId>& getTenant() const {
+    const boost::optional<TenantId>& tenantId() const {
         return _tenant;
     }
 
@@ -897,9 +897,9 @@ void _invalidateUserCache(OperationContext* opCtx,
             AuthorizationManager::get(opCtx->getService())->invalidateUserCache();
             return;
         }
-        UserName userName(id.substr(splitPoint + 1), id.substr(0, splitPoint), coll.getTenant());
+        UserName userName(id.substr(splitPoint + 1), id.substr(0, splitPoint), coll.tenantId());
         AuthorizationManager::get(opCtx->getService())->invalidateUserByName(userName);
-    } else if (const auto& tenant = coll.getTenant()) {
+    } else if (const auto& tenant = coll.tenantId()) {
         AuthorizationManager::get(opCtx->getService())->invalidateUsersByTenant(tenant.value());
     } else {
         AuthorizationManager::get(opCtx->getService())->invalidateUserCache();

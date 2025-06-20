@@ -274,9 +274,8 @@ TEST_F(BSONColumnMaterializerTest, SBEMaterializer) {
         oid, {value::TypeTags::bsonObjectId, value::bitcastFrom<const char*>(oidStorage)});
 
     // Test a string and BSONCode of every size from 0 to 4097.
+    std::string longStr;
     for (size_t strSize = 0; strSize < 4097; ++strSize) {
-        std::string longStr("a", strSize);
-
         {
             StringData sd{longStr};
             obj = BSON("" << sd);
@@ -298,6 +297,9 @@ TEST_F(BSONColumnMaterializerTest, SBEMaterializer) {
                 code,
                 {value::TypeTags::bsonJavascript, value::bitcastFrom<const char*>(codeStorage)});
         }
+
+        invariant(longStr.size() == strSize);
+        longStr.push_back('a');
     }
 }
 
@@ -822,6 +824,58 @@ TEST_F(BSONColumnMaterializerTest, DecompressMultipleBuffers) {
 //     std::vector<int32_t> expectedPositions{1, 0, 2};
 //     verifyDecompressWithPositions(input, path, expectedPositions);
 // }
+
+TEST_F(BSONColumnMaterializerTest, DecompressFastWithRLEAfterControl) {
+    // This test validates that the fast implementation of interleaved decompression preserves state
+    // when decompressing RLE blocks across different control bytes. With a single control byte
+    // using RLE encoding we can have 16 blocks each with 1920 values (30720 values). After this we
+    // will have a new control byte, and then another RLE block, but the RLE block will reference
+    // the last value from the last block.
+
+    SBEPath path{value::CellBlock::PathRequest(
+        value::CellBlock::PathRequestType::kFilter,
+        {value::CellBlock::Get{"a"}, value::CellBlock::Traverse{}, value::CellBlock::Id{}})};
+
+    // Test with a primitive type.
+    {
+        std::vector<BSONObj> input;
+        std::vector<int32_t> expectedPositions;
+        int64_t val = 64;
+        // Write more than 30720 values so we have a control byte separating the RLE blocks.
+        for (int i = 0; i < 30722; i++, val += 2) {
+            input.push_back(BSON("a" << val));
+            addExpectedElement({value::TypeTags::NumberInt64, val});
+            expectedPositions.push_back(1);
+        }
+        verifyDecompressWithPositions(input, path, expectedPositions);
+    }
+
+    // Test with a type that uses deltaOfDelta encoding.
+    {
+        std::vector<BSONObj> input;
+        std::vector<int32_t> expectedPositions;
+        long long val = 1702334800770;
+        for (int i = 0; i < 30722; i++, val += 2) {
+            input.push_back(BSON("a" << Date_t::fromMillisSinceEpoch(val)));
+            addExpectedElement({value::TypeTags::Date, val});
+            expectedPositions.push_back(1);
+        }
+        verifyDecompressWithPositions(input, path, expectedPositions);
+    }
+
+    // Test with doubles.
+    {
+        std::vector<BSONObj> input;
+        std::vector<int32_t> expectedPositions;
+        double val = 100.0;
+        for (int i = 0; i < 30722; i++, val += 2) {
+            input.push_back(BSON("a" << val));
+            addExpectedElement({value::TypeTags::NumberDouble, value::bitcastFrom<double>(val)});
+            expectedPositions.push_back(1);
+        }
+        verifyDecompressWithPositions(input, path, expectedPositions);
+    }
+}
 
 TEST_F(BSONColumnMaterializerTest, DecompressGeneralWithDecimals) {
     std::vector<Decimal128> decimals = {

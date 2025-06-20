@@ -32,6 +32,7 @@
 #include <shared_mutex>
 
 #include "mongo/db/operation_context.h"
+#include "mongo/db/s/replica_set_endpoint_feature_flag.h"
 
 namespace mongo {
 namespace replica_set_endpoint {
@@ -78,17 +79,6 @@ private:
     // Set to true if this mongod is part of a replica set.
     bool _isReplicaSetMember = false;
 };
-
-/**
- * Returns true if the feature flag is enabled, not ignoring the feature compatibility version.
- */
-bool isFeatureFlagEnabled();
-
-/**
- * Returns true if the feature flag is enabled, ignoring the feature compatibility version.
- * To be used only by the machinery for maintaining the ReplicaSetEndpointShardingState.
- */
-bool isFeatureFlagEnabledIgnoreFCV();
 
 }  // namespace replica_set_endpoint
 }  // namespace mongo

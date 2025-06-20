@@ -245,7 +245,8 @@ export function assertExpectedResults(results,
         latestSeenTimestamp,
         lastExecutionMicros,
         totalExecMicros,
-        firstResponseExecMicros
+        firstResponseExecMicros,
+        workingTimeMillis,
     } = metrics;
 
     // The tests can't predict exact timings, so just assert these three fields have been set (are
@@ -260,6 +261,7 @@ export function assertExpectedResults(results,
     for (const field of distributionFields) {
         assert.neq(totalExecMicros[field], NumberLong(0));
         assert.neq(firstResponseExecMicros[field], NumberLong(0));
+        assert.gte(workingTimeMillis[field], NumberLong(0));
         if (metrics.execCount > 1) {
             // If there are prior executions of the same query shape, we can't be certain if those
             // runs had getMores or not, so we can only check totalExec >= firstResponse.
@@ -350,6 +352,22 @@ function hasValueAtPath(object, dottedPath) {
         object = object[nestedField];
     }
     return true;
+}
+
+/**
+ *  Returns the object's value at the dottedPath.
+ * @param {object} object
+ * @param {string} dottedPath
+ */
+export function getValueAtPath(object, dottedPath) {
+    let nestedFields = dottedPath.split(".");
+    for (const nestedField of nestedFields) {
+        if (!object.hasOwnProperty(nestedField)) {
+            return false
+        }
+        object = object[nestedField];
+    }
+    return object;
 }
 
 /**

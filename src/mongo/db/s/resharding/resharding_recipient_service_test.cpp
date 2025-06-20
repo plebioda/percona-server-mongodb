@@ -628,6 +628,7 @@ TEST_F(ReshardingRecipientServiceTest, ReportForCurrentOpAfterCompletion) {
     // Step down before the transition to state can complete.
     stateTransitionsGuard.wait(recipientState);
     stepDown();
+    stateTransitionsGuard.unset(recipientState);
 
     // At this point, the resharding metrics will have been unregistered from the cumulative metrics
     ASSERT_EQ(recipient->getCompletionFuture().getNoThrow(), ErrorCodes::CallbackCanceled);
@@ -653,8 +654,8 @@ TEST_F(ReshardingRecipientServiceTest, ReportForCurrentOpAfterCompletion) {
     ASSERT_NE(recipient, newRecipient);
 
     // No need to finish the resharding op, so we just cancel the op.
-    stepDown();
-    ASSERT_EQ(newRecipient->getCompletionFuture().getNoThrow(), ErrorCodes::CallbackCanceled);
+    newRecipient->abort(false);
+    ASSERT_OK(newRecipient->getCompletionFuture().getNoThrow());
 }
 
 TEST_F(ReshardingRecipientServiceTest, OpCtxKilledWhileRestoringMetrics) {
@@ -1164,6 +1165,7 @@ TEST_F(ReshardingRecipientServiceTest, RestoreMetricsAfterStepUpWithMissingProgr
 }
 
 TEST_F(ReshardingRecipientServiceTest, AbortAfterStepUpWithAbortReasonFromCoordinator) {
+    repl::primaryOnlyServiceTestStepUpWaitForRebuildComplete.setMode(FailPoint::alwaysOn);
     const auto abortErrMsg = "Recieved abort from the resharding coordinator";
 
     for (bool isAlsoDonor : {false, true}) {
@@ -1208,8 +1210,8 @@ TEST_F(ReshardingRecipientServiceTest, AbortAfterStepUpWithAbortReasonFromCoordi
         ASSERT_EQ(recipient->getCompletionFuture().getNoThrow(), ErrorCodes::CallbackCanceled);
         recipient.reset();
 
-        removeRecipientDocFailpoint->setMode(FailPoint::off);
         stepUp(opCtx.get());
+        removeRecipientDocFailpoint->waitForTimesEntered(timesEnteredFailPoint + 2);
 
         auto [maybeRecipient, isPausedOrShutdown] =
             RecipientStateMachine::lookup(opCtx.get(), _service, instanceId);
@@ -1217,6 +1219,7 @@ TEST_F(ReshardingRecipientServiceTest, AbortAfterStepUpWithAbortReasonFromCoordi
         ASSERT_FALSE(isPausedOrShutdown);
         recipient = *maybeRecipient;
 
+        removeRecipientDocFailpoint->setMode(FailPoint::off);
         ASSERT_OK(recipient->getCompletionFuture().getNoThrow());
         checkStateDocumentRemoved(opCtx.get());
     }

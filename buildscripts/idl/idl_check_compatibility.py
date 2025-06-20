@@ -114,6 +114,7 @@ ALLOW_ANY_TYPE_LIST: List[str] = [
     'aggregate-param-cursor',
     'aggregate-param-hint',
     'aggregate-param-allowedIndexes',
+    'aggregate-param-indexHints',
     'aggregate-param-needsMerge',
     'aggregate-param-fromMongos',
     'aggregate-param-$_requestReshardingResumeToken',
@@ -129,6 +130,7 @@ ALLOW_ANY_TYPE_LIST: List[str] = [
     'find-param-sort',
     'find-param-hint',
     'find-param-allowedIndexes',
+    'find-param-indexHints',
     'find-param-collation',
     'find-param-singleBatch',
     'find-param-allowDiskUse',
@@ -180,6 +182,12 @@ IGNORE_ANY_TO_NON_ANY_LIST: List[str] = [
     # of permitted values
     'find-param-maxTimeMS',
     'count-param-maxTimeMS',
+]
+
+# Permit a parameter to move from a non-any bson serialisation type to any.
+IGNORE_NON_ANY_TO_ANY_LIST: List[str] = [
+    'find-param-indexHints',
+    'aggregate-param-indexHints',
 ]
 
 # Permit the cpp type of a parameter to change
@@ -391,15 +399,10 @@ class AllowedNewPrivilege:
         return cls(privilege.resource_pattern, privilege.action_type, privilege.agg_stage)
 
 
-ALLOWED_NEW_ACCESS_CHECK_PRIVILEGES = dict(
+ALLOWED_NEW_ACCESS_CHECK_PRIVILEGES: Dict[str, List[AllowedNewPrivilege]] = dict(
     # Do not add any command other than the aggregate command or any privilege that is not required
     # only by an aggregation stage not present in previously released versions.
-    aggregate=[
-        # TODO SERVER-87193: Check if we can remove the line below after the next 7.0 patch release (7.0.7) is out.
-        # The feature using 'queryStatsReadTransformed' has been backported to v7.0 but is not present
-        # in the latest patch release. It is guarded by a feature flag so we are allowing this conflict here.
-        AllowedNewPrivilege("cluster", ["queryStatsReadTransformed"], "queryStats"),
-    ],
+    aggregate=[],
 
     # This list is only used in unit-tests.
     complexChecksSupersetAllowed=[
@@ -921,7 +924,7 @@ def check_param_or_command_type_recursive(ctxt: IDLCompatibilityContext,
             return
 
     # If bson_serialization_type switches from non-any to 'any' type.
-    if "any" not in old_type.bson_serialization_type and "any" in new_type.bson_serialization_type:
+    if "any" not in old_type.bson_serialization_type and "any" in new_type.bson_serialization_type and ignore_list_name not in IGNORE_NON_ANY_TO_ANY_LIST:
         ctxt.add_new_command_or_param_type_bson_any_error(cmd_name, old_type.name, new_type.name,
                                                           new_field.idl_file_path, param_name,
                                                           is_command_parameter)

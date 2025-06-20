@@ -339,14 +339,18 @@ std::unique_ptr<Pipeline, PipelineDeleter> parsePipelineAndRegisterQueryStats(
     auto pipeline = Pipeline::parse(request.getPipeline(), expCtx);
     // Skip query stats recording for queryable encryption queries.
     if (!shouldDoFLERewrite) {
-        query_stats::registerRequest(opCtx, executionNss, [&]() {
-            return std::make_unique<query_stats::AggKey>(
-                request, *pipeline, expCtx, involvedNamespaces, executionNss);
-        });
+        query_stats::registerRequest(
+            opCtx,
+            executionNss,
+            [&]() {
+                return std::make_unique<query_stats::AggKey>(
+                    request, *pipeline, expCtx, involvedNamespaces, executionNss);
+            },
+            hasChangeStream);
     }
 
     // Perform the query settings lookup and attach it to the ExpressionContext.
-    expCtx->setQuerySettings(query_settings::lookupQuerySettingsForAgg(
+    expCtx->setQuerySettingsIfNotPresent(query_settings::lookupQuerySettingsForAgg(
         expCtx, request, *pipeline, involvedNamespaces, executionNss));
 
     return pipeline;
@@ -633,7 +637,7 @@ Status ClusterAggregate::runAggregate(OperationContext* opCtx,
                     return cluster_aggregation_planner::dispatchPipelineAndMerge(
                         opCtx,
                         std::move(targeter),
-                        aggregation_request_helper::serializeToCommandDoc(request),
+                        aggregation_request_helper::serializeToCommandDoc(expCtx, request),
                         request.getCursor().getBatchSize().value_or(
                             aggregation_request_helper::kDefaultBatchSize),
                         namespaces,
@@ -661,7 +665,7 @@ Status ClusterAggregate::runAggregate(OperationContext* opCtx,
                         expCtx,
                         namespaces,
                         request.getExplain(),
-                        aggregation_request_helper::serializeToCommandDoc(request),
+                        aggregation_request_helper::serializeToCommandDoc(expCtx, request),
                         privileges,
                         shardId,
                         eligibleForSampling,
@@ -688,6 +692,8 @@ Status ClusterAggregate::runAggregate(OperationContext* opCtx,
         if (expCtx->explain) {
             explain_common::appendIfRoom(
                 aggregation_request_helper::serializeToCommandObj(request), "command", result);
+            collectQueryStatsMongos(opCtx,
+                                    std::move(CurOp::get(opCtx)->debug().queryStatsInfo.key));
         }
     } else if (status.code() != ErrorCodes::CommandOnShardedViewNotSupportedOnMongod) {
         // Increment counters even in case of failed aggregate commands.

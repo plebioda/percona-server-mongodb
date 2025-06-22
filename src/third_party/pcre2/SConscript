@@ -28,7 +28,7 @@ if env.TargetOSIs('windows'):
 else:
     env.Append(CPPPATH=["build_posix"])
 
-env.Library(
+env.BazelLibrary(
     target="pcre2",
     source=[
         "src/pcre2_auto_possess.c",
@@ -57,7 +57,6 @@ env.Library(
         "src/pcre2_substring.c",
         "src/pcre2_tables.c",
         "src/pcre2_ucd.c",
-        "src/pcre2_ucptables.c",
         "src/pcre2_valid_utf.c",
     ],
 )

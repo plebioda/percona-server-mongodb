@@ -896,6 +896,9 @@ ExitCode runMongosServer(ServiceContext* serviceContext) {
     CommandInvocationHooks::set(serviceContext,
                                 std::make_unique<transport::IngressHandshakeMetricsCommandHooks>());
 
+    // Must happen before FTDC, because Periodic Metadata Collustion calls getClusterParameter
+    ClusterServerParameterRefresher::start(serviceContext, opCtx);
+
     {
         TimeElapsedBuilderScopedTimer scopedTimer(
             serviceContext->getFastClockSource(), "Start mongos FTDC", &startupTimeElapsedBuilder);
@@ -933,8 +936,6 @@ ExitCode runMongosServer(ServiceContext* serviceContext) {
     clusterCursorCleanupJob.go();
 
     UserCacheInvalidator::start(serviceContext, opCtx);
-
-    ClusterServerParameterRefresher::start(serviceContext, opCtx);
 
     if (audit::initializeSynchronizeJob) {
         TimeElapsedBuilderScopedTimer scopedTimer(serviceContext->getFastClockSource(),

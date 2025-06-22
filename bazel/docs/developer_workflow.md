@@ -99,3 +99,21 @@ This allows SCons build targets to depend on Bazel build targets directly. The B
             'new_library', # depend on the bazel "new_library" target defined above
     	],
     )
+
+## Running clang-tidy via Bazel
+
+Note: This feature is still in development; see https://jira.mongodb.org/browse/SERVER-80396 for details)
+
+To run clang-tidy via Bazel, do the following:
+
+1. To analyze all code, run `bazel build --config=clang-tidy src/...`
+2. To analyze a single target (e.g.: `fsync_locked`), run the following command (note that `_with_debug` suffix on the target): `bazel build --config=clang-tidy src/mongo/db/commands:fsync_locked_with_debug`
+
+Testing notes:
+
+- If you want to test whether clang-tidy is in fact finding bugs, you can inject the following code into a `cpp` file to generate a `bugprone-incorrect-roundings` warning:
+
+```
+const double f = 1.0;
+const int foo = (int)(f + 0.5);
+```

@@ -49,10 +49,10 @@
 #include "mongo/bson/bsontypes_util.h"
 #include "mongo/bson/oid.h"
 #include "mongo/bson/timestamp.h"
+#include "mongo/bson/util/bsoncolumn_test_util.h"
 #include "mongo/bson/util/bsoncolumnbuilder.h"
 #include "mongo/bson/util/builder.h"
 #include "mongo/bson/util/simple8b_builder.h"
-#include "mongo/db/exec/sbe/values/bsoncolumn_materializer.h"
 #include "mongo/platform/decimal128.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/framework.h"
@@ -242,8 +242,8 @@ public:
 
     static uint128_t deltaString(BSONElement val, BSONElement prev) {
         return Simple8bTypeUtil::encodeInt128(
-            *Simple8bTypeUtil::encodeString(val.valueStringData()) -
-            *Simple8bTypeUtil::encodeString(prev.valueStringData()));
+            Simple8bTypeUtil::encodeString(val.valueStringData()).value_or(0) -
+            Simple8bTypeUtil::encodeString(prev.valueStringData()).value_or(0));
     }
 
     static uint64_t deltaInt32(BSONElement val, BSONElement prev) {
@@ -504,103 +504,6 @@ public:
         builder.appendChar(EOO);
     }
 
-    static void assertSbeValueEquals(sbe::bsoncolumn::SBEColumnMaterializer::Element& actual,
-                                     sbe::bsoncolumn::SBEColumnMaterializer::Element& expected) {
-        // We should have already have checked the tags are equal or are expected values. Tags for
-        // strings can differ based on how the SBE element is created, and thus should be verified
-        // before.
-        using namespace sbe::value;
-        switch (actual.first) {
-            // Values that are stored in 'Value' can be compared directly.
-            case TypeTags::Nothing:
-            case TypeTags::NumberInt32:
-            case TypeTags::NumberInt64:
-            case TypeTags::NumberDouble:
-            case TypeTags::Boolean:
-            case TypeTags::Null:
-            case TypeTags::bsonUndefined:
-            case TypeTags::MinKey:
-            case TypeTags::MaxKey:
-            case TypeTags::Date:
-            case TypeTags::Timestamp:
-                ASSERT_EQ(actual.second, expected.second);
-                break;
-            // The following types store pointers in 'Value'.
-            case TypeTags::NumberDecimal:
-                ASSERT_EQ(bitcastTo<Decimal128>(actual.second),
-                          bitcastTo<Decimal128>(expected.second));
-                break;
-            case TypeTags::bsonObjectId:
-                ASSERT_EQ(memcmp(bitcastTo<uint8_t*>(actual.second),
-                                 bitcastTo<uint8_t*>(expected.second),
-                                 sizeof(ObjectIdType)),
-                          0);
-                break;
-            // For strings we can retrieve the strings and compare them directly.
-            case TypeTags::bsonJavascript: {
-                ASSERT_EQ(getBsonJavascriptView(actual.second),
-                          getBsonJavascriptView(expected.second));
-                break;
-            }
-            case TypeTags::StringSmall:
-            case TypeTags::bsonString:
-                // Generic conversion won't produce StringSmall from BSONElements, but the
-                // SBEColumnMaterializer will. So we can't compare the raw pointers since they are
-                // different lengths, but we can compare the string values.
-                ASSERT_EQ(getStringView(actual.first, actual.second),
-                          getStringView(expected.first, expected.second));
-                break;
-            // We can read the raw pointer for these types, since the 32-bit 'length' at the
-            // beginning of pointer holds the full length of the value.
-            case TypeTags::bsonCodeWScope:
-            case TypeTags::bsonSymbol:
-            case TypeTags::bsonObject:
-            case TypeTags::bsonArray: {
-                auto actualPtr = getRawPointerView(actual.second);
-                auto expectedPtr = getRawPointerView(expected.second);
-                auto actSize = ConstDataView(actualPtr).read<LittleEndian<uint32_t>>();
-                ASSERT_EQ(actSize, ConstDataView(expectedPtr).read<LittleEndian<uint32_t>>());
-                ASSERT_EQ(memcmp(actualPtr, expectedPtr, actSize), 0);
-                break;
-            }
-            // For these types we must find the correct number of bytes to read.
-            case TypeTags::bsonRegex: {
-                auto actualPtr = getRawPointerView(actual.second);
-                auto expectedPtr = getRawPointerView(expected.second);
-                auto numBytes = BsonRegex(actualPtr).byteSize();
-                ASSERT_EQ(BsonRegex(expectedPtr).byteSize(), numBytes);
-                ASSERT_EQ(memcmp(actualPtr, expectedPtr, numBytes), 0);
-                break;
-            }
-            case TypeTags::bsonBinData: {
-                // The 32-bit 'length' at the beginning of a BinData does _not_ account for the
-                // 'length' field itself or the 'subtype' field.
-                auto actualSize = getBSONBinDataSize(actual.first, actual.second);
-                auto expectedSize = getBSONBinDataSize(expected.first, expected.second);
-                ASSERT_EQ(actualSize, expectedSize);
-                // We add 1 to compare the subtype and binData payload in one pass.
-                ASSERT_EQ(memcmp(getRawPointerView(actual.second),
-                                 getRawPointerView(expected.second),
-                                 actualSize + 1),
-                          0);
-                break;
-            }
-            case TypeTags::bsonDBPointer: {
-                auto actualPtr = getRawPointerView(actual.second);
-                auto expectedPtr = getRawPointerView(expected.second);
-                auto numBytes = BsonDBPointer(actualPtr).byteSize();
-                ASSERT_EQ(BsonDBPointer(expectedPtr).byteSize(), numBytes);
-                ASSERT_EQ(memcmp(actualPtr, expectedPtr, numBytes), 0);
-                break;
-            }
-            default:
-                FAIL(str::stream()
-                     << "Hit unreachable case in the SBEColumnMaterializer. Expected: " << expected
-                     << "Actual: " << actual);
-                break;
-        }
-    }
-
     static void convertAndAssertSBEEquals(sbe::bsoncolumn::SBEColumnMaterializer::Element& actual,
                                           const BSONElement& expected) {
         auto expectedSBE = sbe::bson::convertFrom<true>(expected);
@@ -611,7 +514,7 @@ public:
         } else {
             ASSERT_EQ(actual.first, expectedSBE.first);
         }
-        assertSbeValueEquals(actual, expectedSBE);
+        ASSERT(areSBEBinariesEqual(actual, expectedSBE));
     }
 
     static void verifyColumnReopenFromBinary(const char* buffer, size_t size) {
@@ -3164,6 +3067,27 @@ TEST_F(BSONColumnTest, BinDataLargerThan16) {
     verifyDecompression(binData, {elemBinData, elemBinDataLong});
 }
 
+TEST_F(BSONColumnTest, BinDataLargerThan16Interleaved) {
+    // The same test as above, but the data is wrapped in an object to test interleaved mode, and
+    // the fast implementation of the block API.
+    std::vector<uint8_t> input{
+        '1', '2', '3', '4', '5', '6', '7', '8', '9', '1', '2', '3', '4', '5', '6', '7', '8'};
+    auto elemBinData = createElementObj(BSON("x" << createElementBinData(BinDataGeneral, input)));
+    cb.append(elemBinData);
+
+    std::vector<uint8_t> inputLong{
+        '1', '2', '3', '4', '5', '6', '7', '8', '9', '1', '2', '3', '4', '5', '6', '7', '9'};
+    auto elemBinDataLong =
+        createElementObj(BSON("x" << createElementBinData(BinDataGeneral, inputLong)));
+
+    cb.append(elemBinDataLong);
+    auto binData = cb.finalize();
+
+    verifyDecompression(binData, {elemBinData, elemBinDataLong});
+    TestPath testPathX{{"x"}};
+    verifyDecompressPathFast(binData, {elemBinData, elemBinDataLong}, testPathX);
+}
+
 TEST_F(BSONColumnTest, BinDataEqualTo16) {
     std::vector<uint8_t> input{
         '1', '2', '3', '4', '5', '6', '7', '8', '9', '1', '2', '3', '4', '5', '6', '7'};
@@ -3412,8 +3336,10 @@ TEST_F(BSONColumnTest, EmptyStringAfterUnencodableDelta) {
 }
 
 TEST_F(BSONColumnTest, EmptyStringAfterUnencodableLiteralAndDelta) {
-    std::vector<BSONElement> elems = {
-        createElementString("\0"_sd), createElementString("a"_sd), createElementString(""_sd)};
+    std::vector<BSONElement> elems = {createElementString("\0"_sd),
+                                      createElementString("a"_sd),
+                                      createElementString(""_sd),
+                                      createElementString(""_sd)};
 
     for (auto&& elem : elems) {
         cb.append(elem);
@@ -3425,6 +3351,55 @@ TEST_F(BSONColumnTest, EmptyStringAfterUnencodableLiteralAndDelta) {
     // As the literal is unencodable it will be considered to have a 0 encoding. We take this from
     // the last element that is empty string.
     appendSimple8bBlocks128(expected, deltaString(elems.begin() + 1, elems.end(), elems.back()), 1);
+    appendEOO(expected);
+
+    auto binData = cb.finalize();
+    verifyBinary(binData, expected);
+    verifyDecompression(binData, elems);
+}
+
+// TODO SERVER-89715 remove test.
+TEST_F(BSONColumnTest, EmptyStringAfterUnencodableLiteralAndDeltaInterleaved) {
+    // The same test as above, but the data is wrapped in an object to test interleaved mode, and
+    // the fast implementation of the block API.
+    std::vector<BSONElement> elems = {createElementObj(BSON("x" << createElementString("\0"_sd))),
+                                      createElementObj(BSON("x" << createElementString("a"_sd))),
+                                      createElementObj(BSON("x" << createElementString(""_sd))),
+                                      createElementObj(BSON("x" << createElementString(""_sd)))};
+
+    for (auto&& elem : elems) {
+        cb.append(elem);
+    }
+    auto binData = cb.finalize();
+
+    verifyDecompression(binData, elems);
+    TestPath testPathX{{"x"}};
+    verifyDecompressPathFast(binData, elems, testPathX);
+}
+
+TEST_F(BSONColumnTest, UnencodableStringBetweenZeroDelta) {
+    std::vector<BSONElement> elems = {
+        createElementString("a"_sd),
+        createElementString("\0"_sd),
+        createElementString("s"_sd),
+        createElementString("s"_sd),
+        createElementString("\0"_sd),
+        createElementString("\0"_sd),
+    };
+
+    for (auto&& elem : elems) {
+        cb.append(elem);
+    }
+
+    BufBuilder expected;
+    appendLiteral(expected, elems[0]);
+    appendLiteral(expected, elems[1]);
+    appendSimple8bControl(expected, 0b1000, 0b0000);
+    appendSimple8bBlocks128(
+        expected, {deltaString(elems[2], elems[1]), deltaString(elems[3], elems[2])}, 1);
+    appendLiteral(expected, elems[4]);
+    appendSimple8bControl(expected, 0b1000, 0b0000);
+    appendSimple8bBlock128(expected, uint128_t(0));
     appendEOO(expected);
 
     auto binData = cb.finalize();
@@ -3842,6 +3817,7 @@ TEST_F(BSONColumnTest, NonZeroRLETwoControlBlocks) {
     verifyColumnReopenFromBinary(reinterpret_cast<const char*>(binData.data), binData.length);
 }
 
+// TODO SERVER-89715 remove test.
 TEST_F(BSONColumnTest, InterleavedNonZeroRLETwoControlBlocks) {
     // The same test as above, but the data is wrapped in an object to test interleaved mode, and
     // the fast implementation of the block API.
@@ -8536,6 +8512,9 @@ TEST_F(BSONColumnTest, BlockFuzzerDiscoveredEdgeCases) {
         "BQAwAAAAAAcAAAAAAAEAAAAAAABAAAAAAAA7Ozs7Ozs7Ozs6Ozs7Ozs7Ozs7Ozs7Ozs7OwD+/4A7OzsA/v+A/wA="_sd,
         // Block-based API didn't allow non-zero/missing deltas after EOO (SERVER-89150).
         "8h4AAAD/p/+zSENBMoAB/0hDQzKAAP9IOjCAAP8AAACCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCggA="_sd,
+        // Blockbased API didn't update last to EOO when Iterative API did for interleaved data
+        // (SERVER-89612).
+        "8hQAAAAF+P//////FCgAAAAAAAAABgAIAACBKg7/+///////MP8V/3EAAACBeHFYDAAA/3RhZ3P//wEAAAA="_sd,
     };
 
     for (auto&& binaryBase64 : binariesBase64) {
@@ -8548,8 +8527,8 @@ TEST_F(BSONColumnTest, BlockFuzzerDiscoveredEdgeCases) {
         bool iteratorError = false;
 
         // Attempt to decompress using the block-based API.
+        bsoncolumn::BSONColumnBlockBased block(binary.data(), binary.size());
         try {
-            bsoncolumn::BSONColumnBlockBased block(binary.data(), binary.size());
             block.decompress<bsoncolumn::BSONElementMaterializer, std::vector<BSONElement>>(
                 blockBasedElems, allocator);
         } catch (...) {
@@ -8557,8 +8536,8 @@ TEST_F(BSONColumnTest, BlockFuzzerDiscoveredEdgeCases) {
         }
 
         // Attempt to decompress using the iterator API.
+        BSONColumn column(binary.data(), binary.size());
         try {
-            BSONColumn column(binary.data(), binary.size());
             for (auto&& elem : column) {
                 iteratorElems.push_back(elem);
             };

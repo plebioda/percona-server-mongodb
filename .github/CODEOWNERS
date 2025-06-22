@@ -39,6 +39,7 @@ WORKSPACE.bazel @10gen/devprod-build
 
 # The following patterns are parsed from ./buildscripts/OWNERS.yml
 /buildscripts/**/* @10gen/devprod-build @10gen/devprod-correctness
+/buildscripts/**/burn_in_tests.py @10gen/devprod-correctness
 
 # The following patterns are parsed from ./buildscripts/idl/OWNERS.yml
 /buildscripts/idl/**/* @10gen/server-service-architecture
@@ -52,6 +53,9 @@ WORKSPACE.bazel @10gen/devprod-build
 
 # The following patterns are parsed from ./buildscripts/resmokelib/OWNERS.yml
 /buildscripts/resmokelib/**/* @10gen/devprod-correctness
+
+# The following patterns are parsed from ./buildscripts/resmokelib/testing/hooks/OWNERS.yml
+/buildscripts/resmokelib/testing/hooks/**/*
 
 # The following patterns are parsed from ./jstests/concurrency/fsm_workloads/OWNERS.yml
 /jstests/concurrency/fsm_workloads/**/server_status.js @10gen/server-service-architecture
@@ -129,7 +133,7 @@ WORKSPACE.bazel @10gen/devprod-build
 /src/mongo/db/concurrency/**/exception_util* @10gen/server-service-architecture
 
 # The following patterns are parsed from ./src/mongo/db/ftdc/OWNERS.yml
-/src/mongo/db/ftdc/**/* @10gen/server-service-architecture
+/src/mongo/db/ftdc/**/* @10gen/server-service-architecture @markbenvenuto
 
 # The following patterns are parsed from ./src/mongo/db/index/OWNERS.yml
 /src/mongo/db/index/**/index_access_method* @10gen/server-storage-execution

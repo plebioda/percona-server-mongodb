@@ -248,7 +248,6 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         '$BUILD_DIR/mongo/db/server_base',
-        '$BUILD_DIR/mongo/util/namespace_string_database_name_util',
     ],
 )
 
@@ -272,7 +271,6 @@ env.Library(
         '$BUILD_DIR/mongo/db/repl/optime',
         '$BUILD_DIR/mongo/rpc/command_status',
         '$BUILD_DIR/mongo/rpc/rpc',
-        '$BUILD_DIR/mongo/util/namespace_string_database_name_util',
         'query_request',
     ],
     LIBDEPS_PRIVATE=[
@@ -302,7 +300,6 @@ env.Library(
         '$BUILD_DIR/mongo/db/repl/read_concern_args',
         '$BUILD_DIR/mongo/db/repl/repl_coordinator_interface',
         '$BUILD_DIR/mongo/s/common_s',
-        '$BUILD_DIR/mongo/util/namespace_string_database_name_util',
         'hint_parser',
     ],
     LIBDEPS_PRIVATE=[
@@ -472,7 +469,6 @@ env.CppUnitTest(
         'cursor_response_test.cpp',
         'field_set_test.cpp',
         'find_common_test.cpp',
-        'get_executor_test.cpp',
         'getmore_request_test.cpp',
         'hint_parser_test.cpp',
         'index_bounds_builder_collator_test.cpp',
@@ -510,6 +506,7 @@ env.CppUnitTest(
         'query_planner_index_test.cpp',
         'query_planner_operator_test.cpp',
         'query_planner_options_test.cpp',
+        'query_planner_params_test.cpp',
         'query_planner_partialidx_test.cpp',
         'query_planner_pipeline_pushdown_test.cpp',
         'query_planner_text_test.cpp',
@@ -663,5 +660,17 @@ env.Benchmark(
         '$BUILD_DIR/mongo/db/query/query_test_service_context',
         '$BUILD_DIR/mongo/s/sharding_router_api',
         'plan_cache_test_util',
+    ],
+)
+
+env.Benchmark(
+    target='sbe_stage_builder_bm',
+    source=[
+        'sbe_stage_builder_bm.cpp',
+    ],
+    LIBDEPS=[
+        '$BUILD_DIR/mongo/db/catalog/catalog_test_fixture',
+        '$BUILD_DIR/mongo/db/query/query_test_service_context',
+        '$BUILD_DIR/mongo/db/query_exec',
     ],
 )

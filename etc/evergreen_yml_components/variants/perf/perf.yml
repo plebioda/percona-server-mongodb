@@ -4,11 +4,6 @@ variables:
       - name: package_new_compile
         variant: amazon2-x86-compile
 
-  - &amazon2_x86_openssl111_compile_variant_dependency
-    depends_on:
-      - name: package_new_compile
-        variant: amazon2-x86-openssl111-compile
-
   - &amazon_linux2_arm64_compile_variant_dependency
     depends_on:
       - name: package_new_compile
@@ -25,18 +20,6 @@ variables:
         variant: amazon2-arm64-compile
       - name: compile_mongocrypt_shlib
         variant: amazon2-arm64-mongocrypt-shlib-compile
-
-  - &al2023_arm64_compile_variant_dependency
-    depends_on:
-      - name: package_new_compile
-        variant: al2023-arm64-compile
-
-  - &al2023_al2_arm64_compile_variant_dependency
-    depends_on:
-      - name: package_new_compile
-        variant: al2023-arm64-compile
-      - name: package_new_compile
-        variant: amazon2-arm64-compile
 
   - &schedule_variant_auto_tasks_task
     name: schedule_variant_auto_tasks
@@ -66,62 +49,6 @@ variables:
       - flamegraph
 
 buildvariants:
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-1-node-replSet.arm.aws.2023-11
-    display_name: 1-Node ReplSet ARM AWS 2023-11
-    cron: &linux-1-node-repl-cron "0 0 * * 4" # 00:00 on Thursday
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: single-replica
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: single
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: &perf_project_dir dsi
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-single"
-    tasks: &1nodetasks
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: ycsb.2023-09
-      - name: ycsb_single_thread
-      - name: ycsb_60GB.2023-09
-      - name: ycsb_60GB.long.2023-09
-      - name: crud_workloads_majority
-      - name: misc_workloads
-      - name: map_reduce_workloads
-      - name: smoke_test
-      - name: canaries_only
-      - name: non_sharded_workloads
-      - name: bestbuy_agg
-      - name: bestbuy_agg_merge_different_db
-      - name: bestbuy_agg_merge_same_db
-      - name: bestbuy_agg_merge_wordcount
-      - name: bestbuy_query
-      - name: change_streams_latency
-      - name: change_streams_listen_throughput
-      - name: snapshot_reads
-      - name: linkbench
-      - name: linkbench2
-      - name: tsbs_load
-      - name: tsbs_query
-      - name: tsbs_query_finance
-      - name: tsbs_query_manual_bucketing
-      - name: tsbs_query_fixed_bucketing
-      - name: tsbs-query-genny
-      - name: tsbs-query-optimizations
-      - name: tpcc
-      - name: tpcc_majority
-      - name: tpch_1_normalized
-      - name: tpch_1_denormalized
-      - name: tpch_10_normalized
-      - name: tpch_10_denormalized
-      - name: genny_execution_ValidationFull
-
   - <<: *amazon2_x86_compile_variant_dependency
     name: perf-standalone-classic-query-engine.intel.aws.2023-11
     display_name: Classic Query Engine Standalone Intel AWS 2023-11
@@ -134,7 +61,7 @@ buildvariants:
       infrastructure_provisioning: single-intel.2023-11
       workload_setup: 2022-11
       platform: linux
-      project_dir: *perf_project_dir
+      project_dir: &perf_project_dir dsi
       authentication: enabled
       storageEngine: wiredTiger
       compile_variant: amazon2-x86-compile
@@ -186,7 +113,7 @@ buildvariants:
   - <<: *amazon2_x86_compile_variant_dependency
     name: perf-1-node-replSet-classic-query-engine.intel.aws.2023-11
     display_name: Classic Query Engine Intel 1-Node ReplSet Intel AWS 2023-11
-    cron: *linux-1-node-repl-cron
+    cron: &linux-1-node-repl-cron "0 0 * * 4" # 00:00 on Thursday
     modules: *perf_modules
     expansions:
       mongodb_setup_release: 2022-11
@@ -259,71 +186,6 @@ buildvariants:
       - name: column_store_tpch_10_denormalized_unindexed
       - name: ssb_column_store_comparison
 
-  - <<: *al2023_al2_arm64_compile_variant_dependency
-    name: atlas-like-replica.2023-09
-    display_name: M60-like-replica.2023-09 3-Node ReplSet
-    cron: &atlas-like-repl-cron "0 0 * * 0,4" # 00:00 on Sunday,Thursday
-    modules: *perf_modules
-    expansions:
-      mongodb_setup: atlas-like-replica.2023-09
-      mongodb_setup_release: 2022-11
-      infrastructure_provisioning: M60-like-replica.2023-09
-      infrastructure_provisioning_release: 2023-09
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: al2023-arm64-compile
-      client_compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-M60-like"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: ycsb.2023-09
-      - name: ycsb_single_thread
-      - name: ycsb_60GB.2023-09
-      - name: tpcc
-      - name: tpcc_majority
-      - name: linkbench
-      - name: linkbench2
-      # - name: genny_query_TenMDocCollection_IntId
-      # - name: genny_query_TenMDocCollection_ObjectId
-      # - name: genny_query_TenMDocCollection_SubDocId
-      # - name: genny_query_TenMDocCollection_IntId_Agg
-      # - name: genny_query_TenMDocCollection_IntId_IdentityView
-      # - name: genny_query_TenMDocCollection_IntId_IdentityView_Agg
-
-  - <<: *amazon2_x86_openssl111_compile_variant_dependency
-    name: atlas-like-replica-intel-openSSL-111.2023-09
-    display_name: M60-like-replica.2023-09 Intel OpenSSL 1.1.1 3-Node ReplSet
-    cron: *atlas-like-repl-cron
-    modules: *perf_modules
-    expansions:
-      mongodb_setup: atlas-like-replica-openssl11.2023-09
-      mongodb_setup_release: 2022-11
-      infrastructure_provisioning: M60-like-replica-intel.2023-09
-      infrastructure_provisioning_release: 2023-09
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-x86-openssl111-compile
-    run_on:
-      - "rhel70-perf-M60-like"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: ycsb.2023-09
-      - name: ycsb_single_thread
-      - name: ycsb_60GB.2023-09
-      - name: tpcc
-      - name: tpcc_majority
-      - name: linkbench
-      - name: linkbench2
-
   - <<: *amazon_linux2_arm64_compile_variant_dependency
     name: perf-atlas-M30-real.arm.aws.2023-11
     display_name: M30-Atlas ReplSet ARM AWS 2023-11
@@ -373,52 +235,6 @@ buildvariants:
       - "rhel70-perf-atlas-large"
     tasks:
       - name: locust_bulk_insert
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-standalone-all-feature-flags.arm.aws.2023-11
-    display_name: all feature flags Standalone ARM AWS 2023-11
-    cron: &linux-standalone-cron "0 0 * * 2,4,6" # Tuesday, Thursday and Saturday at 00:00
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: standalone-all-feature-flags
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: single
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-single"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: ycsb.2023-09
-      - name: ycsb_60GB.2023-09
-      - name: ycsb_60GB.long.2023-09
-      - name: crud_workloads_majority
-      - name: bestbuy_agg
-      - name: bestbuy_agg_merge_different_db
-      - name: bestbuy_agg_merge_same_db
-      - name: bestbuy_agg_merge_wordcount
-      - name: bestbuy_4_analytics
-      - name: bestbuy_4_analytics_columnstore
-      - name: bestbuy_4_inserts
-      - name: bestbuy_query
-      - name: cursor_manager
-      - name: map_reduce_workloads
-      - name: tpcc
-      - name: tpcc_majority
-      - name: tpch_1_normalized
-      - name: tpch_1_denormalized
-      - name: tpch_10_normalized
-      - name: tpch_10_denormalized
-      - name: column_store_index_charts_events_1G
-      - name: column_store_tpch_10_denormalized
-      - name: column_store_tpch_10_denormalized_unindexed
-      - name: ssb_column_store_comparison
 
   - <<: *amazon_linux2_x86_streams_compile_variant_dependency
     name: perf-streams-single.intel.aws.2023-10
@@ -691,30 +507,6 @@ buildvariants:
     tasks: *classic_engine_1nodereplset_tasks
 
   - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-1-node-replSet-all-feature-flags.arm.aws.2023-11
-    display_name: all feature flags 1-Node ReplSet ARM AWS 2023-11
-    cron: *linux-1-node-repl-cron
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: single-replica-all-feature-flags
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: single
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-single"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: linkbench
-      - name: linkbench2
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
     name: perf-1-node-replSet-test-commands.arm.aws.2023-11
     display_name: 1-Node ReplSet With Test Commands ARM AWS 2023-11
     cron: *linux-1-node-repl-cron
@@ -736,91 +528,6 @@ buildvariants:
       - "rhel70-perf-single"
     tasks: &1node-test-commands-tasks
       - name: startup
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-standalone-audit.arm.aws.2023-11
-    display_name: Audit Standalone ARM AWS 2023-11
-    cron: *linux-1-node-repl-cron
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: standalone-audit
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: single
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-single"
-    tasks: &audit-tasks
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: ycsb.2023-09
-      - name: crud_workloads_majority
-      - name: smoke_test
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-1-node-replSet-audit-log-encryption-no-compression.arm.aws.2023-11
-    display_name: Audit w/ At-Rest Log Encryption (No compression) Single-node Replica SetARM AWS 2023-11
-    cron: *linux-1-node-repl-cron
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: single-replica-audit-log-encryption-no-compression
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: single
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-single"
-    tasks: *audit-tasks
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-1-node-replSet-audit.arm.aws.2023-11
-    display_name: Audit Single-node Replica Set ARM AWS 2023-11
-    cron: *linux-1-node-repl-cron
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: single-replica-audit
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: single
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-single"
-    tasks: *audit-tasks
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-1-node-replSet-audit-log-encryption-compression.arm.aws.2023-11
-    display_name: Audit w/ At-Rest Log Encryption (With compression) Single-node Replica Set ARM AWS 2023-11
-    cron: *linux-1-node-repl-cron
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: single-replica-audit-log-encryption-compression
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: single
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-single"
-    tasks: *audit-tasks
 
   - <<: *amazon_linux2_arm64_mongocrypt_compile_variant_dependency
     name: perf-1-node-replSet-fle.arm.aws.2023-11
@@ -847,58 +554,6 @@ buildvariants:
       - *schedule_variant_auto_tasks_task
       - name: ycsb.2023-09
       - name: linkbench
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-1-node-replSet-ese-cbc.arm.aws.2023-11
-    display_name: ESE CBC 1-Node ReplSet ARM AWS 2023-11
-    cron: *linux-1-node-repl-cron
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: single-replica-ese-cbc
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: single
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-single"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: ycsb.2023-09
-      - name: smoke_test
-      - name: ycsb_60GB.2023-09
-      - name: ycsb_60GB.long.2023-09
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-1-node-replSet-ese-gcm.arm.aws.2023-11
-    display_name: ESE GCM 1-Node ReplSet ARM AWS 2023-11
-    cron: "0 0 1 * *" # 00:00 on the first of each month
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: single-replica-ese-gcm
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: single
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-single"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: ycsb.2023-09
-      - name: smoke_test
-      - name: ycsb_60GB.2023-09
-      - name: ycsb_60GB.long.2023-09
 
   - <<: *amazon_linux2_arm64_compile_variant_dependency
     name: perf-1-node-15gbwtcache.arm.aws.2023-11
@@ -977,82 +632,16 @@ buildvariants:
       - name: ycsb.2023-09
       - name: ycsb_w1.2023-09
 
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-shard-lite-audit.arm.aws.2023-11
-    display_name: Shard Lite Cluster Audit ARM AWS 2023-11
-    cron: *cron_sunday_thursday
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: shard-lite-audit
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: shard-lite-audit
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-shard-lite"
-    tasks:
-      - name: ycsb.2023-09
-
-  - &shard-lite-baseline
-    <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-shard-lite.arm.aws.2023-11
-    display_name: Shard Lite Cluster ARM AWS 2023-11
-    cron: *cron_sunday_thursday
-    modules: *perf_modules
-    expansions: &shard-lite-baseline-expansions
-      mongodb_setup_release: 2022-11
-      mongodb_setup: shard-lite
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: shard-lite
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-shard-lite"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: bestbuy_agg
-      - name: bestbuy_agg_merge_different_db
-      - name: bestbuy_agg_merge_same_db
-      - name: bestbuy_agg_merge_target_hashed
-      - name: bestbuy_agg_merge_wordcount
-      - name: bestbuy_query
-      - name: change_streams_latency
-      - name: change_streams_preimage_latency
-      - name: change_streams_preimage_throughput
-      - name: change_streams_listen_throughput
-      - name: ycsb.2023-09
-      - name: linkbench
-      - name: mongos_workloads
-      - name: mongos_large_catalog_workloads
-      - name: move_chunk_large_chunk_map_workloads
-      - name: move_chunk_workloads
-      - name: move_chunk_waiting_workloads
-      - name: smoke_test
-      - name: tsbs_query_sharded
-      - name: tsbs_query_finance_sharded
-      - name: tsbs_query_sharded_balancer
-      - name: tsbs_query_finance_sharded_balancer
-
   - <<: *amazon2_x86_compile_variant_dependency
-    name: perf-shard-lite-intel.intel.aws.2023-11
-    display_name: Shard Lite Cluster Intel AWS 2023-11
+    name: perf-3-shard.intel.aws.2023-11
+    display_name: 3-Shard Cluster Intel AWS 2023-11
     cron: *cron_sunday_thursday
     modules: *perf_modules
     expansions:
       mongodb_setup_release: 2022-11
-      mongodb_setup: shard-lite
+      mongodb_setup: shard
       infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: shard-lite-intel.2023-11
+      infrastructure_provisioning: shard-intel
       workload_setup: 2022-11
       platform: linux
       project_dir: *perf_project_dir
@@ -1060,7 +649,7 @@ buildvariants:
       storageEngine: wiredTiger
       compile_variant: amazon2-x86-compile
     run_on:
-      - "rhel70-perf-shard-lite"
+      - "rhel70-perf-shard"
     tasks:
       - *schedule_patch_auto_tasks_task
       - *schedule_variant_auto_tasks_task
@@ -1068,42 +657,17 @@ buildvariants:
       - name: mongos_workloads
       - name: move_chunk_workloads
       - name: move_chunk_waiting_workloads
-      - name: smoke_test
 
   - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-shard-lite-read-concern-available.arm.aws.2023-11
-    display_name: Shard Lite ReadConcern Available ARM AWS 2023-11
+    name: perf-shard-all-feature-flags.arm.aws.2023-11
+    display_name: all feature flags 3-Shard Cluster ARM AWS 2023-11
     cron: "0 0 * * 4" # 00:00 on Thursday
     modules: *perf_modules
     expansions:
       mongodb_setup_release: 2022-11
-      mongodb_setup: shard-lite-read-concern-available
+      mongodb_setup: shard-all-feature-flags
       infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: shard-lite
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-shard-lite"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: ycsb.2023-09
-      - name: linkbench
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-shard-lite-all-feature-flags.arm.aws.2023-11
-    display_name: all feature flags Shard Lite ARM AWS 2023-11
-    cron: "0 0 * * 4" # 00:00 on Thursday
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: shard-lite-all-feature-flags
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: shard-lite
+      infrastructure_provisioning: shard
       workload_setup: 2022-11
       platform: linux
       project_dir: *perf_project_dir
@@ -1447,29 +1011,6 @@ buildvariants:
   #     - name: initialsync-logkeeper-snapshot-update
 
   - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-replSet-audit.arm.aws.2023-11
-    display_name: Audit 3-Node ReplSet ARM AWS 2023-11
-    cron: "0 0 * * 4" # 00:00 on Thursday
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: replica-audit
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: replica
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-replset"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-      - name: ycsb.2023-09
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
     name: perf-replSet-auth-delay.arm.aws.2023-11
     display_name: Auth Delay 3-Node ReplSet ARM AWS 2023-11
     cron: "0 0 * * 4" # 00:00 on Thursday
@@ -1477,28 +1018,6 @@ buildvariants:
     expansions:
       mongodb_setup_release: 2022-11
       mongodb_setup: replica-auth-cluster-delay
-      infrastructure_provisioning_release: 2023-09
-      infrastructure_provisioning: replica
-      workload_setup: 2022-11
-      platform: linux
-      project_dir: *perf_project_dir
-      authentication: enabled
-      storageEngine: wiredTiger
-      compile_variant: amazon2-arm64-compile
-    run_on:
-      - "rhel70-perf-replset"
-    tasks:
-      - *schedule_patch_auto_tasks_task
-      - *schedule_variant_auto_tasks_task
-
-  - <<: *amazon_linux2_arm64_compile_variant_dependency
-    name: perf-3-node-replSet-250mbwtcache.arm.aws.2023-11
-    display_name: 250 MB WiredTiger Cache 3-Node ReplSet ARM AWS 2023-11
-    cron: &linux-3-node-cron "0 0 * * 1,2,3,4,5,6" # Everyday except Sunday at 00:00
-    modules: *perf_modules
-    expansions:
-      mongodb_setup_release: 2022-11
-      mongodb_setup: replica-250mbwtcache.2023-05
       infrastructure_provisioning_release: 2023-09
       infrastructure_provisioning: replica
       workload_setup: 2022-11
@@ -2079,7 +1598,7 @@ buildvariants:
   - <<: *amazon_linux2_arm64_compile_variant_dependency
     name: perf-3-node-replSet-query-settings.arm.aws.2023-11
     display_name: QuerySettings 3-Node ReplSet ARM AWS 2023-11
-    cron: *linux-3-node-cron
+    cron: &linux-3-node-cron "0 0 * * 1,2,3,4,5,6" # Everyday except Sunday at 00:00
     modules: *perf_modules
     expansions:
       mongodb_setup_release: 2022-11
@@ -2227,8 +1746,43 @@ buildvariants:
       compile_variant: amazon2-arm64-compile
     run_on:
       - "rhel70-perf-single"
-    # Not using 1nodetasks because some need to be temporarily disabled.
-    tasks: *1nodetasks
+    tasks:
+      - *schedule_patch_auto_tasks_task
+      - *schedule_variant_auto_tasks_task
+      - name: ycsb.2023-09
+      - name: ycsb_single_thread
+      - name: ycsb_60GB.2023-09
+      - name: ycsb_60GB.long.2023-09
+      - name: crud_workloads_majority
+      - name: misc_workloads
+      - name: map_reduce_workloads
+      - name: smoke_test
+      - name: canaries_only
+      - name: non_sharded_workloads
+      - name: bestbuy_agg
+      - name: bestbuy_agg_merge_different_db
+      - name: bestbuy_agg_merge_same_db
+      - name: bestbuy_agg_merge_wordcount
+      - name: bestbuy_query
+      - name: change_streams_latency
+      - name: change_streams_listen_throughput
+      - name: snapshot_reads
+      - name: linkbench
+      - name: linkbench2
+      - name: tsbs_load
+      - name: tsbs_query
+      - name: tsbs_query_finance
+      - name: tsbs_query_manual_bucketing
+      - name: tsbs_query_fixed_bucketing
+      - name: tsbs-query-genny
+      - name: tsbs-query-optimizations
+      - name: tpcc
+      - name: tpcc_majority
+      - name: tpch_1_normalized
+      - name: tpch_1_denormalized
+      - name: tpch_10_normalized
+      - name: tpch_10_denormalized
+      - name: genny_execution_ValidationFull
 
   # Variant which runs a single shard cluster with a config
   # shard and mongos processes processes co-located on the

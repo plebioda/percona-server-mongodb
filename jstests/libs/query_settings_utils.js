@@ -77,6 +77,14 @@ export class QuerySettingsUtils {
         return {settings, representativeQuery};
     }
 
+    makeSetQuerySettingsCommand({settings, representativeQuery}) {
+        return {setQuerySettings: representativeQuery, settings};
+    }
+
+    makeRemoveQuerySettingsCommand(representativeQuery) {
+        return {removeQuerySettings: representativeQuery};
+    }
+
     /**
      * Return query settings for the current tenant without query hashes.
      */
@@ -112,7 +120,7 @@ export class QuerySettingsUtils {
      * Return the query settings section of the server status.
      */
     getQuerySettingsServerStatus() {
-        return this.db.runCommand({serverStatus: 1}).querySettings;
+        return assert.commandWorked(this.db.runCommand({serverStatus: 1})).querySettings;
     }
 
     /**

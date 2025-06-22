@@ -105,12 +105,16 @@ void ConvertToCappedCoordinator::_checkPreconditions(OperationContext* opCtx) {
         Grid::get(opCtx)->catalogCache()->getCollectionRoutingInfoWithPlacementRefresh(opCtx,
                                                                                        nss()));
 
-    uassert(ErrorCodes::IllegalOperation,
+    uassert(ErrorCodes::NamespaceCannotBeSharded,
             "Can't convert a sharded collection to a capped collection",
             !chunkManager.isSharded());
 
     if (chunkManager.hasRoutingTable()) {
         invariant(chunkManager.isUnsplittable());
+
+        uassert(ErrorCodes::IllegalOperation,
+                "Can't convert a timeseries collection to a capped collection",
+                !chunkManager.getTimeseriesFields());
 
         const auto& selfShardId = ShardingState::get(opCtx)->shardId();
         std::set<ShardId> shards;

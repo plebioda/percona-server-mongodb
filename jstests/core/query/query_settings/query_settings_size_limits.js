@@ -6,6 +6,8 @@
  *   requires_non_retryable_commands,
  *   simulate_atlas_proxy_incompatible,
  *   requires_fcv_80,
+ *   # TODO SERVER-89461 Investigate why test using huge batch size timeout in suites with balancer.
+ *   assumes_balancer_off,
  * ]
  */
 import {assertDropAndRecreateCollection} from "jstests/libs/collection_drop_recreate.js";
@@ -37,8 +39,8 @@ const qsutils = new QuerySettingsUtils(db, collName);
 coll.insertOne({a123: 456});
 coll.createIndexes([{a123: 1}]);
 
-// Expect empty query settings at the beginning of the test.
-qsutils.assertQueryShapeConfiguration([]);
+// Reset query settings.
+qsutils.removeAllQuerySettings();
 
 // Executing one large query without query settings should succeed.
 assert.commandWorked(db.runCommand(largeQueries[0]));

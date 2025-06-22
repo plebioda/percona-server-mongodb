@@ -219,20 +219,35 @@ std::string actionTypeToString(TransactionRouter::TransactionActions action) {
 }
 
 /**
- * Sets the given logical time as the atClusterTime for the transaction to be the greater of
- * the given time and the user's afterClusterTime, if one was provided.
+ * - If the 'readConcernArgs' specifies an 'atClusterTime', sets the 'txnAtClusterTime' to
+ *   that 'atClusterTime'.
+ * - If the 'readConcernArgs' specifies an 'afterClusterTime', sets the 'txnAtClusterTime' to
+ *   the greater of that 'afterClusterTime' and the 'candidateTime'.
+ * - If neither is specified, sets the 'txnAtClusterTime' to the 'candidateTime'.
  */
 void setAtClusterTime(const LogicalSessionId& lsid,
                       const TxnNumberAndRetryCounter& txnNumberAndRetryCounter,
                       StmtId latestStmtId,
-                      TransactionRouter::AtClusterTime* atClusterTime,
-                      const boost::optional<LogicalTime>& afterClusterTime,
+                      TransactionRouter::AtClusterTime* txnAtClusterTime,
+                      const repl::ReadConcernArgs& readConcernArgs,
                       const LogicalTime& candidateTime) {
-    // If the user passed afterClusterTime, the chosen time must be greater than or equal to it.
-    if (afterClusterTime && *afterClusterTime > candidateTime) {
-        atClusterTime->setTime(*afterClusterTime, latestStmtId);
-        return;
-    }
+    auto requestedAtClusterTime = readConcernArgs.getArgsAtClusterTime();
+    auto requestedAfterClusterTime = readConcernArgs.getArgsAfterClusterTime();
+    tassert(7976601,
+            "Cannot specify both 'atClusterTime' and 'afterClusterTime'",
+            !requestedAtClusterTime || !requestedAfterClusterTime);
+
+    auto atClusterTime = [&] {
+        if (requestedAtClusterTime) {
+            return *requestedAtClusterTime;
+        }
+        // If the user passed afterClusterTime, the chosen time must be greater than or equal to it.
+        if (requestedAfterClusterTime && *requestedAfterClusterTime > candidateTime) {
+
+            return *requestedAfterClusterTime;
+        }
+        return candidateTime;
+    }();
 
     LOGV2_DEBUG(22888,
                 2,
@@ -240,10 +255,9 @@ void setAtClusterTime(const LogicalSessionId& lsid,
                 "sessionId"_attr = lsid,
                 "txnNumber"_attr = txnNumberAndRetryCounter.getTxnNumber(),
                 "txnRetryCounter"_attr = txnNumberAndRetryCounter.getTxnRetryCounter(),
-                "globalSnapshotTimestamp"_attr = candidateTime,
+                "globalSnapshotTimestamp"_attr = atClusterTime,
                 "latestStmtId"_attr = latestStmtId);
-
-    atClusterTime->setTime(candidateTime, latestStmtId);
+    txnAtClusterTime->setTime(atClusterTime, latestStmtId);
 }
 
 struct StrippedFields {
@@ -1163,7 +1177,7 @@ void TransactionRouter::Router::setAtClusterTimeForStartOrContinue(OperationCont
                              o(lk).txnNumberAndRetryCounter,
                              p().latestStmtId,
                              o(lk).atClusterTimeForSnapshotReadConcern.get_ptr(),
-                             repl::ReadConcernArgs::get(opCtx).getArgsAfterClusterTime(),
+                             repl::ReadConcernArgs::get(opCtx),
                              candidateTime.value());
         }
     } else if (o().placementConflictTimeForNonSnapshotReadConcern) {
@@ -1177,7 +1191,7 @@ void TransactionRouter::Router::setAtClusterTimeForStartOrContinue(OperationCont
                              o(lk).txnNumberAndRetryCounter,
                              p().latestStmtId,
                              o(lk).placementConflictTimeForNonSnapshotReadConcern.get_ptr(),
-                             repl::ReadConcernArgs::get(opCtx).getArgsAfterClusterTime(),
+                             repl::ReadConcernArgs::get(opCtx),
                              candidateTime.value());
         }
     }
@@ -1193,7 +1207,7 @@ void TransactionRouter::Router::setDefaultAtClusterTime(OperationContext* opCtx)
                              o(lk).txnNumberAndRetryCounter,
                              p().latestStmtId,
                              o(lk).atClusterTimeForSnapshotReadConcern.get_ptr(),
-                             repl::ReadConcernArgs::get(opCtx).getArgsAfterClusterTime(),
+                             repl::ReadConcernArgs::get(opCtx),
                              defaultTime.clusterTime());
         }
     } else if (o().placementConflictTimeForNonSnapshotReadConcern) {
@@ -1204,7 +1218,7 @@ void TransactionRouter::Router::setDefaultAtClusterTime(OperationContext* opCtx)
                              o(lk).txnNumberAndRetryCounter,
                              p().latestStmtId,
                              o(lk).placementConflictTimeForNonSnapshotReadConcern.get_ptr(),
-                             repl::ReadConcernArgs::get(opCtx).getArgsAfterClusterTime(),
+                             repl::ReadConcernArgs::get(opCtx),
                              defaultTime.clusterTime());
         }
     }
@@ -1882,27 +1896,26 @@ BSONObj TransactionRouter::Router::_commitWithRecoveryToken(OperationContext* op
             recoveryToken.getRecoveryShardId());
     const auto& recoveryShardId = *recoveryToken.getRecoveryShardId();
 
-    const auto shardRegistry = Grid::get(opCtx)->shardRegistry();
-
     auto coordinateCommitCmd = [&] {
         CoordinateCommitTransaction coordinateCommitCmd;
         coordinateCommitCmd.setDbName(DatabaseName::kAdmin);
         coordinateCommitCmd.setParticipants({});
-
-        auto rawCoordinateCommit = coordinateCommitCmd.toBSON(
+        return coordinateCommitCmd.toBSON(
             BSON(WriteConcernOptions::kWriteConcernField << opCtx->getWriteConcern().toBSON()));
-
-        return attachTxnFieldsIfNeeded(opCtx, recoveryShardId, rawCoordinateCommit);
     }();
 
-    auto recoveryShard = uassertStatusOK(shardRegistry->getShard(opCtx, recoveryShardId));
-    return uassertStatusOK(recoveryShard->runCommandWithFixedRetryAttempts(
-                               opCtx,
-                               ReadPreferenceSetting{ReadPreference::PrimaryOnly},
-                               DatabaseName::kAdmin,
-                               coordinateCommitCmd,
-                               Shard::RetryPolicy::kIdempotent))
-        .response;
+    MultiStatementTransactionRequestsSender ars(
+        opCtx,
+        Grid::get(opCtx)->getExecutorPool()->getFixedExecutor(),
+        DatabaseName::kAdmin,
+        {{recoveryShardId, coordinateCommitCmd}},
+        ReadPreferenceSetting{ReadPreference::PrimaryOnly},
+        Shard::RetryPolicy::kIdempotent);
+
+    const auto response = ars.next();
+    invariant(ars.done());
+    uassertStatusOK(response.swResponse);
+    return response.swResponse.getValue().data;
 }
 
 void TransactionRouter::Router::_logSlowTransaction(OperationContext* opCtx,

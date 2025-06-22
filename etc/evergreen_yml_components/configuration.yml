@@ -53,6 +53,10 @@ modules:
     repo: git@github.com:wiredtiger/wiredtiger.git
     prefix: src/third_party
     branch: develop
+  - name: mongot
+    repo: git@github.com:10gen/mongot.git
+    prefix: ${workdir}/src
+    branch: master
 
 # Pre task steps
 pre:
@@ -75,6 +79,7 @@ post:
   - func: "save ec2 task artifacts"
   - func: "attach wiki page"
   - func: "upload docker compose"
+  - func: "attach docker logs"
   - func: "upload jstestfuzz minimized output"
   - func: "upload clang tidy results"
   - func: "kill processes"

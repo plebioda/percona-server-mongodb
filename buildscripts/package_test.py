@@ -110,7 +110,11 @@ OS_DOCKER_LOOKUP = {
                frozenset(["python3", "wget", "pkgconfig", "systemd", "procps", "file"]), "python3"),
     'rhel83': ('almalinux:8', "yum",
                frozenset(["python3", "wget", "pkgconfig", "systemd", "procps", "file"]), "python3"),
+    'rhel88': ('almalinux:8', "yum",
+               frozenset(["python3", "wget", "pkgconfig", "systemd", "procps", "file"]), "python3"),
     'rhel90': ('almalinux:9', "yum",
+               frozenset(["python3", "wget", "pkgconfig", "systemd", "procps", "file"]), "python3"),
+    'rhel93': ('almalinux:9', "yum",
                frozenset(["python3", "wget", "pkgconfig", "systemd", "procps", "file"]), "python3"),
     'sunos5': None,
     'suse11': None,
@@ -140,6 +144,11 @@ OS_DOCKER_LOOKUP = {
                        "python3", "python-is-python3", "wget", "pkg-config", "systemd", "procps",
                        "file"
                    ]), "python3"),
+    'ubuntu2404': ('ubuntu:24.04', "apt",
+                   frozenset([
+                       "python3", "python-is-python3", "wget", "pkg-config", "systemd", "procps",
+                       "file"
+                   ]), "python3"),
     'windows': None,
     'windows_i686': None,
     'windows_x86_64': None,
@@ -150,7 +159,7 @@ OS_DOCKER_LOOKUP = {
 
 # These versions are marked "current" but in fact are EOL
 VERSIONS_TO_SKIP: Set[str] = set(
-    ['3.0.15', '3.2.22', '3.4.24', '3.6.23', '4.0.28', '4.2.24', '6.3.2'])
+    ['3.0.15', '3.2.22', '3.4.24', '3.6.23', '4.0.28', '4.2.24', '4.2.25', '4.4.29', '6.3.2'])
 DISABLED_TESTS: Set[Tuple[str, str]] = set()
 
 

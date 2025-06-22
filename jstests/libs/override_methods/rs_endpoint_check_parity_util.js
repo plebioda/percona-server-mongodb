@@ -1,3 +1,36 @@
+import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
+
+function isConfigShardReplicaSet(adminDB) {
+    assert(!FixtureHelpers.isMongos(adminDB));
+
+    const configShardDoc = adminDB.getSiblingDB("config").shards.findOne({_id: "config"});
+    if (configShardDoc == null) {
+        return false;
+    }
+    const shardIdentityDoc = adminDB.system.version.findOne({_id: "shardIdentity"});
+    if (shardIdentityDoc == null) {
+        return false;
+    }
+    return shardIdentityDoc.shardName == "config";
+}
+
+export function isReplicaSet(conn) {
+    const adminDB = conn.getDB("admin");
+    return FixtureHelpers.isReplSet(adminDB) && !isConfigShardReplicaSet(adminDB);
+}
+
+export function isShardedClusterReplicaSetEndpoint(conn) {
+    const adminDB = conn.getDB("admin");
+    return FeatureFlagUtil.isEnabled(adminDB, "ReplicaSetEndpoint") &&
+        FixtureHelpers.isReplSet(adminDB) && isConfigShardReplicaSet(adminDB);
+}
+
+export function isShardedClusterDedicatedRouter(conn) {
+    const adminDB = conn.getDB("admin");
+    return FixtureHelpers.isMongos(adminDB);
+}
+
 const readCommandNames = new Set([
     "aggregate",
     "collStats",
@@ -36,9 +69,8 @@ function checkCanRun(dbName, commandName, commandObj) {
         throw Error("Cannot run getClusterParameter command since it is currently not supported " +
                     "on embedded routers");
     }
-    if (commandName === 'cloneCollectionAsCapped' || commandName === 'convertToCapped') {
-        // TODO (SERVER-86360): Converting an unsharded collection to capped leads to inconsistent
-        // metadata when featureFlagTrackUnshardedCollectionsUponCreation is enabled.
+    if (commandName === 'cloneCollectionAsCapped') {
+        // TODO (SERVER-80416): Support cloneCollectionAsCapped in sharded clusters.
         throw Error("Cannot run " + commandName + " command since currently running it would lead" +
                     "to inconsistent metadata and cause the CheckMetadataConsistencyInBackground " +
                     "hook to fail");

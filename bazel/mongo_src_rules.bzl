@@ -972,18 +972,49 @@ DEDUPE_SYMBOL_LINKFLAGS = select({
     "//conditions:default": [],
 })
 
+MTUNE_MARCH_COPTS = select({
+    # If we are enabling vectorization in sandybridge mode, we'd
+    # rather not hit the 256 wide vector instructions because the
+    # heavy versions can cause clock speed reductions.
+    "//bazel/config:linux_x86_64": [
+        "-march=sandybridge",
+        "-mtune=generic",
+        "-mprefer-vector-width=128",
+    ],
+    "//bazel/config:linux_aarch64": [
+        "-march=armv8.2-a",
+        "-mtune=generic",
+    ],
+    "//bazel/config:linux_ppc64le": [
+        "-mcpu=power8",
+        "-mtune=power8",
+        "-mcmodel=medium",
+    ],
+    "//bazel/config:linux_s390x": [
+        "-march=z196",
+        "-mtune=zEC12",
+    ],
+    "//conditions:default": [],
+})
+
+MONGO_GLOBAL_INCLUDE_DIRECTORIES = [
+    "-Isrc",
+    "-Isrc/third_party/boost",
+    "-Isrc/third_party/immer/dist",
+]
+
 MONGO_GLOBAL_DEFINES = DEBUG_DEFINES + LIBCXX_DEFINES + ADDRESS_SANITIZER_DEFINES + \
                        THREAD_SANITIZER_DEFINES + UNDEFINED_SANITIZER_DEFINES + GLIBCXX_DEBUG_DEFINES + \
                        WINDOWS_DEFINES + TCMALLOC_DEFINES + LINUX_DEFINES + GCC_OPT_DEFINES + BOOST_DEFINES + \
                        ABSEIL_DEFINES + PCRE2_DEFINES + SAFEINT_DEFINES
 
-MONGO_GLOBAL_COPTS = ["-Isrc", "-Isrc/third_party/boost"] + WINDOWS_COPTS + LIBCXX_COPTS + ADDRESS_SANITIZER_COPTS + \
+MONGO_GLOBAL_COPTS = MONGO_GLOBAL_INCLUDE_DIRECTORIES + WINDOWS_COPTS + LIBCXX_COPTS + ADDRESS_SANITIZER_COPTS + \
                      MEMORY_SANITIZER_COPTS + FUZZER_SANITIZER_COPTS + UNDEFINED_SANITIZER_COPTS + \
                      THREAD_SANITIZER_COPTS + ANY_SANITIZER_AVAILABLE_COPTS + LINUX_OPT_COPTS + \
                      GCC_OR_CLANG_WARNINGS_COPTS + GCC_OR_CLANG_GENERAL_COPTS + \
                      FLOATING_POINT_COPTS + MACOS_WARNINGS_COPTS + CLANG_WARNINGS_COPTS + \
                      CLANG_FNO_LIMIT_DEBUG_INFO + COMPRESS_DEBUG_COPTS + DEBUG_TYPES_SECTION_FLAGS + \
-                     IMPLICIT_FALLTHROUGH_COPTS
+                     IMPLICIT_FALLTHROUGH_COPTS + MTUNE_MARCH_COPTS
 
 MONGO_GLOBAL_LINKFLAGS = MEMORY_SANITIZER_LINKFLAGS + ADDRESS_SANITIZER_LINKFLAGS + FUZZER_SANITIZER_LINKFLAGS + \
                          UNDEFINED_SANITIZER_LINKFLAGS + THREAD_SANITIZER_LINKFLAGS + \
@@ -993,7 +1024,7 @@ MONGO_GLOBAL_LINKFLAGS = MEMORY_SANITIZER_LINKFLAGS + ADDRESS_SANITIZER_LINKFLAG
                          GCC_OR_CLANG_LINKFLAGS + COMPRESS_DEBUG_LINKFLAGS + DEDUPE_SYMBOL_LINKFLAGS + \
                          DEBUG_TYPES_SECTION_FLAGS
 
-MONGO_GLOBAL_ACCESSIBLE_HEADERS = ["//src/third_party/boost:headers"]
+MONGO_GLOBAL_ACCESSIBLE_HEADERS = ["//src/third_party/boost:headers", "//src/third_party/immer:headers"]
 
 MONGO_GLOBAL_FEATURES = GDWARF_FEATURES + DWARF_VERSION_FEATURES
 

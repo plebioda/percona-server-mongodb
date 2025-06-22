@@ -9,6 +9,7 @@
 executor:
   archive:
     hooks:
+    - LagOplogApplicationInBackground
     - PeriodicKillSecondaries
     tests: true
   config:
@@ -18,6 +19,7 @@ executor:
     class: ReplicaSetFixture
     mongod_options:
       set_parameters:
+        enableAutoCompaction: 1
         enableTestCommands: 1
         logComponentVerbosity:
           replication:
@@ -33,6 +35,9 @@ executor:
         electionTimeoutMillis: 5000
     voting_secondaries: false
   hooks:
+  - class: LagOplogApplicationInBackground
+    shell_options:
+      nodb: ''
   - class: PeriodicKillSecondaries
 matrix_suite: true
 selector:

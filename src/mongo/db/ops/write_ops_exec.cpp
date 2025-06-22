@@ -924,7 +924,7 @@ UpdateResult performUpdate(OperationContext* opCtx,
 
     if (docFound) {
         ResourceConsumption::DocumentUnitCounter docUnitsReturned;
-        docUnitsReturned.observeOne(docFound->objsize());
+        docUnitsReturned.observeOneDoc(docFound->objsize());
 
         auto& metricsCollector = ResourceConsumption::MetricsCollector::get(opCtx);
         metricsCollector.incrementDocUnitsReturned(curOp->getNS(), docUnitsReturned);
@@ -1030,7 +1030,7 @@ long long performDelete(OperationContext* opCtx,
 
     if (docFound) {
         ResourceConsumption::DocumentUnitCounter docUnitsReturned;
-        docUnitsReturned.observeOne(docFound->objsize());
+        docUnitsReturned.observeOneDoc(docFound->objsize());
 
         auto& metricsCollector = ResourceConsumption::MetricsCollector::get(opCtx);
         metricsCollector.incrementDocUnitsReturned(curOp->getNS(), docUnitsReturned);
@@ -1183,8 +1183,12 @@ WriteResult performInserts(OperationContext* opCtx,
     for (auto&& doc : wholeOp.getDocuments()) {
         const auto currentOpIndex = nextOpIndex++;
         const bool isLastDoc = (&doc == &wholeOp.getDocuments().back());
+        const bool preserveEmptyTimestamps = source == OperationSource::kFromMigrate;
         bool containsDotsAndDollarsField = false;
-        auto fixedDoc = fixDocumentForInsert(opCtx, doc, &containsDotsAndDollarsField);
+
+        auto fixedDoc =
+            fixDocumentForInsert(opCtx, doc, preserveEmptyTimestamps, &containsDotsAndDollarsField);
+
         const StmtId stmtId = getStmtIdForWriteOp(opCtx, wholeOp, currentOpIndex);
         const bool wasAlreadyExecuted = opCtx->isRetryableWrite() &&
             txnParticipant.checkStatementExecutedNoOplogEntryFetch(opCtx, stmtId);
@@ -1411,10 +1415,17 @@ static SingleWriteResult performSingleUpdateOp(OperationContext* opCtx,
 
     assertCanWrite_inlock(opCtx, ns);
 
-    if (updateRequest->getSort().isEmpty()) {
+    // No need to call writeConflictRetry() since it does not retry if in a transaction,
+    // but calling it can cause WCE to be double counted.
+    const auto inTransaction = opCtx->inMultiDocumentTransaction();
+    if (updateRequest->getSort().isEmpty() || inTransaction) {
         return performSingleUpdateOpNoRetry(
             opCtx, source, curOp, collection, parsedUpdate, containsDotsAndDollarsField);
     } else {
+        // Call writeConflictRetry() if we have a sort, since we express the sort with a limit of 1.
+        // In the case that the predicate of the currently matching document changes due to a
+        // concurrent modification, the query will be retried to see if there's another matching
+        // document.
         return writeConflictRetry(opCtx, "update", ns, [&]() -> SingleWriteResult {
             return performSingleUpdateOpNoRetry(
                 opCtx, source, curOp, collection, parsedUpdate, containsDotsAndDollarsField);
@@ -3317,6 +3328,8 @@ void explainUpdate(OperationContext* opCtx,
                               isTimeseriesViewRequest);
     uassertStatusOK(parsedUpdate.parseRequest());
 
+    CurOp::get(opCtx)->beginQueryPlanningTimer();
+
     auto exec = uassertStatusOK(
         getExecutorUpdate(&CurOp::get(opCtx)->debug(), collection, &parsedUpdate, verbosity));
     auto bodyBuilder = result->getBodyBuilder();
@@ -3355,6 +3368,8 @@ void explainDelete(OperationContext* opCtx,
     ParsedDelete parsedDelete(
         opCtx, &deleteRequest, collection.getCollectionPtr(), isTimeseriesViewRequest);
     uassertStatusOK(parsedDelete.parseRequest());
+
+    CurOp::get(opCtx)->beginQueryPlanningTimer();
 
     // Explain the plan tree.
     auto exec = uassertStatusOK(

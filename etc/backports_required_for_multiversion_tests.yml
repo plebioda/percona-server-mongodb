@@ -37,12 +37,26 @@ last-continuous:
       ticket: SERVER-84796
     - test_file: jstests/sharding/direct_connection_auth_transition.js
       ticket: SERVER-77073
-    - test_file: jstests/replsets/initial_sync_survives_restart.js
-      ticket: SERVER-88447
     - test_file: jstests/core/query/bittest.js
       ticket: SERVER-88173
     - test_file: jstests/core/query/query_settings/query_settings_index_application_aggregate.js
       ticket: SERVER-88629
+    - test_file: jstests/core/command_let_variables_expressions.js
+      ticket: SERVER-89268
+    - test_file: jstests/sharding/analyze_shard_key/sample_write_queries_sharded.js
+      ticket: SERVER-89268
+    - test_file: jstests/sharding/analyze_shard_key/sample_write_queries_unsharded.js
+      ticket: SERVER-89268
+    - test_file: jstests/sharding/balancer_should_return_random_migrations_failpoint.js
+      ticket: SERVER-89395
+    - test_file: jstests/core/query/explain/explain_skip.js
+      ticket: SERVER-88949
+    - test_file: jstests/core/timeseries/timeseries_geonear_lookup.js
+      ticket: SERVER-81454
+    - test_file: jstests/replsets/reconstruct_prepared_transactions_initial_sync.js
+      ticket: SERVER-89618
+    - test_file: jstests/replsets/initial_sync_survives_restart.js
+      ticket: SERVER-88447
   suites: null
 last-lts:
   all:
@@ -62,10 +76,24 @@ last-lts:
       ticket: SERVER-84796
     - test_file: jstests/sharding/direct_connection_auth_transition.js
       ticket: SERVER-77073
-    - test_file: jstests/replsets/initial_sync_survives_restart.js
-      ticket: SERVER-88447
     - test_file: jstests/core/query/bittest.js
       ticket: SERVER-88173
     - test_file: jstests/core/query/query_settings/query_settings_index_application_aggregate.js
       ticket: SERVER-88629
+    - test_file: jstests/core/command_let_variables_expressions.js
+      ticket: SERVER-89268
+    - test_file: jstests/sharding/analyze_shard_key/sample_write_queries_sharded.js
+      ticket: SERVER-89268
+    - test_file: jstests/sharding/analyze_shard_key/sample_write_queries_unsharded.js
+      ticket: SERVER-89268
+    - test_file: jstests/sharding/balancer_should_return_random_migrations_failpoint.js
+      ticket: SERVER-89395
+    - test_file: jstests/core/query/explain/explain_skip.js
+      ticket: SERVER-88949
+    - test_file: jstests/core/timeseries/timeseries_geonear_lookup.js
+      ticket: SERVER-81454
+    - test_file: jstests/replsets/reconstruct_prepared_transactions_initial_sync.js
+      ticket: SERVER-89618
+    - test_file: jstests/replsets/initial_sync_survives_restart.js
+      ticket: SERVER-88447
   suites: null

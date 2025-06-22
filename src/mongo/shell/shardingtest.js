@@ -522,6 +522,10 @@ var ShardingTest = function ShardingTest(params) {
         }
     };
 
+    ShardingTest.prototype.isReplicaSetEndpointActive = function() {
+        return numShards == 1 && this._rs[0].test.isReplicaSetEndpointActive();
+    };
+
     ShardingTest.prototype.stop = function(opts = {}) {
         this.checkMetadataConsistency();
         this.checkUUIDsConsistentAcrossCluster();
@@ -2119,6 +2123,9 @@ var ShardingTest = function ShardingTest(params) {
                 const configShardDoc = this.keyFile
                     ? authutil.asCluster(csrsPrimary, this.keyFile, getConfigShardDoc)
                     : getConfigShardDoc();
+
+                // TODO SERVER-89498: This check is flaky and should be fixed before re-enabling the
+                // autobootstrap procedure. See BF-31879 for more details.
                 return configShardDoc.host == this.configRS.getURL();
             });
         }

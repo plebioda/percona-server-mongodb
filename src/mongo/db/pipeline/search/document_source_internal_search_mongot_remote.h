@@ -37,6 +37,8 @@
 #include "mongo/db/pipeline/search/document_source_internal_search_mongot_remote_gen.h"
 #include "mongo/db/pipeline/search/search_helper.h"
 #include "mongo/db/pipeline/stage_constraints.h"
+#include "mongo/db/pipeline/visitors/docs_needed_bounds.h"
+#include "mongo/db/query/search/mongot_cursor.h"
 #include "mongo/executor/task_executor_cursor.h"
 #include "mongo/util/net/hostandport.h"
 #include "mongo/util/stacktrace.h"
@@ -205,9 +207,13 @@ public:
     void addVariableRefs(std::set<Variables::Id>* refs) const final {}
 
     auto isStoredSource() const {
-        return _searchQuery.hasField(kReturnStoredSourceArg)
-            ? _searchQuery[kReturnStoredSourceArg].Bool()
-            : false;
+        const auto storedSourceElem = _searchQuery[mongot_cursor::kReturnStoredSourceArg];
+        return !storedSourceElem.eoo() && storedSourceElem.Bool();
+    }
+
+    void setDocsNeededBounds(DocsNeededBounds minBounds, DocsNeededBounds maxBounds) {
+        _minDocsNeededBounds = minBounds;
+        _maxDocsNeededBounds = maxBounds;
     }
 
 protected:
@@ -315,6 +321,9 @@ private:
     boost::optional<long long> _mongotDocsRequested;
 
     bool _requiresSearchSequenceToken = false;
+
+    boost::optional<DocsNeededBounds> _minDocsNeededBounds;
+    boost::optional<DocsNeededBounds> _maxDocsNeededBounds;
 };
 
 namespace search_meta {

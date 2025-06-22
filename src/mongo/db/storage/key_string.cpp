@@ -930,7 +930,7 @@ void BuilderBase<BufferT>::_appendDoubleWithoutTypeBits(const double num,
             _appendPreshiftedIntegerPortion((integerPart << 1) | 1, isNegative, invert);
 
             // Append the bytes of the mantissa that include fractional bits.
-            const size_t fractionalBits = 53 - (64 - countLeadingZeros64(integerPart));
+            const size_t fractionalBits = 53 - (64 - countLeadingZerosNonZero64(integerPart));
             const size_t fractionalBytes = (fractionalBits + 7) / 8;
             dassert(fractionalBytes > 0);
             uint64_t mantissa;
@@ -943,7 +943,7 @@ void BuilderBase<BufferT>::_appendDoubleWithoutTypeBits(const double num,
                 reinterpret_cast<const char*>((&mantissa) + 1) - fractionalBytes;
             _appendBytes(firstUsedByte, fractionalBytes, isNegative ? !invert : invert);
         } else {
-            const size_t fractionalBytes = countLeadingZeros64(integerPart << 1) / 8;
+            const size_t fractionalBytes = countLeadingZerosNonZero64(integerPart << 1) / 8;
             const auto ctype = isNegative ? CType::kNumericNegative8ByteInt + fractionalBytes
                                           : CType::kNumericPositive8ByteInt - fractionalBytes;
             _append(static_cast<uint8_t>(ctype), invert);
@@ -1433,7 +1433,7 @@ void BuilderBase<BufferT>::_appendPreshiftedIntegerPortion(uint64_t value,
     dassert(value != 0ULL);
     dassert(value != 1ULL);
 
-    const size_t bytesNeeded = (64 - countLeadingZeros64(value) + 7) / 8;
+    const size_t bytesNeeded = (64 - countLeadingZerosNonZero64(value) + 7) / 8;
 
     // Append the low bytes of value in big endian order.
     value = endian::nativeToBig(value);
@@ -3048,10 +3048,7 @@ size_t Value::getApproximateSize() const {
     return size;
 }
 
-std::unique_ptr<Value> Value::makeValue(Version version,
-                                        StringData ks,
-                                        StringData rid,
-                                        StringData typeBits) {
+Value Value::makeValue(Version version, StringData ks, StringData rid, StringData typeBits) {
     const auto bufSize = ks.size() + rid.size() + (typeBits.size() > 0 ? typeBits.size() : 1);
     BufBuilder buf(bufSize);
     buf.appendBuf(ks.data(), ks.size());
@@ -3063,9 +3060,9 @@ std::unique_ptr<Value> Value::makeValue(Version version,
     }
 
     invariant(bufSize == static_cast<unsigned long>(buf.len()));
-    return std::make_unique<Value>(version,
-                                   static_cast<int32_t>(ks.size() + rid.size()),
-                                   SharedBufferFragment(buf.release(), bufSize));
+    return {version,
+            static_cast<int32_t>(ks.size() + rid.size()),
+            SharedBufferFragment(buf.release(), bufSize)};
 }
 
 template class BuilderBase<Builder>;

@@ -192,6 +192,7 @@ StripeNumber getStripeNumber(const BucketKey& key, size_t numberOfStripes) {
 }
 
 StatusWith<std::pair<BucketKey, Date_t>> extractBucketingParameters(
+    TrackingContext& trackingContext,
     const UUID& collectionUUID,
     const StringDataComparator* comparator,
     const TimeseriesOptions& options,
@@ -218,7 +219,8 @@ StatusWith<std::pair<BucketKey, Date_t>> extractBucketingParameters(
     // Buckets are spread across independently-lockable stripes to improve parallelism. We map a
     // bucket to a stripe by hashing the BucketKey.
     auto key =
-        BucketKey{collectionUUID, BucketMetadata{metadata, comparator, options.getMetaField()}};
+        BucketKey{collectionUUID,
+                  BucketMetadata{trackingContext, metadata, comparator, options.getMetaField()}};
 
     return {std::make_pair(std::move(key), time)};
 }
@@ -410,9 +412,12 @@ StatusWith<unique_tracked_ptr<Bucket>> rehydrateBucket(OperationContext* opCtx,
 
     // Buckets are spread across independently-lockable stripes to improve parallelism. We map a
     // bucket to a stripe by hashing the BucketKey.
-    auto key = BucketKey{
-        collectionUUID,
-        BucketMetadata{catalog.trackingContext, metadata, comparator, options.getMetaField()}};
+    auto key = BucketKey{collectionUUID,
+                         BucketMetadata{getTrackingContext(catalog.trackingContexts,
+                                                           TrackingScope::kOpenBucketsById),
+                                        metadata,
+                                        comparator,
+                                        options.getMetaField()}};
     if (expectedKey && key != *expectedKey) {
         return {ErrorCodes::BadValue, "Bucket metadata does not match (hash collision)"};
     }
@@ -421,13 +426,14 @@ StatusWith<unique_tracked_ptr<Bucket>> rehydrateBucket(OperationContext* opCtx,
                        .getField(options.getTimeField())
                        .Date();
     BucketId bucketId{key.collectionUUID, bucketIdElem.OID()};
-    unique_tracked_ptr<Bucket> bucket = make_unique_tracked<Bucket>(catalog.trackingContext,
-                                                                    catalog.trackingContext,
-                                                                    bucketId,
-                                                                    std::move(key),
-                                                                    options.getTimeField(),
-                                                                    minTime,
-                                                                    catalog.bucketStateRegistry);
+    unique_tracked_ptr<Bucket> bucket = make_unique_tracked<Bucket>(
+        getTrackingContext(catalog.trackingContexts, TrackingScope::kOpenBucketsById),
+        catalog.trackingContexts,
+        bucketId,
+        std::move(key),
+        options.getTimeField(),
+        minTime,
+        catalog.bucketStateRegistry);
 
     const bool isCompressed = isCompressedBucket(bucketDoc);
     const bool usingAlwaysCompressed =
@@ -449,16 +455,24 @@ StatusWith<unique_tracked_ptr<Bucket>> rehydrateBucket(OperationContext* opCtx,
     const BSONObj& dataObj = bucketDoc.getObjectField(kBucketDataFieldName);
     for (const BSONElement& dataElem : dataObj) {
         bucket->fieldNames.emplace(make_tracked_string(
-            catalog.trackingContext, dataElem.fieldName(), dataElem.fieldNameSize() - 1));
+            getTrackingContext(catalog.trackingContexts, TrackingScope::kOpenBucketsById),
+            dataElem.fieldName(),
+            dataElem.fieldNameSize() - 1));
     }
 
-    auto swMinMax = generateMinMaxFromBucketDoc(catalog.trackingContext, bucketDoc, comparator);
+    auto swMinMax = generateMinMaxFromBucketDoc(
+        getTrackingContext(catalog.trackingContexts, TrackingScope::kSummaries),
+        bucketDoc,
+        comparator);
     if (!swMinMax.isOK()) {
         return swMinMax.getStatus();
     }
     bucket->minmax = std::move(swMinMax.getValue());
 
-    auto swSchema = generateSchemaFromBucketDoc(catalog.trackingContext, bucketDoc, comparator);
+    auto swSchema = generateSchemaFromBucketDoc(
+        getTrackingContext(catalog.trackingContexts, TrackingScope::kSummaries),
+        bucketDoc,
+        comparator);
     if (!swSchema.isOK()) {
         return swSchema.getStatus();
     }
@@ -574,7 +588,7 @@ StatusWith<std::reference_wrapper<Bucket>> reopenBucket(OperationContext* opCtx,
     }
 
     // Now actually mark this bucket as open.
-    stripe.openBucketsByKey[key.cloneAsUntracked()].emplace(unownedBucket);
+    stripe.openBucketsByKey[key].emplace(unownedBucket);
     stats.incNumBucketsReopened();
 
     catalog.numberOfActiveBuckets.fetchAndAdd(1);
@@ -641,7 +655,7 @@ std::variant<std::shared_ptr<WriteBatch>, RolloverReason> insertIntoBucket(
     bool openedDueToMetadata = true;
     if (!isNewlyOpenedBucket) {
         auto [action, reason] = determineRolloverAction(opCtx,
-                                                        catalog.trackingContext,
+                                                        catalog.trackingContexts,
                                                         doc,
                                                         insertContext,
                                                         existingBucket,
@@ -664,7 +678,7 @@ std::variant<std::shared_ptr<WriteBatch>, RolloverReason> insertIntoBucket(
     Bucket& bucket = bucketToUse.get();
 
     if (isNewlyOpenedBucket) {
-        calculateBucketFieldsAndSizeChange(catalog.trackingContext,
+        calculateBucketFieldsAndSizeChange(catalog.trackingContexts,
                                            bucket,
                                            doc,
                                            insertContext.options.getMetaField(),
@@ -672,7 +686,7 @@ std::variant<std::shared_ptr<WriteBatch>, RolloverReason> insertIntoBucket(
                                            sizesToBeAdded);
     }
 
-    auto batch = activeBatch(catalog.trackingContext,
+    auto batch = activeBatch(catalog.trackingContexts,
                              bucket,
                              getOpId(opCtx, combine),
                              insertContext.stripeNumber,
@@ -680,8 +694,10 @@ std::variant<std::shared_ptr<WriteBatch>, RolloverReason> insertIntoBucket(
     batch->measurements.push_back(doc);
     for (auto&& field : newFieldNamesToBeInserted) {
         batch->newFieldNamesToBeInserted[field] = field.hash();
-        bucket.uncommittedFieldNames.emplace(
-            TrackedStringMapHashedKey{catalog.trackingContext, field.key(), field.hash()});
+        bucket.uncommittedFieldNames.emplace(TrackedStringMapHashedKey{
+            getTrackingContext(catalog.trackingContexts, TrackingScope::kOpenBucketsById),
+            field.key(),
+            field.hash()});
     }
 
     bucket.numMeasurements++;
@@ -760,8 +776,8 @@ void removeBucket(
     markBucketNotIdle(stripe, stripeLock, bucket);
 
     // If the bucket was rolled over, then there may be a different open bucket for this metadata.
-    auto openIt = stripe.openBucketsByKey.find(
-        {bucket.bucketId.collectionUUID, bucket.key.metadata.cloneAsUntracked()});
+    auto openIt =
+        stripe.openBucketsByKey.find({bucket.bucketId.collectionUUID, bucket.key.metadata});
     if (openIt != stripe.openBucketsByKey.end()) {
         auto& openSet = openIt->second;
         auto bucketIt = openSet.find(&bucket);
@@ -912,12 +928,11 @@ InsertResult getReopeningContext(OperationContext* opCtx,
         }
 
         return ReopeningContext{
-            catalog, stripe, stripeLock, info.key.cloneAsUntracked(), catalogEra, archived.value()};
+            catalog, stripe, stripeLock, info.key, catalogEra, archived.value()};
     }
 
     if (allowQueryBasedReopening == AllowQueryBasedReopening::kDisallow) {
-        return ReopeningContext{
-            catalog, stripe, stripeLock, info.key.cloneAsUntracked(), catalogEra, {}};
+        return ReopeningContext{catalog, stripe, stripeLock, info.key, catalogEra, {}};
     }
 
     // Synchronize concurrent disk accesses. An outstanding reopening request or prepared batch for
@@ -946,7 +961,7 @@ InsertResult getReopeningContext(OperationContext* opCtx,
     return ReopeningContext{catalog,
                             stripe,
                             stripeLock,
-                            info.key.cloneAsUntracked(),
+                            info.key,
                             catalogEra,
                             generateReopeningPipeline(opCtx,
                                                       time,
@@ -1148,13 +1163,14 @@ Bucket& allocateBucket(OperationContext* opCtx,
         auto bucketId = BucketId{info.key.collectionUUID, oid};
         std::tie(it, inserted) = stripe.openBucketsById.try_emplace(
             bucketId,
-            make_unique_tracked<Bucket>(catalog.trackingContext,
-                                        catalog.trackingContext,
-                                        bucketId,
-                                        info.key.cloneAsTracked(catalog.trackingContext),
-                                        info.options.getTimeField(),
-                                        roundedTime,
-                                        catalog.bucketStateRegistry));
+            make_unique_tracked<Bucket>(
+                getTrackingContext(catalog.trackingContexts, TrackingScope::kOpenBucketsById),
+                catalog.trackingContexts,
+                bucketId,
+                info.key,
+                info.options.getTimeField(),
+                roundedTime,
+                catalog.bucketStateRegistry));
         if (!inserted) {
             resetBucketOIDCounter();
         }
@@ -1165,13 +1181,13 @@ Bucket& allocateBucket(OperationContext* opCtx,
             inserted);
 
     Bucket* bucket = it->second.get();
-    stripe.openBucketsByKey[info.key.cloneAsUntracked()].emplace(bucket);
+    stripe.openBucketsByKey[info.key].emplace(bucket);
 
     auto status = initializeBucketState(catalog.bucketStateRegistry, bucket->bucketId);
     if (!status.isOK()) {
         // Don't track the memory usage for the bucket keys in this data structure because it is
         // already being tracked by the Bucket itself.
-        stripe.openBucketsByKey[info.key.cloneAsUntracked()].erase(bucket);
+        stripe.openBucketsByKey[info.key].erase(bucket);
         stripe.openBucketsById.erase(it);
         throwWriteConflictException(status.reason());
     }
@@ -1212,7 +1228,7 @@ Bucket& rollover(OperationContext* opCtx,
 
 std::pair<RolloverAction, RolloverReason> determineRolloverAction(
     OperationContext* opCtx,
-    TrackingContext& trackingContext,
+    TrackingContexts& trackingContexts,
     const BSONObj& doc,
     InsertContext& info,
     Bucket& bucket,
@@ -1266,7 +1282,7 @@ std::pair<RolloverAction, RolloverReason> determineRolloverAction(
     int32_t absoluteMaxSize =
         std::min(Bucket::kLargeMeasurementsMaxBucketSize, cacheDerivedBucketMaxSize);
 
-    calculateBucketFieldsAndSizeChange(trackingContext,
+    calculateBucketFieldsAndSizeChange(trackingContexts,
                                        bucket,
                                        doc,
                                        info.options.getMetaField(),
@@ -1320,8 +1336,10 @@ ExecutionStatsController getOrInitializeExecutionStats(BucketCatalog& catalog,
         return {it->second, catalog.globalExecutionStats};
     }
 
-    auto res = catalog.executionStats.emplace(
-        collectionUUID, make_shared_tracked<ExecutionStats>(catalog.trackingContext));
+    auto res =
+        catalog.executionStats.emplace(collectionUUID,
+                                       make_shared_tracked<ExecutionStats>(getTrackingContext(
+                                           catalog.trackingContexts, TrackingScope::kStats)));
     return {res.first->second, catalog.globalExecutionStats};
 }
 

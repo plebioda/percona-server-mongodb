@@ -61,7 +61,7 @@ pipx = "1.4.3"
 poetry = "1.5.1"
 
 [tool.poetry.group.evergreen.dependencies]
-click = "^7.1.2"
+click = "^8.1.7"
 inject = "^5"
 GitPython = "^3.1.7"
 pydantic = "*"
@@ -76,7 +76,7 @@ pyOpenSSL = [
 ]
 pyparsing = "2.4.0"
 service_identity = "18.1.0"
-twisted = "21.2.0"
+twisted = "24.3.0"
 'zope.interface' = "5.0.0"
 ldaptor = "19.0.0"
 

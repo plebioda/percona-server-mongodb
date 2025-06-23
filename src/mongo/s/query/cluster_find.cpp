@@ -138,6 +138,8 @@
 
 namespace mongo {
 namespace {
+// Ticks for server-side Javascript deprecation log messages.
+Rarely _samplerFunctionJs, _samplerWhereClause;
 
 using namespace fmt::literals;
 
@@ -304,7 +306,7 @@ std::vector<AsyncRequestsSender::Request> constructRequestsForShards(
         invariant(!shard->isConfig() || shard->getConnString());
 
         BSONObjBuilder cmdBuilder;
-        findCommandToForward->serialize(BSONObj(), &cmdBuilder);
+        findCommandToForward->serialize(&cmdBuilder);
         logical_session_id_helpers::serializeLsidAndTxnNumber(opCtx, &cmdBuilder);
         appendOpKey(opKey, &cmdBuilder);
         appendShardVersion(shardId, cmdBuilder);
@@ -713,6 +715,19 @@ CursorId ClusterFind::runQuery(OperationContext* opCtx,
     if (auto letParams = findCommand.getLet()) {
         auto* expCtx = query.getExpCtx().get();
         expCtx->variables.seedVariablesWithLetParameters(expCtx, *letParams);
+    }
+
+    if (query.getExpCtx()->hasServerSideJs.where && _samplerWhereClause.tick()) {
+        LOGV2_WARNING(8996504,
+                      "$where is deprecated. For more information, see "
+                      "https://www.mongodb.com/docs/manual/reference/operator/query/where/");
+    }
+
+    if (query.getExpCtx()->hasServerSideJs.function && _samplerFunctionJs.tick()) {
+        LOGV2_WARNING(
+            8996505,
+            "$function is deprecated. For more information, see "
+            "https://www.mongodb.com/docs/manual/reference/operator/aggregation/function/");
     }
 
     // Re-target and re-send the initial find command to the shards until we have established the

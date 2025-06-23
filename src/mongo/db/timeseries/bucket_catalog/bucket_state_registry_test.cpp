@@ -161,9 +161,9 @@ public:
     BSONElement elem;
     TrackingContext trackingContext;
     BucketMetadata bucketMetadata{trackingContext, elem, nullptr, boost::none};
-    BucketKey bucketKey1{uuid1, bucketMetadata.cloneAsUntracked()};
-    BucketKey bucketKey2{uuid2, bucketMetadata.cloneAsUntracked()};
-    BucketKey bucketKey3{uuid3, bucketMetadata.cloneAsUntracked()};
+    BucketKey bucketKey1{uuid1, bucketMetadata};
+    BucketKey bucketKey2{uuid2, bucketMetadata};
+    BucketKey bucketKey3{uuid3, bucketMetadata};
     Date_t date = Date_t::now();
     TimeseriesOptions options;
     ExecutionStatsController stats = internal::getOrInitializeExecutionStats(*this, uuid1);
@@ -744,11 +744,11 @@ TEST_F(BucketStateRegistryTest, AbortingBatchRemovesBucketState) {
     auto bucketId = bucket.bucketId;
 
     auto stats = internal::getOrInitializeExecutionStats(*this, info1.key.collectionUUID);
-    TrackingContext trackingContext;
+    TrackingContexts trackingContexts;
     auto batch =
-        std::make_shared<WriteBatch>(trackingContext,
+        std::make_shared<WriteBatch>(trackingContexts,
                                      BucketHandle{bucketId, info1.stripeNumber},
-                                     info1.key.cloneAsUntracked(),
+                                     info1.key,
                                      0,
                                      stats,
                                      StringData{bucket.timeField.data(), bucket.timeField.size()});
@@ -770,11 +770,11 @@ TEST_F(BucketStateRegistryTest, ClosingBucketGoesThroughPendingCompressionState)
     ASSERT_TRUE(doesBucketStateMatch(bucketId, BucketState::kNormal));
 
     auto stats = internal::getOrInitializeExecutionStats(*this, info1.key.collectionUUID);
-    TrackingContext trackingContext;
+    TrackingContexts trackingContexts;
     auto batch =
-        std::make_shared<WriteBatch>(trackingContext,
+        std::make_shared<WriteBatch>(trackingContexts,
                                      BucketHandle{bucketId, info1.stripeNumber},
-                                     info1.key.cloneAsUntracked(),
+                                     info1.key,
                                      0,
                                      stats,
                                      StringData{bucket.timeField.data(), bucket.timeField.size()});

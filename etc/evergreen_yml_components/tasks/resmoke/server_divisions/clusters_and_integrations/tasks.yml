@@ -2195,6 +2195,20 @@ tasks:
       - func: "generate resmoke tasks"
 
   - <<: *gen_task_template
+    name: sharding_jscore_passthrough_with_config_transitions_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_cluster_scalability",
+        "release_critical",
+        "incompatible_mac",
+        "sharding",
+        "jscore",
+        "common",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+
+  - <<: *gen_task_template
     name: sharding_jscore_passthrough_with_auto_bootstrap_gen
     tags:
       [
@@ -2317,7 +2331,7 @@ tasks:
           num_tasks: 5
           npm_command: resharding-fuzzer
           jstestfuzz_vars: --opType timeseriesReshardCollection --useEsModules
-          suite: resharding_fuzzer
+          suite: resharding_fuzzer_idempotency
 
   ################################################
   #           Catalog & Routing tasks            #
@@ -2396,6 +2410,24 @@ tasks:
 
   - <<: *gen_task_template
     name: concurrency_sharded_replication_with_balancer_and_config_transitions_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_catalog_and_routing",
+        "default",
+        "concurrency",
+        "large",
+        "non_live_record",
+        "sharded",
+        "no_debug_mode",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          use_large_distro: "true"
+          resmoke_jobs_max: 1
+
+  - <<: *gen_task_template
+    name: concurrency_sharded_with_stepdowns_and_balancer_and_config_transitions_gen
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",

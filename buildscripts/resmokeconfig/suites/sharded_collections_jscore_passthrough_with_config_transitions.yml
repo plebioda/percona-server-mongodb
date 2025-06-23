@@ -3,8 +3,8 @@ test_kind: js_test
 selector:
   roots:
     - jstests/core/**/*.js
-  # TODO: SERVER-86059 Support tracking unsharded collections with FLE in the sharding catalog
-  # - src/mongo/db/modules/*/jstests/fle2/**/*.js
+    - jstests/fle2/**/*.js
+    - src/mongo/db/modules/*/jstests/fle2/**/*.js
   exclude_files:
     # These tests are run in sharded_jscore_txns.
     - jstests/core/txns/**/*.js
@@ -65,6 +65,7 @@ selector:
     # These tests drop and create indexes throughout their execution. Index creation might fail when
     # movePrimary is in progress.
     - jstests/core/query/agg_hint.js
+    - jstests/core/index/express_write.js
     # The following tests are excluded specifically for this passthrough suite.
     # TransitionTo/FromDedicated runs remove/addShard which implicitly will set a cluster parameter, which
     # will conflict with tests that explicitly set cluster parameters.

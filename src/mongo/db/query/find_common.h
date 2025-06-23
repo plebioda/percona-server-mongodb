@@ -63,8 +63,11 @@ class BSONObj;
 class CanonicalQuery;
 class FindCommandRequest;
 
-// Failpoint for making find hang.
-extern FailPoint waitInFindBeforeMakingBatch;
+// Failpoint for making find hang in a shard/mongod.
+extern FailPoint shardWaitInFindBeforeMakingBatch;
+
+// Failpoint for making find hang in a router.
+extern FailPoint routerWaitInFindBeforeMakingBatch;
 
 // Failpoint for making getMore not wait for an awaitdata cursor. Allows us to avoid waiting during
 // tests.
@@ -207,8 +210,18 @@ public:
      * Since query processing happens in three different places, this function makes it easier
      * to check the failpoint for a query's namespace and log a helpful diagnostic message when
      * the failpoint is active.
+     *
+     * This function takes the failpoint it has to wait on as parameter. One of two failpoints
+     * should be passed: routerWaitInFindBeforeMakingBatch or shardWaitInFindBeforeMakingBatch, to
+     * wait either when in router or shard code respectively.
      */
-    static void waitInFindBeforeMakingBatch(OperationContext* opCtx, const CanonicalQuery& cq);
+    static void waitInFindBeforeMakingBatch(OperationContext* opCtx,
+                                            const CanonicalQuery& cq,
+                                            FailPoint* fp) {
+        if (MONGO_unlikely(fp->shouldFail())) {
+            _waitInFindBeforeMakingBatchImpl(opCtx, cq, fp);
+        }
+    }
 
     /**
      * Computes an initial preallocation size for the GetMore reply buffer based on its
@@ -243,6 +256,11 @@ public:
         std::size_t _numberOfDocuments{0};
         std::size_t _bsonArraySizeInBytes{0};
     };
+
+private:
+    static void _waitInFindBeforeMakingBatchImpl(OperationContext* opCtx,
+                                                 const CanonicalQuery& cq,
+                                                 FailPoint* fp);
 };
 
 }  // namespace mongo

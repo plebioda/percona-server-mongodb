@@ -282,7 +282,7 @@ void DropCollectionCoordinator::_enterCriticalSection(
     blockCRUDOperationsRequest.setBlockType(mongo::CriticalSectionBlockTypeEnum::kReadsAndWrites);
     blockCRUDOperationsRequest.setReason(_critSecReason);
 
-    async_rpc::GenericArgs args;
+    GenericArguments args;
     async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
     async_rpc::AsyncRPCCommandHelpers::appendOSI(args, getNewSession(opCtx));
     auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrParticipantBlock>>(
@@ -339,7 +339,7 @@ void DropCollectionCoordinator::_commitDropCollection(
 
     // We need to send the drop to all the shards because both movePrimary and
     // moveChunk leave garbage behind for sharded collections.
-    auto participants = Grid::get(opCtx)->shardRegistry()->getAllShardIds(opCtx);
+    auto participants = getAllShardsAndConfigServerIds(opCtx);
     // Remove primary shard from participants
     participants.erase(std::remove(participants.begin(), participants.end(), primaryShardId),
                        participants.end());
@@ -381,7 +381,7 @@ void DropCollectionCoordinator::_exitCriticalSection(
     unblockCRUDOperationsRequest.setBlockType(CriticalSectionBlockTypeEnum::kUnblock);
     unblockCRUDOperationsRequest.setReason(_critSecReason);
 
-    async_rpc::GenericArgs args;
+    GenericArguments args;
     async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
     async_rpc::AsyncRPCCommandHelpers::appendOSI(args, getNewSession(opCtx));
     auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrParticipantBlock>>(

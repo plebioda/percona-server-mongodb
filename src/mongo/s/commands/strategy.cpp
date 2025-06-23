@@ -76,6 +76,7 @@
 #include "mongo/db/repl/optime.h"
 #include "mongo/db/repl/read_concern_args.h"
 #include "mongo/db/repl/read_concern_level.h"
+#include "mongo/db/replica_set_endpoint_util.h"
 #include "mongo/db/session/logical_session_id.h"
 #include "mongo/db/session/logical_session_id_gen.h"
 #include "mongo/db/stats/api_version_metrics.h"
@@ -567,7 +568,10 @@ void ParseAndRunCommand::_parseCommand() {
                           : _invocation->ns());
 
     // Fill out all currentOp details.
-    CurOp::get(opCtx)->setGenericOpRequestDetails(nss, command, request.body, _opType);
+    {
+        stdx::lock_guard<Client> lk(*client);
+        CurOp::get(opCtx)->setGenericOpRequestDetails_inlock(nss, command, request.body, _opType);
+    }
 
     _osi = initializeOperationSessionInfo(opCtx,
                                           request.getValidatedTenantId(),
@@ -945,6 +949,10 @@ Status ParseAndRunCommand::RunInvocation::_setup() {
 
     if (command->shouldAffectQueryCounter()) {
         globalOpCounters.gotQuery();
+    }
+
+    if (opCtx->routedByReplicaSetEndpoint()) {
+        replica_set_endpoint::checkIfCanRunCommand(opCtx, request);
     }
 
     return Status::OK();

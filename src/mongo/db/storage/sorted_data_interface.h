@@ -291,32 +291,39 @@ public:
         /**
          * Seeks to the provided keyString and returns the KeyStringEntry.
          * The provided keyString has discriminator information encoded.
+         * The keyString should not have RecordId or TypeBits encoded, which is guaranteed if
+         * obtained from BuilderBase::finishAndGetBuffer().
          */
-        virtual boost::optional<KeyStringEntry> seekForKeyString(
-            const key_string::Value& keyString) = 0;
+        virtual boost::optional<KeyStringEntry> seekForKeyString(StringData keyString) = 0;
 
         /**
          * Seeks to the provided keyString and returns the SortedDataKeyValueView.
          * The provided keyString has discriminator information encoded.
+         * The keyString should not have RecordId or TypeBits encoded, which is guaranteed if
+         * obtained from BuilderBase::finishAndGetBuffer().
+         *
          * Returns unowned data, which is invalidated upon calling a next() or seek()
          * variant, a save(), or when the cursor is destructed.
          */
-        virtual SortedDataKeyValueView seekForKeyValueView(const key_string::Value& keyString) = 0;
+        virtual SortedDataKeyValueView seekForKeyValueView(StringData keyString) = 0;
 
         /**
          * Seeks to the provided keyString and returns the IndexKeyEntry.
          * The provided keyString has discriminator information encoded.
+         * The keyString should not have RecordId or TypeBits encoded, which is guaranteed if
+         * obtained from BuilderBase::finishAndGetBuffer().
          */
         virtual boost::optional<IndexKeyEntry> seek(
-            const key_string::Value& keyString,
-            KeyInclusion keyInclusion = KeyInclusion::kInclude) = 0;
+            StringData keyString, KeyInclusion keyInclusion = KeyInclusion::kInclude) = 0;
 
         /**
          * Seeks to the provided keyString and returns the RecordId of the matching key, or
          * boost::none if one does not exist.
-         * The provided key must always have a kInclusive discriminator.
+         * The provided keyString must always have a kInclusive discriminator.
+         * The keyString should not have RecordId or TypeBits encoded, which is guaranteed if
+         * obtained from BuilderBase::finishAndGetBuffer().
          */
-        virtual boost::optional<RecordId> seekExact(const key_string::Value& keyString) = 0;
+        virtual boost::optional<RecordId> seekExact(StringData keyString) = 0;
 
         //
         // Saving and restoring state
@@ -467,7 +474,7 @@ public:
           _tbSize(typeBitsSize),
           _version(version),
           _id(id) {
-        invariant(ksSize > 0 && ridSize > 0 && typeBitsSize >= 0);
+        invariant(ksSize > 0 && ridSize >= 0 && typeBitsSize >= 0);
         _ksOriginalSize = isRecordIdAtEndOfKeyString ? (ksSize + ridSize) : ksSize;
     }
 
@@ -508,6 +515,14 @@ public:
         return _ksOriginalSize > _ksSize;
     }
 
+    /**
+     * Return the cached RecordId pointer that was passed to this view's constructor.
+     *
+     * A nullptr only means the pointer was not cached, but the RecordId may still be present,
+     * as long as the original key_string::Value has a RecordId at the end. In this case, the
+     * RecordId buffer can be obtained through getRecordIdView(), and then be decoded as long
+     * or binary string depending on its key format.
+     */
     const RecordId* getRecordId() const {
         return _id;
     }
@@ -518,6 +533,22 @@ public:
     key_string::Value getValueCopy() const {
         return key_string::Value::makeValue(
             _version, getKeyStringWithoutRecordIdView(), getRecordIdView(), getTypeBitsView());
+    }
+
+    /**
+     * Returns an unowned view of the provided Value. Remains valid as long as this Value is
+     * valid.
+     */
+    static SortedDataKeyValueView fromValue(const key_string::Value& value) {
+        auto typeBits = value.getTypeBitsView();
+        return {value.getBuffer(),                                  /* ksData */
+                value.getSizeWithoutRecordId(),                     /* ksSize */
+                value.getBuffer() + value.getSizeWithoutRecordId(), /* ridData */
+                value.getRecordIdSize(),                            /* ridSize */
+                typeBits.data(),                                    /* typeBitsData */
+                static_cast<int32_t>(typeBits.size()),              /* typeBitsSize */
+                value.getVersion(),
+                value.getRecordIdSize() > 0 /* isRecordIdAtEndOfKeyString */};
     }
 
     bool isEmpty() const {

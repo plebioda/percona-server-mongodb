@@ -160,9 +160,10 @@ TEST_F(SemaphoreTicketHolderTest, ImmediateResize) {
     ASSERT_EQ(holder->outof(), 10);
 
     // acquire 5 tickets
-    std::array<boost::optional<Ticket>, 5> tickets;
+    std::vector<Ticket> tickets;
     for (size_t i = 0; i < 5; ++i) {
-        tickets[i] = holder->waitForTicket(_opCtx.get(), &admCtx);
+        auto ticket = holder->waitForTicket(_opCtx.get(), &admCtx);
+        tickets.push_back(std::move(ticket));
     }
     ASSERT_EQ(holder->used(), 5);
     ASSERT_EQ(holder->available(), 5);
@@ -185,14 +186,10 @@ TEST_F(SemaphoreTicketHolderTest, ImmediateResize) {
         stdx::lock_guard lk(ticketCheckMutex);
         releaseWaiterAdmission.ticket = std::move(ticket);
     });
-    while (holder->queued() < 1) {
-        // spin
-    }
+    assertSoon([&]() { return holder->queued() >= 1; });
 
     // release 3 tickets
-    for (size_t i = 0; i < 3; i++) {
-        tickets[i].reset();
-    }
+    tickets.erase(tickets.end() - 3, tickets.end());
 
     // check that the waiter acquired a ticket
     assertSoon([&] {
@@ -233,9 +230,7 @@ TEST_F(SemaphoreTicketHolderTest, ImmediateResize) {
         stdx::lock_guard lk(ticketCheckMutex);
         resizeWaiterAdmission3.ticket = std::move(ticket);
     });
-    while (holder->queued() < 3) {
-        // spin
-    }
+    assertSoon([&]() { return holder->queued() >= 3; });
 
     // grow the pool to 5
     ASSERT_TRUE(holder->resize(_opCtx.get(), 5));
@@ -277,6 +272,50 @@ TEST_F(SemaphoreTicketHolderTest, ImmediateResize) {
     resizeWaiter1.join();
     resizeWaiter2.join();
     resizeWaiter3.join();
+}
+
+TEST_F(SemaphoreTicketHolderTest, ReleaseToPoolWakesWaiters) {
+    // We had a bug where releasing a ticket back to the ticket holder would only waker waiters when
+    // adding a ticket would result in 0 available tickets (a case only reachable after resize).
+    // This test is meant to prove that we always wake waiters when a ticket is returned, if there
+    // are available tickets
+
+    auto holder =
+        std::make_unique<SemaphoreTicketHolder>(getServiceContext(),
+                                                2,
+                                                false /* trackPeakUsed */,
+                                                SemaphoreTicketHolder::ResizePolicy::kImmediate);
+
+    // Here's the approach: We need to have a SemaphoreTicketHolder of size >1 in order to meet the
+    // condition that we possibly have a non-zero number of tickets when returning a ticket to the
+    // pool. Initially acquire two tickets, and spin up two waiters which will queue. A third
+    // waiting thread waits for the initial waiters to queue before enqueueing itself. Back on the
+    // main thread, wait for all three queued waiters before returning two tickets to the pool
+    // immediately.
+
+    MockAdmissionContext admCtx{};
+    std::vector<Ticket> tickets;
+    for (size_t i = 0; i < 2; ++i) {
+        auto ticket = holder->waitForTicket(_opCtx.get(), &admCtx);
+        tickets.push_back(std::move(ticket));
+    }
+
+    std::vector<stdx::thread> threads;
+    for (size_t i = 0; i < 3; ++i) {
+        threads.emplace_back([&] {
+            MockAdmission admission{getServiceContext(), AdmissionContext::Priority::kNormal};
+            auto ticket = holder->waitForTicket(admission.opCtx.get(), &admission.admCtx);
+        });
+    }
+
+    // await 3 queued waiters, and then return 2 tickets to the pool
+    assertSoon([&] { return holder->queued() == 3; });
+    tickets.erase(tickets.end() - 2, tickets.end());
+
+    // join all threads and drain the waiters one-by-one
+    for (auto& t : threads) {
+        t.join();
+    }
 }
 
 }  // namespace

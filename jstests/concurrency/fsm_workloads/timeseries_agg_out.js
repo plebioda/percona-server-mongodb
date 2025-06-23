@@ -107,14 +107,13 @@ export const $config = extendWorkload($baseConfig, function($config, $super) {
      */
     $config.states.convertToCapped = function convertToCapped(db, unusedCollName) {
         jsTestLog(`Running convertToCapped: coll=${this.outputCollName}`);
-        // The command might return IllegalOperation when running on a timeseries, which is not
-        // allowed. TODO SERVER-89880 remove ErrorCodes.IllegalOperation.
         assert.commandFailedWithCode(
             db.runCommand({convertToCapped: this.outputCollName, size: 100000}), [
-                ErrorCodes.CommandNotSupportedOnView,
+                ErrorCodes.MovePrimaryInProgress,
                 ErrorCodes.NamespaceNotFound,
                 ErrorCodes.NamespaceCannotBeSharded,
-                ErrorCodes.IllegalOperation
+                // Can't convert a timeseries collection to a capped collection
+                ErrorCodes.CommandNotSupportedOnView,
             ]);
     };
 
@@ -129,7 +128,11 @@ export const $config = extendWorkload($baseConfig, function($config, $super) {
             assert.commandWorkedOrFailedWithCode(
                 db.adminCommand(
                     {shardCollection: db[this.outputCollName].getFullName(), key: this.shardKey}),
-                [ErrorCodes.ConflictingOperationInProgress]);
+                [
+                    ErrorCodes.ConflictingOperationInProgress,
+                    // Can't shard a capped collection.
+                    ErrorCodes.InvalidOptions
+                ]);
         }
     };
 

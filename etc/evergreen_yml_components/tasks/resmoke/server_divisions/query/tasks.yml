@@ -151,6 +151,8 @@ tasks:
         "assigned_to_jira_team_server_query_execution",
         "non_deterministic",
         "incompatible_tsan",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
         "aggfuzzer",
         "multiversion",
         "require_npm",
@@ -185,6 +187,14 @@ tasks:
       - func: "do setup"
       - func: "run tests"
 
+  # In order to share binaries with downstream patches on 10gen/mongot, for each variant this task is included in
+  # it writes the S3 binary tarball link to downstream_expansions.yml.
+  - <<: *task_template
+    name: set_downstream_expansions_for_mongot
+    tags: ["assigned_to_jira_team_server_query_integration", "experimental"]
+    commands:
+      - func: "write and set downstream expansions"
+
   - <<: *task_template
     name: aggregation_mongos_passthrough
     tags:
@@ -209,6 +219,8 @@ tasks:
         "assigned_to_jira_team_server_query_execution",
         "non_deterministic",
         "incompatible_tsan",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
         "aggfuzzer",
         "common",
         "multiversion",

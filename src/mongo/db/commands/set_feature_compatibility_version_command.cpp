@@ -165,6 +165,7 @@ MONGO_FAIL_POINT_DEFINE(failAfterReachingTransitioningState);
 MONGO_FAIL_POINT_DEFINE(hangAtSetFCVStart);
 MONGO_FAIL_POINT_DEFINE(failAfterSendingShardsToDowngradingOrUpgrading);
 MONGO_FAIL_POINT_DEFINE(hangAfterBlockingIndexBuildsForFcvDowngrade);
+MONGO_FAIL_POINT_DEFINE(automaticallyCollmodToRecordIdsReplicatedFalse);
 
 /**
  * Ensures that only one instance of setFeatureCompatibilityVersion can run at a given time.
@@ -267,6 +268,48 @@ void uassertStatusOKIgnoreNSNotFound(Status status) {
     }
 
     uassertStatusOK(status);
+}
+
+/*
+ * Automatically modifies data on downgrade for testing. This is because in some cases,
+ * the server expects the user to modify data themselves. In testing, as there may not
+ * actually be a real user, we need to do it ourselves.
+ */
+void maybeModifyDataOnDowngradeForTest(
+    OperationContext* opCtx,
+    const multiversion::FeatureCompatibilityVersion requestedVersion,
+    const multiversion::FeatureCompatibilityVersion originalVersion) {
+    if (MONGO_unlikely(automaticallyCollmodToRecordIdsReplicatedFalse.shouldFail())) {
+        // If the test-only failpoint 'automaticallyCollmodToRecordIdsReplicatedFalse' is set,
+        // we automatically strip the 'recordIdsReplicated' parameter from the collection
+        // options when performing an FCV downgrade to a version that doesn't support replicated
+        // recordIds. Normally this is not the case: when a collection with
+        // recordIdsReplicated:true is found, we complain.
+        if (gFeatureFlagRecordIdsReplicated.isDisabledOnTargetFCVButEnabledOnOriginalFCV(
+                requestedVersion, originalVersion)) {
+            LOGV2(8700500,
+                  "Automatically issuing collMod to strip recordIdsReplicated:true field.");
+            for (const auto& dbName : DatabaseHolder::get(opCtx)->getNames()) {
+                Lock::DBLock dbLock(opCtx, dbName, MODE_IX);
+                catalog::forEachCollectionFromDb(
+                    opCtx,
+                    dbName,
+                    MODE_X,
+                    [&](const Collection* collection) {
+                        BSONObjBuilder responseBuilder;
+                        auto collMod = CollMod{collection->ns()};
+                        collMod.setRecordIdsReplicated(false);
+                        uassertStatusOK(processCollModCommand(
+                            opCtx, collection->ns(), collMod, nullptr, &responseBuilder));
+                        return true;
+                    },
+                    [&](const Collection* collection) {
+                        return collection->areRecordIdsReplicated();
+                        ;
+                    });
+            }
+        }
+    }
 }
 
 /**
@@ -449,9 +492,10 @@ public:
                 if (role && role->has(ClusterRole::ConfigServer)) {
                     uassert(ErrorCodes::CannotDowngrade,
                             "Cannot downgrade while cluster server parameters are being set",
-                            ConfigsvrCoordinatorService::getService(opCtx)
-                                ->areAllCoordinatorsOfTypeFinished(
-                                    opCtx, ConfigsvrCoordinatorTypeEnum::kSetClusterParameter));
+                            (requestedVersion > actualVersion ||
+                             ConfigsvrCoordinatorService::getService(opCtx)
+                                 ->areAllCoordinatorsOfTypeFinished(
+                                     opCtx, ConfigsvrCoordinatorTypeEnum::kSetClusterParameter)));
                 }
 
                 // We pass boost::none as the setIsCleaningServerMetadata argument in order to
@@ -734,30 +778,51 @@ private:
     // of _userCollectionsUassertsForDowngrade or _internalServerCleanupForDowngrade.
     void _userCollectionsWorkForUpgrade(
         OperationContext* opCtx, const multiversion::FeatureCompatibilityVersion requestedVersion) {
+
+        std::vector<std::function<void(const Collection* collection)>> collValidationFunctions;
+
         const auto& [originalVersion, _] = getTransitionFCVFromAndTo(
             serverGlobalParams.featureCompatibility.acquireFCVSnapshot().getVersion());
+
         if (gFeatureFlagQERangeV2.isEnabledOnTargetFCVButDisabledOnOriginalFCV(requestedVersion,
                                                                                originalVersion)) {
-            auto checkForDeprecatedQueryType = [](const Collection* collection) {
+            collValidationFunctions.emplace_back([](const Collection* collection) -> void {
                 const auto& encryptedFields =
                     collection->getCollectionOptions().encryptedFieldConfig;
                 if (encryptedFields) {
                     uassert(ErrorCodes::CannotUpgrade,
-                            str::stream()
-                                << "Collection " << collection->ns().toStringForErrorMsg()
-                                << " has an encrypted field with query type rangePreview, "
-                                   "which is deprecated. Please drop this collection "
-                                   "before trying to upgrade FCV.",
+                            fmt::format("Collection {} has an encrypted field with query type "
+                                        "rangePreview, which is deprecated. Please drop this "
+                                        "collection before upgrading FCV.",
+                                        collection->ns().toStringForErrorMsg()),
                             !hasQueryType(encryptedFields.get(),
                                           QueryTypeEnum::RangePreviewDeprecated));
                 }
-                return true;
-            };
-            for (const auto& dbName : DatabaseHolder::get(opCtx)->getNames()) {
-                Lock::DBLock dbLock(opCtx, dbName, MODE_IS);
-                catalog::forEachCollectionFromDb(
-                    opCtx, dbName, MODE_IS, checkForDeprecatedQueryType);
-            }
+            });
+        }
+
+        if (gFeatureFlagDisallowBucketCollectionWithoutTimeseriesOptions
+                .isEnabledOnTargetFCVButDisabledOnOriginalFCV(requestedVersion, originalVersion)) {
+            collValidationFunctions.emplace_back([](const Collection* collection) {
+                uassert(ErrorCodes::CannotUpgrade,
+                        fmt::format("Bucket collection '{}' does not have timeseries options, "
+                                    "which is not allowed in new FCV version. Please rename or "
+                                    "drop this collection before upgrading FCV.",
+                                    collection->ns().toStringForErrorMsg()),
+                        !collection->ns().isTimeseriesBucketsCollection() ||
+                            collection->getTimeseriesOptions());
+            });
+        }
+
+        for (const auto& dbName : DatabaseHolder::get(opCtx)->getNames()) {
+            Lock::DBLock dbLock(opCtx, dbName, MODE_IS);
+            catalog::forEachCollectionFromDb(
+                opCtx, dbName, MODE_IS, [&](const Collection* collection) {
+                    for (const auto& collValidationFunc : collValidationFunctions) {
+                        collValidationFunc(collection);
+                    }
+                    return true;
+                });
         }
     }
 
@@ -849,10 +914,13 @@ private:
                     // with the namespace of the collection being modified.
                     CurOp collModCurOp;
                     collModCurOp.push(opCtx);
-                    collModCurOp.setGenericOpRequestDetails(collection->ns(),
-                                                            curop->getCommand(),
-                                                            collModCmd.toBSON({}),
-                                                            NetworkOp::dbMsg);
+                    {
+                        stdx::lock_guard<Client> lk(*opCtx->getClient());
+                        collModCurOp.setGenericOpRequestDetails_inlock(collection->ns(),
+                                                                       curop->getCommand(),
+                                                                       collModCmd.toBSON({}),
+                                                                       NetworkOp::dbMsg);
+                    }
 
                     BSONObjBuilder unusedBuilder;
                     uassertStatusOK(processCollModCommand(
@@ -1208,7 +1276,8 @@ private:
         }
 
         if (gFeatureFlagRecordIdsReplicated.isDisabledOnTargetFCVButEnabledOnOriginalFCV(
-                requestedVersion, originalVersion)) {
+                requestedVersion, originalVersion) &&
+            MONGO_likely(!automaticallyCollmodToRecordIdsReplicatedFalse.shouldFail())) {
             // so don't allow downgrading with such a collection.
             for (const auto& dbName : DatabaseHolder::get(opCtx)->getNames()) {
                 Lock::DBLock dbLock(opCtx, dbName, MODE_IS);
@@ -1377,6 +1446,8 @@ private:
                         });
                 }
             }
+
+            maybeModifyDataOnDowngradeForTest(opCtx, requestedVersion, originalVersion);
         }
 
         _cleanUpClusterParameters(opCtx, requestedVersion);
@@ -1409,9 +1480,6 @@ private:
         } else {
             _updateAuditConfigOnDowngrade(opCtx, requestedVersion);
         }
-        // TODO(SERVER-84271): Remove this when featureFlagReplicateVectoredInsertsTransactionally
-        // is removed.
-        _truncateRetryableWriteSessionsForDowngrade(opCtx);
     }
 
     void _dropInternalShardingIndexCatalogCollection(
@@ -1510,58 +1578,6 @@ private:
              fmt::format("FCV downgrading to {} and pauseMigrationsDuringMultiUpdates is not "
                          "supported on this version",
                          toString(requestedVersion))});
-    }
-
-    // Set config.transactions entries for retryable writes to appear to have a truncated oplog
-    // history.  This is to prevent attempting to read sessions which contain an oplog entry
-    // unparseable with an earlier binary, which would make that session unusable.
-    // TODO(SERVER-84271): Removed thi when featureFlagReplicateVectoredInsertsTransactionally
-    // is removed.
-    void _truncateRetryableWriteSessionsForDowngrade(OperationContext* opCtx) {
-        // Must use a new client/opCtx because the current one might have a session and direct
-        // writes to the config.transactions table are not permitted in a session.
-        auto newClient = opCtx->getServiceContext()->getService()->makeClient(
-            "TruncateRetryableWriteSessionsForDowngradeClient");
-        AlternativeClientRegion acr(newClient);
-        auto newOpCtx = cc().makeOperationContext();
-        DBDirectClient client(newOpCtx.get());
-        write_ops::UpdateCommandRequest update(NamespaceString::kSessionTransactionsTableNamespace);
-        update.setUpdates({[&]() {
-            write_ops::UpdateOpEntry entry;
-            // The relevant entries are not child sessions and have no state (only
-            // transactions have state).
-            BSONObjBuilder queryBuilder(BSON(SessionTxnRecord::kParentSessionIdFieldName
-                                             << BSON("$exists" << false)
-                                             << SessionTxnRecord::kStateFieldName
-                                             << BSON("$exists" << false)));
-            auto lsidToIgnore = opCtx->getLogicalSessionId();
-            if (lsidToIgnore) {
-                // Make sure we don't deadlock by trying to change the session of the opCtx
-                // which called setFeatureCompatibilityVersion.  It should be safe to leave
-                // this session alone because setFCV is not a retryable write.
-                queryBuilder.append(SessionTxnRecord::kSessionIdFieldName,
-                                    BSON("$ne" << lsidToIgnore->toBSON()));
-            }
-            entry.setQ(queryBuilder.obj());
-            // Set the last-write optime to something that won't appear in the oplog but
-            // also isn't null.  This will cause the TransactionParticipant to consider the
-            // transaction history truncated.  The fallbackOpObserver handles keeping the
-            // in-memory session catalog up to date.
-            //
-            // OpTime(Timestamp(1,0), kInitialTerm) won't appear in the oplog because we never write
-            // anything with an inc of 0.  It isn't null because secs is non-zero.  And the term has
-            // to be something valid because we disallow queries of kUninitializedTerm.
-            repl::OpTime neverWrittenOpTime(Timestamp(1, 0), repl::OpTime::kInitialTerm);
-            dassert(!neverWrittenOpTime.isNull());
-            entry.setU(write_ops::UpdateModification::parseFromClassicUpdate(
-                BSON("$set" << BSON(SessionTxnRecord::kLastWriteOpTimeFieldName
-                                    << neverWrittenOpTime))));
-            entry.setMulti(true);
-            return entry;
-        }()});
-        update.getWriteCommandRequestBase().setOrdered(false);
-        auto result = client.update(update);
-        LOGV2(8674100, "Truncated all retryable write sessions", "result"_attr = result);
     }
 
     /**

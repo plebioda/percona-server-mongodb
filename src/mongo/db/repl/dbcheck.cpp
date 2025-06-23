@@ -450,23 +450,14 @@ void maybeAppend(md5_state_t* state, const boost::optional<UUID>& uuid) {
     }
 }
 
-size_t getKeyStringSizeWithoutRecordId(const Collection* collection,
-                                       const key_string::Value& keyString) {
-    switch (collection->getRecordStore()->keyFormat()) {
-        case KeyFormat::Long:
-            return key_string::sizeWithoutRecordIdLongAtEnd(keyString.getBuffer(),
-                                                            keyString.getSize());
-
-        case KeyFormat::String:
-            return key_string::sizeWithoutRecordIdStrAtEnd(keyString.getBuffer(),
-                                                           keyString.getSize());
-    }
-    MONGO_UNREACHABLE;
-}
-
 BSONObj _keyStringToBsonSafeHelper(const key_string::Value& keyString, const Ordering& ordering) {
     return key_string::toBsonSafe(
         keyString.getBuffer(), keyString.getSize(), ordering, keyString.getTypeBits());
+}
+
+BSONObj _builderToBsonSafeHelper(const key_string::Builder& builder, const Ordering& ordering) {
+    return key_string::toBsonSafe(
+        builder.getBuffer(), builder.getSize(), ordering, builder.getTypeBits());
 }
 
 Status DbCheckHasher::hashForExtraIndexKeysCheck(OperationContext* opCtx,
@@ -514,7 +505,9 @@ Status DbCheckHasher::hashForExtraIndexKeysCheck(OperationContext* opCtx,
     // Note that seekForKeyString/nextKeyString always return a keyString with RecordId appended,
     // regardless of what format the index has.
     for (auto currEntryWithRecordId =
-             indexCursor->seekForKeyString(opCtx, batchStartWithoutRecordId);
+             indexCursor->seekForKeyString(opCtx,
+                                           StringData(batchStartWithoutRecordId.getBuffer(),
+                                                      batchStartWithoutRecordId.getSize()));
          currEntryWithRecordId;
          currEntryWithRecordId = indexCursor->nextKeyString(opCtx)) {
         iassert(opCtx->checkForInterruptNoAssert());
@@ -527,8 +520,7 @@ Status DbCheckHasher::hashForExtraIndexKeysCheck(OperationContext* opCtx,
                         key_string::rehydrateKey(indexDescriptor->keyPattern(), keyStringBson),
                     "indexName"_attr = indexName);
         // Append the keystring to the hash without the recordId at end.
-        size_t sizeWithoutRecordId =
-            getKeyStringSizeWithoutRecordId(collection, currKeyStringWithRecordId);
+        size_t sizeWithoutRecordId = currKeyStringWithRecordId.getSizeWithoutRecordId();
 
         _bytesSeen += sizeWithoutRecordId;
         _countKeysSeen += 1;
@@ -561,7 +553,7 @@ Status DbCheckHasher::hashForExtraIndexKeysCheck(OperationContext* opCtx,
 
     LOGV2_DEBUG(7844904,
                 3,
-                "Finished hashing one batch in hashe≠",
+                "Finished hashing one batch in hasher",
                 "firstKeyString"_attr =
                     key_string::rehydrateKey(indexDescriptor->keyPattern(), batchStartBson),
                 "lastKeyString"_attr =
@@ -631,7 +623,8 @@ Status DbCheckHasher::validateMissingKeys(OperationContext* opCtx,
 
             // seekForKeyString returns the closest key string if the exact keystring does not
             // exist.
-            auto ksEntry = cursor->seekForKeyString(opCtx, key);
+            auto ksEntry =
+                cursor->seekForKeyString(opCtx, StringData(key.getBuffer(), key.getSize()));
             // Dbcheck will access every index for each document, and we aim for the count to
             // represent the storage accesses. Therefore, we increment the number of keys seen.
             _countKeysSeen++;

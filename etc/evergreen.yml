@@ -97,9 +97,8 @@ commit_queue_aliases:
     variant_tags: []
     task_tags: []
   - variant: "^(amazon-linux2-arm64-dynamic-compile|linux-x86-dynamic-compile-required)$"
-    task: "clang_tidy.*"
     variant_tags: []
-    task_tags: []
+    task_tags: ["clang_tidy"]
 
 patch_aliases:
   - alias: required
@@ -122,3 +121,7 @@ patch_aliases:
     description: "Runs bazel build system tests"
     variant_tags: ["bazel_check"]
     task: ".*"
+  - alias: search
+    description: "Runs all $search, $vectorSearch tests"
+    variant: ".*"
+    task: "^.*search*"

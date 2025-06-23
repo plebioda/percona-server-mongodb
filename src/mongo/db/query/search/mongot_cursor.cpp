@@ -69,22 +69,17 @@ executor::RemoteCommandRequest getRemoteCommandRequestForSearchQuery(
         cmdBob.append(kIntermediateField, *protocolVersion);
     }
 
-    const auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
-    const auto needsSetBatchSize =
-        feature_flags::gFeatureFlagSearchBatchSizeTuning.isEnabled(fcvSnapshot) &&
-        batchSize.has_value();
-    // (Ignore FCV check): This feature is enabled on an earlier FCV.
-    // We should only set docsRequested if we're not setting batchSize.
-    // TODO SERVER-74941 Remove docsRequested alongside featureFlagSearchBatchSizeLimit.
-    const auto needsSetDocsRequested = !needsSetBatchSize &&
-        feature_flags::gFeatureFlagSearchBatchSizeLimit.isEnabledAndIgnoreFCVUnsafe() &&
-        docsRequested.has_value();
-    if (needsSetBatchSize || needsSetDocsRequested || requiresSearchSequenceToken) {
+    if (docsRequested.has_value() || batchSize.has_value() || requiresSearchSequenceToken) {
+        tassert(
+            8953001,
+            "Only one of docsRequested or batchSize should be set on the initial mongot request.",
+            !docsRequested.has_value() || !batchSize.has_value());
+
         BSONObjBuilder cursorOptionsBob(cmdBob.subobjStart(kCursorOptionsField));
-        if (needsSetBatchSize) {
+        if (batchSize.has_value()) {
             cursorOptionsBob.append(kBatchSizeField, batchSize.get());
         }
-        if (needsSetDocsRequested) {
+        if (docsRequested.has_value()) {
             cursorOptionsBob.append(kDocsRequestedField, docsRequested.get());
         }
         if (requiresSearchSequenceToken) {
@@ -161,12 +156,9 @@ std::vector<std::unique_ptr<executor::TaskExecutorCursor>> establishCursors(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     const executor::RemoteCommandRequest& command,
     std::shared_ptr<executor::TaskExecutor> taskExecutor,
-    bool preFetchNextBatch,
-    std::function<boost::optional<long long>()> calcDocsNeededFn,
+    std::unique_ptr<executor::TaskExecutorCursorGetMoreStrategy> getMoreStrategy,
     std::unique_ptr<PlanYieldPolicy> yieldPolicy) {
     std::vector<std::unique_ptr<executor::TaskExecutorCursor>> cursors;
-    auto getMoreStrategy = std::make_shared<executor::MongotTaskExecutorCursorGetMoreStrategy>(
-        preFetchNextBatch, calcDocsNeededFn);
     auto initialCursor =
         makeTaskExecutorCursor(expCtx->opCtx,
                                taskExecutor,
@@ -203,7 +195,11 @@ std::vector<std::unique_ptr<executor::TaskExecutorCursor>> establishCursorsForSe
     }
 
     boost::optional<long long> batchSize = boost::none;
-    if (minDocsNeededBounds.has_value() & maxDocsNeededBounds.has_value()) {
+    // We should only use batchSize if the batchSize feature flag (featureFlagSearchBatchSizeTuning)
+    // is enabled and we've already computed min/max bounds.
+    if (feature_flags::gFeatureFlagSearchBatchSizeTuning.isEnabled(
+            serverGlobalParams.featureCompatibility.acquireFCVSnapshot()) &&
+        minDocsNeededBounds.has_value() && maxDocsNeededBounds.has_value()) {
         // TODO SERVER-87077 This manual check for storedSource shouldn't be necessary if we pass
         // all arguments via the mongot remote spec.
         const auto storedSourceElem = query[kReturnStoredSourceArg];
@@ -211,14 +207,27 @@ std::vector<std::unique_ptr<executor::TaskExecutorCursor>> establishCursorsForSe
         batchSize = computeInitialBatchSize(
             expCtx, *minDocsNeededBounds, *maxDocsNeededBounds, userBatchSize, isStoredSource);
     }
+    // We disable setting docsRequested if we're already setting batchSize or if
+    // the docsRequested feature flag (featureFlagSearchBatchSizeLimit) is disabled.
+    // TODO SERVER-74941 Remove docsRequested alongside featureFlagSearchBatchSizeLimit.
+    // (Ignore FCV check): This feature is enabled on an earlier FCV.
+    if (batchSize.has_value() ||
+        !feature_flags::gFeatureFlagSearchBatchSizeLimit.isEnabledAndIgnoreFCVUnsafe()) {
+        docsRequested = boost::none;
+        // Set calcDocsNeededFn to disable docsRequested for getMore requests.
+        calcDocsNeededFn = nullptr;
+    } else {
+        // If we're enabling the docsRequested option, min/max bounds can be set to the
+        // docsRequested value (either the extracted limit value, or boost::none).
+        minDocsNeededBounds = docsRequested;
+        maxDocsNeededBounds = docsRequested;
+    }
 
-    // If we are sending docsRequested to mongot, then we should avoid prefetching the next
-    // batch. We optimistically assume that we will only need a single batch and attempt to
-    // avoid doing unnecessary work on mongot. If $idLookup filters out enough documents
-    // such that we are not able to satisfy the limit, then we will fetch the next batch
-    // syncronously on the subsequent 'getNext()' call.
-    // TODO SERVER-86739 batchSize tuning will change conditions for pre-fetch enablement
-    bool prefetchNextBatch = !docsRequested.has_value();
+    auto getMoreStrategy = std::make_unique<executor::MongotTaskExecutorCursorGetMoreStrategy>(
+        calcDocsNeededFn,
+        batchSize,
+        minDocsNeededBounds.value_or(docs_needed_bounds::Unknown()),
+        maxDocsNeededBounds.value_or(docs_needed_bounds::Unknown()));
     return establishCursors(expCtx,
                             getRemoteCommandRequestForSearchQuery(expCtx->opCtx,
                                                                   expCtx->ns,
@@ -230,8 +239,7 @@ std::vector<std::unique_ptr<executor::TaskExecutorCursor>> establishCursorsForSe
                                                                   batchSize,
                                                                   requiresSearchSequenceToken),
                             taskExecutor,
-                            prefetchNextBatch,
-                            calcDocsNeededFn,
+                            std::move(getMoreStrategy),
                             std::move(yieldPolicy));
 }
 
@@ -247,13 +255,15 @@ std::vector<std::unique_ptr<executor::TaskExecutorCursor>> establishCursorsForSe
         return {};
     }
 
+    auto getMoreStrategy = std::make_unique<executor::DefaultTaskExecutorCursorGetMoreStrategy>(
+        /*batchSize*/ boost::none,
+        /*preFetchNextBatch*/ false);
     return establishCursors(
         expCtx,
         getRemoteCommandRequestForSearchQuery(
             expCtx->opCtx, expCtx->ns, expCtx->uuid, expCtx->explain, query, protocolVersion),
         taskExecutor,
-        /*preFetchNextBatch*/ false,
-        /*calcDocsNeededFn*/ nullptr,
+        std::move(getMoreStrategy),
         std::move(yieldPolicy));
 }
 

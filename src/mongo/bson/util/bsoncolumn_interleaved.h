@@ -723,26 +723,65 @@ template <class Buffer>
 void BlockBasedInterleavedDecompressor::dispatchDecompressionForType(
     FastDecodingState<Buffer>& state, const char* control, uint8_t size) {
 
-    auto finish64 = [&state](size_t valueCount, int64_t lastValue, uint64_t lastNonRLEBlock) {
-        state._valueCount += valueCount;
-        state._lastNonRLEBlock = lastNonRLEBlock;
-        state._lastValue.template emplace<int64_t>(lastValue);
+    size_t bufIdx = 0;
+    const size_t lastBufIdx = state._buffers.size() - 1;
+
+    // These are finish functions that will update 'state'. We may need to decompress elements to
+    // more than on buffer, so make sure that we only update the state once.
+    auto finish64 = [&state, &bufIdx, lastBufIdx](
+                        size_t valueCount, int64_t lastValue, uint64_t lastNonRLEBlock) {
+        if (bufIdx == lastBufIdx) {
+            state._valueCount += valueCount;
+            state._lastNonRLEBlock = lastNonRLEBlock;
+            state._lastValue.template emplace<int64_t>(lastValue);
+        }
+        ++bufIdx;
     };
-    auto finish128 = [&state](size_t valueCount, int128_t lastValue, uint64_t lastNonRLEBlock) {
-        state._valueCount += valueCount;
-        state._lastNonRLEBlock = lastNonRLEBlock;
-        state._lastValue.template emplace<int128_t>(lastValue);
+    auto finish128 = [&state, &bufIdx, lastBufIdx](
+                         size_t valueCount, int128_t lastValue, uint64_t lastNonRLEBlock) {
+        if (bufIdx == lastBufIdx) {
+            state._valueCount += valueCount;
+            state._lastNonRLEBlock = lastNonRLEBlock;
+            state._lastValue.template emplace<int128_t>(lastValue);
+        }
+        ++bufIdx;
     };
-    auto finishDeltaOfDelta = [&state](size_t valueCount,
-                                       int64_t lastValue,
-                                       int64_t lastLastValue,
-                                       uint64_t lastNonRLEBlock) {
-        state._valueCount += valueCount;
-        state._lastNonRLEBlock = lastNonRLEBlock;
-        state._lastValue.template emplace<std::pair<int64_t, int64_t>>(lastValue, lastLastValue);
+    auto finishDouble = [&state, &bufIdx, lastBufIdx](size_t valueCount,
+                                                      int64_t lastValue,
+                                                      uint8_t scaleIndex,
+                                                      uint64_t lastNonRLEBlock) {
+        if (bufIdx == lastBufIdx) {
+            state._valueCount += valueCount;
+            state._lastNonRLEBlock = lastNonRLEBlock;
+            double v = Simple8bTypeUtil::decodeDouble(lastValue, scaleIndex);
+            state._lastValue.template emplace<double>(v);
+        }
+        ++bufIdx;
     };
+    auto finishDeltaOfDelta = [&state, &bufIdx, lastBufIdx](size_t valueCount,
+                                                            int64_t lastValue,
+                                                            int64_t lastLastValue,
+                                                            uint64_t lastNonRLEBlock) {
+        if (bufIdx == lastBufIdx) {
+            state._valueCount += valueCount;
+            state._lastNonRLEBlock = lastNonRLEBlock;
+            state._lastValue.template emplace<std::pair<int64_t, int64_t>>(lastValue,
+                                                                           lastLastValue);
+        }
+        ++bufIdx;
+    };
+    auto finishLiteral = [&state, &bufIdx, lastBufIdx](size_t valueCount,
+                                                       uint64_t lastNonRLEBlock) {
+        if (bufIdx == lastBufIdx) {
+            state._valueCount += valueCount;
+            state._lastNonRLEBlock = lastNonRLEBlock;
+        }
+        ++bufIdx;
+    };
+
     const char* ptr = nullptr;
     const char* end = control + size + 1;
+
     switch (state._refElem.type()) {
         case Bool:
             for (auto&& buffer : state._buffers) {
@@ -816,15 +855,7 @@ void BlockBasedInterleavedDecompressor::dispatchDecompressionForType(
                     *buffer,
                     std::get<double>(state._lastValue),
                     state._lastNonRLEBlock,
-                    [&state](size_t valueCount,
-                             int64_t lastValue,
-                             uint8_t scaleIndex,
-                             uint64_t lastNonRLEBlock) {
-                        state._valueCount += valueCount;
-                        state._lastNonRLEBlock = lastNonRLEBlock;
-                        double v = Simple8bTypeUtil::decodeDouble(lastValue, scaleIndex);
-                        state._lastValue.template emplace<double>(v);
-                    });
+                    finishDouble);
             }
             break;
         case bsonTimestamp: {
@@ -899,10 +930,10 @@ void BlockBasedInterleavedDecompressor::dispatchDecompressionForType(
             }
             break;
         case BinData:
-            for (auto&& buffer : state._buffers) {
-                // If the lastValue is not a 'int128_t', then the binData is too large to be
-                // decoded and should be treated as a literal.
-                if (auto lastValue = std::get_if<int128_t>(&state._lastValue)) {
+            // If the lastValue is not a 'int128_t', then the binData is too large to be decoded and
+            // should be treated as a literal.
+            if (auto lastValue = std::get_if<int128_t>(&state._lastValue)) {
+                for (auto&& buffer : state._buffers) {
                     ptr = BSONColumnBlockDecompressHelpers::
                         decompressAllDelta<BSONBinData, int128_t, Buffer>(
                             control,
@@ -918,16 +949,11 @@ void BlockBasedInterleavedDecompressor::dispatchDecompressionForType(
                                 buffer.append(BSONBinData(data, size, ref.binDataType()));
                             },
                             finish128);
-                } else {
+                }
+            } else {
+                for (auto&& buffer : state._buffers) {
                     ptr = BSONColumnBlockDecompressHelpers::decompressAllLiteral(
-                        control,
-                        end,
-                        *buffer,
-                        state._lastNonRLEBlock,
-                        [&state](size_t valueCount, uint64_t lastNonRLEBlock) {
-                            state._valueCount += valueCount;
-                            state._lastNonRLEBlock = lastNonRLEBlock;
-                        });
+                        control, end, *buffer, state._lastNonRLEBlock, finishLiteral);
                 }
             }
             break;
@@ -943,7 +969,8 @@ void BlockBasedInterleavedDecompressor::dispatchDecompressionForType(
                         state._refElem,
                         [](const int128_t v, const BSONElement& ref, Buffer& buffer) {
                             auto string = Simple8bTypeUtil::decodeString(v);
-                            buffer.append(StringData((const char*)string.str.data(), string.size));
+                            buffer.append(
+                                BSONCode(StringData((const char*)string.str.data(), string.size)));
                         },
                         finish128);
             }
@@ -960,14 +987,7 @@ void BlockBasedInterleavedDecompressor::dispatchDecompressionForType(
         case MaxKey:
             for (auto&& buffer : state._buffers) {
                 ptr = BSONColumnBlockDecompressHelpers::decompressAllLiteral(
-                    control,
-                    end,
-                    *buffer,
-                    state._lastNonRLEBlock,
-                    [&state](size_t valueCount, uint64_t lastNonRLEBlock) {
-                        state._valueCount += valueCount;
-                        state._lastNonRLEBlock = lastNonRLEBlock;
-                    });
+                    control, end, *buffer, state._lastNonRLEBlock, finishLiteral);
             }
             break;
         default:

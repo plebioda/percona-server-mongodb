@@ -200,6 +200,7 @@ MONGO_FAIL_POINT_DEFINE(hangBeforeSessionCheckOut);
 MONGO_FAIL_POINT_DEFINE(hangAfterSessionCheckOut);
 MONGO_FAIL_POINT_DEFINE(hangBeforeSettingTxnInterruptFlag);
 MONGO_FAIL_POINT_DEFINE(hangAfterCheckingWritabilityForMultiDocumentTransactions);
+MONGO_FAIL_POINT_DEFINE(failWithErrorCodeAfterSessionCheckOut);
 
 // Tracks the number of times a legacy unacknowledged write failed due to
 // not primary error resulted in network disconnection.
@@ -594,15 +595,17 @@ private:
         validateAPIParameters(request.body, _requestArgs.getAPIParametersFromClient(), command);
 
         Client* client = opCtx->getClient();
-
         {
             stdx::lock_guard<Client> lk(*client);
             // We construct a legacy $cmd namespace so we can fill in curOp using
             // the existing logic that existed for OP_QUERY commands
-            NamespaceString nss(NamespaceString::makeCommandNamespace(_requestArgs.getDbName()));
-            CurOp::get(opCtx)->setNS_inlock(std::move(nss));
-
-            CurOp::get(opCtx)->setCommand_inlock(command);
+            CurOp::get(opCtx)->setGenericOpRequestDetails_inlock(
+                NamespaceString::makeCommandNamespace(_requestArgs.getDbName()),
+                command,
+                request.body,
+                _execContext.op());
+            // We must obtain the client lock to set APIParameters on the operation context, as it
+            // may be concurrently read by CurrentOp.
             APIParameters::get(opCtx) =
                 APIParameters::fromClient(_requestArgs.getAPIParametersFromClient());
         }
@@ -822,6 +825,19 @@ void CheckoutSessionAndInvokeCommand::run() {
             tenant_migration_access_blocker::checkIfCanRunCommandOrBlock(
                 execContext.getOpCtx(), dbName, execContext.getRequest())
                 .get(execContext.getOpCtx());
+
+            if (auto scoped = failWithErrorCodeAfterSessionCheckOut.scoped();
+                MONGO_unlikely(scoped.isActive())) {
+                const auto errorCode =
+                    static_cast<ErrorCodes::Error>(scoped.getData()["errorCode"].numberInt());
+                LOGV2_DEBUG(8535500,
+                            1,
+                            "failWithErrorCodeAfterSessionCheckOut enabled, failing command",
+                            "errorCode"_attr = errorCode);
+                BSONObjBuilder errorBuilder;
+                return Status(errorCode, "failWithErrorCodeAfterSessionCheckOut enabled.");
+            }
+
             runCommandInvocation(_ecd->getExecutionContext(), _ecd->getInvocation());
             return Status::OK();
         } catch (const ExceptionForCat<ErrorCategory::TenantMigrationConflictError>& ex) {
@@ -2111,18 +2127,6 @@ void ExecCommandDatabase::_handleFailure(Status status) {
     }
 }
 
-/**
- * Fills out CurOp / OpDebug with basic command info.
- */
-void curOpCommandSetup(OperationContext* opCtx, const OpMsgRequest& request) {
-    auto curop = CurOp::get(opCtx);
-    curop->debug().iscommand = true;
-
-    stdx::lock_guard<Client> lk(*opCtx->getClient());
-    curop->setOpDescription_inlock(request.body);
-    curop->markCommand_inlock();
-}
-
 void parseCommand(HandleRequest::ExecutionContext& execContext) try {
     const auto& msg = execContext.getMessage();
     auto client = execContext.getOpCtx()->getClient();
@@ -2147,7 +2151,6 @@ void executeCommand(HandleRequest::ExecutionContext& execContext) {
     // Prepare environment for command execution (e.g., find command object in registry)
     auto opCtx = execContext.getOpCtx();
     auto& request = execContext.getRequest();
-    curOpCommandSetup(opCtx, request);
 
     // In the absence of a Command object, no redaction is possible. Therefore to avoid
     // displaying potentially sensitive information in the logs, we restrict the log
@@ -2172,13 +2175,6 @@ void executeCommand(HandleRequest::ExecutionContext& execContext) {
                                      : ""),
                 "commandArgs"_attr =
                     redact(ServiceEntryPointCommon::getRedactedCopyForLogging(c, request.body)));
-
-    {
-        // Try to set this as early as possible, as soon as we have figured out the
-        // command.
-        stdx::lock_guard<Client> lk(*opCtx->getClient());
-        CurOp::get(opCtx)->setLogicalOp_inlock(c->getLogicalOp());
-    }
 
     opCtx->setExhaust(OpMsg::isFlagSet(execContext.getMessage(), OpMsg::kExhaustSupported));
 
@@ -2288,7 +2284,6 @@ DbResponse receivedCommands(HandleRequest::ExecutionContext& execContext) {
 void HandleRequest::startOperation() {
     auto opCtx = executionContext.getOpCtx();
     auto& client = executionContext.client();
-    auto& currentOp = executionContext.currentOp();
 
     if (client.isInDirectClient()) {
         if (!opCtx->getLogicalSessionId() || !opCtx->getTxnNumber()) {
@@ -2301,13 +2296,6 @@ void HandleRequest::startOperation() {
 
         // We should not be holding any locks at this point
         invariant(!shard_role_details::getLocker(opCtx)->isLocked());
-    }
-    {
-        stdx::lock_guard<Client> lk(client);
-        // Commands handling code will reset this if the operation is a command
-        // which is logically a basic CRUD operation like query, insert, etc.
-        currentOp.setNetworkOp_inlock(executionContext.op());
-        currentOp.setLogicalOp_inlock(networkOpToLogicalOp(executionContext.op()));
     }
 }
 

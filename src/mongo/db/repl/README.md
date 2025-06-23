@@ -754,10 +754,14 @@ Replica set nodes receive the `$readPreference` in a command invocation for vali
 This is to ensure that the given `$readPreference` matches the current state of the node, as the
 replica set state may have changed in the time between the client’s server selection and the node
 receiving the command. If it doesn't match, the operation will fail with one of the error codes
-mentioned below.
+mentioned below. Note that there are still edge cases for `primary` or `secondary` read preferences.
+With lock-free reads, a node can validate an operation's read preference in the command layer and
+perform a state transition before the read succeeds, as reads are not killed on step up or step down.
+This can result in a newly-stepped down secondary servicing a `primary` read preference, or a
+newly-stepped up primary servicing a `secondary` read preference.
 
 Commands can define whether or not they can run on a secondary by overriding the
-`[secondaryAllowed](https://github.com/10gen/mongo/blob/r7.1.0/src/mongo/db/commands.h#L502-L509)`
+[`secondaryAllowed`](https://github.com/mongodb/mongo/blob/r7.1.0/src/mongo/db/commands.h#L502-L509)
 function. If a secondary node receives an operation it cannot service, it will either fail with a
 `NotWritablePrimary` error if the command is designated as primary-only, or a `NotPrimaryNoSecondaryOk`
 error if the command can be serviced by a secondary but the operation’s`$readPreference` specifies
@@ -2372,6 +2376,45 @@ committed. However, this is safe because we do not allow rollbacks before the
   same for non-prepared transactions because we do not write down the oplog entry until we commit the
   transaction. For a prepared transaction, we have the following guarantee: `prepareTimestamp` <=
   `commitTimestamp` <= `commit oplog entry timestamp`
+
+# Replication state transitions
+
+```mermaid
+  graph TD
+  STARTUP --> STARTUP2
+  STARTUP2 --> RECOVERING
+  RECOVERING --> SECONDARY
+  SECONDARY <-- election --> PRIMARY
+  PRIMARY --> REMOVED
+  PRIMARY -- [5] --> RECOVERING
+  SECONDARY <--> ROLLBACK
+  ROLLBACK --[7] --> RECOVERING
+  REMOVED -- [6] --> RECOVERING
+  SECONDARY -- [4] --> MAINTENANCE(MAINTENANCE #91;2#93;)
+  MAINTENANCE -- [3] --> SECONDARY
+  STARTUP --> ARBITER
+  ARBITER <--> REMOVED
+  REMOVED <--> SECONDARY
+  ROLLBACK --> REMOVED
+  STARTUP --> REMOVED
+  REMOVED <--> STARTUP2
+  UNKNOWN(UNKNOWN #91;1#93;)
+  DOWN(DOWN #91;1#93;)
+
+  %% The following are invisible links and nodes used for formatting:
+  REMOVED ~~~ UNKNOWN
+  REMOVED ~~~ DOWN
+  ROLLBACK ~~~ SPACER(" ") ~~~ REMOVED
+  style SPACER height:0px;
+```
+
+- **`[1]`**: A node can never be in that state. One node can consider another to be in that state.
+- **`[2]`**: Not an actual MemberState, RECOVERING + a [separate flag](https://github.com/10gen/mongo/blob/v8.0/src/mongo/db/repl/topology_coordinator.h#L1206)
+- **`[3]`**: With manual replSetMaintenance or when [switching sync source](https://github.com/10gen/mongo/blob/v8.0/src/mongo/db/repl/bgsync.cpp#L485-L486)
+- **`[4]`**: Too stale or manual replSetMaintenance
+- **`[5]`**: When stepping down with [\_hasOnlyAuthErrorUpHeartbeats(...) returning true](https://github.com/10gen/mongo/blob/v8.0/src/mongo/db/repl/topology_coordinator.cpp#L2737-L2739)
+- **`[6]`**: [Code in ReplicationCoordinatorImpl::\_startDataReplication](https://github.com/10gen/mongo/blob/v8.0/src/mongo/db/repl/replication_coordinator_impl.cpp#L899-L900) allows it
+- **`[7]`**: For Rollback via Refetch (which is not used starting in 5.0), [here](https://github.com/10gen/mongo/blob/v8.0/src/mongo/db/repl/rs_rollback.cpp#L2026)
 
 # Non-replication subsystems dependent on replication state transitions.
 

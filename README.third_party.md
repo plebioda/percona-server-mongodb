@@ -28,7 +28,6 @@ a notice will be included in
 | [Boost]                    | BSL-1.0                                                        | 1.79.0                                             |                      |                ✗                |
 | [c-ares]                   | MIT                                                            | 1.19.1                                             |                      |                ✗                |
 | [CRoaring]                 | Apache-2.0/ MIT                                                | 2.1.2.1                                            |                      |                ✗                |
-| [double-conversion]        | BSD 3-Clause                                                   | bf4607277fa7133825cb7899015374917cd06b8f           |                      |                ✗                |
 | [fmt]                      | BSD-2-Clause                                                   | 7.1.3                                              |                      |                ✗                |
 | [GPerfTools]               | BSD-3-Clause                                                   | 2.9.1                                              |                      |                ✗                |
 | [gRPC]                     | Apache-2.0                                                     | 1.59.2                                             |                      |                ✗                |
@@ -41,6 +40,7 @@ a notice will be included in
 | [libmongocrypt]            | Apache-2.0                                                     | 1.8.4                                              |          ✗           |                ✗                |
 | [linenoise]                | BSD-3-Clause                                                   | 6cdc775 + changes                                  |                      |                ✗                |
 | [mongo-c-driver]           | Apache-2.0                                                     | 1.23.0                                             |          ✗           |                ✗                |
+| [mongo-cxx-driver]         | Apache-2.0                                                     | r3.7.1                                             |          ✗           |                ✗                |
 | [MozJS]                    | MPL-2.0                                                        | ESR 91.3.0                                         |                      |                ✗                |
 | [MurmurHash3]              | Public Domain                                                  | a6bd3ce + changes                                  |          ✗           |                ✗                |
 | [ocspbuilder]              | MIT                                                            | 0.10.2                                             |                      |                                 |
@@ -72,7 +72,6 @@ a notice will be included in
 [benchmark]: https://github.com/google/benchmark
 [Boost]: http://www.boost.org/
 [CRoaring]: https://github.com/RoaringBitmap/CRoaring
-[double-conversion]: https://github.com/google/double-conversion "transitive dependency of MozJS"
 [fmt]: http://fmtlib.net/
 [GPerfTools]: https://github.com/gperftools/gperftools
 [gRPC]: https://github.com/grpc/grpc
@@ -86,6 +85,7 @@ a notice will be included in
 [linenoise]: https://github.com/antirez/linenoise
 [lz4]: https://github.com/lz4/lz4
 [mongo-c-driver]: https://github.com/mongodb/mongo-c-driver
+[mongo-cxx-driver]: https://github.com/mongodb/mongo-cxx-driver
 [MozJS]: https://www.mozilla.org/en-US/security/known-vulnerabilities/firefox-esr
 [MurmurHash3]: https://github.com/aappleby/smhasher/blob/a6bd3ce/
 [ocspbuilder]: https://github.com/wbond/ocspbuilder

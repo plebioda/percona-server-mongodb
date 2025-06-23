@@ -170,7 +170,7 @@ void BalancerStatsRegistry::initializeAsync(OperationContext* opCtx) {
         .getAsync([](auto) {});
 }
 
-void BalancerStatsRegistry::terminate() {
+void BalancerStatsRegistry::_terminate() {
     {
         stdx::lock_guard lk{_stateMutex};
         _state.store(State::kTerminating);
@@ -180,8 +180,10 @@ void BalancerStatsRegistry::terminate() {
         }
     }
 
-    // Wait for the  asynchronous initialization to complete
-    _threadPool->waitForIdle();
+    if (_threadPool) {
+        // Wait for the  asynchronous initialization to complete
+        _threadPool->waitForIdle();
+    }
 
     {
         // Clear the stats
@@ -195,7 +197,18 @@ void BalancerStatsRegistry::terminate() {
 }
 
 void BalancerStatsRegistry::onStepDown() {
-    terminate();
+    _terminate();
+    _state.store(State::kSecondary);
+}
+
+void BalancerStatsRegistry::onShutdown() {
+    _terminate();
+    if (_threadPool) {
+        _threadPool->shutdown();
+        _threadPool->join();
+        _threadPool.reset();
+    }
+
     _state.store(State::kSecondary);
 }
 
@@ -317,9 +330,12 @@ void BalancerStatsRegistry::updateOrphansCount(const UUID& collectionUUID, long 
         stats.numOrphanDocs += delta;
 
         if (stats.numOrphanDocs < 0) {
-            // This should happen only in case of direct manipulation of range deletion tasks
-            // documents or direct writes into orphaned ranges
-            LOGV2_ERROR(6419611,
+            // This could happen in case of direct manipulation of range deletion tasks documents or
+            // direct writes into orphaned ranges, but also in some other benign situations.
+            // numOrphanDocs is a best-effort counter, miscounting or even being negative in some
+            // scenarios is expected.
+            LOGV2_DEBUG(6419611,
+                        1,
                         "Cached orphan documents count became negative, resetting it to 0",
                         "collectionUUID"_attr = collectionUUID,
                         "numOrphanDocs"_attr = stats.numOrphanDocs,
@@ -367,7 +383,8 @@ void BalancerStatsRegistry::_loadOrphansCount(OperationContext* opCtx) {
             auto numRangeDeletionTasks = collObj[kNumRangeDeletionTasksLabel].exactNumberLong();
             invariant(numRangeDeletionTasks > 0);
             if (orphanCount < 0) {
-                LOGV2_ERROR(6419621,
+                LOGV2_DEBUG(6419621,
+                            1,
                             "Found negative orphan count in range deletion task documents",
                             "collectionUUID"_attr = collUUID,
                             "numOrphanDocs"_attr = orphanCount,

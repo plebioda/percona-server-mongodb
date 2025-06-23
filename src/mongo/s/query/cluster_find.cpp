@@ -323,7 +323,9 @@ std::vector<AsyncRequestsSender::Request> constructRequestsForShards(
 void updateNumHostsTargetedMetrics(OperationContext* opCtx,
                                    const ChunkManager& cm,
                                    int nTargetedShards) {
-    int nShardsOwningChunks = cm.hasRoutingTable() ? cm.getNShardsOwningChunks() : 0;
+    // Note: It is fine to use 'getAproxNShardsOwningChunks' here because the result is only used to
+    // update stats.
+    int nShardsOwningChunks = cm.hasRoutingTable() ? cm.getAproxNShardsOwningChunks() : 0;
     auto targetType = NumHostsTargetedMetrics::get(opCtx).parseTargetType(
         opCtx, nTargetedShards, nShardsOwningChunks, cm.isSharded());
     NumHostsTargetedMetrics::get(opCtx).addNumHostsTargeted(
@@ -487,7 +489,7 @@ CursorId runQueryWithoutRetrying(OperationContext* opCtx,
 
     // Retrieve enough data from the ClusterClientCursor for the first batch of results.
 
-    FindCommon::waitInFindBeforeMakingBatch(opCtx, query);
+    FindCommon::waitInFindBeforeMakingBatch(opCtx, query, &routerWaitInFindBeforeMakingBatch);
 
     if (findCommand.getAllowPartialResults() &&
         opCtx->checkForInterruptNoAssert().code() == ErrorCodes::MaxTimeMSExpired) {

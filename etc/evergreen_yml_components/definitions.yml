@@ -240,6 +240,20 @@ functions:
       bucket: mciuploads
       local_file: src/mongo-binaries.tgz
 
+  "write mongo binary URL to downstream_expansions.yml": &echo_mongo_binary_url
+    command: shell.exec
+    params:
+      shell: bash
+      script: |
+        touch downstream_expansions.yaml
+        echo "${build_variant}-mongo-binaries: https://mciuploads.s3.amazonaws.com/${mongo_binaries}" 2>&1 | tee downstream_expansions.yaml
+
+  "set downstreams expansions": &downstream_expansions
+    command: downstream_expansions.set
+    display_name: "set downstream expansions"
+    params:
+      file: downstream_expansions.yaml
+
   "extract binaries": &extract_binaries
     command: subprocess.exec
     display_name: "extract binaries"
@@ -671,6 +685,10 @@ functions:
     - *monitor_process_threads
     - *collect_system_resource_info
     - *collect_ulimit_info
+
+  "write and set downstream expansions":
+    - *echo_mongo_binary_url
+    - *downstream_expansions
 
   "do setup for antithesis":
     - command: s3.get
@@ -1159,6 +1177,18 @@ functions:
         updates:
           - key: install_dir
             value: ${install_dir}
+    - command: s3.put
+      display_name: "attach bazel scons diff file"
+      params:
+        optional: true
+        aws_key: ${aws_key}
+        aws_secret: ${aws_secret}
+        local_file: src/build/merged_diff.md
+        remote_file: ${project}/${build_variant}/${revision}/bazel-scons-diff-${task_id}-${execution}.md
+        bucket: mciuploads
+        permissions: public-read
+        content_type: text/markdown
+        display_name: Bazel-SCons Diff File
 
   # This is only used to simulate local dev compilation. Do NOT use for anything else.
   "scons raw compile":
@@ -1173,6 +1203,32 @@ functions:
         binary: bash
         args:
           - "src/evergreen/scons_raw_compile.sh"
+
+  "bazel scons diff":
+    - *get_version_expansions
+    - *apply_version_expansions
+    - *f_expansions_write
+    - *scons_splunk
+    - command: subprocess.exec
+      display_name: "bazel scons diff"
+      type: test
+      params:
+        binary: bash
+        args:
+          - "src/evergreen/bazel_scons_diff.sh"
+
+  "attach bazel scons diff file":
+    command: s3.put
+    params:
+      optional: true
+      aws_key: ${aws_key}
+      aws_secret: ${aws_secret}
+      local_file: src/build/merged_diff.md
+      remote_file: ${project}/${build_variant}/${revision}/bazel-scons-diff-${task_id}-${execution}.md
+      bucket: mciuploads
+      permissions: public-read
+      content_type: text/plain
+      display_name: Bazel-SCons Diff File
 
   "fetch bazel":
     - command: subprocess.exec
@@ -2520,6 +2576,12 @@ functions:
         binary: bash
         args:
           - "./src/evergreen/external_auth_oidc_teardown.sh"
+
+    - command: subprocess.exec
+      params:
+        binary: bash
+        args:
+          - "./src/evergreen/sasl_windows_cyrussasl_teardown.sh"
 
   "do scons setup":
     - command: manifest.load

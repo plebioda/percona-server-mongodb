@@ -64,18 +64,10 @@ SnapshotId getNextSnapshotId() {
 }
 }  // namespace
 
-RecoveryUnit::RecoveryUnit() : _snapshot(getNextSnapshotId()) {}
-
-RecoveryUnit::~RecoveryUnit() = default;
-
-RecoveryUnit::Snapshot& RecoveryUnit::getSnapshot() {
-    return _snapshot.get();
-}
-
-void RecoveryUnit::assignNextSnapshot() {
-    // The current snapshot's destructor will be called first, followed by the constructors for the
-    // next snapshot.
-    _snapshot.emplace(getNextSnapshotId());
+void RecoveryUnit::ensureSnapshot() {
+    if (!_snapshot) {
+        _snapshot.emplace(getNextSnapshotId());
+    }
 }
 
 void RecoveryUnit::registerPreCommitHook(std::function<void(OperationContext*)> callback) {
@@ -124,13 +116,13 @@ void RecoveryUnit::beginUnitOfWork(bool readOnly) {
 void RecoveryUnit::commitUnitOfWork() {
     invariant(!_readOnly);
     doCommitUnitOfWork();
-    assignNextSnapshot();
+    resetSnapshot();
 }
 
 void RecoveryUnit::abortUnitOfWork() {
     invariant(!_readOnly);
     doAbortUnitOfWork();
-    assignNextSnapshot();
+    resetSnapshot();
 }
 
 void RecoveryUnit::endReadOnlyUnitOfWork() {
@@ -139,7 +131,7 @@ void RecoveryUnit::endReadOnlyUnitOfWork() {
 
 void RecoveryUnit::abandonSnapshot() {
     doAbandonSnapshot();
-    assignNextSnapshot();
+    resetSnapshot();
 }
 
 void RecoveryUnit::setOperationContext(OperationContext* opCtx) {

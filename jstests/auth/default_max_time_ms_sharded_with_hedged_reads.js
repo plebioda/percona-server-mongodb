@@ -3,7 +3,7 @@
  *
  * @tags: [
  *   creates_and_authenticates_user,
- *   requires_fcv_81,
+ *   requires_fcv_80,
  *   # Transactions aborted upon fcv upgrade or downgrade; cluster parameters use internal txns.
  *   required_auth,
  *   requires_sharding,
@@ -52,7 +52,7 @@ let st = new ShardingTest({
         }
     }],
     shards: 1,
-    config: {nodes: 1},
+    config: 2,
     other: {keyFile: 'jstests/libs/key1'},
     rs: {nodes: 2, setParameter: {logComponentVerbosity: tojson({command: {verbosity: 1}})}}
 });

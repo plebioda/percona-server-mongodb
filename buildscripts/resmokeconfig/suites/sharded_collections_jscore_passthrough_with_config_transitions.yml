@@ -46,9 +46,6 @@ selector:
     - jstests/core/**/create_indexes.js
     - jstests/core/**/list_indexes_non_existent_ns.js
     - jstests/core/**/mr_preserve_indexes.js
-    # These tests fail because sharded clusters do not clean up correctly after failed index builds.
-    # See SERVER-33207 as an example.
-    - jstests/core/**/geo_borders.js
     # TODO: Remove after fixing SERVER-29449. executionStats.nReturned is incorrect for sharded
     # queries with a limit or for distinct commands.
     - jstests/core/**/distinct_index1.js
@@ -195,6 +192,9 @@ selector:
     # Currently this passthrough enables the balancer to allow the config transition to successfully complete.
     - assumes_balancer_off
 
+    # TODO SERVER-90239 Enable time series tests.
+    - requires_timeseries
+
 executor:
   archive:
     hooks:
@@ -216,7 +216,7 @@ executor:
   fixture:
     class: ShardedClusterFixture
     config_shard: "any"
-    num_shards: 2
+    num_shards: 3
     mongos_options:
       set_parameters:
         enableTestCommands: 1

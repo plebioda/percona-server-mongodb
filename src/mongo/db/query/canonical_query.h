@@ -158,6 +158,11 @@ public:
         return _sortPattern;
     }
 
+    void resetSortPattern() {
+        _findCommand->setSort(BSONObj());
+        _sortPattern = boost::none;
+    }
+
     const CollatorInterface* getCollator() const {
         return _expCtx->getCollator();
     }
@@ -313,10 +318,7 @@ public:
     }
 
     void setCqPipeline(std::vector<boost::intrusive_ptr<DocumentSource>> cqPipeline,
-                       bool containsEntirePipeline) {
-        _cqPipeline = std::move(cqPipeline);
-        _containsEntirePipeline = containsEntirePipeline;
-    }
+                       bool containsEntirePipeline);
 
     const std::vector<boost::intrusive_ptr<DocumentSource>>& cqPipeline() const {
         return _cqPipeline;

@@ -186,7 +186,12 @@ void executeChildBatches(OperationContext* opCtx,
             break;
         }
 
-        TargetedWriteBatch* writeBatch = childBatches.find(response.shardId)->second.get();
+        auto iter = childBatches.find(response.shardId);
+        tassert(8971901,
+                "Unexpectedly could not find batches sent to a shard",
+                iter != childBatches.end());
+
+        TargetedWriteBatch* writeBatch = iter->second.get();
         tassert(8048101, "Unexpectedly could not find write batch for shard", writeBatch);
 
         // When the responseStatus is not OK, this means that mongos was unable to receive a
@@ -604,8 +609,10 @@ void executeWriteWithoutShardKey(
             return childBatches.begin()->second.get();
         }();
 
+        // Note: It is fine to use 'getAproxNShardsOwningChunks' here because the result is only
+        // used to update stats.
         bulkWriteOp.noteTwoPhaseWriteProtocol(
-            *targetedWriteBatch, nsIdx, targeter->getNShardsOwningChunks());
+            *targetedWriteBatch, nsIdx, targeter->getAproxNShardsOwningChunks());
 
         auto cmdObj = bulkWriteOp
                           .buildBulkCommandRequest(targeters,
@@ -682,7 +689,7 @@ void executeWriteWithoutShardKey(
     }
 }
 
-void executeNonTargetedSingleWriteWithoutShardKeyWithId(
+void executeNonTargetedWriteWithoutShardKeyWithId(
     OperationContext* opCtx,
     const std::vector<std::unique_ptr<NSTargeter>>& targeters,
     TargetedBatchMap& childBatches,
@@ -776,7 +783,7 @@ BulkWriteReplyInfo execute(OperationContext* opCtx,
                 executeWriteWithoutShardKey(
                     opCtx, targeters, childBatches, bulkWriteOp, errorsPerNamespace);
             } else if (targetStatus.getValue() == WriteType::WithoutShardKeyWithId) {
-                executeNonTargetedSingleWriteWithoutShardKeyWithId(
+                executeNonTargetedWriteWithoutShardKeyWithId(
                     opCtx, targeters, childBatches, bulkWriteOp, errorsPerNamespace);
             } else if (targetStatus.getValue() == WriteType::MultiWriteBlockingMigrations) {
                 coordinateMultiUpdate(opCtx, childBatches, bulkWriteOp);
@@ -861,7 +868,10 @@ BulkWriteReplyInfo execute(OperationContext* opCtx,
     }
 
     for (size_t nsIdx = 0; nsIdx < targeters.size(); ++nsIdx) {
-        bulkWriteOp.noteNumShardsOwningChunks(nsIdx, targeters[nsIdx]->getNShardsOwningChunks());
+        // Note: It is fine to use 'getAproxNShardsOwningChunks' here because the result is only
+        // used to update stats.
+        bulkWriteOp.noteNumShardsOwningChunks(nsIdx,
+                                              targeters[nsIdx]->getAproxNShardsOwningChunks());
     }
 
     LOGV2_DEBUG(7263701, 4, "Finished execution of bulkWrite");
@@ -1795,7 +1805,6 @@ void BulkWriteOp::finishExecutingWriteWithoutShardKeyWithId() {
             if (targeterHasStaleShardResponse()) {
                 if (writeOp.getWriteState() != WriteOpState_Ready) {
                     writeOp.resetWriteToReady();
-                    _shouldStopCurrentRound = false;
                 }
             } else if (writeOp.getWriteState() != WriteOpState_Error) {
                 auto nVal = response.getNModified() + response.getNDeleted();
@@ -1824,6 +1833,10 @@ void BulkWriteOp::finishExecutingWriteWithoutShardKeyWithId() {
         }
         _deferredWCErrors = boost::none;
     }
+
+    // Setting _shouldStopCurrentRound to false here allows for the processing of any pending
+    // writeOps. The decision to stop retrying for the current writeOp is made before this point.
+    _shouldStopCurrentRound = false;
 }
 
 int BulkWriteOp::getBaseChildBatchCommandSizeEstimate() const {

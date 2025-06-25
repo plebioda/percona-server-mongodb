@@ -31,31 +31,46 @@
 #include <boost/optional/optional.hpp>
 
 #include "mongo/db/operation_context.h"
+#include "mongo/db/ops/parsed_delete.h"
+#include "mongo/db/ops/parsed_update.h"
 #include "mongo/db/query/index_entry.h"
 #include "mongo/db/query/plan_executor.h"
 #include "mongo/db/query/query_planner_params.h"
 #include "mongo/db/s/scoped_collection_metadata.h"
 #include "mongo/db/session/logical_session_id.h"
 
+
 namespace mongo {
 std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> makeExpressExecutorForFindById(
     OperationContext* opCtx,
     std::unique_ptr<CanonicalQuery> cq,
     VariantCollectionPtrOrAcquisition coll,
-    boost::optional<ScopedCollectionFilter> collectionFilter);
+    boost::optional<ScopedCollectionFilter> collectionFilter,
+    bool returnOwnedBson);
 
 std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> makeExpressExecutorForFindByClusteredId(
     OperationContext* opCtx,
     std::unique_ptr<CanonicalQuery> cq,
     VariantCollectionPtrOrAcquisition coll,
-    boost::optional<ScopedCollectionFilter> collectionFilter);
+    boost::optional<ScopedCollectionFilter> collectionFilter,
+    bool returnOwnedBson);
 
 std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> makeExpressExecutorForFindByUserIndex(
     OperationContext* opCtx,
     std::unique_ptr<CanonicalQuery> cq,
     VariantCollectionPtrOrAcquisition coll,
     const IndexEntry& index,
-    boost::optional<ScopedCollectionFilter> collectionFilter);
+    boost::optional<ScopedCollectionFilter> collectionFilter,
+    bool returnOwnedBson);
+
+std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> makeExpressExecutorForUpdate(
+    OperationContext* opCtx,
+    CollectionAcquisition collection,
+    ParsedUpdate* parsedUpdate,
+    bool returnOwnedBson);
+
+std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> makeExpressExecutorForDelete(
+    OperationContext* opCtx, CollectionAcquisition collection, ParsedDelete* parsedDelete);
 
 /**
  * Tries to find an index suitable for use in the express equality path. Excludes indexes which

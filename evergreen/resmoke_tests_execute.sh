@@ -143,7 +143,7 @@ if [[ ${disable_unit_tests} = "false" && ! -f ${skip_tests} ]]; then
     $extra_args \
     ${test_flags} \
     --suites=${suite_name} \
-    --log=buildlogger \
+    --log=${resmoke_logger} \
     --staggerJobs=on \
     --installDir=${install_dir} \
     --buildId=${build_id} \
@@ -156,6 +156,7 @@ if [[ ${disable_unit_tests} = "false" && ! -f ${skip_tests} ]]; then
     --taskName=${task_name} \
     --variantName=${build_variant} \
     --versionId=${version_id} \
+    --requester=${requester} \
     --taskWorkDir='${workdir}' \
     --projectConfigPath ${evergreen_config_file_path} \
     --reportFile=report.json \

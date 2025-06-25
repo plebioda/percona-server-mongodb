@@ -105,7 +105,7 @@ enums:
            flushRouterConfig :  "flushRouterConfig"
            forceUUID :  "forceUUID"
            fsync :  "fsync"
-           fsyncUnlock: "fsyncUnlock"
+           fsyncUnlock: "fsyncUnlock" # Deprecated in favor of unlock (refer to:SERVER-89642)
            getClusterParameter: "getClusterParameter"
            getDatabaseVersion :  "getDatabaseVersion"
            getDefaultRWConcern :  "getDefaultRWConcern"
@@ -236,6 +236,7 @@ enums:
                 extra_data:
                     serverlessActionTypes:
                         - applyOps
+                        - bypassDefaultMaxTimeMS
                         - killAnyCursor
                         - killAnySession
                         - killCursors

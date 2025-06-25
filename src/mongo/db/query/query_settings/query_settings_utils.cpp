@@ -166,7 +166,6 @@ RepresentativeQueryInfo createRepresentativeInfoFind(OperationContext* opCtx,
                                                      const boost::optional<TenantId>& tenantId) {
     auto findCommandRequest = std::make_unique<FindCommandRequest>(
         FindCommandRequest::parse(IDLParserContext("findCommandRequest",
-                                                   false /* apiStrict */,
                                                    auth::ValidatedTenancyScope::get(opCtx),
                                                    tenantId,
                                                    kSerializationContext),
@@ -184,7 +183,8 @@ RepresentativeQueryInfo createRepresentativeInfoFind(OperationContext* opCtx,
             "Collection namespace string must be provided for setQuerySettings command",
             nssOrUuid.isNamespaceString());
 
-    auto expCtx = ExpressionContext::makeBlankExpressionContext(opCtx, nssOrUuid.nss());
+    auto expCtx = ExpressionContext::makeBlankExpressionContext(
+        opCtx, nssOrUuid.nss(), findCommandRequest->getLet());
     auto parsedFindCommand = uassertStatusOK(parsed_find_command::parse(
         expCtx,
         ParsedFindCommandParams{.findCommand = std::move(findCommandRequest),
@@ -218,7 +218,6 @@ RepresentativeQueryInfo createRepresentativeInfoDistinct(
     const boost::optional<TenantId>& tenantId) {
     auto distinctCommandRequest = std::make_unique<DistinctCommandRequest>(
         DistinctCommandRequest::parse(IDLParserContext("distinctCommandRequest",
-                                                       false /* apiStrict */,
                                                        auth::ValidatedTenancyScope::get(opCtx),
                                                        tenantId,
                                                        kSerializationContext),
@@ -265,7 +264,6 @@ RepresentativeQueryInfo createRepresentativeInfoAgg(OperationContext* opCtx,
                                                     const boost::optional<TenantId>& tenantId) {
     auto aggregateCommandRequest =
         AggregateCommandRequest::parse(IDLParserContext("aggregateCommandRequest",
-                                                        false /* apiStrict */,
                                                         auth::ValidatedTenancyScope::get(opCtx),
                                                         tenantId,
                                                         kSerializationContext),
@@ -379,8 +377,7 @@ QuerySettings lookupQuerySettingsForFind(const boost::intrusive_ptr<ExpressionCo
     // Return the found query settings or an empty one.
     auto& manager = QuerySettingsManager::get(opCtx);
     auto settings = manager.getQuerySettingsForQueryShapeHash(opCtx, *hash, nss.dbName().tenantId())
-                        .get_value_or({})
-                        .first;
+                        .get_value_or({});
 
     // Fail the current command, if 'reject: true' flag is present.
     failIfRejectedBySettings(expCtx, settings);
@@ -441,8 +438,7 @@ QuerySettings lookupQuerySettingsForAgg(
     // Return the found query settings or an empty one.
     auto& manager = QuerySettingsManager::get(opCtx);
     auto settings = manager.getQuerySettingsForQueryShapeHash(opCtx, *hash, nss.dbName().tenantId())
-                        .get_value_or({})
-                        .first;
+                        .get_value_or({});
 
     // Fail the current command, if 'reject: true' flag is present.
     failIfRejectedBySettings(expCtx, pipeline, settings);
@@ -497,8 +493,7 @@ QuerySettings lookupQuerySettingsForDistinct(const boost::intrusive_ptr<Expressi
     // Return the found query settings or an empty one.
     auto& manager = QuerySettingsManager::get(opCtx);
     auto settings = manager.getQuerySettingsForQueryShapeHash(opCtx, *hash, nss.dbName().tenantId())
-                        .get_value_or({})
-                        .first;
+                        .get_value_or({});
 
     // Fail the current command, if 'reject: true' flag is present.
     failIfRejectedBySettings(expCtx, settings);

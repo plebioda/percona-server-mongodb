@@ -132,13 +132,9 @@ CanonicalDistinct parseDistinctCmd(OperationContext* opCtx,
         ? SerializationContext::stateCommandRequest(vts->hasTenantId(), vts->isFromAtlasProxy())
         : SerializationContext::stateCommandRequest();
 
-    auto distinctCommand = std::make_unique<DistinctCommandRequest>(
-        DistinctCommandRequest::parse(IDLParserContext("distinctCommandRequest",
-                                                       false /* apiStrict */,
-                                                       vts,
-                                                       nss.tenantId(),
-                                                       serializationContext),
-                                      cmdObj));
+    auto distinctCommand = std::make_unique<DistinctCommandRequest>(DistinctCommandRequest::parse(
+        IDLParserContext("distinctCommandRequest", vts, nss.tenantId(), serializationContext),
+        cmdObj));
 
     // Forbid users from passing 'querySettings' explicitly.
     uassert(7923000,
@@ -328,6 +324,8 @@ public:
         auto canonicalDistinct = parseDistinctCmd(
             opCtx, nss, cmdObj, ExtensionsCallbackReal(opCtx, &nss), defaultCollator, verbosity);
 
+        CurOp::get(opCtx)->beginQueryPlanningTimer();
+
         if (collectionOrView->isView()) {
             // Relinquish locks. The aggregation command will re-acquire them.
             collectionOrView.reset();
@@ -507,7 +505,7 @@ public:
         if (collection) {
             CollectionQueryInfo::get(collection).notifyOfQuery(opCtx, collection, stats);
         }
-        curOp->debug().setPlanSummaryMetrics(stats);
+        curOp->debug().setPlanSummaryMetrics(std::move(stats));
 
         if (curOp->shouldDBProfile()) {
             auto&& [stats, _] =

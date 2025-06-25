@@ -73,14 +73,13 @@
 #include "mongo/util/debug_util.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/fail_point.h"
-#include "mongo/util/md5.hpp"
 #include "mongo/util/uuid.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kCommand
 namespace mongo {
 
 MONGO_FAIL_POINT_DEFINE(SleepDbCheckInBatch);
-MONGO_FAIL_POINT_DEFINE(hangAfterGeneratingHashForExtraIndexKeysCheck);
+MONGO_FAIL_POINT_DEFINE(secondaryHangAfterExtraIndexKeysHashing);
 
 namespace {
 
@@ -390,7 +389,7 @@ DbCheckHasher::DbCheckHasher(
       _dataThrottle(dataThrottle) {
 
     // Get the MD5 hasher set up.
-    md5_init(&_state);
+    md5_init_state(&_state);
 
     auto& collection = acquisition.coll.getCollectionPtr();
 
@@ -450,23 +449,14 @@ void maybeAppend(md5_state_t* state, const boost::optional<UUID>& uuid) {
     }
 }
 
-size_t getKeyStringSizeWithoutRecordId(const Collection* collection,
-                                       const key_string::Value& keyString) {
-    switch (collection->getRecordStore()->keyFormat()) {
-        case KeyFormat::Long:
-            return key_string::sizeWithoutRecordIdLongAtEnd(keyString.getBuffer(),
-                                                            keyString.getSize());
-
-        case KeyFormat::String:
-            return key_string::sizeWithoutRecordIdStrAtEnd(keyString.getBuffer(),
-                                                           keyString.getSize());
-    }
-    MONGO_UNREACHABLE;
-}
-
 BSONObj _keyStringToBsonSafeHelper(const key_string::Value& keyString, const Ordering& ordering) {
     return key_string::toBsonSafe(
         keyString.getBuffer(), keyString.getSize(), ordering, keyString.getTypeBits());
+}
+
+BSONObj _builderToBsonSafeHelper(const key_string::Builder& builder, const Ordering& ordering) {
+    return key_string::toBsonSafe(
+        builder.getBuffer(), builder.getSize(), ordering, builder.getTypeBits());
 }
 
 Status DbCheckHasher::hashForExtraIndexKeysCheck(OperationContext* opCtx,
@@ -514,7 +504,9 @@ Status DbCheckHasher::hashForExtraIndexKeysCheck(OperationContext* opCtx,
     // Note that seekForKeyString/nextKeyString always return a keyString with RecordId appended,
     // regardless of what format the index has.
     for (auto currEntryWithRecordId =
-             indexCursor->seekForKeyString(opCtx, batchStartWithoutRecordId);
+             indexCursor->seekForKeyString(opCtx,
+                                           StringData(batchStartWithoutRecordId.getBuffer(),
+                                                      batchStartWithoutRecordId.getSize()));
          currEntryWithRecordId;
          currEntryWithRecordId = indexCursor->nextKeyString(opCtx)) {
         iassert(opCtx->checkForInterruptNoAssert());
@@ -527,8 +519,7 @@ Status DbCheckHasher::hashForExtraIndexKeysCheck(OperationContext* opCtx,
                         key_string::rehydrateKey(indexDescriptor->keyPattern(), keyStringBson),
                     "indexName"_attr = indexName);
         // Append the keystring to the hash without the recordId at end.
-        size_t sizeWithoutRecordId =
-            getKeyStringSizeWithoutRecordId(collection, currKeyStringWithRecordId);
+        size_t sizeWithoutRecordId = currKeyStringWithRecordId.getSizeWithoutRecordId();
 
         _bytesSeen += sizeWithoutRecordId;
         _countKeysSeen += 1;
@@ -561,7 +552,7 @@ Status DbCheckHasher::hashForExtraIndexKeysCheck(OperationContext* opCtx,
 
     LOGV2_DEBUG(7844904,
                 3,
-                "Finished hashing one batch in hashe≠",
+                "Finished hashing one batch in hasher",
                 "firstKeyString"_attr =
                     key_string::rehydrateKey(indexDescriptor->keyPattern(), batchStartBson),
                 "lastKeyString"_attr =
@@ -631,7 +622,8 @@ Status DbCheckHasher::validateMissingKeys(OperationContext* opCtx,
 
             // seekForKeyString returns the closest key string if the exact keystring does not
             // exist.
-            auto ksEntry = cursor->seekForKeyString(opCtx, key);
+            auto ksEntry =
+                cursor->seekForKeyString(opCtx, StringData(key.getBuffer(), key.getSize()));
             // Dbcheck will access every index for each document, and we aim for the count to
             // represent the storage accesses. Therefore, we increment the number of keys seen.
             _countKeysSeen++;
@@ -929,13 +921,12 @@ Status dbCheckBatchOnSecondary(OperationContext* opCtx,
 
                     uassertStatusOK(hasher->hashForExtraIndexKeysCheck(
                         opCtx, collection.get(), batchStart, batchEnd));
-                    if (MONGO_unlikely(
-                            hangAfterGeneratingHashForExtraIndexKeysCheck.shouldFail())) {
+                    if (MONGO_unlikely(secondaryHangAfterExtraIndexKeysHashing.shouldFail())) {
                         LOGV2_DEBUG(3083200,
                                     3,
-                                    "Hanging due to hangAfterGeneratingHashForExtraIndexKeysCheck "
+                                    "Hanging due to secondaryHangAfterExtraIndexKeysHashing "
                                     "failpoint");
-                        hangAfterGeneratingHashForExtraIndexKeysCheck.pauseWhileSet(opCtx);
+                        secondaryHangAfterExtraIndexKeysHashing.pauseWhileSet(opCtx);
                     }
                     break;
                 }
@@ -1058,7 +1049,6 @@ Status dbCheckOplogCommand(OperationContext* opCtx,
     }
     const auto type = OplogEntries_parse(IDLParserContext("type"), cmd.getStringField("type"));
     const IDLParserContext ctx("o",
-                               false /*apiStrict*/,
                                auth::ValidatedTenancyScope::get(opCtx),
                                entry.getTid(),
                                SerializationContext::stateDefault());
@@ -1082,7 +1072,7 @@ Status dbCheckOplogCommand(OperationContext* opCtx,
             // TODO SERVER-78399: Clean up handling minKey/maxKey once feature flag is removed.
             // If the dbcheck oplog entry doesn't contain batchStart, convert minKey to a BSONObj to
             // be used as batchStart.
-            BSONObj batchStart, batchEnd;
+            BSONObj batchStart, batchEnd, batchId;
             if (!invocation.getBatchStart()) {
                 batchStart = BSON("_id" << invocation.getMinKey().elem());
             } else {
@@ -1094,22 +1084,45 @@ Status dbCheckOplogCommand(OperationContext* opCtx,
                 batchEnd = invocation.getBatchEnd().get();
             }
 
-            if (!skipDbCheck) {
+            if (!skipDbCheck && !repl::skipApplyingDbCheckBatchOnSecondary.load()) {
                 return dbCheckBatchOnSecondary(opCtx, opTime, invocation, batchStart, batchEnd);
             }
+
+            if (invocation.getBatchId()) {
+                batchId = invocation.getBatchId().get().toBSON();
+            }
+
+            auto warningMsg = "cannot execute dbcheck due to ongoing " + oplogApplicationMode;
+            if (repl::skipApplyingDbCheckBatchOnSecondary.load()) {
+                warningMsg =
+                    "skipping applying dbcheck batch because the "
+                    "'skipApplyingDbCheckBatchOnSecondary' parameter is on";
+            }
+
+            LOGV2_DEBUG(8888500,
+                        3,
+                        "skipping applying dbcheck batch",
+                        "reason"_attr = warningMsg,
+                        "batchStart"_attr = batchStart,
+                        "batchEnd"_attr = batchEnd,
+                        "batchId"_attr = batchId);
+
 
             BSONObjBuilder data;
             data.append("batchStart", batchStart);
             data.append("batchEnd", batchEnd);
-            auto healthLogEntry = mongo::dbCheckHealthLogEntry(
-                invocation.getSecondaryIndexCheckParameters(),
-                invocation.getNss(),
-                boost::none /*collectionUUID*/,
-                SeverityEnum::Warning,
-                "cannot execute dbcheck due to ongoing " + oplogApplicationMode,
-                ScopeEnum::Cluster,
-                type,
-                data.obj());
+            if (!batchId.isEmpty()) {
+                data.append("batchId", batchId);
+            }
+            auto healthLogEntry =
+                mongo::dbCheckHealthLogEntry(invocation.getSecondaryIndexCheckParameters(),
+                                             invocation.getNss(),
+                                             boost::none /*collectionUUID*/,
+                                             SeverityEnum::Warning,
+                                             warningMsg,
+                                             ScopeEnum::Cluster,
+                                             type,
+                                             data.obj());
             HealthLogInterface::get(Client::getCurrent()->getServiceContext())
                 ->log(*healthLogEntry);
             return Status::OK();

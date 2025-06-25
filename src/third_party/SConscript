@@ -1,5 +1,5 @@
 # -*- mode: python -*-
-
+import SCons
 import json
 
 Import([
@@ -127,7 +127,8 @@ if not use_system_version_of_library('boost'):
         # We could narror further to just clang on Darwin, but there is
         # little harm in applying for all clang.
         'NOERROR_FOR_UNKNOWN_WARNING_OPTION_GEN': NoErrorForUnknownWarningOptionGenerator,
-        'CCFLAGS': ['$NOERROR_FOR_UNKNOWN_WARNING_OPTION_GEN'] if env.ToolchainIs('clang') else []
+        'CCFLAGS': ['$NOERROR_FOR_UNKNOWN_WARNING_OPTION_GEN'] if env.ToolchainIs('clang') else [],
+        'SYSLIBDEPS': ['synchronization'] if env.ToolchainIs('msvc') else [],
     }
 
 if not use_system_version_of_library('snappy'):
@@ -172,6 +173,12 @@ if not use_system_version_of_library('google-benchmark'):
 if "tom" in env["MONGO_CRYPTO"]:
     thirdPartyEnvironmentModifications['tomcrypt'] = {
         'CPPPATH': ['#/src/third_party/tomcrypt' + tomcryptSuffix + '/src/headers'],
+    }
+
+if not use_system_version_of_library('tomcrypt'):
+    thirdPartyEnvironmentModifications['tomcrypt_md5'] = {
+        'CPPPATH': ['#/src/third_party/tomcrypt' + tomcryptSuffix + '/src/headers'],
+        'CPPDEFINES': ['LTC_NO_PROTOTYPES'] if env.TargetOSIs('windows') else [],
     }
 
 if not use_system_version_of_library('stemmer'):
@@ -280,11 +287,19 @@ if not use_system_version_of_library('grpc'):
         ],
     }
 
+# Vendored libunwind can be configured to use liblzma for decompressing
+# minidebuginfo sections, but we disable that feature via
+# `unwind/scripts/host-config.sh`. If vendored libunwind ever needs
+# minidebuginfo support, we'd say so here, and we'd dynamically link with
+# system lzma. Until then, it would be an unnecessary dynamic dependency.
+# However, the system libunwind is assumed to need `lzma` unconditionally.
+vendored_libunwind_needs_lzma = False
+
 if use_system_libunwind:
     thirdPartyEnvironmentModifications['unwind'] = {
         'SYSLIBDEPS_PRIVATE': [env['LIBDEPS_UNWIND_SYSLIBDEP'], env['LIBDEPS_LZMA_SYSLIBDEP']],
     }
-elif use_vendored_libunwind:
+elif use_vendored_libunwind and vendored_libunwind_needs_lzma:
     thirdPartyEnvironmentModifications['unwind'] = {
         'SYSLIBDEPS_PRIVATE': [env['LIBDEPS_LZMA_SYSLIBDEP']],
     }
@@ -343,10 +358,6 @@ def shim_library(env, name, **kwargs):
 
 env.AddMethod(shim_library, 'ShimLibrary')
 
-murmurEnv = env.Clone()
-murmurEnv.InjectThirdParty(libraries=['fmt'])
-murmurEnv.SConscript('murmurhash3/SConscript', exports={'env': murmurEnv})
-
 s2Env = env.Clone()
 s2Env.InjectThirdParty(libraries=[
     's2',
@@ -385,7 +396,11 @@ if use_libunwind:
                 thirdPartyEnvironmentModifications['unwind'][k] = v
 
         unwindEnv.AddMethod(registerConsumerModifications, 'RegisterConsumerModifications')
-        unwindEnv.SConscript('unwind/SConscript', exports={'env': unwindEnv})
+        unwindEnv.SConscript(
+            'unwind/SConscript', exports={
+                'env': unwindEnv,
+                'vendored_libunwind_needs_lzma': vendored_libunwind_needs_lzma,
+            })
         unwindEnv.Append(LIBDEPS_INTERFACE=[
             'unwind/unwind',
         ])
@@ -398,10 +413,6 @@ if use_system_version_of_library("fmt"):
         env['LIBDEPS_FMT_SYSLIBDEP'],
     ])
 else:
-    fmtEnv = fmtEnv.Clone()
-    fmtEnv.InjectThirdParty(libraries=['fmt'])
-    fmtEnv.InjectMongoIncludePaths()
-    fmtEnv.SConscript('fmt/SConscript', exports={'env': fmtEnv})
     fmtEnv = fmtEnv.Clone(LIBDEPS_INTERFACE=[
         'fmt/fmt',
     ])
@@ -415,8 +426,6 @@ if use_system_version_of_library("pcre2"):
     ])
 else:
     pcre2Env = pcre2Env.Clone()
-    pcre2Env.InjectThirdParty(libraries=['pcre2'])
-    pcre2Env.SConscript('pcre2' + '/SConscript', exports={'env': pcre2Env})
     pcre2Env = pcre2Env.Clone(LIBDEPS_INTERFACE=[
         'pcre2/pcre2',
     ])
@@ -438,9 +447,6 @@ if use_system_version_of_library("boost"):
         ])
 else:
     boostDirectory = 'boost'
-    boostEnv = boostEnv.Clone()
-    boostEnv.InjectThirdParty(libraries=['boost'])
-    boostEnv.SConscript(boostDirectory + '/SConscript', exports={'env': boostEnv})
     boostEnv = boostEnv.Clone(LIBDEPS_INTERFACE=[
         boostDirectory + '/boost_filesystem',
         boostDirectory + '/boost_iostreams',
@@ -453,8 +459,6 @@ boostEnv.ShimLibrary(name="boost")
 
 abseilDirectory = 'abseil-cpp'
 abseilEnv = env.Clone()
-abseilEnv.InjectThirdParty(libraries=['abseil-cpp'])
-abseilEnv.SConscript(abseilDirectory + '/SConscript', exports={'env': abseilEnv})
 abseilEnv = abseilEnv.Clone(LIBDEPS_INTERFACE=[
     abseilDirectory + '/absl_city',
     abseilDirectory + '/absl_hash',
@@ -472,9 +476,6 @@ if use_system_version_of_library("snappy"):
     ])
 else:
     snappyEnv = snappyEnv.Clone()
-    snappyEnv.InjectThirdParty(libraries=['snappy'])
-    snappyEnv.InjectMongoIncludePaths()
-    snappyEnv.SConscript('snappy' + '/SConscript', exports={'env': snappyEnv})
     snappyEnv = snappyEnv.Clone(LIBDEPS_INTERFACE=[
         'snappy/snappy',
     ])
@@ -488,8 +489,6 @@ if use_system_version_of_library("zlib"):
     ])
 else:
     zlibEnv = zlibEnv.Clone()
-    zlibEnv.InjectThirdParty(libraries=['zlib'])
-    zlibEnv.SConscript('zlib' + '/SConscript', exports={'env': zlibEnv})
     zlibEnv = zlibEnv.Clone(LIBDEPS_INTERFACE=[
         'zlib/zlib',
     ])
@@ -503,8 +502,6 @@ if use_system_version_of_library("zstd"):
     ])
 else:
     zstdEnv = zstdEnv.Clone()
-    zstdEnv.InjectThirdParty(libraries=['zstd'])
-    zstdEnv.SConscript('zstandard/SConscript', exports={'env': zstdEnv})
     zstdEnv = zstdEnv.Clone(LIBDEPS_INTERFACE=[
         'zstandard/zstd',
     ])
@@ -518,11 +515,6 @@ if use_system_version_of_library("google-benchmark"):
     ])
 else:
     benchmarkEnv = benchmarkEnv.Clone()
-    benchmarkEnv.InjectThirdParty(libraries=['benchmark'])
-    benchmarkEnv.SConscript(
-        'benchmark/SConscript',
-        exports={'env': benchmarkEnv},
-    )
     benchmarkEnv = benchmarkEnv.Clone(LIBDEPS_INTERFACE=[
         'benchmark/benchmark',
     ])
@@ -541,6 +533,21 @@ if "tom" in env["MONGO_CRYPTO"]:
 
     tomcryptEnv.ShimLibrary(name="tomcrypt", )
 
+md5Env = env.Clone()
+if use_system_version_of_library("tomcrypt"):
+    md5Env = md5Env.Clone(SYSLIBDEPS=[
+        env['LIBDEPS_TOMCRYPT_SYSLIBDEP'],
+    ])
+else:
+    md5Env = md5Env.Clone()
+    md5Env.InjectThirdParty(libraries=['tomcrypt_md5'])
+    md5Env.SConscript('tomcrypt' + tomcryptSuffix + '/SConscript', exports={'env': md5Env})
+    md5Env = md5Env.Clone(LIBDEPS_INTERFACE=[
+        'tomcrypt' + tomcryptSuffix + '/tomcrypt_md5',
+    ])
+
+md5Env.ShimLibrary(name="tomcrypt_md5")
+
 # libunwind and tcmalloc are both added as global dependencies. Skip
 # inheriting global dependencies to avoid a circular dependency.
 tcmallocEnv = env.Clone(
@@ -556,11 +563,6 @@ if tcmallocEnv['MONGO_ALLOCATOR'] in ["tcmalloc-google"]:
     else:
         tcmallocDirectory = 'tcmalloc'
         tcmallocEnv = tcmallocEnv.Clone()
-        tcmallocEnv.InjectThirdParty(libraries=['tcmalloc'])
-        tcmallocEnv.SConscript(
-            tcmallocDirectory + '/SConscript',
-            exports={'env': tcmallocEnv},
-        )
         tcmallocEnv = tcmallocEnv.Clone(LIBDEPS_INTERFACE=[
             'tcmalloc/tcmalloc',
         ])
@@ -630,7 +632,7 @@ else:
     yamlEnv.SConscript('yaml-cpp/SConscript', exports={'env': yamlEnv})
     yamlEnv = yamlEnv.Clone(LIBDEPS_INTERFACE=[
         'yaml-cpp/yaml',
-    ])
+    ], )
 
 yamlEnv.ShimLibrary(name="yaml")
 
@@ -667,9 +669,6 @@ if use_system_version_of_library("asio"):
     # injected via LIBS= on the command line.
     asioEnv = asioEnv.Clone()
 else:
-    asioEnv = asioEnv.Clone()
-    asioEnv.InjectThirdParty(libraries=['asio'])
-    asioEnv.SConscript('asio-master/SConscript', exports={'env': asioEnv})
     asioEnv = asioEnv.Clone(LIBDEPS_INTERFACE=[
         'asio-master/asio',
     ])
@@ -706,8 +705,6 @@ if use_system_version_of_library("icu"):
     ])
 else:
     icuEnv = icuEnv.Clone()
-    icuEnv.InjectThirdParty(libraries=['icu'])
-    icuEnv.SConscript('icu4c' + icuSuffix + '/source/SConscript', exports={'env': icuEnv})
     icuEnv = icuEnv.Clone(LIBDEPS_INTERFACE=[
         'icu4c' + icuSuffix + '/source/icu_i18n',
     ])
@@ -721,8 +718,6 @@ if use_system_version_of_library("bson"):
     ])
 else:
     libbsonEnv = libbsonEnv.Clone()
-    libbsonEnv.InjectThirdParty(libraries=['bson'])
-    libbsonEnv.SConscript('libbson/SConscript', exports={'env': libbsonEnv})
     libbsonEnv = libbsonEnv.Clone(LIBDEPS_INTERFACE=[
         'libbson/bson',
     ])
@@ -771,8 +766,6 @@ if env.TargetOSIs('linux') and env['ENABLE_GRPC_BUILD']:
         ])
     else:
         grpcEnv.SConscript(dirs=[
-            'cares',
-            're2',
             'grpc',
         ], duplicate=False, exports={'env': env})
         grpcEnv = grpcEnv.Clone(LIBDEPS_INTERFACE=[

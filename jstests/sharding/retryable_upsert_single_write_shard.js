@@ -49,7 +49,9 @@ db = st.s.getDB(jsTestName());
 coll = db.coll;
 
 // Insert a document matching the update query.
-coll.insertOne({x: -50});
+// Add retries on retryable error as the connections in ShardingTest may be stale and can fail with
+// NotWritablePrimary
+retryOnRetryableError(() => coll.insertOne({x: -50}), 10, 30);
 
 // A retry of the update should fail.
 assert.commandFailedWithCode(db.runCommand(updateCmd), ErrorCodes.IncompleteTransactionHistory);

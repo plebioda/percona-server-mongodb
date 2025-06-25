@@ -1,11 +1,10 @@
 """The unittest.TestCase for Server Selection JSON tests."""
+
 import os
 import os.path
+from typing import Optional
 
-from buildscripts.resmokelib import config
-from buildscripts.resmokelib import core
-from buildscripts.resmokelib import errors
-from buildscripts.resmokelib import utils
+from buildscripts.resmokelib import config, logging, core, errors, utils
 from buildscripts.resmokelib.testing.testcases import interface
 from buildscripts.resmokelib.utils import globstar
 
@@ -16,13 +15,20 @@ class ServerSelectionJsonTestCase(interface.ProcessTestCase):
     REGISTERED_NAME = "server_selection_json_test"
     TEST_DIR = os.path.normpath("src/mongo/client/sdam/json_tests/server_selection_tests")
 
-    def __init__(self, logger, json_test_file, program_options=None):
+    def __init__(
+        self,
+        logger: logging.Logger,
+        json_test_files: list[str],
+        program_options: Optional[dict] = None,
+    ):
         """Initialize the TestCase with the executable to run."""
-        interface.ProcessTestCase.__init__(self, logger, "Server Selection Json Test",
-                                           json_test_file)
+        assert len(json_test_files) == 1
+        interface.ProcessTestCase.__init__(
+            self, logger, "Server Selection Json Test", json_test_files[0]
+        )
 
         self.program_executable = self._find_executable()
-        self.json_test_file = os.path.normpath(json_test_file)
+        self.json_test_file = os.path.normpath(json_test_files[0])
         self.program_options = utils.default_if_none(program_options, {}).copy()
 
     def _find_executable(self):
@@ -32,7 +38,8 @@ class ServerSelectionJsonTestCase(interface.ProcessTestCase):
 
         if not os.path.isfile(binary):
             raise errors.StopExecution(
-                f"Failed to locate server_selection_json_test binary at {binary}")
+                f"Failed to locate server_selection_json_test binary at {binary}"
+            )
         return binary
 
     def _make_process(self):

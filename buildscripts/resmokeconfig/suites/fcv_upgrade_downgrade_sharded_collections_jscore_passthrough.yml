@@ -45,9 +45,6 @@ selector:
     - jstests/core/**/create_indexes.js
     - jstests/core/**/list_indexes_non_existent_ns.js
     - jstests/core/**/mr_preserve_indexes.js
-    # These tests fail because sharded clusters do not clean up correctly after failed index builds.
-    # See SERVER-33207 as an example.
-    - jstests/core/**/geo_borders.js
     # TODO: Remove after fixing SERVER-29449. executionStats.nReturned is incorrect for sharded
     # queries with a limit or for distinct commands.
     - jstests/core/**/distinct_index1.js
@@ -117,6 +114,7 @@ selector:
     # Test runs an updateOne without shard key which will use an internal transaction
     # that can be aborted by the fcv upgrade downgrade suite.
     - jstests/aggregation/sources/unionWith/unionWith_invalid_usage.js
+    - jstests/core/command_let_variables_expressions.js
     - jstests/core/index/hashed/hashed_index_with_arrays.js
     - jstests/core/write/update/update5.js
     - jstests/core/write/find_and_modify/find_and_modify_server6582.js

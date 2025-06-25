@@ -171,6 +171,7 @@ MONGO_FAIL_POINT_DEFINE(moveChunkHangAtStep5);
 MONGO_FAIL_POINT_DEFINE(moveChunkHangAtStep6);
 
 MONGO_FAIL_POINT_DEFINE(failMigrationCommit);
+MONGO_FAIL_POINT_DEFINE(hangBeforeEnteringCriticalSection);
 MONGO_FAIL_POINT_DEFINE(hangBeforeLeavingCriticalSection);
 MONGO_FAIL_POINT_DEFINE(migrationCommitNetworkError);
 MONGO_FAIL_POINT_DEFINE(hangBeforePostMigrationCommitRefresh);
@@ -216,7 +217,7 @@ MigrationSourceManager::MigrationSourceManager(OperationContext* opCtx,
 
     LOGV2(22016,
           "Starting chunk migration donation",
-          "requestParameters"_attr = redact(_args.toBSON({})));
+          "requestParameters"_attr = redact(_args.toBSON()));
 
     _moveTimingHelper.done(1);
     moveChunkHangAtStep1.pauseWhileSet();
@@ -413,6 +414,12 @@ void MigrationSourceManager::startClone() {
         _state = kCloning;
     }
 
+    // Refreshing the collection routing information after starting the clone driver will give us a
+    // stable view on whether the recipient is owning other chunks of the collection (a condition
+    // that will be later evaluated).
+    uassertStatusOK(Grid::get(_opCtx)->catalogCache()->getCollectionRoutingInfoWithPlacementRefresh(
+        _opCtx, nss()));
+
     if (replEnabled) {
         auto const readConcernArgs = repl::ReadConcernArgs(
             replCoord->getMyLastAppliedOpTime(), repl::ReadConcernLevel::kLocalReadConcern);
@@ -458,11 +465,14 @@ void MigrationSourceManager::enterCriticalSection() {
     _stats.totalDonorChunkCloneTimeMillis.addAndFetch(_cloneAndCommitTimer.millis());
     _cloneAndCommitTimer.reset();
 
-    const auto& metadata = _getCurrentMetadataAndCheckForConflictingErrors();
+    hangBeforeEnteringCriticalSection.pauseWhileSet();
+
+    const auto [cm, _] =
+        uassertStatusOK(Grid::get(_opCtx)->catalogCache()->getCollectionRoutingInfo(_opCtx, nss()));
 
     // Check that there are no chunks on the recepient shard. Write an oplog event for change
     // streams if this is the first migration to the recipient.
-    if (!metadata.getChunkManager()->getVersion(_args.getToShard()).isSet()) {
+    if (!cm.getVersion(_args.getToShard()).isSet()) {
         migrationutil::notifyChangeStreamsOnRecipientFirstChunk(
             _opCtx, nss(), _args.getFromShard(), _args.getToShard(), _collectionUUID);
 
@@ -556,7 +566,7 @@ void MigrationSourceManager::commitChunkMetadataOnConfig() {
                                             migratedChunk,
                                             metadata.getCollPlacementVersion());
 
-        request.serialize({}, &builder);
+        request.serialize(&builder);
         builder.append(kWriteConcernField, kMajorityWriteConcern.toBSON());
     }
 
@@ -855,7 +865,7 @@ void MigrationSourceManager::_cleanup(bool completeMigration) noexcept {
     } catch (const DBException& ex) {
         LOGV2_WARNING(5089001,
                       "Failed to complete the migration",
-                      "chunkMigrationRequestParameters"_attr = redact(_args.toBSON({})),
+                      "chunkMigrationRequestParameters"_attr = redact(_args.toBSON()),
                       "error"_attr = redact(ex),
                       "migrationId"_attr = _coordinator->getMigrationId());
         // Something went really wrong when completing the migration just unset the metadata and let

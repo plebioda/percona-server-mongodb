@@ -15,16 +15,9 @@ selector:
     - jstests/core/columnstore/**/*.js
     - jstests/core/query/project/projection_semantics.js
 
-    # TODO SERVER-89344: Fix explain output for '$unionWith' queries.
-    - jstests/aggregation/sources/unionWith/unionWith_explain.js
-
     # TODO SERVER-89207: Ensure that the fallback mechanism works for '$_requestResumeToken'
     # queries.
     - jstests/core/find_with_resume_after_param.js
-
-    # TODO SERVER-89299: Ensure the uniqueness of query shapes containing $setWindowFields.
-    - jstests/aggregation/sources/setWindowFields/**/*.js
-    - jstests/aggregation/sources/fill/**/*.js
 
     # Test which overcomes the imposed 16Mb query settings limit making the 'setQuerySettings' command fail.
     - jstests/aggregation/query_limits_test.js
@@ -34,7 +27,10 @@ selector:
     - jstests/aggregation/sources/geonear/geonear_hint.js
     - jstests/aggregation/sources/lookup/lookup_query_stats.js
     - jstests/core/administrative/current_op/**/*.js
+    - jstests/core/collation.js
     - jstests/core/operation_latency_histogram.js
+    - jstests/core/top.js
+    - jstests/core/views/views_stats.js
 
     # Cannot clear the plan cache due to timeseries lock.
     - jstests/core/write/bulk/bulk_write_timeseries_basic.js
@@ -63,13 +59,17 @@ selector:
     - jstests/core/index/express.js
     - jstests/core/index/index_filter_commands.js
     - jstests/core/query/query_settings/**/*.js
-    - jstests/core/queryable_encryption/query_settings_fle.js
+
+    # Query settings application is skipped for queries targeting collections containing encryption information,
+    # and as such it's not possible to engage the fallback mechanism.
+    - jstests/core/queryable_encryption/**/*.js
 
     - jstests/core/txns/**/*.js
   exclude_with_any_tags:
     - assumes_standalone_mongod
     - requires_getmore
     - requires_profiling
+    - requires_fsync
 executor:
   archive:
     hooks:

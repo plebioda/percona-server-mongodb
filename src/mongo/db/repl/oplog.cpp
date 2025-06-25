@@ -549,7 +549,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry* oplogEntry) {
     }
 
     // Use OplogAccessMode::kLogOp to avoid recursive locking.
-    AutoGetOplog oplogWrite(opCtx, OplogAccessMode::kLogOp);
+    AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kLogOp);
     auto oplogInfo = oplogWrite.getOplogInfo();
 
     // If an OpTime is not specified (i.e. isNull), a new OpTime will be assigned to the oplog entry
@@ -572,7 +572,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry* oplogEntry) {
         oplogEntry->setOpTime(slot);
     }
 
-    const auto& oplog = oplogInfo->getCollection();
+    const auto& oplog = oplogWrite.getCollection();
     auto wallClockTime = oplogEntry->getWallClockTime();
 
     auto bsonOplogEntry = oplogEntry->toBSON();
@@ -587,7 +587,7 @@ OpTime logOp(OperationContext* opCtx, MutableOplogEntry* oplogEntry) {
                     oplogEntry->getNss(),
                     &records,
                     timestamps,
-                    CollectionPtr(oplog),
+                    oplog,
                     slot,
                     wallClockTime,
                     isAbortIndexBuild);
@@ -1036,13 +1036,10 @@ const StringMap<ApplyOpMetadata> kOpsMap = {
                     *tenantId, auth::ValidatedTenancyScopeFactory::TrustedForInnerOpMsgRequestTag{})
               : auth::ValidatedTenancyScope::kNotRequired;
           auto opMsg = OpMsgRequestBuilder::create(vts, entry.getNss().dbName(), cmd);
-          auto collModCmd =
-              CollMod::parse(IDLParserContext("collModOplogEntry",
-                                              false /* apiStrict */,
-                                              vts,
-                                              tenantId,
-                                              SerializationContext::stateStorageRequest()),
-                             opMsg.body);
+          auto collModCmd = CollMod::parse(
+              IDLParserContext(
+                  "collModOplogEntry", vts, tenantId, SerializationContext::stateStorageRequest()),
+              opMsg.body);
           const auto nssOrUUID([&collModCmd, &entry, mode]() -> NamespaceStringOrUUID {
               // Oplog entries from secondary oplog application will allways have the Uuid set and
               // it is only invocations of applyOps directly that may omit it
@@ -1151,7 +1148,6 @@ const StringMap<ApplyOpMetadata> kOpsMap = {
               : boost::none;
           auto importEntry = mongo::ImportCollectionOplogEntry::parse(
               IDLParserContext("importCollectionOplogEntry",
-                               false /* apiStrict */,
                                vts,
                                tenantId,
                                SerializationContext::stateDefault()),
@@ -2582,24 +2578,26 @@ void initTimestampFromOplog(OperationContext* opCtx, const NamespaceString& oplo
 }
 
 void clearLocalOplogPtr(ServiceContext* service) {
-    LocalOplogInfo::get(service)->resetCollection();
+    LocalOplogInfo::get(service)->resetRecordStore();
 }
 
 void acquireOplogCollectionForLogging(OperationContext* opCtx) {
-    AutoGetCollection autoColl(opCtx, NamespaceString::kRsOplogNamespace, MODE_IX);
-    LocalOplogInfo::get(opCtx)->setCollection(autoColl.getCollection().get());
+    AutoGetCollection oplog(opCtx, NamespaceString::kRsOplogNamespace, MODE_IX);
+    if (oplog) {
+        LocalOplogInfo::get(opCtx)->setRecordStore(oplog->getRecordStore());
+    }
 }
 
-void establishOplogCollectionForLogging(OperationContext* opCtx, const Collection* oplog) {
+void establishOplogRecordStoreForLogging(OperationContext* opCtx, RecordStore* rs) {
     invariant(shard_role_details::getLocker(opCtx)->isW());
-    invariant(oplog);
-    LocalOplogInfo::get(opCtx)->setCollection(oplog);
+    invariant(rs);
+    LocalOplogInfo::get(opCtx)->setRecordStore(rs);
 }
 
 void signalOplogWaiters() {
-    const auto& oplog = LocalOplogInfo::get(getGlobalServiceContext())->getCollection();
+    const auto& oplog = LocalOplogInfo::get(getGlobalServiceContext())->getRecordStore();
     if (oplog) {
-        oplog->getRecordStore()->getCappedInsertNotifier()->notifyAll();
+        oplog->getCappedInsertNotifier()->notifyAll();
     }
 }
 

@@ -375,7 +375,6 @@ public:
                     firstBatch.push_back(ListIndexesReplyItem::parse(
                         IDLParserContext(
                             "ListIndexesReplyItem",
-                            false /* apiStrict */,
                             auth::ValidatedTenancyScope::get(opCtx),
                             nss.tenantId(),
                             SerializationContext::stateCommandReply(serializationContext)),
@@ -415,7 +414,7 @@ public:
                  opCtx->getWriteConcern(),
                  repl::ReadConcernArgs::get(opCtx),
                  ReadPreferenceSetting::get(opCtx),
-                 cmd.toBSON({}),
+                 cmd.toBSON(),
                  {Privilege(ResourcePattern::forExactNamespace(nss), ActionType::listIndexes)}});
 
             pinnedCursor->incNBatches();

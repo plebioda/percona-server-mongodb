@@ -84,7 +84,6 @@ std::unique_ptr<ParsedDistinctCommand> bsonToParsedDistinct(
     const boost::intrusive_ptr<ExpressionContext>& expCtx, const BSONObj& cmd) {
     auto distinctCommand = std::make_unique<DistinctCommandRequest>(DistinctCommandRequest::parse(
         IDLParserContext("distinctCommandRequest",
-                         false /* apiStrict */,
                          auth::ValidatedTenancyScope::get(expCtx->opCtx),
                          boost::none,
                          SerializationContext::stateDefault()),
@@ -321,7 +320,8 @@ TEST_F(CanonicalDistinctTest, FailsToParseDistinctWithUnknownFields) {
         unknown: 1
     })");
 
-    ASSERT_THROWS_CODE(bsonToParsedDistinct(expCtx, cmdObj), DBException, 40415);
+    ASSERT_THROWS_CODE(
+        bsonToParsedDistinct(expCtx, cmdObj), DBException, ErrorCodes::IDLUnknownField);
 }
 
 TEST_F(CanonicalDistinctTest, FailsToParseDistinctWithMissingKey) {

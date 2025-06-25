@@ -96,6 +96,7 @@
 #include "mongo/db/pipeline/plan_executor_pipeline.h"
 #include "mongo/db/pipeline/process_interface/mongo_process_interface.h"
 #include "mongo/db/pipeline/search/search_helper.h"
+#include "mongo/db/pipeline/visitors/document_source_visitor_docs_needed_bounds.h"
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/collation/collation_spec.h"
 #include "mongo/db/query/collation/collator_interface.h"
@@ -181,6 +182,8 @@ using NamespaceStringSet = stdx::unordered_set<NamespaceString>;
 Counter64& allowDiskUseFalseCounter = *MetricBuilder<Counter64>{"query.allowDiskUseFalse"};
 
 namespace {
+// Ticks for server-side Javascript deprecation log messages.
+Rarely _samplerAccumulatorJs, _samplerFunctionJs;
 
 MONGO_FAIL_POINT_DEFINE(hangAfterCreatingAggregationPlan);
 MONGO_FAIL_POINT_DEFINE(hangAfterAcquiringCollectionCatalog);
@@ -251,8 +254,8 @@ void collectQueryStats(OperationContext* opCtx,
         : maybeExec->getPlanExplainer();
     PlanSummaryStats stats;
     planExplainer.getSummaryStats(&stats);
-    curOp->debug().setPlanSummaryMetrics(stats);
     curOp->setEndOfOpMetrics(stats.nReturned);
+    curOp->debug().setPlanSummaryMetrics(std::move(stats));
 
     if (maybePinnedCursor) {
         collectQueryStatsMongod(opCtx, *maybePinnedCursor);
@@ -405,7 +408,7 @@ bool getFirstBatch(OperationContext* opCtx,
         // If this executor produces a postBatchResumeToken, add it to the cursor response.
         responseBuilder.setPostBatchResumeToken(exec.getPostBatchResumeToken());
         responseBuilder.append(nextDoc);
-        docUnitsReturned.observeOne(nextDoc.objsize());
+        docUnitsReturned.observeOneDoc(nextDoc.objsize());
     }
 
     if (doRegisterCursor) {
@@ -829,14 +832,24 @@ std::vector<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> createLegacyEx
         std::vector<std::unique_ptr<Pipeline, PipelineDeleter>> pipelines;
         // Any pipeline that relies on calls to mongot requires additional setup.
         if (search_helpers::isMongotPipeline(pipeline.get())) {
+            uassert(6253506,
+                    "Cannot have exchange specified in a search pipeline",
+                    !request.getExchange());
+
             // Release locks early, before we generate the search pipeline, so that we don't hold
             // them during network calls to mongot. This is fine for search pipelines since they are
             // not reading any local (lock-protected) data in the main pipeline.
             resetContextFn();
             pipelines.push_back(std::move(pipeline));
 
-            if (auto metadataPipe = search_helpers::prepareSearchForTopLevelPipelineLegacyExecutor(
-                    expCtx->opCtx, expCtx, request, pipelines.back().get(), expCtx->uuid)) {
+            auto [minBounds, maxBounds] = extractDocsNeededBounds(*pipelines.back().get());
+            auto metadataPipe = search_helpers::prepareSearchForTopLevelPipelineLegacyExecutor(
+                expCtx,
+                pipelines.back().get(),
+                minBounds,
+                maxBounds,
+                request.getCursor().getBatchSize());
+            if (metadataPipe) {
                 pipelines.push_back(std::move(metadataPipe));
             }
         } else {
@@ -1477,6 +1490,20 @@ Status _runAggregate(OperationContext* opCtx,
                                                resolvedView,
                                                origRequest);
         expCtx = pipeline->getContext();
+
+        if (expCtx->hasServerSideJs.accumulator && _samplerAccumulatorJs.tick()) {
+            LOGV2_WARNING(
+                8996502,
+                "$accumulator is deprecated. For more information, see "
+                "https://www.mongodb.com/docs/manual/reference/operator/aggregation/accumulator/");
+        }
+
+        if (expCtx->hasServerSideJs.function && _samplerFunctionJs.tick()) {
+            LOGV2_WARNING(
+                8996503,
+                "$function is deprecated. For more information, see "
+                "https://www.mongodb.com/docs/manual/reference/operator/aggregation/function/");
+        }
 
         // Only allow the use of runtime constants when from Mongos is true.
         uassert(463840,

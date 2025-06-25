@@ -224,7 +224,7 @@ void ensureChunkVersionIsGreaterThan(OperationContext* opCtx,
     ensureChunkVersionIsGreaterThanRequest.setNss(nss);
     ensureChunkVersionIsGreaterThanRequest.setCollectionUUID(collUUID);
     const auto ensureChunkVersionIsGreaterThanRequestBSON =
-        ensureChunkVersionIsGreaterThanRequest.toBSON({});
+        ensureChunkVersionIsGreaterThanRequest.toBSON();
 
     hangInEnsureChunkVersionIsGreaterThanInterruptible.pauseWhileSet(opCtx);
 
@@ -398,7 +398,7 @@ void notifyChangeStreamsOnRecipientFirstChunk(OperationContext* opCtx,
 
     // TODO (SERVER-71444): Fix to be interruptible or document exception.
     UninterruptibleLockGuard noInterrupt(opCtx);  // NOLINT.
-    AutoGetOplog oplogWrite(opCtx, OplogAccessMode::kWrite);
+    AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kWrite);
     writeConflictRetry(opCtx, "migrateChunkToNewShard", NamespaceString::kRsOplogNamespace, [&] {
         WriteUnitOfWork uow(opCtx);
         serviceContext->getOpObserver()->onInternalOpMessage(opCtx,
@@ -433,7 +433,7 @@ void notifyChangeStreamsOnDonorLastChunk(OperationContext* opCtx,
 
     // TODO (SERVER-71444): Fix to be interruptible or document exception.
     UninterruptibleLockGuard noInterrupt(opCtx);  // NOLINT.
-    AutoGetOplog oplogWrite(opCtx, OplogAccessMode::kWrite);
+    AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kWrite);
     writeConflictRetry(opCtx, "migrateLastChunkFromShard", NamespaceString::kRsOplogNamespace, [&] {
         WriteUnitOfWork uow(opCtx);
         serviceContext->getOpObserver()->onInternalOpMessage(opCtx,

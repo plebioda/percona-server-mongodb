@@ -6,6 +6,7 @@
  *   requires_majority_read_concern,
  *   requires_persistence,
  *   requires_replication,
+ *   incompatible_with_windows_tls,
  * ]
  */
 
@@ -112,7 +113,25 @@ node = rst.restart(node, {
 });
 reconnect(node);
 assertDocsInColl(node, []);
-assert.commandWorked(getColl(node).insert({_id: 6}));
+
+// If the collection is using recordIdsReplicated:true, then we need to be careful about
+// inserting a new document as we have to make sure the recordId doesn't collide with
+// an existing recordId. In this case, because the standalone can't see existing non-majority
+// committed documents, the test must take care to make sure the document inserted as a standalone
+// doesn't use a recordId that collides with the non-majority committed documents' recordIds.
+if (node.getDB(dbName).getCollectionInfos({name: collName})[0].options.recordIdsReplicated) {
+    assert.commandWorked(node.getDB(dbName).runCommand({
+        applyOps: [{
+            op: 'i',
+            ns: getColl(node).getFullName(),
+            o: {_id: 6},
+            // This happens to be a recordId that doesn't clash.
+            rid: NumberLong(6)
+        }]
+    }))
+} else {
+    assert.commandWorked(getColl(node).insert({_id: 6}));
+}
 assertDocsInColl(node, [6]);
 node = rst.restart(node, {
     noReplSet: true,

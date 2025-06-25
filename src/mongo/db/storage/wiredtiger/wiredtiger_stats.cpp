@@ -74,7 +74,6 @@ void appendIfNonZero(StringData fieldName, int64_t value, BSONObjBuilder* builde
 WiredTigerStats::WiredTigerStats(WT_SESSION* session) {
     invariant(session);
 
-    // TODO SERVER-88233: stats cursors are expensive to fetch and consider caching them
     WT_CURSOR* c;
     uassert(ErrorCodes::CursorNotFound,
             "Unable to open statistics cursor",
@@ -125,6 +124,14 @@ BSONObj WiredTigerStats::toBSON() const {
     }
 
     return builder.obj();
+}
+
+uint64_t WiredTigerStats::bytesRead() const {
+    return bytes_read;
+}
+
+Microseconds WiredTigerStats::readingTime() const {
+    return Microseconds(read_time);
 }
 
 std::unique_ptr<StorageStats> WiredTigerStats::clone() const {

@@ -9,7 +9,8 @@
  *   not_allowed_with_signed_security_token,
  *   # Can't use multiplanning, as it leads to query serialization that fails because of max BSON
  *   # size.
- *   does_not_support_multiplanning_single_solutions
+ *   does_not_support_multiplanning_single_solutions,
+ *   incompatible_aubsan,
  * ]
  */
 
@@ -172,7 +173,9 @@ function skipMatchCase() {
 // Test pipeline length.
 function testPipelineLimits() {
     jsTestLog("Testing large agg pipelines");
-    const pipelineLimit = 1000;
+    const pipelineLimit =
+        assert.commandWorked(db.adminCommand({getParameter: 1, internalPipelineLengthLimit: 1}))
+            .internalPipelineLengthLimit;
     let stages = [
         {$limit: 1},
         {$skip: 1},

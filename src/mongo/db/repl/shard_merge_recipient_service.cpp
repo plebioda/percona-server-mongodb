@@ -559,14 +559,14 @@ boost::optional<BSONObj> ShardMergeRecipientService::Instance::reportForCurrentO
     }
 
     if (_stateDoc.getStartAtOpTime()) {
-        _stateDoc.getStartAtOpTime()->append(&bob, "receiveStartOpTime");
+        _stateDoc.getStartAtOpTime()->append("receiveStartOpTime", &bob);
     }
     if (_stateDoc.getStartFetchingDonorOpTime())
-        _stateDoc.getStartFetchingDonorOpTime()->append(&bob, "startFetchingDonorOpTime");
+        _stateDoc.getStartFetchingDonorOpTime()->append("startFetchingDonorOpTime", &bob);
     if (_stateDoc.getStartApplyingDonorOpTime())
-        _stateDoc.getStartApplyingDonorOpTime()->append(&bob, "startApplyingDonorOpTime");
+        _stateDoc.getStartApplyingDonorOpTime()->append("startApplyingDonorOpTime", &bob);
     if (_stateDoc.getCloneFinishedRecipientOpTime())
-        _stateDoc.getCloneFinishedRecipientOpTime()->append(&bob, "cloneFinishedRecipientOpTime");
+        _stateDoc.getCloneFinishedRecipientOpTime()->append("cloneFinishedRecipientOpTime", &bob);
 
     if (_stateDoc.getExpireAt())
         bob.append("expireAt", *_stateDoc.getExpireAt());
@@ -1027,7 +1027,7 @@ SemiFuture<void> ShardMergeRecipientService::Instance::_openBackupCursor(
 
     const auto aggregateCommandRequestObj = [] {
         AggregateCommandRequest aggRequest(
-            NamespaceString::makeCollectionlessAggregateNSS(DatabaseName::kAdmin),
+            NamespaceString::makeCollectionlessAggregateNSS(DatabaseName::kLocal),
             {BSON("$backupCursor" << BSONObj())});
         // We must set a writeConcern on internal commands.
         aggRequest.setWriteConcern(WriteConcernOptions());
@@ -1151,7 +1151,7 @@ SemiFuture<void> ShardMergeRecipientService::Instance::_openBackupCursor(
     _donorFilenameBackupCursorFileFetcher = std::make_unique<Fetcher>(
         _backupCursorExecutor.get(),
         _client->getServerHostAndPort(),
-        DatabaseName::kAdmin,
+        DatabaseName::kLocal,
         aggregateCommandRequestObj,
         fetcherCallback,
         ReadPreferenceSetting(ReadPreference::PrimaryPreferred).toContainingBSON(),
@@ -1404,7 +1404,7 @@ void ShardMergeRecipientService::Instance::_processCommittedTransactionEntry(con
     // Use the same wallclock time as the noop entry.
     sessionTxnRecord.setLastWriteDate(noopEntry.getWallClockTime());
 
-    AutoGetOplog oplogWrite(opCtx, OplogAccessMode::kWrite);
+    AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kWrite);
     writeConflictRetry(
         opCtx, "writeDonorCommittedTxnEntry", NamespaceString::kRsOplogNamespace, [&] {
             WriteUnitOfWork wuow(opCtx);
@@ -1864,7 +1864,7 @@ ShardMergeRecipientService::Instance::_advanceMajorityCommitTsToBkpCursorCheckpo
                        "mergeRecipientWriteNoopToAdvanceStableTimestamp",
                        NamespaceString::kRsOplogNamespace,
                        [&] {
-                           AutoGetOplog oplogWrite(opCtx, OplogAccessMode::kWrite);
+                           AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kWrite);
                            WriteUnitOfWork wuow(opCtx);
                            const std::string msg = str::stream()
                                << "Merge recipient advancing stable timestamp";

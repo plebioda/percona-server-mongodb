@@ -96,7 +96,7 @@ void notifyChangeStreamsOnRefineCollectionShardKeyComplete(OperationContext* opC
     auto const serviceContext = opCtx->getClient()->getServiceContext();
 
     writeConflictRetry(opCtx, "RefineCollectionShardKey", NamespaceString::kRsOplogNamespace, [&] {
-        AutoGetOplog oplogWrite(opCtx, OplogAccessMode::kWrite);
+        AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kWrite);
         WriteUnitOfWork uow(opCtx);
         serviceContext->getOpObserver()->onInternalOpMessage(opCtx,
                                                              collNss,
@@ -273,7 +273,7 @@ ExecutorFuture<void> RefineCollectionShardKeyCoordinator::_runImpl(
                         sharding_util::sendCommandToShardsWithVersion(
                             opCtx,
                             ns.dbName(),
-                            validateRequest.toBSON({}),
+                            validateRequest.toBSON(),
                             getShardsWithDataForCollection(opCtx, ns),
                             **executor,
                             uassertStatusOK(catalogCache->getCollectionRoutingInfo(opCtx, ns)),
@@ -296,7 +296,7 @@ ExecutorFuture<void> RefineCollectionShardKeyCoordinator::_runImpl(
                 blockCRUDOperationsRequest.setBlockType(
                     CriticalSectionBlockTypeEnum::kReadsAndWrites);
                 blockCRUDOperationsRequest.setReason(_critSecReason);
-                async_rpc::GenericArgs args;
+                GenericArguments args;
                 async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
                 async_rpc::AsyncRPCCommandHelpers::appendOSI(args, getNewSession(opCtx));
                 auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrParticipantBlock>>(
@@ -351,7 +351,7 @@ ExecutorFuture<void> RefineCollectionShardKeyCoordinator::_runImpl(
                             opCtx,
                             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
                             DatabaseName::kAdmin,
-                            CommandHelpers::appendMajorityWriteConcern(commitRequest.toBSON({})),
+                            CommandHelpers::appendMajorityWriteConcern(commitRequest.toBSON()),
                             Shard::RetryPolicy::kIdempotent);
 
                 uassertStatusOK(Shard::CommandResponse::getEffectiveStatus(commitResponse));
@@ -378,7 +378,7 @@ ExecutorFuture<void> RefineCollectionShardKeyCoordinator::_runImpl(
                 unblockCRUDOperationsRequest.setReason(_critSecReason);
                 unblockCRUDOperationsRequest.setClearFilteringMetadata(true);
 
-                async_rpc::GenericArgs args;
+                GenericArguments args;
                 async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
                 async_rpc::AsyncRPCCommandHelpers::appendOSI(args, getNewSession(opCtx));
                 auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrParticipantBlock>>(
@@ -511,8 +511,8 @@ ExecutorFuture<void> RefineCollectionShardKeyCoordinatorPre71Compatible::_runImp
                     opCtx,
                     ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                     DatabaseName::kAdmin,
-                    CommandHelpers::appendMajorityWriteConcern(
-                        configsvrRefineCollShardKey.toBSON({}), opCtx->getWriteConcern()),
+                    CommandHelpers::appendMajorityWriteConcern(configsvrRefineCollShardKey.toBSON(),
+                                                               opCtx->getWriteConcern()),
                     Shard::RetryPolicy::kIdempotent));
 
                 uassertStatusOK(Shard::CommandResponse::getEffectiveStatus(cmdResponse));

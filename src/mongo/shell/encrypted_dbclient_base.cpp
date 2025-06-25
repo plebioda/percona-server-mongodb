@@ -63,6 +63,7 @@
 #include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/util/builder.h"
 #include "mongo/client/dbclient_base.h"
+#include "mongo/client/read_preference.h"
 #include "mongo/config.h"  // IWYU pragma: keep
 #include "mongo/crypto/aead_encryption.h"
 #include "mongo/crypto/fle_crypto.h"
@@ -591,7 +592,9 @@ boost::optional<EncryptedFieldConfig> EncryptedDBClientBase::getEncryptedFieldCo
     if (opts.eoo() || !opts.isABSONObj()) {
         return boost::none;
     }
-    auto efc = opts.Obj().getField("encryptedFields");
+    // BSONObj must outlive BSONElement. See BSONElement, BSONObj::getField().
+    auto optsObj = opts.Obj();
+    auto efc = optsObj.getField("encryptedFields");
     if (efc.eoo() || !efc.isABSONObj()) {
         return boost::none;
     }
@@ -843,6 +846,7 @@ BSONObj EncryptedDBClientBase::getEncryptedKey(const UUID& uuid) {
     findCmd.setFilter(BSON("_id" << uuid));
     findCmd.setReadConcern(
         repl::ReadConcernArgs(repl::ReadConcernLevel::kMajorityReadConcern).toBSONInner());
+    ReadPreferenceSetting readPref{ReadPreference::PrimaryPreferred};
 
     Client* client = &cc();
     auto opCtx = client->getOperationContext();
@@ -852,7 +856,8 @@ BSONObj EncryptedDBClientBase::getEncryptedKey(const UUID& uuid) {
         vts = auth::ValidatedTenancyScope::get(opCtx);
     }
 
-    OpMsgRequest req = OpMsgRequestBuilder::create(vts, fullNameNS.dbName(), findCmd.toBSON({}));
+    OpMsgRequest req = OpMsgRequestBuilder::create(
+        vts, fullNameNS.dbName(), findCmd.toBSON(readPref.toContainingBSON()));
 
     BSONObj dataKeyObj = doFindOne(req);
 

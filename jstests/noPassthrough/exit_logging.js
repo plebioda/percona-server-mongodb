@@ -2,6 +2,7 @@
  * Tests that various forms of normal and abnormal shutdown write to the log files as expected.
  * @tags: [
  *   requires_sharding,
+ *   incompatible_aubsan,
  * ]
  */
 
@@ -69,11 +70,6 @@ if (_isWindows()) {
     quit();
 }
 
-if (_isAddressSanitizerActive()) {
-    print("SKIPPING TEST ON ADDRESS SANITIZER BUILD");
-    quit();
-}
-
 (function testMongod() {
     print("********************\nTesting exit logging in mongod\n********************");
 
@@ -89,7 +85,10 @@ if (_isAddressSanitizerActive()) {
 (function testMongos() {
     print("********************\nTesting exit logging in mongos\n********************");
 
-    var st = new ShardingTest({shards: 1});
+    var st = new ShardingTest({
+        shards: 1,
+        configOptions: {setParameter: {transactionLifetimeLimitSeconds: 10}},
+    });
     var mongosLauncher = {
         start: function(opts) {
             var actualOpts = {configdb: st._configDB};

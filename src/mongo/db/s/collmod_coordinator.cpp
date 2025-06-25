@@ -229,13 +229,22 @@ std::vector<AsyncRequestsSender::Response> CollModCoordinator::_sendCollModToPri
     // 'performViewChange' flag only to the primary shard.
     request.setPerformViewChange(true);
     auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrCollModParticipant>>(
-        **executor, token, request, async_rpc::GenericArgs());
+        **executor, token, request, GenericArguments());
 
-    return sendAuthenticatedCommandWithOsiToShards(opCtx,
-                                                   opts,
-                                                   {_shardingInfo->primaryShard},
-                                                   getNewSession(opCtx),
-                                                   !_shardingInfo->isPrimaryOwningChunks);
+    try {
+        return sendAuthenticatedCommandWithOsiToShards(opCtx,
+                                                       opts,
+                                                       {_shardingInfo->primaryShard},
+                                                       getNewSession(opCtx),
+                                                       false /* ignoreResponses */);
+    } catch (const DBException& ex) {
+        // For a db primary shard not owning chunks only throw retriable errors for the coordinator.
+        if (_shardingInfo->isPrimaryOwningChunks ||
+            _isRetriableErrorForDDLCoordinator(ex.toStatus())) {
+            throw;
+        }
+        return {};
+    }
 }
 
 std::vector<AsyncRequestsSender::Response> CollModCoordinator::_sendCollModToParticipantShards(
@@ -245,16 +254,22 @@ std::vector<AsyncRequestsSender::Response> CollModCoordinator::_sendCollModToPar
     const CancellationToken& token) {
     request.setPerformViewChange(false);
     auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrCollModParticipant>>(
-        **executor, token, request, async_rpc::GenericArgs());
+        **executor, token, request, GenericArguments());
 
     // The collMod command targets all shards, regardless of whether they have chunks. The shards
-    // that have no chunks for the collection will not throw nor will be included in the responses.
+    // that have no chunks for the collection will not be included in the responses.
 
-    sendAuthenticatedCommandWithOsiToShards(opCtx,
-                                            opts,
-                                            _shardingInfo->participantsNotOwningChunks,
-                                            getNewSession(opCtx),
-                                            true /* ignoreResponses */);
+    for (auto&& shard : _shardingInfo->participantsNotOwningChunks) {
+        try {
+            sendAuthenticatedCommandWithOsiToShards(
+                opCtx, opts, {shard}, getNewSession(opCtx), false /* ignoreResponses */);
+        } catch (const DBException& ex) {
+            // For shards not owning chunks only throw retriable errors for the coordinator.
+            if (_isRetriableErrorForDDLCoordinator(ex.toStatus())) {
+                throw;
+            }
+        }
+    }
 
     return sendAuthenticatedCommandWithOsiToShards(opCtx,
                                                    opts,
@@ -334,10 +349,7 @@ ExecutorFuture<void> CollModCoordinator::_runImpl(
                         CriticalSectionBlockTypeEnum::kReadsAndWrites);
                     auto opts =
                         std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrParticipantBlock>>(
-                            **executor,
-                            token,
-                            blockCRUDOperationsRequest,
-                            async_rpc::GenericArgs());
+                            **executor, token, blockCRUDOperationsRequest, GenericArguments());
                     std::vector<ShardId> shards = _shardingInfo->participantsOwningChunks;
                     if (_shardingInfo->isPrimaryOwningChunks) {
                         shards.push_back(_shardingInfo->primaryShard);
@@ -362,7 +374,7 @@ ExecutorFuture<void> CollModCoordinator::_runImpl(
                     hasTimeSeriesBucketingUpdate(_request)) {
                     ConfigsvrCollMod request(_collInfo->nsForTargeting, _request);
                     const auto cmdObj =
-                        CommandHelpers::appendMajorityWriteConcern(request.toBSON({}));
+                        CommandHelpers::appendMajorityWriteConcern(request.toBSON());
 
                     const auto& configShard = Grid::get(opCtx)->shardRegistry()->getConfigShard();
                     uassertStatusOK(Shard::CommandResponse::getEffectiveStatus(
@@ -411,7 +423,7 @@ ExecutorFuture<void> CollModCoordinator::_runImpl(
                             // strip out other incompatible options.
                             auto dryRunRequest = ShardsvrCollModParticipant{
                                 originalNss(), makeCollModDryRunRequest(_request)};
-                            async_rpc::GenericArgs args;
+                            GenericArguments args;
                             async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
                             auto optsDryRun = std::make_shared<
                                 async_rpc::AsyncRPCOptions<ShardsvrCollModParticipant>>(
@@ -431,11 +443,8 @@ ExecutorFuture<void> CollModCoordinator::_runImpl(
 
                         std::vector<AsyncRequestsSender::Response> responses;
 
-                        // In the case of the participants, we are broadcasting the collMod to all
-                        // the shards. On one hand, if the shard contains chunks for the
-                        // collections, we parse all the responses. On the other hand, if the shard
-                        // does not contain chunks, we make a best effort to not process the
-                        // returned responses or throw any errors.
+                        // We are broadcasting the collMod to all the shards, but only appending the
+                        // participants' responses from those owning chunks.
 
                         auto primaryResponse =
                             _sendCollModToPrimaryShard(opCtx, request, executor, token);

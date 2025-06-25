@@ -41,6 +41,7 @@
 #include "mongo/db/exec/document_value/value_comparator.h"
 #include "mongo/db/pipeline/accumulation_statement.h"
 #include "mongo/db/pipeline/accumulator.h"
+#include "mongo/db/pipeline/accumulator_js_reduce.h"
 #include "mongo/db/pipeline/accumulator_multi.h"
 #include "mongo/db/pipeline/document_source_match.h"
 #include "mongo/db/pipeline/document_source_project.h"
@@ -239,14 +240,6 @@ bool DocumentSourceGroup::tryToAbsorbTopKSort(
         }
     }
 
-    // We don't want to apply this optimization if this group can leverage DISTINCT_SCAN when we
-    // transform it to an internal $groupByDistinctScan.
-    std::string groupId;
-    GroupFromFirstDocumentTransformation::ExpectedInput expectedInput;
-    if (isEligibleForTransformOnFirstDocument(expectedInput, groupId)) {
-        return false;
-    }
-
     // Collects all $first and $last accumulators. Does not support either $firstN or $lastN
     // accumulators yet.
     auto& accumulators = _groupProcessor.getMutableAccumulationStatements();
@@ -258,10 +251,11 @@ bool DocumentSourceGroup::tryToAbsorbTopKSort(
         } else if (accumulators[i].expr.name == AccumulatorFirstN::kName ||
                    accumulators[i].expr.name == AccumulatorLastN::kName ||
                    accumulators[i].expr.name == AccumulatorMergeObjects::kName ||
-                   accumulators[i].expr.name == AccumulatorPush::kName) {
-            // If there's any $firstN, $lastN, $mergeObjects and/or $push accumulators which depends
-            // on the order, we cannot absorb the $sort into $group because they rely on the ordered
-            // input from $sort.
+                   accumulators[i].expr.name == AccumulatorPush::kName ||
+                   accumulators[i].expr.name == AccumulatorJs::kName) {
+            // If there's any $firstN, $lastN, $mergeObjects, $push, and/or $accumulator
+            // accumulators which depends on the order, we cannot absorb the $sort into $group
+            // because they rely on the ordered input from $sort.
             return false;
         }
     }
@@ -323,11 +317,6 @@ using AccIndices = absl::InlinedVector<size_t, 4>;
 // Hash table to group $top(N)/$bottom(N) with the same sort pattern.
 using TopBottomAccKeyToAccIndicesMap =
     absl::flat_hash_map<TopBottomAccKey, AccIndices, Hasher, EqualTo>;
-
-template <TopBottomSense sense, bool single>
-SortPattern getAccSortPattern(AccumulatorN* accN) {
-    return static_cast<AccumulatorTopBottomN<sense, single>*>(accN)->getSortPattern();
-}
 
 TopBottomAccKey getTopBottomAccKey(AccumulatorN* accN) {
     switch (accN->getAccumulatorType()) {
@@ -469,7 +458,7 @@ bool DocumentSourceGroup::tryToGenerateCommonSortKey(Pipeline::SourceContainer::
         auto key = getTopBottomAccKey(dynamic_cast<AccumulatorN*>(accN.get()));
         if (key.accType == AccumulatorN::AccumulatorType::kTopN ||
             key.accType == AccumulatorN::AccumulatorType::kBottomN) {
-            key.n = accStmts[accIdx].expr.initializer->serialize({});
+            key.n = accStmts[accIdx].expr.initializer->serialize();
         }
 
         if (auto [it, inserted] =

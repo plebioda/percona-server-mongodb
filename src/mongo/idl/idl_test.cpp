@@ -199,7 +199,7 @@ BSONObj appendDB(const BSONObj& obj, StringData dbName) {
 
 template <typename T>
 BSONObj serializeCmd(const T& cmd) {
-    auto reply = cmd.serialize({});
+    auto reply = cmd.serialize();
     return reply.body;
 }
 
@@ -2590,7 +2590,7 @@ TEST(IDLCommand, TestConcatentateWithDb) {
             NamespaceString::createNamespaceString_forTest("db.coll1"));
         one_new.setField1(3);
         one_new.setField2("five");
-        one_new.serialize(BSONObj(), &builder);
+        one_new.serialize(&builder);
 
         auto serializedDoc = builder.obj();
         ASSERT_BSONOBJ_EQ(testDocWithoutDb, serializedDoc);
@@ -2627,7 +2627,7 @@ TEST(IDLCommand, TestConcatentateWithDb_WithTenant) {
 
     auto opMsg = makeOMRWithTenant(testDoc, tenantId, VTS::TenantProtocol::kAtlasProxy);
     IDLParserContext ctxt(
-        "root", false, opMsg.validatedTenancyScope, tenantId, SerializationContext::stateDefault());
+        "root", opMsg.validatedTenancyScope, tenantId, SerializationContext::stateDefault());
 
     auto testStruct = BasicConcatenateWithDbCommand::parse(ctxt, opMsg);
     ASSERT_EQUALS(testStruct.getDbName(), DatabaseName::createDatabaseName_forTest(tenantId, "db"));
@@ -2748,7 +2748,7 @@ TEST(IDLCommand, TestConcatentateWithDbOrUUID_TestNSS) {
             NamespaceString::createNamespaceString_forTest("db.coll1"));
         one_new.setField1(3);
         one_new.setField2("five");
-        one_new.serialize(BSONObj(), &builder);
+        one_new.serialize(&builder);
 
         auto serializedDoc = builder.obj();
         ASSERT_BSONOBJ_EQ(testDocWithoutDb, serializedDoc);
@@ -2785,7 +2785,7 @@ TEST(IDLCommand, TestConcatentateWithDbOrUUID_TestNSS_WithTenant) {
 
     const auto opMsg = makeOMRWithTenant(testDoc, tenantId, VTS::TenantProtocol::kAtlasProxy);
     IDLParserContext ctxt(
-        "root", false, opMsg.validatedTenancyScope, tenantId, SerializationContext::stateDefault());
+        "root", opMsg.validatedTenancyScope, tenantId, SerializationContext::stateDefault());
 
     auto testStruct = BasicConcatenateWithDbOrUUIDCommand::parse(ctxt, opMsg);
     ASSERT_EQUALS(testStruct.getDbName(), DatabaseName::createDatabaseName_forTest(tenantId, "db"));
@@ -2831,7 +2831,7 @@ TEST(IDLCommand, TestConcatentateWithDbOrUUID_TestUUID) {
             DatabaseName::createDatabaseName_forTest(boost::none, "db"), uuid));
         one_new.setField1(3);
         one_new.setField2("five");
-        one_new.serialize(BSONObj(), &builder);
+        one_new.serialize(&builder);
 
         auto serializedDoc = builder.obj();
         ASSERT_BSONOBJ_EQ(testDocWithoutDb, serializedDoc);
@@ -2872,7 +2872,7 @@ TEST(IDLCommand, TestConcatentateWithDbOrUUID_TestUUID_WithTenant) {
 
     const auto opMsg = makeOMRWithTenant(testDoc, tenantId, VTS::TenantProtocol::kAtlasProxy);
     IDLParserContext ctxt(
-        "root", false, opMsg.validatedTenancyScope, tenantId, SerializationContext::stateDefault());
+        "root", opMsg.validatedTenancyScope, tenantId, SerializationContext::stateDefault());
 
     auto testStruct = BasicConcatenateWithDbOrUUIDCommand::parse(ctxt, opMsg);
     ASSERT_EQUALS(testStruct.getDbName(), DatabaseName::createDatabaseName_forTest(tenantId, "db"));
@@ -2967,7 +2967,7 @@ TEST(IDLCommand, TestIgnore) {
     // Positive: Test we can roundtrip from the just parsed document
     {
         BSONObjBuilder builder;
-        testStruct.serialize(BSONObj(), &builder);
+        testStruct.serialize(&builder);
         auto loopbackDoc = builder.obj();
 
         ASSERT_BSONOBJ_EQ(testDoc, loopbackDoc);
@@ -3107,7 +3107,7 @@ TEST(IDLDocSequence, TestBasic) {
     // Positive: Test we can roundtrip just the body from the just parsed document
     {
         BSONObjBuilder builder;
-        testStruct.serialize(BSONObj(), &builder);
+        testStruct.serialize(&builder);
 
         auto testTempDocWithoutDB = testTempDoc.removeField("$db");
 
@@ -3957,7 +3957,7 @@ TEST(IDLTypeCommand, TestString) {
         CommandTypeStringCommand one_new("foo");
         one_new.setField1(3);
         one_new.setDbName(DatabaseName::createDatabaseName_forTest(boost::none, "db"));
-        one_new.serialize(BSONObj(), &builder);
+        one_new.serialize(&builder);
 
         auto serializedDoc = builder.obj();
         ASSERT_BSONOBJ_EQ(testDocWithoutDb, serializedDoc);
@@ -4094,7 +4094,7 @@ TEST(IDLTypeCommand, TestUnderscoreCommand) {
         WellNamedCommand one_new("foo");
         one_new.setField1(3);
         one_new.setDbName(DatabaseName::createDatabaseName_forTest(boost::none, "db"));
-        one_new.serialize(BSONObj(), &builder);
+        one_new.serialize(&builder);
 
         auto serializedDoc = builder.obj();
         ASSERT_BSONOBJ_EQ(testDocWithoutDb, serializedDoc);
@@ -4458,11 +4458,8 @@ TEST(IDLParserContext, TestConstructorWithPredecessorAndDifferentTenant) {
     const auto otherTenantId = TenantId(OID::gen());
     const auto otherOpMsg =
         makeOMRWithTenant(testDoc, otherTenantId, VTS::TenantProtocol::kDefault);
-    auto ctxt = IDLParserContext("root",
-                                 false,
-                                 otherOpMsg.validatedTenancyScope,
-                                 tenantId,
-                                 SerializationContext::stateDefault());
+    auto ctxt = IDLParserContext(
+        "root", otherOpMsg.validatedTenancyScope, tenantId, SerializationContext::stateDefault());
     ASSERT_THROWS_CODE(CommandWithNamespaceStruct::parse(ctxt, otherOpMsg), DBException, 8423379);
 }
 
@@ -4556,8 +4553,7 @@ TEST(IDLTypeCommand, TestStructWithBypassAndNamespaceMember_Parse) {
                     VTS::TenantProtocol::kDefault,
                     auth::ValidatedTenancyScopeFactory::TenantForTestingTag{});
             }
-            IDLParserContext ctxt(
-                "root", false, vts, tenantId, SerializationContext::stateDefault());
+            IDLParserContext ctxt("root", vts, tenantId, SerializationContext::stateDefault());
 
             const std::string ns1 = "db.coll1";
             const std::string ns2 = "a.b";
@@ -4620,8 +4616,7 @@ TEST(IDLTypeCommand, TestStructWithBypassReplyAndNamespaceMember_Parse) {
                     VTS::TenantProtocol::kDefault,
                     auth::ValidatedTenancyScopeFactory::TenantForTestingTag{});
             }
-            IDLParserContext ctxt(
-                "root", false, vts, tenantId, SerializationContext::stateDefault());
+            IDLParserContext ctxt("root", vts, tenantId, SerializationContext::stateDefault());
 
             const std::string ns1 = "db.coll1";
             const std::string ns2 = "a.b";
@@ -4986,11 +4981,13 @@ TEST(IDLOwnershipTests, ParseOwnAssumesOwnership) {
     {
         auto tmp = BSON("value" << BSON("x" << 42));
         idlStruct = One_plain_object::parseOwned(ctxt, std::move(tmp));
+        ASSERT_TRUE(idlStruct.isOwned());
     }
     // Now that tmp is out of scope, if idlStruct didn't retain ownership, it would be accessing
     // free'd memory which should error on ASAN and debug builds.
     auto obj = idlStruct.getValue();
     ASSERT_BSONOBJ_EQ(obj, BSON("x" << 42));
+    ASSERT_TRUE(idlStruct.isOwned());
 }
 
 TEST(IDLOwnershipTests, ParseSharingOwnershipTmpBSON) {
@@ -4999,11 +4996,13 @@ TEST(IDLOwnershipTests, ParseSharingOwnershipTmpBSON) {
     {
         auto tmp = BSON("value" << BSON("x" << 42));
         idlStruct = One_plain_object::parseSharingOwnership(ctxt, tmp);
+        ASSERT_TRUE(idlStruct.isOwned());
     }
     // Now that tmp is out of scope, if idlStruct didn't particpate in ownership, it would be
     // accessing free'd memory which should error on ASAN and debug builds.
     auto obj = idlStruct.getValue();
     ASSERT_BSONOBJ_EQ(obj, BSON("x" << 42));
+    ASSERT_TRUE(idlStruct.isOwned());
 }
 
 TEST(IDLOwnershipTests, ParseSharingOwnershipTmpIDLStruct) {
@@ -5015,6 +5014,34 @@ TEST(IDLOwnershipTests, ParseSharingOwnershipTmpIDLStruct) {
     ASSERT_BSONOBJ_EQ(bson["value"].Obj(), BSON("x" << 42));
 }
 
+TEST(IDLOwnershipTests, ParseViewStructIsNotOwned) {
+    IDLParserContext ctxt("root");
+
+    {
+        ViewStructChainedStruct view_struct_chained_struct;
+        auto tmp = BSON("view_type" << BSON("a"
+                                            << "b"));
+        view_struct_chained_struct = ViewStructChainedStruct::parse(ctxt, tmp);
+        ASSERT_FALSE(view_struct_chained_struct.isOwned());
+    }
+
+    {
+        ViewStructChainedType view_struct_chained_type;
+        auto tmp = BSON("view_type" << BSON("a"
+                                            << "b"));
+        view_struct_chained_type = ViewStructChainedType::parse(ctxt, tmp);
+        ASSERT_FALSE(view_struct_chained_type.isOwned());
+    }
+
+    {
+        ViewStructWithViewStructMember view_struct_member;
+        auto tmp = BSON("view_struct" << BSON("view_type" << BSON("a"
+                                                                  << "b")));
+        view_struct_member = ViewStructWithViewStructMember::parse(ctxt, tmp);
+        ASSERT_FALSE(view_struct_member.isOwned());
+    }
+}
+
 TEST(IDLOwnershipTests, ChainedParseSharingOwnershipTmpBSON) {
     IDLParserContext ctxt("root");
 
@@ -5023,32 +5050,38 @@ TEST(IDLOwnershipTests, ChainedParseSharingOwnershipTmpBSON) {
         auto tmp = BSON("view_type" << BSON("a"
                                             << "b"));
         view_struct_chained_struct = ViewStructChainedStruct::parseSharingOwnership(ctxt, tmp);
+        ASSERT_TRUE(view_struct_chained_struct.isOwned());
     }
     // Now that tmp is out of scope, if idlStruct didn't particpate in ownership, it would be
     // accessing free'd memory which should error on ASAN and debug builds.
     ASSERT_BSONOBJ_EQ(view_struct_chained_struct.getView_type(),
                       BSON("a"
                            << "b"));
+    ASSERT_TRUE(view_struct_chained_struct.isOwned());
 
     ViewStructChainedType view_struct_chained_type;
     {
         auto tmp = BSON("view_type" << BSON("a"
                                             << "b"));
         view_struct_chained_type = ViewStructChainedType::parseSharingOwnership(ctxt, tmp);
+        ASSERT_TRUE(view_struct_chained_type.isOwned());
     }
     ASSERT_BSONOBJ_EQ(view_struct_chained_type.getViewChainedType().getView_type(),
                       BSON("view_type" << BSON("a"
                                                << "b")));
+    ASSERT_TRUE(view_struct_chained_type.isOwned());
 
     ViewStructWithViewStructMember view_struct_member;
     {
         auto tmp = BSON("view_struct" << BSON("view_type" << BSON("a"
                                                                   << "b")));
         view_struct_member = ViewStructWithViewStructMember::parseSharingOwnership(ctxt, tmp);
+        ASSERT_TRUE(view_struct_member.isOwned());
     }
     ASSERT_BSONOBJ_EQ(view_struct_member.getView_struct().getView_type(),
                       BSON("a"
                            << "b"));
+    ASSERT_TRUE(view_struct_member.isOwned());
 }
 
 /**
@@ -5132,6 +5165,8 @@ TEST(IDLOwnershipTests, NonViewStructParseAssumesOwnership) {
         // We want to test that idlStruct is internally a non view type, and that the struct
         // inherently owns all its members.
         idlStruct = NonViewStruct::parse(ctxt, std::move(tmp));
+
+        ASSERT_TRUE(idlStruct.isOwned());
     }
 
     // Now that tmp is out of scope, if idlStruct is a view type, it would be accessing

@@ -35,28 +35,79 @@
 
 namespace mongo {
 namespace executor {
-BSONObj MongotTaskExecutorCursorGetMoreStrategy::createGetMoreRequest(const CursorId& cursorId,
-                                                                      const NamespaceString& nss) {
+
+MongotTaskExecutorCursorGetMoreStrategy::MongotTaskExecutorCursorGetMoreStrategy(
+    std::function<boost::optional<long long>()> calcDocsNeededFn,
+    boost::optional<long long> startingBatchSize,
+    DocsNeededBounds minDocsNeededBounds,
+    DocsNeededBounds maxDocsNeededBounds)
+    : _calcDocsNeededFn(calcDocsNeededFn),
+      _currentBatchSize(startingBatchSize),
+      _minDocsNeededBounds(minDocsNeededBounds),
+      _maxDocsNeededBounds(maxDocsNeededBounds),
+      _batchSizeHistory({}) {
+    if (startingBatchSize.has_value()) {
+        _batchSizeHistory.emplace_back(*startingBatchSize);
+    }
+    tassert(8953000,
+            "Only one of docsRequested or batchSize should be enabled for mongot getMore requests.",
+            _calcDocsNeededFn == nullptr || !_currentBatchSize.has_value());
+}
+
+BSONObj MongotTaskExecutorCursorGetMoreStrategy::createGetMoreRequest(
+    const CursorId& cursorId, const NamespaceString& nss, long long prevBatchNumReceived) {
     GetMoreCommandRequest getMoreRequest(cursorId, nss.coll().toString());
 
-    if (!_calcDocsNeededFn) {
-        return getMoreRequest.toBSON({});
-    }
+    boost::optional<long long> docsNeeded = _calcDocsNeededFn ? _calcDocsNeededFn() : boost::none;
 
-    auto docsNeeded = _calcDocsNeededFn();
-    // (Ignore FCV check): This feature is enabled on an earlier FCV.
-    // TODO SERVER-74941 Remove featureFlagSearchBatchSizeLimit
-    if (feature_flags::gFeatureFlagSearchBatchSizeLimit.isEnabledAndIgnoreFCVUnsafe() &&
-        docsNeeded.has_value()) {
+    // TODO SERVER-74941 Remove docsRequested alongside featureFlagSearchBatchSizeLimit.
+    if (_currentBatchSize.has_value() || docsNeeded.has_value()) {
         BSONObjBuilder getMoreBob;
-        getMoreRequest.serialize({}, &getMoreBob);
+        getMoreRequest.serialize(&getMoreBob);
         BSONObjBuilder cursorOptionsBob(getMoreBob.subobjStart(mongot_cursor::kCursorOptionsField));
-        cursorOptionsBob.append(mongot_cursor::kDocsRequestedField, docsNeeded.get());
+        if (_currentBatchSize.has_value()) {
+            cursorOptionsBob.append(mongot_cursor::kBatchSizeField,
+                                    _getNextBatchSize(prevBatchNumReceived));
+        } else {
+            cursorOptionsBob.append(mongot_cursor::kDocsRequestedField, docsNeeded.get());
+        }
         cursorOptionsBob.doneFast();
         return getMoreBob.obj();
     }
+    return getMoreRequest.toBSON();
+}
 
-    return getMoreRequest.toBSON({});
+long long MongotTaskExecutorCursorGetMoreStrategy::_getNextBatchSize(
+    long long prevBatchNumReceived) {
+    tassert(8953002,
+            "_getNextBatchSize() should only be called when using the batchSize field.",
+            _currentBatchSize.has_value());
+
+    // Don't increase batchSize if the previous batch was returned without filling to the requested
+    // batchSize. That indicates the BSON limit was reached, which likely could happen again.
+    if (prevBatchNumReceived == *_currentBatchSize) {
+        // In case the growth factor is small enough that the next batchSize rounds back to the
+        // previous batchSize, we use std::ceil to make sure it always grows by at least 1,
+        // unless the growth factor is exactly 1.
+        _currentBatchSize = std::ceil(*_currentBatchSize * kInternalSearchBatchSizeGrowthFactor);
+    }
+    _batchSizeHistory.emplace_back(*_currentBatchSize);
+    return *_currentBatchSize;
+}
+
+bool MongotTaskExecutorCursorGetMoreStrategy::shouldPrefetch() const {
+    // If we aren't sending batchSize to mongot, then we prefetch the next batch, unless we have a
+    // discrete maximum bounds used to set docsRequested. When docsRequested is set, we
+    // optimistically assume that we will only need a single batch and attempt to avoid doing
+    // unnecessary work on mongot. If $idLookup filters out enough documents such that we are not
+    // able to satisfy the limit, then we will fetch the next batch syncronously on the subsequent
+    // 'getNext()' call.
+    if (!_currentBatchSize.has_value()) {
+        return !std::holds_alternative<long long>(_maxDocsNeededBounds);
+    }
+
+    // TODO SERVER-86739 Enable pre-fetching for queries that use batchSize tuning.
+    return false;
 }
 
 }  // namespace executor

@@ -680,6 +680,7 @@ ShardingCatalogManager::ShardingCatalogManager(
       _executorForAddShard(std::move(addShardExecutor)),
       _localConfigShard(std::move(localConfigShard)),
       _localCatalogClient(std::move(localCatalogClient)),
+      _kAddRemoveShardLock("addRemoveShardLock"),
       _kShardMembershipLock("shardMembershipLock"),
       _kClusterCardinalityParameterLock("clusterCardinalityParameterLock"),
       _kChunkOpLock("chunkOpLock"),
@@ -911,7 +912,7 @@ Status ShardingCatalogManager::_initConfigSettings(OperationContext* opCtx) {
     collModCmd.getCollModRequest().setValidationLevel(ValidationLevelEnum::strict);
     BSONObjBuilder builder;
     return processCollModCommand(
-        opCtx, {NamespaceString::kConfigSettingsNamespace}, collModCmd, &builder);
+        opCtx, {NamespaceString::kConfigSettingsNamespace}, collModCmd, nullptr, &builder);
 }
 
 Status ShardingCatalogManager::setFeatureCompatibilityVersionOnShards(OperationContext* opCtx,
@@ -1043,7 +1044,7 @@ Status ShardingCatalogManager::_notifyClusterOnNewDatabases(
                                                    event.toBSON());
         BSONObjBuilder bob;
         request.serialize(
-            BSON(WriteConcernOptions::kWriteConcernField << WriteConcernOptions::Majority), &bob);
+            &bob, BSON(WriteConcernOptions::kWriteConcernField << WriteConcernOptions::Majority));
         rpc::writeAuthDataToImpersonatedUserMetadata(altOpCtx, &bob);
 
         // send cmd
@@ -1577,7 +1578,7 @@ void ShardingCatalogManager::cleanUpPlacementHistory(OperationContext* opCtx,
         opCtx,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         NamespaceString::kConfigsvrPlacementHistoryNamespace.dbName(),
-        deleteRequest.toBSON({}),
+        deleteRequest.toBSON(),
         Shard::RetryPolicy::kIdempotent));
 
     LOGV2_DEBUG(7068808, 2, "Cleaning up placement history - done deleting entries");

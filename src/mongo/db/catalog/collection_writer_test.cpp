@@ -47,6 +47,7 @@
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/d_concurrency.h"
+#include "mongo/db/concurrency/exception_util.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/storage/write_unit_of_work.h"
@@ -99,15 +100,20 @@ protected:
             ->lookupCollectionByNamespace(operationContext(), nss);
     }
 
-    void verifyCollectionInCatalogUsingDifferentClient(const Collection* expected) {
-        stdx::thread t([this, expected]() {
+    void verifyCollectionInCatalogUsingDifferentClient(const Collection* expected,
+                                                       const NamespaceString& nss) {
+        stdx::thread t([this, expected, nss]() {
             ThreadClient client(getServiceContext()->getService());
             auto opCtx = client->makeOperationContext();
-            ASSERT_EQ(expected,
-                      CollectionCatalog::get(opCtx.get())
-                          ->lookupCollectionByNamespace(opCtx.get(), kNss));
+            ASSERT_EQ(
+                expected,
+                CollectionCatalog::get(opCtx.get())->lookupCollectionByNamespace(opCtx.get(), nss));
         });
         t.join();
+    }
+
+    void verifyCollectionInCatalogUsingDifferentClient(const Collection* expected) {
+        verifyCollectionInCatalogUsingDifferentClient(expected, kNss);
     }
 
     const NamespaceString kNss =
@@ -256,6 +262,95 @@ TEST_F(CatalogTestFixture, ConcurrentCatalogWritesSerialized) {
     }
 }
 
+// Validate that the oplog supports copy on write like any other collection.
+TEST_F(CollectionWriterTest, OplogCOW) {
+    const auto nss = NamespaceString::kRsOplogNamespace;
+
+    const auto& oplogInitial = lookupCollectionFromCatalogForRead(nss);
+    ASSERT(oplogInitial);
+
+    AutoGetCollection lock(operationContext(), nss, MODE_X);
+    CollectionWriter writer(operationContext(), nss);
+
+    const auto& oplogDuringDDL = lookupCollectionFromCatalogForRead(nss);
+    ASSERT(oplogDuringDDL);
+    ASSERT(oplogInitial == oplogDuringDDL);
+
+    {
+        WriteUnitOfWork wuow(operationContext());
+        auto writable = writer.getWritableCollection(operationContext());
+
+        // get() and getWritableCollection() should return the same instance
+        ASSERT_EQ(writer.get().get(), writable);
+
+        // Catalog lookups for this OperationContext should see the uncommitted collection.
+        ASSERT_EQ(writable, lookupCollectionFromCatalogForRead(nss));
+
+        wuow.commit();
+    }
+
+    // A new oplog lookup should return a new Collection pointer.
+    const auto& oplogAfterDDL = lookupCollectionFromCatalogForRead(nss);
+    ASSERT(oplogAfterDDL != oplogInitial);
+
+    // Likewise from another thread.
+    verifyCollectionInCatalogUsingDifferentClient(oplogAfterDDL, nss);
+}
+
+void runAutoGetOplogFastPathObjectStabilityConcurrentDDL(ServiceContext* svcCtx,
+                                                         OperationContext* opCtx,
+                                                         OplogAccessMode mode) {
+    boost::optional<Lock::GlobalLock> gl;
+    if (mode == OplogAccessMode::kLogOp) {
+        gl.emplace(opCtx, MODE_IX);
+    }
+
+    AutoGetOplogFastPath oplogRead(opCtx, mode);
+    const auto& oplogR = oplogRead.getCollection();
+    ASSERT(oplogR);
+
+    // Modify the oplog catalog object in another thread. This is possible because the fast-path
+    // oplog acquisition does not hold the oplog collection lock.
+    {
+        stdx::thread t([&]() {
+            ThreadClient client(svcCtx->getService());
+            auto opCtx = client->makeOperationContext();
+
+            writeConflictRetry(
+                opCtx.get(), "dummy oplog DDL", NamespaceString::kRsOplogNamespace, [&] {
+                    AutoGetCollection autoColl(
+                        opCtx.get(), NamespaceString::kRsOplogNamespace, MODE_X);
+                    ASSERT(autoColl.getCollection());
+                    WriteUnitOfWork wunit(opCtx.get());
+                    auto oplogWrite = autoColl.getWritableCollection(opCtx.get());
+                    ASSERT(oplogWrite);
+                    wunit.commit();
+                });
+        });
+        t.join();
+    }
+
+    // Access the oplog object. It doesn't matter why we access it, as long as we do. This ensures
+    // that the collection object is still valid, albeit stale due to the DDL that committed above.
+    // If the object is unexpectedly invalid, this would be detected by our sanitizers (heap use
+    // after free).
+    ASSERT(oplogR->ns() == NamespaceString::kRsOplogNamespace);
+}
+
+// Validate that the oplog object remains valid in the case of a concurrent DDL operation.
+TEST_F(CollectionWriterTest, AutoGetOplogFastPathkReadObjectStabilityConcurrentDDL) {
+    runAutoGetOplogFastPathObjectStabilityConcurrentDDL(
+        getServiceContext(), operationContext(), OplogAccessMode::kRead);
+}
+TEST_F(CollectionWriterTest, AutoGetOplogFastPathkWriteObjectStabilityConcurrentDDL) {
+    runAutoGetOplogFastPathObjectStabilityConcurrentDDL(
+        getServiceContext(), operationContext(), OplogAccessMode::kWrite);
+}
+TEST_F(CollectionWriterTest, AutoGetOplogFastPathkLogOpObjectStabilityConcurrentDDL) {
+    runAutoGetOplogFastPathObjectStabilityConcurrentDDL(
+        getServiceContext(), operationContext(), OplogAccessMode::kLogOp);
+}
+
 /**
  * This test uses a catalog with a large number of collections to make it slow to copy. The idea
  * is to trigger the batching behavior when multiple threads want to perform catalog writes
@@ -316,75 +411,6 @@ TEST_F(CatalogReadCopyUpdateTest, ConcurrentCatalogWriteBatchingMayThrow) {
     for (auto&& thread : threads) {
         thread.join();
     }
-}
-
-class BatchedCollectionCatalogWriterTest : public CollectionWriterTest {
-public:
-    Collection* lookupCollectionFromCatalogForMetadataWrite(const NamespaceString& nss) {
-        return CollectionCatalog::get(operationContext())
-            ->lookupCollectionByNamespaceForMetadataWrite(operationContext(), nss);
-    }
-};
-
-TEST_F(BatchedCollectionCatalogWriterTest, BatchedTest) {
-    const NamespaceString other = NamespaceString::createNamespaceString_forTest("testdb", "other");
-
-    const Collection* before = lookupCollectionFromCatalogForRead(kNss);
-    const Collection* after = nullptr;
-    {
-        Lock::GlobalWrite lock(operationContext());
-        createCollection(other);
-
-        BatchedCollectionCatalogWriter batched(operationContext());
-
-        // We should get a unique clone the first time we request a writable collection
-        Collection* firstWritable = lookupCollectionFromCatalogForMetadataWrite(kNss);
-        ASSERT_NE(firstWritable, before);
-
-        // Subsequent requests should return the same instance.
-        Collection* secondWritable = lookupCollectionFromCatalogForMetadataWrite(kNss);
-        ASSERT_EQ(secondWritable, firstWritable);
-
-        // Check behavior with WUOW
-        const Collection* otherBefore = lookupCollectionFromCatalogForRead(other);
-        const Collection* otherInWUOW = nullptr;
-
-        // Behavior for WUOW that commits
-        {
-            WriteUnitOfWork wuow(operationContext());
-
-            // Lookup for write and record the instance, we should find it in the catalog after the
-            // WOUW commits
-            Collection* otherWritable = lookupCollectionFromCatalogForMetadataWrite(other);
-            otherInWUOW = otherWritable;
-            ASSERT_NE(otherBefore, otherInWUOW);
-
-            wuow.commit();
-        }
-        ASSERT_EQ(lookupCollectionFromCatalogForRead(other), otherInWUOW);
-
-        // Behavior for WUOW that rollback
-        {
-            WriteUnitOfWork wuow(operationContext());
-
-            // Another WUOW, check that that we will re-clone the collection
-            Collection* otherWritable = lookupCollectionFromCatalogForMetadataWrite(other);
-            ASSERT_NE(otherWritable, otherInWUOW);
-        }
-
-        // After rollback we restored the original instance
-        ASSERT_EQ(lookupCollectionFromCatalogForRead(other), otherInWUOW);
-
-        // Make sure we did not restore the instance for the collection that write was requested for
-        // outside of a WUOW.
-        ASSERT_EQ(lookupCollectionFromCatalogForRead(kNss), firstWritable);
-
-        after = firstWritable;
-    }
-
-    // When the batched writer commits our collection instance should be replaced.
-    ASSERT_NE(lookupCollectionFromCatalogForRead(kNss), before);
-    ASSERT_EQ(lookupCollectionFromCatalogForRead(kNss), after);
 }
 
 }  // namespace

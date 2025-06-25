@@ -28,21 +28,22 @@
  */
 
 #include "mongo/db/query/plan_explainer_express.h"
-
 #include "mongo/db/keypattern.h"
 
 namespace mongo {
 std::string PlanExplainerExpress::getPlanSummary() const {
-    if (_iteratorStats->indexKeyPattern().isEmpty()) {
-        return _iteratorStats->stageName();
-    } else {
-        // KeyPattern::toString() is faster and produces different output compared to
-        // BSONObj::toString(). KeyPattern produces "{ a: 1 }" instead of "{ a: 1.0 }" as its
-        // output.
-        return fmt::format("{} {}",
-                           _iteratorStats->stageName(),
-                           KeyPattern(_iteratorStats->indexKeyPattern()).toString());
+    StackStringBuilder ssb;
+
+    ssb << _iteratorStats->stageName();
+
+    if (!_iteratorStats->indexKeyPattern().empty()) {
+        ssb << " " << _iteratorStats->indexKeyPattern();
     }
+
+    if (!_writeOperationStats->stageName().empty()) {
+        ssb << "," << _writeOperationStats->stageName();
+    }
+    return ssb.str();
 }
 
 void PlanExplainerExpress::getSummaryStats(PlanSummaryStats* statsOut) const {
@@ -55,6 +56,11 @@ PlanExplainer::PlanStatsDetails PlanExplainerExpress::getWinningPlanStats(
     BSONObjBuilder bob;
 
     bob.append("isCached", false);
+    if (_writeOperationStats->stageName().empty()) {
+        bob.append("stage"_sd, _iteratorStats->stageName());
+    } else {
+        bob.append("stage"_sd, _writeOperationStats->stageName());
+    }
     _iteratorStats->appendDataAccessStats(bob);
     PlanSummaryStats stats;
     getSummaryStats(&stats);
@@ -63,6 +69,9 @@ PlanExplainer::PlanStatsDetails PlanExplainerExpress::getWinningPlanStats(
         bob.appendNumber("keysExamined", static_cast<long long>(stats.totalKeysExamined));
         bob.appendNumber("docsExamined", static_cast<long long>(stats.totalDocsExamined));
         bob.appendNumber("nReturned", static_cast<long long>(stats.nReturned));
+        if (!_writeOperationStats->stageName().empty()) {
+            _writeOperationStats->populateExecStats(bob);
+        }
     }
 
     return {bob.obj(), stats};

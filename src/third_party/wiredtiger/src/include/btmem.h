@@ -316,7 +316,6 @@ struct __wt_page_modify {
 
     /* Avoid checking for obsolete updates during checkpoints. */
     uint64_t obsolete_check_txn;
-    wt_timestamp_t obsolete_check_timestamp;
 
     /* The largest transaction seen on the page by reconciliation. */
     uint64_t rec_max_txn;
@@ -1430,7 +1429,8 @@ struct __wt_update {
 #define WT_UPDATE_RESTORED_FAST_TRUNCATE 0x08u   /* Fast truncate instantiation */
 #define WT_UPDATE_RESTORED_FROM_DS 0x10u         /* Update restored from data store. */
 #define WT_UPDATE_RESTORED_FROM_HS 0x20u         /* Update restored from history store. */
-#define WT_UPDATE_TO_DELETE_FROM_HS 0x40u        /* Update needs to be deleted from history store */
+#define WT_UPDATE_RTS_DRYRUN_ABORT 0x40u         /* Used by dry run to mark a would-be abort. */
+#define WT_UPDATE_TO_DELETE_FROM_HS 0x80u        /* Update needs to be deleted from history store */
                                                  /* AUTOMATIC FLAG VALUE GENERATION STOP 8 */
     uint8_t flags;
 

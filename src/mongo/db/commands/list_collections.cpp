@@ -554,7 +554,6 @@ public:
                     try {
                         firstBatch.push_back(ListCollectionsReplyItem::parse(
                             IDLParserContext("ListCollectionsReplyItem",
-                                             false /* apiStrict*/,
                                              auth::ValidatedTenancyScope::get(opCtx),
                                              cursorNss.tenantId(),
                                              respSerializationContext),
@@ -579,7 +578,7 @@ public:
                 exec->detachFromOperationContext();
             }  // Drop db lock. Global cursor registration must be done without holding any locks.
 
-            auto cmdObj = listCollRequest.toBSON({});
+            auto cmdObj = listCollRequest.toBSON();
             auto pinnedCursor = CursorManager::get(opCtx)->registerCursor(
                 opCtx,
                 {std::move(exec),

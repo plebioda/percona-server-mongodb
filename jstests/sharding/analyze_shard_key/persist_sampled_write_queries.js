@@ -7,6 +7,9 @@
 import {extractUUIDFromObject} from "jstests/libs/uuid_util.js";
 import {QuerySamplingUtil} from "jstests/sharding/analyze_shard_key/libs/query_sampling_util.js";
 
+// This test requires running commands directly against the shard.
+TestData.replicaSetEndpointIncompatible = true;
+
 const supportedTestCases = [
     {collectionExists: true, markForSampling: true, expectSampling: true},
     {collectionExists: true, markForSampling: false, expectSampling: false},
@@ -198,7 +201,8 @@ function testInsertCmd(rst) {
     // Verify that no mongods support persisting sampled insert queries. Specifically, "sampleId"
     // is an unknown field for insert commands.
     assert.commandFailedWithCode(
-        db.runCommand({insert: collName, documents: [{a: 0}], sampleId: UUID()}), 40415);
+        db.runCommand({insert: collName, documents: [{a: 0}], sampleId: UUID()}),
+        ErrorCodes.IDLUnknownField);
 }
 
 {

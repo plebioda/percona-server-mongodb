@@ -138,6 +138,11 @@ public:
         void aggregateCursorMetrics(const CursorMetrics& metrics);
 
         /**
+         * Aggregates StorageStats from the storage engine into this AdditiveMetrics instance.
+         */
+        void aggregateStorageStats(const StorageStats& stats);
+
+        /**
          * Resets all members to the default state.
          */
         void reset();
@@ -210,6 +215,7 @@ public:
 
         boost::optional<long long> keysExamined;
         boost::optional<long long> docsExamined;
+        boost::optional<long long> bytesRead;
 
         // Number of records that match the query.
         boost::optional<long long> nMatched;
@@ -247,6 +253,9 @@ public:
         // for other nodes to do work on our behalf. In mongos, this tracks the total working time
         // across the cluster.
         boost::optional<Milliseconds> clusterWorkingTime{0};
+
+        // Amount of time spent reading from disk in the storage engine.
+        boost::optional<Microseconds> readingTime{0};
 
         // True if the query plan involves an in-memory sort.
         bool hasSortStage{false};
@@ -288,9 +297,9 @@ public:
     static void appendUserInfo(const CurOp&, BSONObjBuilder&, AuthorizationSession*);
 
     /**
-     * Copies relevant plan summary metrics to this OpDebug instance.
+     * Moves relevant plan summary metrics to this OpDebug instance.
      */
-    void setPlanSummaryMetrics(const PlanSummaryStats& planSummaryStats);
+    void setPlanSummaryMetrics(PlanSummaryStats&& planSummaryStats);
 
     /**
      * The resulting object has zeros omitted. As is typical in this file.
@@ -591,12 +600,12 @@ public:
      * Fills out CurOp and OpDebug with basic info common to all commands. We require the NetworkOp
      * in order to distinguish which protocol delivered this request, e.g. OP_QUERY or OP_MSG. This
      * is set early in the request processing backend and does not typically need to be called
-     * thereafter. Locks the client as needed to apply the specified settings.
+     * thereafter. It is necessary to hold the Client lock while this method executes.
      */
-    void setGenericOpRequestDetails(NamespaceString nss,
-                                    const Command* command,
-                                    BSONObj cmdObj,
-                                    NetworkOp op);
+    void setGenericOpRequestDetails_inlock(NamespaceString nss,
+                                           const Command* command,
+                                           BSONObj cmdObj,
+                                           NetworkOp op);
 
     /**
      * Sets metrics collected at the end of an operation onto curOp's OpDebug instance. Note that
@@ -1121,7 +1130,11 @@ private:
     Microseconds computeElapsedTimeTotal(TickSource::Tick startTime,
                                          TickSource::Tick endTime) const;
 
-    Milliseconds _sumBlockedTimeTotal();
+    /**
+     * Returns the time operation spends blocked waiting for locks and tickets. Also returns the
+     * retrieved time waiting for locks.
+     */
+    std::tuple<Milliseconds, Milliseconds> _getAndSumBlockedTimeTotal();
 
     /**
      * Handles failpoints that check whether a command has completed or not.
@@ -1134,6 +1147,12 @@ private:
     // Rate limiter only affects profiler at level 2 (_dbprofile >= 2)
     // so calling this method on other levels is not necessary.
     bool _shouldDBProfileWithRateLimit(long long slowMS);
+
+    /**
+     * Fetches storage stats and stores them in the OpDebug if they're not already present.
+     * Can throw if interrupted while waiting for the global lock.
+     */
+    void _fetchStorageStatsIfNecessary(Date_t deadline, AdmissionContext::Priority priority);
 
     static const OperationContext::Decoration<CurOpStack> _curopStack;
 

@@ -3,6 +3,10 @@
  * are only legal in sharded clusters (e.g., the two phase commit commands).
  * @tags: [uses_transactions]
  */
+
+// This test requires running transactions directly against the shard.
+TestData.replicaSetEndpointIncompatible = true;
+
 const dbName = "test";
 
 const txnNumber = 0;
@@ -57,7 +61,6 @@ jsTest.log(
 const standaloneReplSet = new ReplSetTest({nodes: 1});
 standaloneReplSet.startSet();
 standaloneReplSet.initiate();
-checkCoordinatorCommandsRejected(
-    standaloneReplSet.getPrimary(),
-    [ErrorCodes.ShardingStateNotInitialized, ErrorCodes.NoShardingEnabled_OBSOLETE]);
+checkCoordinatorCommandsRejected(standaloneReplSet.getPrimary(),
+                                 ErrorCodes.ShardingStateNotInitialized);
 standaloneReplSet.stopSet();

@@ -88,12 +88,9 @@ namespace mongo {
 using executor::NetworkInterfaceMock;
 using executor::NetworkTestEnv;
 using executor::RemoteCommandRequest;
-using executor::RemoteCommandResponse;
-using unittest::assertGet;
 
 using std::string;
 using std::vector;
-using unittest::assertGet;
 
 namespace {
 ReadPreferenceSetting kReadPref(ReadPreference::PrimaryOnly);
@@ -196,7 +193,7 @@ Status ConfigServerTestFixture::insertToConfigCollection(OperationContext* opCtx
         [&]() {
             write_ops::InsertCommandRequest insertOp(ns);
             insertOp.setDocuments({doc});
-            return insertOp.toBSON({});
+            return insertOp.toBSON();
         }(),
         Milliseconds(defaultConfigCommandTimeoutMS.load()),
         Shard::RetryPolicy::kNoRetry);
@@ -224,7 +221,7 @@ Status ConfigServerTestFixture::updateToConfigCollection(OperationContext* opCtx
                 entry.setUpsert(upsert);
                 return entry;
             }()});
-            return updateOp.toBSON({});
+            return updateOp.toBSON();
         }(),
         Milliseconds(defaultConfigCommandTimeoutMS.load()),
         Shard::RetryPolicy::kNoRetry);
@@ -251,7 +248,7 @@ Status ConfigServerTestFixture::deleteToConfigCollection(OperationContext* opCtx
                 entry.setMulti(multi);
                 return entry;
             }()});
-            return deleteOp.toBSON({});
+            return deleteOp.toBSON();
         }(),
         Milliseconds(defaultConfigCommandTimeoutMS.load()),
         Shard::RetryPolicy::kNoRetry);

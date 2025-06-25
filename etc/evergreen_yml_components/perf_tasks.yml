@@ -1,5 +1,9 @@
 functions:
   f_dsi_run_workload: &dsi_run_func # this function replaces f_run_dsi_workload
+    - command: timeout.update
+      params:
+        exec_timeout_secs: ${exec_timeout_secs_override}
+        timeout_secs: ${timeout_secs_override}
     - command: git.get_project
       params:
         directory: src/mongo
@@ -233,6 +237,25 @@ tasks:
         vars:
           test_control: "ycsb-60GB.long.2023-09"
 
+  - name: ycsb_audit.2023-09
+    priority: 5
+    commands:
+      - func: f_dsi_run_workload
+        vars:
+          test_control: "ycsb.2023-09"
+          additional_mongodb_setup: |
+            {audit: enabled,
+             auditAuthorization: 1}
+
+  - name: ycsb_read_concern_available.2023-09
+    priority: 5
+    commands:
+      - func: f_dsi_run_workload
+        vars:
+          test_control: "ycsb.2023-09"
+          test_control_params: |
+            {readConcernAvailable: 1}
+
   - name: ycsb_secondary_reads.2023-09
     priority: 5
     commands:
@@ -319,10 +342,10 @@ tasks:
 
   - name: linkbench2
     priority: 5
-    exec_timeout_secs: 43200 # 12 hours
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 43200 # 12 hours
           test_control: "linkbench2"
           additional_tfvars: "tags: {expire-on-delta: 12}"
 
@@ -356,26 +379,26 @@ tasks:
 
   - name: tsbs_query_high_cardinality
     priority: 5
-    exec_timeout_secs: 432000 # 5 days
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 432000 # 5 days
           test_control: "tsbs_query_high_cardinality"
 
   - name: tsbs_query_medium_cardinality
     priority: 5
-    exec_timeout_secs: 86400 # 1 day
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 86400 # 1 day
           test_control: "tsbs_query_medium_cardinality"
 
   - name: tsbs_high_cardinality_short
     priority: 5
-    exec_timeout_secs: 86400 # 1 day
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 86400 # 1 day
           test_control: "tsbs_high_cardinality_short"
 
   - name: tsbs_query_sharded
@@ -515,11 +538,11 @@ tasks:
 
   - name: dbcheck
     priority: 5
-    exec_timeout_secs: 43200 # 12 hours
     commands:
       - func: f_dsi_run_workload
-        timeout_secs: 43200 # 12 hours
         vars:
+          exec_timeout_secs_override: 43200 # 12 hours
+          timeout_secs_overide: 43200 # 12 hours
           test_control: "dbcheck"
           additional_tfvars: "tags: {expire-on-delta: 12}" # increase host expiration to 12 hours.
 
@@ -642,10 +665,10 @@ tasks:
 
   - name: tpch_10_normalized
     priority: 5
-    exec_timeout_secs: 43200 # 12 hours
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 43200 # 12 hours
           test_control: "tpch"
           test_control_params: |
             {scale: 10,
@@ -653,10 +676,10 @@ tasks:
 
   - name: tpch_10_denormalized
     priority: 5
-    exec_timeout_secs: 43200 # 12 hours
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 43200 # 12 hours
           test_control: "tpch"
           test_control_params: |
             {scale: 10,
@@ -673,10 +696,10 @@ tasks:
 
   - name: column_store_tpch_10_denormalized
     priority: 5
-    exec_timeout_secs: 43200 # 12 hours
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 43200 # 12 hours
           test_control: "column_store_tpch"
           test_control_params: |
             {scale: 10,
@@ -685,10 +708,10 @@ tasks:
 
   - name: column_store_tpch_10_denormalized_unindexed
     priority: 5
-    exec_timeout_secs: 43200 # 12 hours
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 43200 # 12 hours
           test_control: "column_store_tpch"
           test_control_params: |
             {scale: 10,
@@ -710,14 +733,6 @@ tasks:
         vars:
           test_control: load_test
           auto_workload_path: ./src/genny/dist/etc/genny/workloads/scale/LoadTest.yml
-
-  - name: majority_reads10_k_threads_high_value
-    priority: 5
-    commands:
-      - func: f_dsi_run_workload
-        vars:
-          test_control: majority_reads10_k_threads
-          auto_workload_path: ./src/genny/dist/etc/genny/workloads/scale/MajorityReads10KThreads.yml
 
   - name: large_indexed_ins_high_value
     priority: 5
@@ -750,6 +765,14 @@ tasks:
         vars:
           test_control: medical_workload_diagnosis_50_50
           auto_workload_path: ./src/genny/dist/etc/genny/workloads/encrypted/medical_workload-diagnosis-50-50.yml
+
+  - name: qe_range_balance_50_50_high_value
+    priority: 5
+    commands:
+      - func: f_dsi_run_workload
+        vars:
+          test_control: qe_range_balance_50_50
+          auto_workload_path: ./src/genny/dist/etc/genny/workloads/encrypted/qe-range-balance-50-50.yml
 
   - name: ycsb_like_queryable_encrypt1_cfdefault_high_value
     priority: 5
@@ -869,20 +892,20 @@ tasks:
 
   - name: initialsync-logkeeper
     priority: 5
-    exec_timeout_secs: 43200 # 12 hours
     commands:
       - func: f_dsi_run_workload
-        timeout_secs: 43200 # 12 hours
         vars:
+          exec_timeout_secs_override: 43200 # 12 hours
+          timeout_secs_override: 43200 # 12 hours
           test_control: "initialsync-logkeeper"
 
   - name: initialsync-logkeeper-fcbis
     priority: 5
-    exec_timeout_secs: 43200 # 12 hours
     commands:
       - func: f_dsi_run_workload
-        timeout_secs: 43200 # 12 hours
         vars:
+          exec_timeout_secs_override: 43200 # 12 hours
+          timeout_secs_override: 43200 # 12 hours
           test_control: "initialsync-logkeeper"
           mongodb_setup: "initialsync-logkeeper-fcbis"
 
@@ -892,10 +915,10 @@ tasks:
 
   - name: initialsync-logkeeper-snapshot-update
     priority: 5
-    exec_timeout_secs: 216000 # 2.5 days
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 216000 # 2.5 days
           test_control: "initialsync-logkeeper-snapshot-update"
 
   - name: initialsync-large
@@ -970,11 +993,11 @@ tasks:
           auto_workload_path: ./src/genny/dist/etc/genny/workloads/scale/InsertRemove.yml
 
   - name: genny_resharding_withIndexes
-    exec_timeout_secs: 172800 # 2 days
     commands:
       - func: f_dsi_run_workload
-        timeout_secs: 43200 # 12 hours
         vars:
+          exec_timeout_secs_override: 172800 # 2 days
+          timeout_secs_override: 43200 # 12 hours
           test_control: auto_genny_workload
           auto_workload_path: ./src/genny/dist/etc/genny/workloads/sharding/ReshardCollectionWithIndexes.yml
 
@@ -1000,8 +1023,7 @@ tasks:
              include_filter_2: regression,
              exclude_filter: none,
              threads: "1 4",
-             read_cmd: 'true',
-             share_dataset: 'true'}
+             read_cmd: 'true'}
 
   - name: big_collection
     commands:
@@ -1317,8 +1339,8 @@ tasks:
 
   - name: resharding-3shard-snapshot-update
     priority: 5
-    exec_timeout_secs: 216000 # 2.5 days
     commands:
       - func: f_dsi_run_workload
         vars:
+          exec_timeout_secs_override: 216000 # 2.5 days
           test_control: "resharding-3shard-snapshot-update.2023-10"

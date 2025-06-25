@@ -1,9 +1,9 @@
-# Common mongo-specific bazel build rules intended to be used in individual BUILD files in the "src/" subtree.
-load("@poetry//:dependencies.bzl", "dependency")
-
 # config selection
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain")
+
+# Common mongo-specific bazel build rules intended to be used in individual BUILD files in the "src/" subtree.
+load("@poetry//:dependencies.bzl", "dependency")
 load("//bazel:separate_debug.bzl", "CC_SHARED_LIBRARY_SUFFIX", "SHARED_ARCHIVE_SUFFIX", "WITH_DEBUG_SUFFIX", "extract_debuginfo", "extract_debuginfo_binary")
 
 # https://learn.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library?view=msvc-170
@@ -806,26 +806,53 @@ UNDEFINED_SANITIZER_DEFINES = select({
 # have renamed the flag.
 # However, this flag cannot be included when using the fuzzer sanitizer
 # if we want to suppress errors to uncover new ones.
+
+# this is a workaround, dive deeper with the folowing
+# TODO: https://jira.mongodb.org/browse/SERVER-90130
+
+UBSAN_EXPANSION_MINUS_VPTR = ",".join(
+    [
+        "alignment",
+        "array-bounds",
+        "bool",
+        "builtin",
+        "enum",
+        "float-cast-overflow",
+        "integer-divide-by-zero",
+        "nonnull-attribute",
+        "null",
+        "pointer-overflow",
+        "return",
+        "returns-nonnull-attribute",
+        "shift-base",
+        "shift-exponent",
+        "signed-integer-overflow",
+        "unreachable",
+        "vla-bound",
+    ],
+)
+
 UNDEFINED_SANITIZER_COPTS = select({
+    "//bazel/config:sanitize_undefined_static_link_settings": ["-fsanitize=" + UBSAN_EXPANSION_MINUS_VPTR + ",vptr"],
+    "//bazel/config:sanitize_undefined_dynamic_link_settings": ["-fno-sanitize=vptr", "-fsanitize=" + UBSAN_EXPANSION_MINUS_VPTR],
+    "//conditions:default": [],
+}) + select({
     ("//bazel/config:sanitize_undefined_without_fuzzer_settings"): ["-fno-sanitize-recover"],
     ("//conditions:default"): [],
 }) + select({
-    ("//bazel/config:sanitize_undefined_dynamic_link_settings"): ["-fno-sanitize=vptr"],
-    ("//conditions:default"): [],
-}) + select({
     "//bazel/config:ubsan_enabled": [
-        "-fsanitize=undefined",
         "-fsanitize-blacklist=$(location //etc:ubsan_denylist_h)",
     ],
     "//bazel/config:ubsan_disabled": [],
 }, no_match_error = GENERIC_SANITIZER_ERROR_MESSAGE + "undefined")
 
 UNDEFINED_SANITIZER_LINKFLAGS = select({
+    "//bazel/config:sanitize_undefined_static_link_settings": ["-fsanitize=" + UBSAN_EXPANSION_MINUS_VPTR + ",vptr"],
+    "//bazel/config:sanitize_undefined_dynamic_link_settings": ["-fno-sanitize=vptr", "-fsanitize=" + UBSAN_EXPANSION_MINUS_VPTR],
+    "//bazel/config:ubsan_disabled": [],
+}) + select({
     ("//bazel/config:sanitize_undefined_dynamic_link_settings"): ["-fno-sanitize=vptr"],
     ("//conditions:default"): [],
-}) + select({
-    ("//bazel/config:ubsan_enabled"): ["-fsanitize=undefined"],
-    ("//bazel/config:ubsan_disabled"): [],
 }, no_match_error = GENERIC_SANITIZER_ERROR_MESSAGE + "undefined")
 
 REQUIRED_SETTINGS_DYNAMIC_LINK_ERROR_MESSAGE = (
@@ -972,18 +999,49 @@ DEDUPE_SYMBOL_LINKFLAGS = select({
     "//conditions:default": [],
 })
 
+MTUNE_MARCH_COPTS = select({
+    # If we are enabling vectorization in sandybridge mode, we'd
+    # rather not hit the 256 wide vector instructions because the
+    # heavy versions can cause clock speed reductions.
+    "//bazel/config:linux_x86_64": [
+        "-march=sandybridge",
+        "-mtune=generic",
+        "-mprefer-vector-width=128",
+    ],
+    "//bazel/config:linux_aarch64": [
+        "-march=armv8.2-a",
+        "-mtune=generic",
+    ],
+    "//bazel/config:linux_ppc64le": [
+        "-mcpu=power8",
+        "-mtune=power8",
+        "-mcmodel=medium",
+    ],
+    "//bazel/config:linux_s390x": [
+        "-march=z196",
+        "-mtune=zEC12",
+    ],
+    "//conditions:default": [],
+})
+
+MONGO_GLOBAL_INCLUDE_DIRECTORIES = [
+    "-Isrc",
+    "-Isrc/third_party/boost",
+    "-Isrc/third_party/immer/dist",
+]
+
 MONGO_GLOBAL_DEFINES = DEBUG_DEFINES + LIBCXX_DEFINES + ADDRESS_SANITIZER_DEFINES + \
                        THREAD_SANITIZER_DEFINES + UNDEFINED_SANITIZER_DEFINES + GLIBCXX_DEBUG_DEFINES + \
                        WINDOWS_DEFINES + TCMALLOC_DEFINES + LINUX_DEFINES + GCC_OPT_DEFINES + BOOST_DEFINES + \
                        ABSEIL_DEFINES + PCRE2_DEFINES + SAFEINT_DEFINES
 
-MONGO_GLOBAL_COPTS = ["-Isrc", "-Isrc/third_party/boost"] + WINDOWS_COPTS + LIBCXX_COPTS + ADDRESS_SANITIZER_COPTS + \
+MONGO_GLOBAL_COPTS = MONGO_GLOBAL_INCLUDE_DIRECTORIES + WINDOWS_COPTS + LIBCXX_COPTS + ADDRESS_SANITIZER_COPTS + \
                      MEMORY_SANITIZER_COPTS + FUZZER_SANITIZER_COPTS + UNDEFINED_SANITIZER_COPTS + \
                      THREAD_SANITIZER_COPTS + ANY_SANITIZER_AVAILABLE_COPTS + LINUX_OPT_COPTS + \
                      GCC_OR_CLANG_WARNINGS_COPTS + GCC_OR_CLANG_GENERAL_COPTS + \
                      FLOATING_POINT_COPTS + MACOS_WARNINGS_COPTS + CLANG_WARNINGS_COPTS + \
                      CLANG_FNO_LIMIT_DEBUG_INFO + COMPRESS_DEBUG_COPTS + DEBUG_TYPES_SECTION_FLAGS + \
-                     IMPLICIT_FALLTHROUGH_COPTS
+                     IMPLICIT_FALLTHROUGH_COPTS + MTUNE_MARCH_COPTS
 
 MONGO_GLOBAL_LINKFLAGS = MEMORY_SANITIZER_LINKFLAGS + ADDRESS_SANITIZER_LINKFLAGS + FUZZER_SANITIZER_LINKFLAGS + \
                          UNDEFINED_SANITIZER_LINKFLAGS + THREAD_SANITIZER_LINKFLAGS + \
@@ -993,7 +1051,7 @@ MONGO_GLOBAL_LINKFLAGS = MEMORY_SANITIZER_LINKFLAGS + ADDRESS_SANITIZER_LINKFLAG
                          GCC_OR_CLANG_LINKFLAGS + COMPRESS_DEBUG_LINKFLAGS + DEDUPE_SYMBOL_LINKFLAGS + \
                          DEBUG_TYPES_SECTION_FLAGS
 
-MONGO_GLOBAL_ACCESSIBLE_HEADERS = ["//src/third_party/boost:headers"]
+MONGO_GLOBAL_ACCESSIBLE_HEADERS = ["//src/third_party/boost:headers", "//src/third_party/immer:headers"]
 
 MONGO_GLOBAL_FEATURES = GDWARF_FEATURES + DWARF_VERSION_FEATURES
 

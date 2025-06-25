@@ -17,7 +17,9 @@ import {
     kSafeContentField
 } from "jstests/fle2/libs/encrypted_client_util.js";
 
-if (!(buildInfo().modules.includes("enterprise"))) {
+const buildInfo = assert.commandWorked(db.runCommand({"buildInfo": 1}));
+
+if (!(buildInfo.modules.includes("enterprise"))) {
     jsTestLog("Skipping test as it requires the enterprise module");
     quit();
 }
@@ -48,7 +50,6 @@ const clientSideFLEOptions = {
 db.getSiblingDB(dbName).dropDatabase();
 
 assert(initialConn.setAutoEncryption(clientSideFLEOptions));
-initialConn.toggleAutoEncryption(true);
 
 let encryptedClient = new EncryptedClient(initialConn, dbName);
 assert.commandWorked(encryptedClient.createEncryptionCollection(collName, {
@@ -58,6 +59,8 @@ assert.commandWorked(encryptedClient.createEncryptionCollection(collName, {
         ]
     }
 }));
+
+initialConn.toggleAutoEncryption(true);
 
 function runIndexedEqualityEncryptedCRUDTest(client, iterations) {
     let conn = client.getDB().getMongo();

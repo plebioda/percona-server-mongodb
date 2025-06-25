@@ -337,7 +337,7 @@ Status deleteRangeInBatches(OperationContext* opCtx,
 
             markRangeDeletionTaskAsProcessing(opCtx, collectionUuid, range);
 
-            int numDeleted;
+            int numDeleted = 0;
             const auto nss = [&]() {
                 try {
                     const auto nssOrUuid = NamespaceStringOrUUID{dbName, collectionUuid};
@@ -532,7 +532,7 @@ void removePersistentRangeDeletionTasksByUUID(OperationContext* opCtx, const UUI
             return entry;
         }()});
 
-        return deleteOp.serialize({});
+        return deleteOp.serialize();
     }());
 
     const auto commandReply = commandResponse->getCommandReply();

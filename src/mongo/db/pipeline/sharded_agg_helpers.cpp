@@ -1111,8 +1111,7 @@ BSONObj createPassthroughCommandForShard(
 
         if (arrayBuilder.arrSize() > 0) {
             filteredCommand = filteredCommand.addField(
-                BSON(Generic_args_unstable_v1::kRequestGossipRoutingCacheFieldName
-                     << arrayBuilder.arr())
+                BSON(GenericArguments::kRequestGossipRoutingCacheFieldName << arrayBuilder.arr())
                     .firstElement());
         }
     }
@@ -1162,7 +1161,7 @@ BSONObj createCommandForTargetedShards(const boost::intrusive_ptr<ExpressionCont
         }
 
         if (arrayBuilder.arrSize() > 0) {
-            targetedCmd[Generic_args_unstable_v1::kRequestGossipRoutingCacheFieldName] =
+            targetedCmd[GenericArguments::kRequestGossipRoutingCacheFieldName] =
                 Value(arrayBuilder.arr());
         }
     }

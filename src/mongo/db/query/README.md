@@ -17,7 +17,7 @@ satisfy it, and to actually compute the results. It is primarily exposed through
 - Optimizer
 - Execution engine
 - Sharding
-- Views
+- [Views][views]
 
 ## Features
 
@@ -30,7 +30,7 @@ satisfy it, and to actually compute the results. It is primarily exposed through
 - Queryable encryption
 - Search
 - [Timeseries][timeseries]
-- Vector search
+- [Vector search][vector search]
 
 ## Glossary
 
@@ -72,8 +72,10 @@ satisfy it, and to actually compute the results. It is primarily exposed through
 [timeseries]: timeseries/README.md
 [query stats]: query_stats/README.md
 [query shape]: query_shape/README.md
+[vector search]: ../pipeline/search/README.md
 [bson]: https://bsonspec.org/
 [idl]: ../../idl/README.md
 [canonicalquery]: canonical_query.h
 [liteparsedpipeline]: ../pipeline/lite_parsed_pipeline.h
 [expressioncontext]: ../pipeline/expression_context.h
+[views]: README_views.md

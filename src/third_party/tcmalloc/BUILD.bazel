@@ -138,8 +138,17 @@ COPTS = [
     ],
 })
 
+# The kernel supported logic is split into 2 select statements to avoid an "ambiguous match" error.
+# The first select statement checks if the local build is enabled and if so, requires a kernel version of 4.4 or greater.
+# The second select statement checks if the platform is s390x or ppc64le and if so, overrides the kernel supported logic.
+# When Bazel evaluates the added result of the 2 select statements, it understands that `...:incompatible` overrides
+# the `...:kernel_version_4_4_or_greater` logic.
 KERNEL_SUPPORTED = select({
     "//bazel/config:local_build_enabled": ["//bazel/platforms:kernel_version_4_4_or_greater"],
+    "//conditions:default": [],
+}) + select({
+    "//bazel/config:linux_s390x": ["@platforms//:incompatible"],
+    "//bazel/config:linux_ppc64le": ["@platforms//:incompatible"],
     "//conditions:default": [],
 })
 
@@ -160,6 +169,7 @@ mongo_cc_library(
         "tcmalloc_internal_logging",
         "tcmalloc_internal_page_size",
         "tcmalloc_internal_percpu",
+        "tcmalloc_internal_percpu_tcmalloc",
         "tcmalloc_malloc_extension",
         "tcmalloc_malloc_tracing_extension",
         "tcmalloc_new_extension",
@@ -350,6 +360,7 @@ mongo_cc_library(
     skip_global_deps = TCMALLOC_SKIP_GLOBAL_DEPS,
     target_compatible_with = KERNEL_SUPPORTED,
     deps = [
+        ":tcmalloc_internal_sysinfo",
         "//src/third_party/abseil-cpp:absl_base",
     ],
 )

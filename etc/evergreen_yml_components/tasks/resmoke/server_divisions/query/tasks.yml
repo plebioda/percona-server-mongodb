@@ -151,6 +151,8 @@ tasks:
         "assigned_to_jira_team_server_query_execution",
         "non_deterministic",
         "incompatible_tsan",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
         "aggfuzzer",
         "multiversion",
         "require_npm",
@@ -185,6 +187,14 @@ tasks:
       - func: "do setup"
       - func: "run tests"
 
+  # In order to share binaries with downstream patches on 10gen/mongot, for each variant this task is included in
+  # it writes the S3 binary tarball link to downstream_expansions.yml.
+  - <<: *task_template
+    name: set_downstream_expansions_for_mongot
+    tags: ["assigned_to_jira_team_server_query_integration", "experimental"]
+    commands:
+      - func: "write and set downstream expansions"
+
   - <<: *task_template
     name: aggregation_mongos_passthrough
     tags:
@@ -209,6 +219,8 @@ tasks:
         "assigned_to_jira_team_server_query_execution",
         "non_deterministic",
         "incompatible_tsan",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
         "aggfuzzer",
         "common",
         "multiversion",
@@ -344,6 +356,43 @@ tasks:
           num_files: 70
           num_tasks: 20
           jstestfuzz_vars: --diffTestingMode timeseries --numPipelines=1000
+          npm_command: agg-fuzzer
+          suite: generational_fuzzer
+          resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
+
+  ## Standalone fuzzer for checking block_processing correctness ##
+  - <<: *jstestfuzz_template
+    name: aggregation_blockprocessing_fuzzer_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_query_execution",
+        "release_critical",
+        "incompatible_development_variant",
+        "incompatible_mac",
+        "incompatible_ppc",
+        "incompatible_s390x",
+        "aggfuzzer",
+        "common",
+        "timeseries",
+        "blockprocessing",
+        "require_npm",
+        "random_name",
+        "no_debug_mode",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          <<: *jstestfuzz_config_vars
+          # We have seen some common scenarios where the generated pipelines take a while to run and can
+          # hit some timeouts. We'll split 70000 pipelines across 70 files, compared to 80000 pipelines
+          # across 20 files in the other generational agg fuzzers. This approach can be considered if we
+          # see similar timeouts elsewhere. It is not well understood whether/how we could pass
+          # 'numPipelines' as an argument in the yaml here, but it works as part of the
+          # 'jstestfuzz_vars' argument string. If a future reader better understands this evergreen
+          # integration, please update this comment and/or move numPipelines to a yaml arg here.
+          num_files: 70
+          num_tasks: 20
+          jstestfuzz_vars: --diffTestingMode blockprocessing --numPipelines=1000
           npm_command: agg-fuzzer
           suite: generational_fuzzer
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
@@ -545,7 +594,6 @@ tasks:
           change_streams_last_lts_old_new_new: last_lts
       - func: "generate resmoke tasks"
         vars:
-          suite: change_streams
           run_no_feature_flag_tests: "true"
 
   - <<: *task_template
@@ -591,7 +639,6 @@ tasks:
           change_streams_sharded_collections_passthrough_last_lts_new_old_old_new: last_lts
       - func: "generate resmoke tasks"
         vars:
-          suite: change_streams_sharded_collections_passthrough
           run_no_feature_flag_tests: "true"
 
   - <<: *task_template
@@ -737,19 +784,21 @@ tasks:
       - func: "do setup"
       - func: "run tests"
 
-  - <<: *task_template
-    name: cursor_hints_to_query_settings_sharded_collections_passthrough
+  - <<: *gen_task_template
+    name: cursor_hints_to_query_settings_sharded_collections_passthrough_gen
     tags: ["assigned_to_jira_team_server_query_execution", "default"]
     commands:
-      - func: "do setup"
-      - func: "run tests"
+      - func: "generate resmoke tasks"
+        vars:
+          use_large_distro: "true"
 
-  - <<: *task_template
-    name: cursor_hints_to_query_settings_unsharded_collections_passthrough
+  - <<: *gen_task_template
+    name: cursor_hints_to_query_settings_unsharded_collections_passthrough_gen
     tags: ["assigned_to_jira_team_server_query_execution", "default"]
     commands:
-      - func: "do setup"
-      - func: "run tests"
+      - func: "generate resmoke tasks"
+        vars:
+          use_large_distro: "true"
 
   - <<: *task_template
     name: implicit_query_settings_fallback
@@ -932,6 +981,36 @@ tasks:
           resmoke_jobs_max: 1
 
   - <<: *task_template
+    name: search_end_to_end_sharded_cluster
+    tags:
+      [
+        "assigned_to_jira_team_server_query_integration",
+        "experimental",
+        "incompatible_windows",
+        "search_e2e_tests",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "run tests"
+        vars:
+          resmoke_jobs_max: 1
+
+  - <<: *task_template
+    name: search_end_to_end_single_node
+    tags:
+      [
+        "assigned_to_jira_team_server_query_integration",
+        "experimental",
+        "incompatible_windows",
+        "search_e2e_tests",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "run tests"
+        vars:
+          resmoke_jobs_max: 1
+
+  - <<: *task_template
     name: search_ssl
     tags:
       [
@@ -969,6 +1048,9 @@ tasks:
         "require_npm",
         "random_name",
         "multiversion",
+        "incompatible_tsan",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
       ]
     commands:
       - func: "initialize multiversion tasks"
@@ -992,11 +1074,13 @@ tasks:
       [
         "assigned_to_jira_team_server_query_execution",
         "non_deterministic",
-        "incompatible_debug_mode",
         "updatefuzzer",
         "require_npm",
         "random_name",
         "multiversion",
+        "incompatible_tsan",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
       ]
     commands:
       - func: "initialize multiversion tasks"
@@ -1199,6 +1283,9 @@ tasks:
         "change_stream_fuzzer",
         "require_npm",
         "random_name",
+        "incompatible_tsan",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1220,6 +1307,9 @@ tasks:
         "change_stream_fuzzer",
         "require_npm",
         "random_name",
+        "incompatible_tsan",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1241,6 +1331,9 @@ tasks:
         "change_stream_fuzzer",
         "require_npm",
         "random_name",
+        "incompatible_tsan",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
       ]
     commands:
       - func: "generate resmoke tasks"

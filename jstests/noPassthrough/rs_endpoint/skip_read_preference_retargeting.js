@@ -3,6 +3,7 @@
  *
  * @tags: [
  *   requires_fcv_80,
+ *   featureFlagReplicaSetEndpoint,
  *   featureFlagRouterPort,
  * ]
  */
@@ -16,7 +17,6 @@ const rst = new ReplSetTest({
     nodeOptions: {
         setParameter: {
             featureFlagAllMongodsAreSharded: true,
-            featureFlagReplicaSetEndpoint: true,
             // TODO (SERVER-84243): When the feature flag below is enabled, the collections in this
             // test would be tracked so a read on a secondary may trigger a catalog cache refresh.
             // The router service on mongod currently uses the ShardServerCatalogCacheLoader.
@@ -248,6 +248,32 @@ assert.commandWorked(secondary1TestDB.setProfilingLevel(2));
                                  ErrorCodes.NotWritablePrimary);
     assert.eq(primaryTestDB.getCollectionInfos({name: collName}).length, 1);
     assert.eq(primaryTestDB.getCollectionInfos({name: newCollName}).length, 0);
+}
+
+{
+    jsTest.log("Testing that the replica set endpoint attaches error labels when writes are " +
+               "run against a secondary");
+
+    const lsid = {id: UUID()};
+    const txnNumber = NumberLong(1);
+
+    const insertRes = assert.commandFailedWithCode(secondary0TestDB.runCommand({
+        insert: collName,
+        documents: [{x: 100}],
+        lsid,
+        txnNumber,
+        startTransaction: true,
+        autocommit: false
+    }),
+                                                   ErrorCodes.NotWritablePrimary);
+    assert.eq(insertRes.errorLabels, ["TransientTransactionError"], insertRes);
+
+    const commitRes = assert.commandFailedWithCode(
+        secondary0TestDB.adminCommand({commitTransaction: 1, lsid, txnNumber, autocommit: false}),
+        ErrorCodes.NotWritablePrimary);
+    // TODO (SERVER-90015): Mongos communicates retryable error labels from shards to drivers.
+    assert(!commitRes.hasOwnProperty("errorLabels"), commitRes);
+    // assert.eq(commitRes.errorLabels, ["RetryableWriteError"], commitRes);
 }
 
 jsTest.log("Disabling profiler");

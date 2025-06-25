@@ -148,15 +148,13 @@ doc_diff::VerifierFunc makeVerifierFunction(std::vector<details::Measurement> so
                                                                  AddAttrsFn addAttrsWithoutData,
                                                                  AddAttrsFn addAttrsWithData) {
             logv2::DynamicAttributes attrs;
+            attrs.add("reason", reason);
             attrs.add("bucketId", batch->bucketHandle.bucketId.oid);
             attrs.add("collectionUUID", batch->bucketHandle.bucketId.collectionUUID);
             addAttrsWithoutData(attrs);
 
-            LOGV2_WARNING(8807500,
-                          "Failed data verification inserting into compressed column",
-                          "reason"_attr = reason,
-                          "bucketId"_attr = batch->bucketHandle.bucketId.oid,
-                          "collectionUUID"_attr = batch->bucketHandle.bucketId.collectionUUID);
+            LOGV2_WARNING(
+                8807500, "Failed data verification inserting into compressed column", attrs);
 
             attrs = {};
             auto seqLogDataFields = [](const details::Measurement& measurement) {
@@ -645,7 +643,9 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucketWithReopening(
     const TimeseriesOptions& options,
     const BSONObj& measurementDoc,
     bucket_catalog::CombineWithInsertsFromOtherClients combine,
-    const CompressAndWriteBucketFunc& compressAndWriteBucketFunc) {
+    const CompressAndWriteBucketFunc& compressAndWriteBucketFunc,
+    bucket_catalog::InsertContext& insertContext,
+    const Date_t& time) {
     boost::optional<OID> uncompressedBucketId{boost::none};
     // The purpose of this scope is to destroy the ReopeningContext for the
     // compress-and-write-uncompressed-bucket scenario.
@@ -653,11 +653,11 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucketWithReopening(
         auto swResult = bucket_catalog::tryInsert(opCtx,
                                                   bucketCatalog,
                                                   bucketsColl->ns().getTimeseriesViewNamespace(),
-                                                  bucketsColl->uuid(),
                                                   bucketsColl->getDefaultCollator(),
-                                                  options,
                                                   measurementDoc,
-                                                  combine);
+                                                  combine,
+                                                  insertContext,
+                                                  time);
         if (!swResult.isOK()) {
             return swResult;
         }
@@ -693,12 +693,12 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucketWithReopening(
                         opCtx,
                         bucketCatalog,
                         bucketsColl->ns().getTimeseriesViewNamespace(),
-                        bucketsColl->uuid(),
                         bucketsColl->getDefaultCollator(),
-                        options,
                         measurementDoc,
                         combine,
-                        reopeningContext);
+                        reopeningContext,
+                        insertContext,
+                        time);
                 },
                 [](bucket_catalog::InsertWaiter& waiter)
                     -> StatusWith<bucket_catalog::InsertResult> {
@@ -746,7 +746,9 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucketWithReopening(
 BSONObj makeTimeseriesInsertCompressedBucketDocument(
     std::shared_ptr<bucket_catalog::WriteBatch> batch,
     const BSONObj& metadata,
-    const std::vector<std::pair<StringData, TrackedBSONColumnBuilder::BinaryDiff>>& intermediates) {
+    const std::vector<
+        std::pair<StringData, BSONColumnBuilder<TrackingAllocator<void>>::BinaryDiff>>&
+        intermediates) {
     BSONObjBuilder insertBuilder;
     insertBuilder.append(kBucketIdFieldName, batch->bucketHandle.bucketId.oid);
 
@@ -833,7 +835,8 @@ void assertTimeseriesBucketsCollection(const Collection* bucketsColl) {
             bucketsColl->getTimeseriesOptions());
 }
 
-BSONObj makeBSONColumnDocDiff(const TrackedBSONColumnBuilder::BinaryDiff& binaryDiff) {
+BSONObj makeBSONColumnDocDiff(
+    const BSONColumnBuilder<TrackingAllocator<void>>::BinaryDiff& binaryDiff) {
     return BSON(
         "o" << binaryDiff.offset() << "d"
             << BSONBinData(binaryDiff.data(), binaryDiff.size(), BinDataType::BinDataGeneral));
@@ -885,9 +888,9 @@ BSONObj makeBucketDocument(const std::vector<BSONObj>& measurements,
                            const UUID& collectionUUID,
                            const TimeseriesOptions& options,
                            const StringDataComparator* comparator) {
-    std::vector<write_ops::InsertCommandRequest> insertOps;
+    TrackingContext trackingContext;
     auto res = uassertStatusOK(bucket_catalog::internal::extractBucketingParameters(
-        collectionUUID, comparator, options, measurements[0]));
+        trackingContext, collectionUUID, comparator, options, measurements[0]));
     auto time = res.second;
     auto [oid, _] = bucket_catalog::internal::generateBucketOID(time, options);
     BucketDocument bucketDoc = makeNewDocumentForWrite(
@@ -1070,16 +1073,28 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucket(
     BucketReopeningPermittance reopening,
     bucket_catalog::CombineWithInsertsFromOtherClients combine,
     const CompressAndWriteBucketFunc& compressAndWriteBucketFunc) {
+    auto insertContextAndDate = bucket_catalog::prepareInsert(bucketCatalog,
+                                                              bucketsColl->uuid(),
+                                                              bucketsColl->getDefaultCollator(),
+                                                              timeSeriesOptions,
+                                                              measurementDoc);
+
+    if (!insertContextAndDate.isOK()) {
+        return insertContextAndDate.getStatus();
+    }
     switch (reopening) {
         case BucketReopeningPermittance::kAllowed:
             while (true) {
-                auto result = attemptInsertIntoBucketWithReopening(opCtx,
-                                                                   bucketCatalog,
-                                                                   bucketsColl,
-                                                                   timeSeriesOptions,
-                                                                   measurementDoc,
-                                                                   combine,
-                                                                   compressAndWriteBucketFunc);
+                auto result = attemptInsertIntoBucketWithReopening(
+                    opCtx,
+                    bucketCatalog,
+                    bucketsColl,
+                    timeSeriesOptions,
+                    measurementDoc,
+                    combine,
+                    compressAndWriteBucketFunc,
+                    std::get<bucket_catalog::InsertContext>(insertContextAndDate.getValue()),
+                    std::get<Date_t>(insertContextAndDate.getValue()));
                 if (!result.isOK()) {
                     if (result.getStatus().code() == ErrorCodes::WriteConflict) {
                         // If there is an era offset (between the bucket we want to reopen and the
@@ -1097,24 +1112,26 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucket(
                             opCtx,
                             bucketCatalog,
                             bucketsColl->ns().getTimeseriesViewNamespace(),
-                            bucketsColl->uuid(),
                             bucketsColl->getDefaultCollator(),
-                            timeSeriesOptions,
                             measurementDoc,
-                            combine);
+                            combine,
+                            std::get<bucket_catalog::InsertContext>(
+                                insertContextAndDate.getValue()),
+                            std::get<Date_t>(insertContextAndDate.getValue()));
                     }
                 }
                 return result;
             }
         case BucketReopeningPermittance::kDisallowed:
-            return bucket_catalog::insert(opCtx,
-                                          bucketCatalog,
-                                          bucketsColl->ns().getTimeseriesViewNamespace(),
-                                          bucketsColl->uuid(),
-                                          bucketsColl->getDefaultCollator(),
-                                          timeSeriesOptions,
-                                          measurementDoc,
-                                          combine);
+            return bucket_catalog::insert(
+                opCtx,
+                bucketCatalog,
+                bucketsColl->ns().getTimeseriesViewNamespace(),
+                bucketsColl->getDefaultCollator(),
+                measurementDoc,
+                combine,
+                std::get<bucket_catalog::InsertContext>(insertContextAndDate.getValue()),
+                std::get<Date_t>(insertContextAndDate.getValue()));
     }
     MONGO_UNREACHABLE;
 }

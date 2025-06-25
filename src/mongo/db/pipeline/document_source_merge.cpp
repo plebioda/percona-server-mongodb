@@ -116,9 +116,8 @@ DocumentSourceMergeSpec parseMergeSpecAndResolveTargetNamespace(
             ? boost::make_optional(auth::ValidatedTenancyScopeFactory::create(
                   *tenantId, auth::ValidatedTenancyScopeFactory::TrustedForInnerOpMsgRequestTag{}))
             : boost::none;
-        mergeSpec = DocumentSourceMergeSpec::parse(
-            IDLParserContext(kStageName, false /* apiStrict */, vts, tenantId, sc),
-            spec.embeddedObject());
+        mergeSpec = DocumentSourceMergeSpec::parse(IDLParserContext(kStageName, vts, tenantId, sc),
+                                                   spec.embeddedObject());
         targetNss = mergeSpec.getTargetNss();
         if (targetNss.coll().empty()) {
             // If the $merge spec is an object, the target namespace can be specified as a
@@ -394,8 +393,8 @@ std::pair<DocumentSourceMerge::BatchObject, int> DocumentSourceMerge::makeBatchO
     auto upsertType = _mergeProcessor->getMergeStrategyDescriptor().upsertType;
 
     tassert(6628901, "_writeSizeEstimator should be initialized", _writeSizeEstimator);
-    return {std::move(batchObject),
-            _writeSizeEstimator->estimateUpdateSizeBytes(batchObject, upsertType)};
+    int size = _writeSizeEstimator->estimateUpdateSizeBytes(batchObject, upsertType);
+    return {std::move(batchObject), size};
 }
 
 void DocumentSourceMerge::flush(BatchedCommandRequest bcr, BatchedObjects batch) {

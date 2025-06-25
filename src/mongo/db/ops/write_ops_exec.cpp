@@ -511,19 +511,17 @@ bool handleError(OperationContext* opCtx,
     if (ex.code() == ErrorCodes::StaleDbVersion || ErrorCodes::isStaleShardVersionError(ex) ||
         ex.code() == ErrorCodes::ShardCannotRefreshDueToLocksHeld ||
         ex.code() == ErrorCodes::CannotImplicitlyCreateCollection) {
+        // Fail the write for direct shard operations so that a RetryableWriteError label can be
+        // returned and the write can be retried by the driver.
+        if (!OperationShardingState::isComingFromRouter(opCtx) &&
+            ex.code() == ErrorCodes::StaleConfig && opCtx->isRetryableWrite()) {
+            throw;
+        }
+
         if (!opCtx->getClient()->isInDirectClient() &&
             ex.code() != ErrorCodes::CannotImplicitlyCreateCollection) {
             auto& oss = OperationShardingState::get(opCtx);
             oss.setShardingOperationFailedStatus(ex.toStatus());
-        }
-
-        // Fail the write for direct shard operations so that a RetryableWriteError label
-        // can be returned and the write can be retried by the driver. The retry should succeed
-        // because a command failing with StaleConfig triggers sharding metadata refresh in the
-        // ScopedOperationCompletionShardingActions destructor.
-        if (!OperationShardingState::isComingFromRouter(opCtx) &&
-            ex.code() == ErrorCodes::StaleConfig && opCtx->isRetryableWrite()) {
-            throw;
         }
 
         // For routing errors, it is guaranteed that all subsequent operations will fail
@@ -910,7 +908,7 @@ UpdateResult performUpdate(OperationContext* opCtx,
 
     write_ops_exec::recordUpdateResultInOpDebug(updateResult, &curOp->debug());
 
-    curOp->debug().setPlanSummaryMetrics(summaryStats);
+    curOp->debug().setPlanSummaryMetrics(std::move(summaryStats));
 
     if (updateResult.containsDotsAndDollarsField) {
         // If it's an upsert, increment 'inserts' metric, otherwise increment 'updates'.
@@ -924,7 +922,7 @@ UpdateResult performUpdate(OperationContext* opCtx,
 
     if (docFound) {
         ResourceConsumption::DocumentUnitCounter docUnitsReturned;
-        docUnitsReturned.observeOne(docFound->objsize());
+        docUnitsReturned.observeOneDoc(docFound->objsize());
 
         auto& metricsCollector = ResourceConsumption::MetricsCollector::get(opCtx);
         metricsCollector.incrementDocUnitsReturned(curOp->getNS(), docUnitsReturned);
@@ -1016,7 +1014,7 @@ long long performDelete(OperationContext* opCtx,
     if (const auto& coll = collectionPtr) {
         CollectionQueryInfo::get(coll).notifyOfQuery(opCtx, coll, summaryStats);
     }
-    curOp->debug().setPlanSummaryMetrics(summaryStats);
+    curOp->debug().setPlanSummaryMetrics(std::move(summaryStats));
 
     // Fill out OpDebug with the number of deleted docs.
     auto nDeleted = exec->getDeleteResult();
@@ -1030,7 +1028,7 @@ long long performDelete(OperationContext* opCtx,
 
     if (docFound) {
         ResourceConsumption::DocumentUnitCounter docUnitsReturned;
-        docUnitsReturned.observeOne(docFound->objsize());
+        docUnitsReturned.observeOneDoc(docFound->objsize());
 
         auto& metricsCollector = ResourceConsumption::MetricsCollector::get(opCtx);
         metricsCollector.incrementDocUnitsReturned(curOp->getNS(), docUnitsReturned);
@@ -1183,8 +1181,12 @@ WriteResult performInserts(OperationContext* opCtx,
     for (auto&& doc : wholeOp.getDocuments()) {
         const auto currentOpIndex = nextOpIndex++;
         const bool isLastDoc = (&doc == &wholeOp.getDocuments().back());
+        const bool preserveEmptyTimestamps = source == OperationSource::kFromMigrate;
         bool containsDotsAndDollarsField = false;
-        auto fixedDoc = fixDocumentForInsert(opCtx, doc, &containsDotsAndDollarsField);
+
+        auto fixedDoc =
+            fixDocumentForInsert(opCtx, doc, preserveEmptyTimestamps, &containsDotsAndDollarsField);
+
         const StmtId stmtId = getStmtIdForWriteOp(opCtx, wholeOp, currentOpIndex);
         const bool wasAlreadyExecuted = opCtx->isRetryableWrite() &&
             txnParticipant.checkStatementExecutedNoOplogEntryFetch(opCtx, stmtId);
@@ -1300,7 +1302,7 @@ static SingleWriteResult performSingleUpdateOpNoRetry(OperationContext* opCtx,
     if (source != OperationSource::kTimeseriesInsert) {
         recordUpdateResultInOpDebug(updateResult, &curOp.debug());
     }
-    curOp.debug().setPlanSummaryMetrics(summary);
+    curOp.debug().setPlanSummaryMetrics(std::move(summary));
 
     const bool didInsert = !updateResult.upsertedId.isEmpty();
     const long long nMatchedOrInserted = didInsert ? 1 : updateResult.numMatched;
@@ -1411,10 +1413,17 @@ static SingleWriteResult performSingleUpdateOp(OperationContext* opCtx,
 
     assertCanWrite_inlock(opCtx, ns);
 
-    if (updateRequest->getSort().isEmpty()) {
+    // No need to call writeConflictRetry() since it does not retry if in a transaction,
+    // but calling it can cause WCE to be double counted.
+    const auto inTransaction = opCtx->inMultiDocumentTransaction();
+    if (updateRequest->getSort().isEmpty() || inTransaction) {
         return performSingleUpdateOpNoRetry(
             opCtx, source, curOp, collection, parsedUpdate, containsDotsAndDollarsField);
     } else {
+        // Call writeConflictRetry() if we have a sort, since we express the sort with a limit of 1.
+        // In the case that the predicate of the currently matching document changes due to a
+        // concurrent modification, the query will be retried to see if there's another matching
+        // document.
         return writeConflictRetry(opCtx, "update", ns, [&]() -> SingleWriteResult {
             return performSingleUpdateOpNoRetry(
                 opCtx, source, curOp, collection, parsedUpdate, containsDotsAndDollarsField);
@@ -1856,7 +1865,7 @@ static SingleWriteResult performSingleDeleteOp(OperationContext* opCtx,
     if (const auto& coll = collection.getCollectionPtr()) {
         CollectionQueryInfo::get(coll).notifyOfQuery(opCtx, coll, summary);
     }
-    curOp.debug().setPlanSummaryMetrics(summary);
+    curOp.debug().setPlanSummaryMetrics(std::move(summary));
 
     if (curOp.shouldDBProfile()) {
         auto&& [stats, _] = explainer.getWinningPlanStats(ExplainOptions::Verbosity::kExecStats);
@@ -3317,6 +3326,8 @@ void explainUpdate(OperationContext* opCtx,
                               isTimeseriesViewRequest);
     uassertStatusOK(parsedUpdate.parseRequest());
 
+    CurOp::get(opCtx)->beginQueryPlanningTimer();
+
     auto exec = uassertStatusOK(
         getExecutorUpdate(&CurOp::get(opCtx)->debug(), collection, &parsedUpdate, verbosity));
     auto bodyBuilder = result->getBodyBuilder();
@@ -3355,6 +3366,8 @@ void explainDelete(OperationContext* opCtx,
     ParsedDelete parsedDelete(
         opCtx, &deleteRequest, collection.getCollectionPtr(), isTimeseriesViewRequest);
     uassertStatusOK(parsedDelete.parseRequest());
+
+    CurOp::get(opCtx)->beginQueryPlanningTimer();
 
     // Explain the plan tree.
     auto exec = uassertStatusOK(

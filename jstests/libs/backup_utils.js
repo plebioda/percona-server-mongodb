@@ -84,7 +84,9 @@ export function getBackupCursorMetadata(backupCursor) {
 export function copyBackupCursorFiles(
     backupCursor, namespacesToSkip, dbpath, destinationDirectory, async, fileCopiedCallback) {
     resetDbpath(destinationDirectory);
-    mkdir(destinationDirectory + "/journal");
+    let separator = _isWindows() ? '\\' : '/';
+    // TODO(SERVER-13455): Replace `journal/` with the configurable journal path.
+    mkdir(destinationDirectory + separator + "journal");
 
     let copyThread = copyBackupCursorExtendFiles(
         backupCursor, namespacesToSkip, dbpath, destinationDirectory, async, fileCopiedCallback);
@@ -102,6 +104,7 @@ export function copyBackupCursorExtendFiles(
         _copyFiles(files, dbpath, destinationDirectory, _copyFileHelper);
     }
 
+    // TODO(SERVER-13455): Replace `journal/` with the configurable journal path.
     jsTestLog({
         msg: "Destination",
         destination: destinationDirectory,
@@ -127,24 +130,39 @@ export function _cursorToFiles(cursor, namespacesToSkip, fileCopiedCallback) {
             fileCopiedCallback(doc);
         }
 
-        files.push(doc.filename);
+        let file = {filename: doc.filename};
+
+        if (doc.hasOwnProperty("fileSize")) {
+            file.fileSize = Number(doc.fileSize);
+        }
+
+        if (doc.hasOwnProperty("offset")) {
+            assert(doc.hasOwnProperty("length"));
+            file.offset = Number(doc.offset);
+            file.length = Number(doc.length);
+        }
+
+        files.push(file);
     }
     return files;
 }
 
 export function _copyFiles(files, dbpath, destinationDirectory, copyFileHelper) {
     files.forEach((file) => {
-        let dbgDoc = copyFileHelper(file, dbpath, destinationDirectory);
-        dbgDoc["msg"] = "File copy";
-        jsTestLog(dbgDoc);
+        jsTestLog(copyFileHelper(file, dbpath, destinationDirectory));
     });
 }
 
-export function _copyFileHelper(absoluteFilePath, sourceDbPath, destinationDirectory) {
+export function _copyFileHelper(file, sourceDbPath, destinationDirectory) {
+    let absoluteFilePath = file.filename;
+
     // Ensure the dbpath ends with an OS appropriate slash.
     let separator = '/';
     if (_isWindows()) {
         separator = '\\';
+        // Convert dbpath which may contain directoryperdb/wiredTigerDirectoryForIndexes
+        // subdirectory in POSIX style.
+        absoluteFilePath = absoluteFilePath.replace(/[\/]/g, separator);
     }
     let lastChar = sourceDbPath[sourceDbPath.length - 1];
     if (lastChar !== '/' && lastChar !== '\\') {
@@ -160,8 +178,43 @@ export function _copyFileHelper(absoluteFilePath, sourceDbPath, destinationDirec
     let destination = destinationDirectory + separator + relativePath;
     const newFileDirectory = destination.substring(0, destination.lastIndexOf(separator));
     mkdir(newFileDirectory);
-    copyFile(absoluteFilePath, destination);
-    return {fileSource: absoluteFilePath, relativePath: relativePath, fileDestination: destination};
+
+    let msg = "File copy";
+    if (!pathExists(destination)) {
+        // If the file hasn't had an initial backup yet, then a full file copy is needed.
+        copyFile(absoluteFilePath, destination);
+    } else if (file.fileSize == undefined || file.length == undefined ||
+               file.fileSize == file.length) {
+        // - $backupCursorExtend, which only returns journal files does not report a 'fileSize'.
+        // - 'length' is only reported for incremental backups.
+        // - When 'fileSize' == 'length', that's used as an indicator to do a full file copy. Mostly
+        // used for internal tables.
+        if (pathExists(destination)) {
+            // Remove the old backup of the file. For journal files specifically, if a checkpoint
+            // didn't take place between two incremental backups, then the backup cursor can specify
+            // journal files we've already copied at an earlier time. We should remove these old
+            // journal files so that we can copy them over again in the event that their contents
+            // have changed over time.
+            jsTestLog(`Removing existing file ${
+                destination} in preparation of copying a newer version of it`);
+            removeFile(destination);
+        }
+
+        copyFile(absoluteFilePath, destination);
+    } else {
+        assert(file.offset != undefined);
+        assert(file.length != undefined);
+        msg = "Range copy, offset: " + file.offset + ", length: " + file.length;
+        _copyFileRange(
+            absoluteFilePath, destination, NumberLong(file.offset), NumberLong(file.length));
+    }
+
+    return {
+        fileSource: absoluteFilePath,
+        relativePath: relativePath,
+        fileDestination: destination,
+        msg: msg
+    };
 }
 
 // Magic restore utility class
@@ -172,10 +225,12 @@ export function _copyFileHelper(absoluteFilePath, sourceDbPath, destinationDirec
 // needed.
 
 export class MagicRestoreUtils {
-    constructor({backupSource, pipeDir, insertHigherTermOplogEntry}) {
+    constructor({backupSource, pipeDir, insertHigherTermOplogEntry, backupDbPathSuffix}) {
         this.backupSource = backupSource;
         this.pipeDir = pipeDir;
-        this.backupDbPath = pipeDir + "/backup";
+        this.backupDbPath =
+            pipeDir + "/backup" + (backupDbPathSuffix != undefined ? backupDbPathSuffix : "");
+
         // isPit is set when we receive the restoreConfiguration.
         this.isPit = false;
         this.insertHigherTermOplogEntry = insertHigherTermOplogEntry;
@@ -212,6 +267,7 @@ export class MagicRestoreUtils {
         assert.commandWorked(this.backupSource.adminCommand({fsync: 1}));
 
         resetDbpath(this.backupDbPath);
+        // TODO(SERVER-13455): Replace `journal/` with the configurable journal path.
         mkdir(this.backupDbPath + "/journal");
 
         // Open a backup cursor on the checkpoint.
@@ -230,7 +286,9 @@ export class MagicRestoreUtils {
         while (this.backupCursor.hasNext()) {
             const doc = this.backupCursor.next();
             jsTestLog("Copying for backup: " + tojson(doc));
-            _copyFileHelper(doc.filename, this.backupSource.dbpath, this.backupDbPath);
+            _copyFileHelper({filename: doc.filename, fileSize: doc.fileSize},
+                            this.backupSource.dbpath,
+                            this.backupDbPath);
         }
         this.backupCursor.close();
     }
@@ -331,10 +389,10 @@ export class MagicRestoreUtils {
     /**
      * Combines writing objects to the named pipe and running magic restore.
      */
-    writeObjsAndRunMagicRestore(restoreConfiguration, entriesAfterBackup = [], options = {}) {
+    writeObjsAndRunMagicRestore(restoreConfiguration, entriesAfterBackup, options) {
         this.pointInTimeTimestamp = restoreConfiguration.pointInTimeTimestamp;
         if (this.pointInTimeTimestamp) {
-            assert(entriesAfterBackup);
+            assert(entriesAfterBackup.length > 0);
             this.isPit = true;
         }
         MagicRestoreUtils.writeObjsToMagicRestorePipe(
@@ -421,5 +479,12 @@ export class MagicRestoreUtils {
         });
         assert.commandWorked(res);
         assert.eq(res.cursor.firstBatch.length, expectedNumDocs);
+    }
+
+    /**
+     * Get the UUID for a given collection.
+     */
+    getCollUuid(node, dbName, collName) {
+        return node.getDB(dbName).getCollectionInfos({name: collName})[0].info.uuid;
     }
 }

@@ -655,9 +655,11 @@ template <class BufferT>
 void BuilderBase<BufferT>::appendRecordId(const RecordId& loc) {
     _doneAppending();
     _transition(BuildState::kAppendedRecordID);
+    int32_t beforeAppend = _buffer().len();
     loc.withFormat([](RecordId::Null n) { invariant(false); },
                    [&](int64_t rid) { _appendRecordIdLong(rid); },
                    [&](const char* str, int size) { _appendRecordIdStr(str, size); });
+    _ridSize = _buffer().len() - beforeAppend;
 }
 
 template <class BufferT>
@@ -930,7 +932,7 @@ void BuilderBase<BufferT>::_appendDoubleWithoutTypeBits(const double num,
             _appendPreshiftedIntegerPortion((integerPart << 1) | 1, isNegative, invert);
 
             // Append the bytes of the mantissa that include fractional bits.
-            const size_t fractionalBits = 53 - (64 - countLeadingZeros64(integerPart));
+            const size_t fractionalBits = 53 - (64 - countLeadingZerosNonZero64(integerPart));
             const size_t fractionalBytes = (fractionalBits + 7) / 8;
             dassert(fractionalBytes > 0);
             uint64_t mantissa;
@@ -943,7 +945,7 @@ void BuilderBase<BufferT>::_appendDoubleWithoutTypeBits(const double num,
                 reinterpret_cast<const char*>((&mantissa) + 1) - fractionalBytes;
             _appendBytes(firstUsedByte, fractionalBytes, isNegative ? !invert : invert);
         } else {
-            const size_t fractionalBytes = countLeadingZeros64(integerPart << 1) / 8;
+            const size_t fractionalBytes = countLeadingZerosNonZero64(integerPart << 1) / 8;
             const auto ctype = isNegative ? CType::kNumericNegative8ByteInt + fractionalBytes
                                           : CType::kNumericPositive8ByteInt - fractionalBytes;
             _append(static_cast<uint8_t>(ctype), invert);
@@ -1433,7 +1435,7 @@ void BuilderBase<BufferT>::_appendPreshiftedIntegerPortion(uint64_t value,
     dassert(value != 0ULL);
     dassert(value != 1ULL);
 
-    const size_t bytesNeeded = (64 - countLeadingZeros64(value) + 7) / 8;
+    const size_t bytesNeeded = (64 - countLeadingZerosNonZero64(value) + 7) / 8;
 
     // Append the low bytes of value in big endian order.
     value = endian::nativeToBig(value);
@@ -2740,7 +2742,7 @@ int Value::computeElementCount(Ordering ord) const {
         if (ctype == kLess || ctype == kGreater || ctype == kEnd) {
             return count;
         }
-        filterKeyFromKeyString(ctype, &reader, invert, _version);
+        filterKeyFromKeyString(ctype, &reader, invert, getVersion());
         ++count;
     }
     return count;
@@ -3027,7 +3029,7 @@ void appendToBSONArray(const char* buf, int len, BSONArrayBuilder* builder, Vers
 void Value::serializeWithoutRecordIdLong(BufBuilder& buf) const {
     dassert(decodeRecordIdLongAtEnd(_buffer.get(), _ksSize).isValid());
 
-    const int32_t sizeWithoutRecordId = sizeWithoutRecordIdLongAtEnd(_buffer.get(), _ksSize);
+    const int32_t sizeWithoutRecordId = getSizeWithoutRecordId();
     buf.appendNum(sizeWithoutRecordId);                 // Serialize size of KeyString
     buf.appendBuf(_buffer.get(), sizeWithoutRecordId);  // Serialize KeyString
     buf.appendBuf(_buffer.get() + _ksSize, _buffer.size() - _ksSize);  // Serialize TypeBits
@@ -3036,10 +3038,46 @@ void Value::serializeWithoutRecordIdLong(BufBuilder& buf) const {
 void Value::serializeWithoutRecordIdStr(BufBuilder& buf) const {
     dassert(decodeRecordIdStrAtEnd(_buffer.get(), _ksSize).isValid());
 
-    const int32_t sizeWithoutRecordId = sizeWithoutRecordIdStrAtEnd(_buffer.get(), _ksSize);
+    const int32_t sizeWithoutRecordId = getSizeWithoutRecordId();
     buf.appendNum(sizeWithoutRecordId);                 // Serialize size of KeyString
     buf.appendBuf(_buffer.get(), sizeWithoutRecordId);  // Serialize KeyString
     buf.appendBuf(_buffer.get() + _ksSize, _buffer.size() - _ksSize);  // Serialize TypeBits
+}
+
+Value Value::deserialize(BufReader& buf,
+                         key_string::Version version,
+                         boost::optional<KeyFormat> ridFormat) {
+    const int32_t sizeOfKeystring = buf.read<LittleEndian<int32_t>>();
+    const void* keystringPtr = buf.skip(sizeOfKeystring);
+
+    BufBuilder newBuf;
+    newBuf.appendBuf(keystringPtr, sizeOfKeystring);
+
+    // We have to decode the RecordId because we don't serialize that information.
+    const auto ridOffset = [&] {
+        if (!ridFormat) {
+            return sizeOfKeystring;
+        } else if (KeyFormat::Long == *ridFormat) {
+            return sizeWithoutRecordIdLongAtEnd(keystringPtr, sizeOfKeystring);
+        } else if (KeyFormat::String == *ridFormat) {
+            return sizeWithoutRecordIdStrAtEnd(keystringPtr, sizeOfKeystring);
+        }
+        MONGO_UNREACHABLE;
+    }();
+
+    auto typeBits = TypeBits::fromBuffer(version, &buf);  // advances the buf
+    if (typeBits.isAllZeros()) {
+        newBuf.appendChar(0);
+    } else {
+        newBuf.appendBuf(typeBits.getBuffer(), typeBits.getSize());
+    }
+    // Note: this variable is needed to make sure that no method is called on 'newBuf'
+    // after a call on its 'release' method.
+    const size_t newBufLen = newBuf.len();
+    return {version,
+            sizeOfKeystring,
+            sizeOfKeystring - ridOffset,
+            SharedBufferFragment(newBuf.release(), newBufLen)};
 }
 
 size_t Value::getApproximateSize() const {
@@ -3048,10 +3086,7 @@ size_t Value::getApproximateSize() const {
     return size;
 }
 
-std::unique_ptr<Value> Value::makeValue(Version version,
-                                        StringData ks,
-                                        StringData rid,
-                                        StringData typeBits) {
+Value Value::makeValue(Version version, StringData ks, StringData rid, StringData typeBits) {
     const auto bufSize = ks.size() + rid.size() + (typeBits.size() > 0 ? typeBits.size() : 1);
     BufBuilder buf(bufSize);
     buf.appendBuf(ks.data(), ks.size());
@@ -3063,9 +3098,10 @@ std::unique_ptr<Value> Value::makeValue(Version version,
     }
 
     invariant(bufSize == static_cast<unsigned long>(buf.len()));
-    return std::make_unique<Value>(version,
-                                   static_cast<int32_t>(ks.size() + rid.size()),
-                                   SharedBufferFragment(buf.release(), bufSize));
+    return {version,
+            static_cast<int32_t>(ks.size() + rid.size()),
+            static_cast<int32_t>(rid.size()),
+            SharedBufferFragment(buf.release(), bufSize)};
 }
 
 template class BuilderBase<Builder>;

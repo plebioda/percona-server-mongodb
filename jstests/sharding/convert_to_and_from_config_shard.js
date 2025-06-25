@@ -4,8 +4,6 @@
  *
  * @tags: [
  *   multiversion_incompatible,
- *   # TODO: SERVER-88739 Remove this and handle stepdowns.
- *   does_not_support_stepdowns,
  *   requires_replication,
  *   requires_persistence,
  * ]
@@ -13,6 +11,9 @@
 /* global retryOnRetryableError */
 import {Thread} from "jstests/libs/parallelTester.js";
 import {removeShard} from "jstests/sharding/libs/remove_shard_util.js";
+
+// TODO: SERVER-89292 Re-enable test.
+quit();
 
 if (jsTestOptions().useAutoBootstrapProcedure) {  // TODO: SERVER-80318 Delete test.
     quit();
@@ -178,7 +179,9 @@ jsTestLog("Restarting replica set without --configsvr");
 replSet.nodes.forEach(function(node) {
     delete node.fullOptions.configsvr;
 });
-replSet.restart(replSet.nodes);
+// TODO (SERVER-83433): Add back the test coverage for running db hash check and validation
+// on replica set that is fsync locked and has replica set endpoint enabled.
+replSet.restart(replSet.nodes, {skipValidation: true});
 replSet.awaitNodesAgreeOnPrimary();
 primary = replSet.getPrimary();
 checkBasicCRUD(primary.getDB(dbName)[shardedColl], _id);

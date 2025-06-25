@@ -71,7 +71,7 @@ public:
             if (request().getToShard().has_value()) {
                 toShard = request().getToShard().get();
             } else {
-                toShard = shardutil::selectLeastLoadedShard(opCtx);
+                toShard = shardutil::selectLeastLoadedNonDrainingShard(opCtx);
             }
 
             std::vector<mongo::ShardKeyRange> destinationShard = {toShard};
@@ -94,7 +94,7 @@ public:
                 opCtx,
                 DatabaseName::kAdmin,
                 dbInfo,
-                CommandHelpers::appendMajorityWriteConcern(shardsvrReshardCollection.toBSON({}),
+                CommandHelpers::appendMajorityWriteConcern(shardsvrReshardCollection.toBSON(),
                                                            opCtx->getWriteConcern()),
                 ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                 Shard::RetryPolicy::kIdempotent);

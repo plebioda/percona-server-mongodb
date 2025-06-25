@@ -120,11 +120,6 @@ export var ReplicaSetEndpointTest = class {
             // TODO (SERVER-83433): Make the replica set have secondaries to get test coverage
             // for running db hash check while the replica set is fsync locked.
             nodes: 1,
-            nodeOptions: {
-                setParameter: {
-                    featureFlagReplicaSetEndpoint: true,
-                }
-            },
             isRouterServer: true,
             keyFile: this._keyFile
         });
@@ -193,6 +188,9 @@ export var ReplicaSetEndpointTest = class {
 
     tearDown() {
         MongoRunner.stopMongos(this._mongos);
+        // Log out the the test user (_shard0TestUser) to force stopSet() to reauthenticate this
+        // connection with the admin user (if needed) when doing the tear down.
+        assert(this.shard0AuthDB.logout());
         this._shard0Rst.stopSet();
         this._shard1Rst.stopSet();
     }

@@ -13,17 +13,17 @@ src/mongo/BUILD.bazel would contain:
     mongo_cc_binary(
         name = "hello_world",
         srcs = [
-    	    "hello_world.cpp"
-    	],
+            "hello_world.cpp"
+        ],
     }
 
-Once you've obtained bazelisk by running **evergreen/get_bazelisk.sh**, you can then build this target via "bazelisk build":
+Once you've obtained bazel by running **python buildscripts/install_bazel.py**, you can then build this target via "bazel build":
 
-    ./bazelisk build //src/mongo:hello_world
+    bazel build //src/mongo:hello_world
 
-Or run this target via "bazelisk run":
+Or run this target via "bazel run":
 
-    ./bazelisk run //src/mongo:hello_world
+    bazel run //src/mongo:hello_world
 
 The full target name is a combination between the directory of the BUILD.bazel file and the target name:
 
@@ -38,12 +38,12 @@ The divergence from SCons is that now source files have to be declared in additi
     mongo_cc_binary(
         name = "hello_world",
         srcs = [
-    	    "hello_world.cpp",
-    	    "new_source.cpp" # If adding a source file
-    	],
+            "hello_world.cpp",
+            "new_source.cpp" # If adding a source file
+        ],
         hdrs = [
-    	    "new_header.h" # If adding a header file
-    	],
+            "new_header.h" # If adding a header file
+        ],
     }
 
 ## Adding a New Library
@@ -59,13 +59,13 @@ Creating a new library is similar to the steps above for creating a new binary. 
     mongo_cc_library(
         name = "new_library",
         srcs = [
-    	    "new_library_source_file.cpp"
-    	]
+            "new_library_source_file.cpp"
+        ]
     }
 
 ## Declaring Dependencies
 
-If a library or binary depends on another library, this must be declared in the **deps** section of the target. The syntax for referring to the library is the same syntax used in the bazelisk build/run command.
+If a library or binary depends on another library, this must be declared in the **deps** section of the target. The syntax for referring to the library is the same syntax used in the bazel build/run command.
 
     mongo_cc_library(
         name = "new_library",
@@ -75,27 +75,37 @@ If a library or binary depends on another library, this must be declared in the 
     mongo_cc_binary(
         name = "hello_world",
         srcs = [
-    	    "hello_world.cpp",
-    	],
+            "hello_world.cpp",
+        ],
         deps = [
-    	    ":new_library", # if referring to the library declared in the same directory as this build file
-    	    # "//src/mongo:new_library" # absolute path
-    	    # "sub_directory:new_library" # relative path of a subdirectory
-    	],
+            ":new_library", # if referring to the library declared in the same directory as this build file
+            # "//src/mongo:new_library" # absolute path
+            # "sub_directory:new_library" # relative path of a subdirectory
+        ],
     }
 
 ## Depending on a Bazel Library in a SCons Build Target
 
 During migration from SCons to Bazel, the Build Team has created an integration layer between the two while working towards converting all SCons targets to Bazel targets.
 
-This allows SCons build targets to depend on Bazel build targets directly. The Bazel targets depended on by the SCons build target will be built with the normal scons.py invocation automatically.
+Targets which are built by bazel will be labeled as ThinTarget builder types. You can reference them by the same name you would use in scons in LIBDEPS lists.
 
-    env.BazelLibrary(
-        target='fsync_locked',
-        source=[
-            'fsync_locked.cpp',
-        ],
-        LIBDEPS=[
-            'new_library', # depend on the bazel "new_library" target defined above
-    	],
-    )
+If adding a a new library to the build, check to see if it should be added as a bazel or scons library. This will depend on how deep it is in the dependency tree. You can ask the build team at #ask-devprod-build for advice on if a given library should be added to the bazel or scons part of the build.
+
+## Running clang-tidy via Bazel
+
+Note: This feature is still in development; see https://jira.mongodb.org/browse/SERVER-80396 for details)
+
+To run clang-tidy via Bazel, do the following:
+
+1. To analyze all code, run `bazel build --config=clang-tidy src/...`
+2. To analyze a single target (e.g.: `fsync_locked`), run the following command (note that `_with_debug` suffix on the target): `bazel build --config=clang-tidy src/mongo/db/commands:fsync_locked_with_debug`
+
+Testing notes:
+
+- If you want to test whether clang-tidy is in fact finding bugs, you can inject the following code into a `cpp` file to generate a `bugprone-incorrect-roundings` warning:
+
+```
+const double f = 1.0;
+const int foo = (int)(f + 0.5);
+```

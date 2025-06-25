@@ -136,6 +136,7 @@
 #include "mongo/db/query/sbe_stage_builder_projection.h"
 #include "mongo/db/query/sbe_stage_builder_sbexpr_helpers.h"
 #include "mongo/db/query/sbe_stage_builder_window_function.h"
+#include "mongo/db/query/search/mongot_cursor.h"
 #include "mongo/db/query/shard_filterer_factory_impl.h"
 #include "mongo/db/query/sort_pattern.h"
 #include "mongo/db/query/stage_types.h"
@@ -219,10 +220,11 @@ void prepareSearchQueryParameters(PlanStageData* data, const CanonicalQuery& cq)
                     opDebug.mongotCountVal = metaValObj.getField("count").wrap();
                 }
 
-                if (metaValObj.hasField(kSlowQueryLogFieldName)) {
+                if (metaValObj.hasField(mongot_cursor::kSlowQueryLogFieldName)) {
                     auto& opDebug = CurOp::get(cq.getOpCtx())->debug();
                     opDebug.mongotSlowQueryLog =
-                        metaValObj.getField(kSlowQueryLogFieldName).wrap(kSlowQueryLogFieldName);
+                        metaValObj.getField(mongot_cursor::kSlowQueryLogFieldName)
+                            .wrap(mongot_cursor::kSlowQueryLogFieldName);
                 }
             }
         }
@@ -757,7 +759,7 @@ SlotBasedStageBuilder::SlotBasedStageBuilder(OperationContext* opCtx,
              &_slotIdGenerator,
              &_frameIdGenerator,
              &_spoolIdGenerator,
-             &_inListsSet,
+             &_inListsMap,
              &_collatorsMap,
              &_sortSpecMap,
              _cq.getExpCtx(),
@@ -4438,14 +4440,12 @@ public:
                        const PlanStageReqs& forwardingReqs,
                        const PlanStageSlots& outputs,
                        const WindowNode* wn,
-                       ExpressionContext* expCtx,
                        bool allowDiskUse,
                        SbSlotVector currSlotsIn)
         : state(state),
           forwardingReqs(forwardingReqs),
           outputs(outputs),
           windowNode(wn),
-          expCtx(expCtx),
           allowDiskUse(allowDiskUse),
           b(state, wn->nodeId()),
           currSlots(std::move(currSlotsIn)) {
@@ -4559,18 +4559,18 @@ public:
             tassert(7914602,
                     "Expected to have a single sort component",
                     windowNode->sortBy && windowNode->sortBy->size() == 1);
-            const auto& part = windowNode->sortBy->front();
+
+            FieldPath fp("CURRENT." + windowNode->sortBy->front().fieldPath->fullPath());
 
             auto rootSlotOpt = outputs.getResultObjIfExists();
-            auto fieldPathExpr = ExpressionFieldPath::createPathFromString(
-                expCtx, part.fieldPath->fullPath(), expCtx->variablesParseState);
-
-            auto sortByExpr = generateExpression(state, fieldPathExpr.get(), rootSlotOpt, outputs);
+            auto sortByExpr =
+                generateExpressionFieldPath(state, fp, boost::none, rootSlotOpt, outputs);
 
             auto [outStage, _] =
                 b.makeProject(std::move(stage), std::pair(std::move(sortByExpr), *sortBySlot));
             stage = std::move(outStage);
         }
+
         auto sortBySlotIdx = ensureSlotInBuffer(*sortBySlot);
         return {std::move(stage), *sortBySlot, boundTestingSlots[sortBySlotIdx]};
     }
@@ -5178,7 +5178,6 @@ private:
     const PlanStageReqs& forwardingReqs;
     const PlanStageSlots& outputs;
     const WindowNode* windowNode;
-    ExpressionContext* expCtx;
     const bool allowDiskUse;
     SbBuilder b;
 
@@ -5333,13 +5332,12 @@ std::pair<std::unique_ptr<sbe::PlanStage>, PlanStageSlots> SlotBasedStageBuilder
         currSlots.emplace_back(SbSlot{slotId});
     }
 
-    ExpressionContext* expCtx = _cq.getExpCtxRaw();
     const bool allowDiskUse = _cq.getExpCtx()->allowDiskUse;
 
     // Create a WindowStageBuilder and call the build() method on it. This will generate all
     // the SBE expressions and SBE stages needed to implement the window stage.
     WindowStageBuilder builder(
-        _state, forwardingReqs, outputs, windowNode, expCtx, allowDiskUse, std::move(currSlots));
+        _state, forwardingReqs, outputs, windowNode, allowDiskUse, std::move(currSlots));
 
     auto [outStage, windowFields, windowFinalSlots, outputPathMap] =
         builder.build(std::move(stage));
@@ -5473,7 +5471,7 @@ std::pair<std::unique_ptr<sbe::PlanStage>, PlanStageSlots> SlotBasedStageBuilder
     auto sortSpecSlot = _env->registerSlot(
         "searchSortSpec"_sd, sbe::value::TypeTags::Nothing, 0 /* val */, false, &_slotIdGenerator);
 
-    bool isStoredSource = sn->searchQuery.getBoolField(kReturnStoredSourceArg);
+    bool isStoredSource = sn->searchQuery.getBoolField(mongot_cursor::kReturnStoredSourceArg);
 
     auto topLevelFields = getTopLevelFields(reqs.getFields());
     auto topLevelFieldSlots = _slotIdGenerator.generateMultiple(topLevelFields.size());

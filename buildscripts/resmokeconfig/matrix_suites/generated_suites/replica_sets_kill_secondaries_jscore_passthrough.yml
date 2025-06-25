@@ -9,6 +9,7 @@
 executor:
   archive:
     hooks:
+    - LagOplogApplicationInBackground
     - PeriodicKillSecondaries
     tests: true
   config:
@@ -33,6 +34,9 @@ executor:
         electionTimeoutMillis: 5000
     voting_secondaries: false
   hooks:
+  - class: LagOplogApplicationInBackground
+    shell_options:
+      nodb: ''
   - class: PeriodicKillSecondaries
 matrix_suite: true
 selector:

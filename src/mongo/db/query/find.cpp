@@ -53,7 +53,6 @@
 
 namespace mongo {
 
-using std::unique_ptr;
 
 // Failpoint for checking whether we've received a getmore.
 MONGO_FAIL_POINT_DEFINE(failReceivedGetmore);
@@ -101,7 +100,12 @@ void endQueryOp(OperationContext* opCtx,
     PlanSummaryStats summaryStats;
     auto&& explainer = exec.getPlanExplainer();
     explainer.getSummaryStats(&summaryStats);
-    curOp->debug().setPlanSummaryMetrics(summaryStats);
+
+    if (collection) {
+        CollectionQueryInfo::get(collection).notifyOfQuery(opCtx, collection, summaryStats);
+    }
+
+    curOp->debug().setPlanSummaryMetrics(std::move(summaryStats));
     curOp->setEndOfOpMetrics(numResults);
 
     if (cursor) {
@@ -111,10 +115,6 @@ void endQueryOp(OperationContext* opCtx,
         const auto& expCtx =
             cq ? cq->getExpCtx() : ExpressionContext::makeBlankExpressionContext(opCtx, exec.nss());
         collectQueryStatsMongod(opCtx, expCtx, std::move(curOp->debug().queryStatsInfo.key));
-    }
-
-    if (collection) {
-        CollectionQueryInfo::get(collection).notifyOfQuery(opCtx, collection, summaryStats);
     }
 
     if (curOp->shouldDBProfile()) {

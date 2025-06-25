@@ -155,6 +155,7 @@
 #include "mongo/s/analyze_shard_key_role.h"
 #include "mongo/s/chunk_version.h"
 #include "mongo/s/database_version.h"
+#include "mongo/s/query/document_source_merge_cursors.h"
 #include "mongo/s/query_analysis_sampler.h"
 #include "mongo/s/shard_cannot_refresh_due_to_locks_held_exception.h"
 #include "mongo/s/shard_version.h"
@@ -199,6 +200,7 @@ MONGO_FAIL_POINT_DEFINE(hangBeforeSessionCheckOut);
 MONGO_FAIL_POINT_DEFINE(hangAfterSessionCheckOut);
 MONGO_FAIL_POINT_DEFINE(hangBeforeSettingTxnInterruptFlag);
 MONGO_FAIL_POINT_DEFINE(hangAfterCheckingWritabilityForMultiDocumentTransactions);
+MONGO_FAIL_POINT_DEFINE(failWithErrorCodeAfterSessionCheckOut);
 
 // Tracks the number of times a legacy unacknowledged write failed due to
 // not primary error resulted in network disconnection.
@@ -486,6 +488,11 @@ private:
     repl::OpTime _lastOpAfterRun;
 };
 
+namespace {
+const CommandNameAtom helloAtom("hello");
+const CommandNameAtom isMasterAtom("isMaster");
+}  // namespace
+
 class ExecCommandDatabase {
 public:
     explicit ExecCommandDatabase(HandleRequest::ExecutionContext& execContext)
@@ -567,8 +574,8 @@ public:
     }
 
     bool isHello() const {
-        return _execContext.getCommand()->getName() == "hello"_sd ||
-            _execContext.getCommand()->getName() == "isMaster"_sd;
+        auto atom = _execContext.getCommand()->getNameAtom();
+        return atom == helloAtom || atom == isMasterAtom;
     }
 
     const CommonRequestArgs& getCommonRequestArgs() const {
@@ -584,7 +591,6 @@ private:
         CommandHelpers::uassertShouldAttemptParse(opCtx, command, request);
 
         _requestArgs = CommonRequestArgs::parse(IDLParserContext("request",
-                                                                 false,
                                                                  request.validatedTenancyScope,
                                                                  request.getValidatedTenantId(),
                                                                  request.getSerializationContext()),
@@ -593,15 +599,17 @@ private:
         validateAPIParameters(request.body, _requestArgs.getAPIParametersFromClient(), command);
 
         Client* client = opCtx->getClient();
-
         {
             stdx::lock_guard<Client> lk(*client);
             // We construct a legacy $cmd namespace so we can fill in curOp using
             // the existing logic that existed for OP_QUERY commands
-            NamespaceString nss(NamespaceString::makeCommandNamespace(_requestArgs.getDbName()));
-            CurOp::get(opCtx)->setNS_inlock(std::move(nss));
-
-            CurOp::get(opCtx)->setCommand_inlock(command);
+            CurOp::get(opCtx)->setGenericOpRequestDetails_inlock(
+                NamespaceString::makeCommandNamespace(_requestArgs.getDbName()),
+                command,
+                request.body,
+                _execContext.op());
+            // We must obtain the client lock to set APIParameters on the operation context, as it
+            // may be concurrently read by CurrentOp.
             APIParameters::get(opCtx) =
                 APIParameters::fromClient(_requestArgs.getAPIParametersFromClient());
         }
@@ -640,6 +648,14 @@ private:
     // Executes the parsed command against the database.
     void _commandExec();
 
+    // Takes a command execution error (or write error), attempts to perform metadata refresh and
+    // return true in case the refresh was executed, false in case no refresh was executed and an
+    // error status if the refresh failed.
+    StatusWith<bool> _refreshIfNeeded(const Status& execError);
+
+    // Decides if the command can be retried based on the execution error.
+    bool _canRetryCommand(const Status& execError);
+
     // Any error-handling logic that must be performed if the command initiation/execution fails.
     void _handleFailure(Status status);
 
@@ -665,7 +681,6 @@ private:
     boost::optional<ResourceConsumption::ScopedMetricsCollector> _scopedMetrics;
     boost::optional<ImpersonationSessionGuard> _impersonationSessionGuard;
     boost::optional<auth::SecurityTokenAuthenticationGuard> _tokenAuthorizationSessionGuard;
-    std::unique_ptr<PolymorphicScoped> _scoped;
     bool _refreshedDatabase = false;
     bool _refreshedCollection = false;
     bool _refreshedCatalogCache = false;
@@ -821,6 +836,19 @@ void CheckoutSessionAndInvokeCommand::run() {
             tenant_migration_access_blocker::checkIfCanRunCommandOrBlock(
                 execContext.getOpCtx(), dbName, execContext.getRequest())
                 .get(execContext.getOpCtx());
+
+            if (auto scoped = failWithErrorCodeAfterSessionCheckOut.scoped();
+                MONGO_unlikely(scoped.isActive())) {
+                const auto errorCode =
+                    static_cast<ErrorCodes::Error>(scoped.getData()["errorCode"].numberInt());
+                LOGV2_DEBUG(8535500,
+                            1,
+                            "failWithErrorCodeAfterSessionCheckOut enabled, failing command",
+                            "errorCode"_attr = errorCode);
+                BSONObjBuilder errorBuilder;
+                return Status(errorCode, "failWithErrorCodeAfterSessionCheckOut enabled.");
+            }
+
             runCommandInvocation(_ecd->getExecutionContext(), _ecd->getInvocation());
             return Status::OK();
         } catch (const ExceptionForCat<ErrorCategory::TenantMigrationConflictError>& ex) {
@@ -905,6 +933,18 @@ void CheckoutSessionAndInvokeCommand::_cleanupTransaction(
                     "error"_attr = exceptionToStatus());
     }
 }
+
+namespace {
+const CommandNameAtom createAtom("create");
+const CommandNameAtom shardSvrAtom("_shardsvrCreateCollection");
+const CommandNameAtom createIndexesAtom("createIndexes");
+
+bool isCreate(const Command* cmd) {
+    auto atom = cmd->getNameAtom();
+    return atom == createAtom || atom == shardSvrAtom || atom == createIndexesAtom;
+}
+}  // namespace
+
 
 void CheckoutSessionAndInvokeCommand::_checkOutSession() {
     auto& execContext = _ecd->getExecutionContext();
@@ -1043,16 +1083,13 @@ void CheckoutSessionAndInvokeCommand::_checkOutSession() {
         // Note: _shardsvrCreateCollection is used to run the 'create' command on the primary in
         // case of sharded cluster
         // TODO(SERVER-46971): Consider how to extend this check to other commands.
-        auto cmdName = command->getName();
         auto readConcernSupport = invocation->supportsReadConcern(
             readConcernArgs.getLevel(), readConcernArgs.isImplicitDefault());
-        if (readConcernArgs.hasLevel() &&
-            (cmdName == "create"_sd || cmdName == "_shardsvrCreateCollection"_sd ||
-             cmdName == "createIndexes"_sd)) {
+        if (readConcernArgs.hasLevel() && isCreate(command)) {
             if (!readConcernSupport.readConcernSupport.isOK()) {
                 uassertStatusOK(readConcernSupport.readConcernSupport.withContext(
                     "Command {} does not support this transaction's {}"_format(
-                        cmdName, readConcernArgs.toString())));
+                        command->getName(), readConcernArgs.toString())));
             }
         }
     }
@@ -1346,8 +1383,7 @@ void RunCommandAndWaitForWriteConcern::_setup() {
         _extractedWriteConcern.emplace(
             uassertStatusOK(extractWriteConcern(opCtx, request.body, _isInternalClient())));
         if (_ecd->getSessionOptions().getAutocommit()) {
-            validateWriteConcernForTransaction(
-                opCtx->getService(), *_extractedWriteConcern, invocation->definition()->getName());
+            validateWriteConcernForTransaction(*_extractedWriteConcern, invocation->definition());
         }
 
         // Ensure that the WC being set on the opCtx has provenance.
@@ -1617,11 +1653,8 @@ void ExecCommandDatabase::_initiateCommand() {
          serverGlobalParams.clusterRole.has(ClusterRole::ShardServer)) ||
         client->isFromSystemConnection();
 
-    validateSessionOptions(_sessionOptions,
-                           opCtx->getService(),
-                           command->getName(),
-                           _invocation->allNamespaces(),
-                           allowTransactionsOnConfigDatabase);
+    validateSessionOptions(
+        _sessionOptions, command, _invocation->allNamespaces(), allowTransactionsOnConfigDatabase);
 
     if (auto& commentField = _requestArgs.getComment()) {
         stdx::lock_guard<Client> lk(*client);
@@ -1768,7 +1801,8 @@ void ExecCommandDatabase::_initiateCommand() {
                 opCtx->setDeadlineByDate(startedCommandExecAt + maxTimeMS,
                                          ErrorCodes::MaxTimeMSExpired);
             }
-            opCtx->setUsesDefaultMaxTimeMS(usesDefaultMaxTimeMS);
+            opCtx->setUsesDefaultMaxTimeMS(_requestArgs.getUsesDefaultMaxTimeMS().value_or(false) ||
+                                           usesDefaultMaxTimeMS);
         }
     }
 
@@ -1850,8 +1884,6 @@ void ExecCommandDatabase::_initiateCommand() {
         }
     }
 
-    _scoped = _execContext.behaviors.scopedOperationCompletionShardingActions(opCtx);
-
     // This may trigger the maxTimeAlwaysTimeOut failpoint.
     auto status = opCtx->checkForInterruptNoAssert();
 
@@ -1868,6 +1900,11 @@ void ExecCommandDatabase::_initiateCommand() {
     command->incrementCommandsExecuted();
 }
 
+namespace {
+const CommandNameAtom aggregateAtom("aggregate");
+const CommandNameAtom getMoreAtom("getMore");
+}  // namespace
+
 void ExecCommandDatabase::_commandExec() {
     auto opCtx = _execContext.getOpCtx();
     auto& request = _execContext.getRequest();
@@ -1880,6 +1917,7 @@ void ExecCommandDatabase::_commandExec() {
     }
     _execContext.behaviors.setPrepareConflictBehaviorForReadConcern(opCtx, getInvocation());
 
+    _extraFieldsBuilder.resetToEmpty();
     _execContext.getReplyBuilder()->reset();
 
     if (OperationShardingState::isComingFromRouter(opCtx)) {
@@ -1899,117 +1937,195 @@ void ExecCommandDatabase::_commandExec() {
             RunCommandImpl runner(this);
             runner.run();
         }
-    } catch (const ExceptionFor<ErrorCodes::StaleDbVersion>& ex) {
-        auto opCtx = _execContext.getOpCtx();
+    } catch (const DBException& ex) {
+        // If the command has failed, there is no need to look for write errors at the oss.
+        OperationShardingState::get(opCtx).resetShardingOperationFailedStatus();
 
-        if (!opCtx->getClient()->isInDirectClient() && !_refreshedDatabase) {
-            auto sce = ex.toStatus().extraInfo<StaleDbRoutingVersion>();
-            invariant(sce);
+        const auto metadataRefreshStatus = _refreshIfNeeded(ex.toStatus());
+        const auto refreshed = uassertStatusOK(metadataRefreshStatus);
 
-            bool stableLocalVersion = !sce->getCriticalSectionSignal() && sce->getVersionWanted();
-
-            if (stableLocalVersion && sce->getVersionReceived() < sce->getVersionWanted()) {
-                // The shard is recovered and the router is staler than the shard, so we cannot
-                // retry locally
-                throw;
-            }
-
-            const auto refreshed = _execContext.behaviors.refreshDatabase(opCtx, *sce);
-            if (refreshed) {
-                _refreshedDatabase = true;
-                if (!opCtx->isContinuingMultiDocumentTransaction() &&
-                    !sce->getCriticalSectionSignal()) {
-                    _resetLockerStateAfterShardingUpdate(opCtx);
-                    _commandExec();
-                    return;
-                }
-            }
-        }
-
-        throw;
-    } catch (const ExceptionForCat<ErrorCategory::StaleShardVersionError>& ex) {
-        auto opCtx = _execContext.getOpCtx();
-        ShardingStatistics::get(opCtx).countStaleConfigErrors.addAndFetch(1);
-
-        if (!opCtx->getClient()->isInDirectClient() && !_refreshedCollection) {
-            if (auto sce = ex.toStatus().extraInfo<StaleConfigInfo>()) {
-                bool inCriticalSection = sce->getCriticalSectionSignal().has_value();
-                bool stableLocalVersion = !inCriticalSection && sce->getVersionWanted();
-
-                if (stableLocalVersion &&
-                    ShardVersion::isPlacementVersionIgnored(sce->getVersionReceived())) {
-                    // Shard is recovered, but the router didn't sent a shard version, therefore
-                    // we just need to tell the router how much it needs to advance to
-                    // (getVersionWanted).
-                    throw;
-                }
-
-                if (stableLocalVersion &&
-                    sce->getVersionReceived().placementVersion().isOlderThan(
-                        sce->getVersionWanted()->placementVersion())) {
-                    // Shard is recovered and the router is staler than the shard
-                    throw;
-                }
-
-                if (inCriticalSection) {
-                    _execContext.behaviors.handleReshardingCriticalSectionMetrics(opCtx, *sce);
-                }
-
-                // Fail the direct shard operation so that a RetryableWriteError label can be
-                // returned and the write can be retried by the driver. The retry should succeed
-                // because a command failing with StaleConfig triggers sharding metadata refresh in
-                // the ScopedOperationCompletionShardingActions destructor.
-                auto fromRouter = OperationShardingState::isComingFromRouter(opCtx);
-                if (opCtx->isRetryableWrite() && !fromRouter &&
-                    ex.code() == ErrorCodes::StaleConfig) {
-                    throw;
-                }
-
-                const auto refreshed = _execContext.behaviors.refreshCollection(opCtx, *sce);
-                if (refreshed) {
-                    _refreshedCollection = true;
-
-                    // Can not rerun the command when executing a GetMore command as the cursor
-                    // is already lost.
-                    const auto isRunningGetMoreCmd =
-                        _execContext.getCommand()->getName() == "getMore";
-                    if (!opCtx->isContinuingMultiDocumentTransaction() && !inCriticalSection &&
-                        !isRunningGetMoreCmd) {
-                        _resetLockerStateAfterShardingUpdate(opCtx);
-                        _commandExec();
-                        return;
-                    }
-                }
-            }
-        }
-
-        throw;
-    } catch (const ExceptionFor<ErrorCodes::ShardCannotRefreshDueToLocksHeld>& ex) {
-        auto opCtx = _execContext.getOpCtx();
-        if (!opCtx->getClient()->isInDirectClient() && !_refreshedCatalogCache) {
-            invariant(!shard_role_details::getLocker(opCtx)->isLocked());
-
-            auto refreshInfo = ex.toStatus().extraInfo<ShardCannotRefreshDueToLocksHeldInfo>();
-            invariant(refreshInfo);
-
-            const auto refreshed = _execContext.behaviors.refreshCatalogCache(opCtx, *refreshInfo);
-
-            if (refreshed) {
-                _refreshedCatalogCache = true;
-
-                // Can not rerun the command when executing a GetMore command as the cursor is
-                // already lost.
-                const auto isRunningGetMoreCmd = _execContext.getCommand()->getName() == "getMore";
-                if (!opCtx->isContinuingMultiDocumentTransaction() && !isRunningGetMoreCmd) {
-                    _resetLockerStateAfterShardingUpdate(opCtx);
-                    _commandExec();
-                    return;
-                }
-            }
+        if (refreshed && _canRetryCommand(ex.toStatus())) {
+            _resetLockerStateAfterShardingUpdate(opCtx);
+            _commandExec();
+            return;
         }
 
         throw;
     }
+
+    // Regardless if the command has succeeded, it needs to check if the operation sharding state
+    // has some stale config errors to be handled before returning to the router.
+    if (auto writeError = OperationShardingState::get(opCtx).resetShardingOperationFailedStatus()) {
+        const auto metadataRefreshStatus = _refreshIfNeeded(*writeError);
+        if (!metadataRefreshStatus.isOK() &&
+            ErrorCodes::isInterruption(metadataRefreshStatus.getStatus())) {
+            uassertStatusOK(metadataRefreshStatus);
+        }
+    }
+}
+
+StatusWith<bool> ExecCommandDatabase::_refreshIfNeeded(const Status& execError) {
+    auto opCtx = _execContext.getOpCtx();
+
+    tassert(8462308, "Expected to find an error in the status of the command", !execError.isOK());
+
+    if (execError == ErrorCodes::StaleConfig) {
+        ShardingStatistics::get(opCtx).countStaleConfigErrors.addAndFetch(1);
+    }
+
+    if (opCtx->getClient()->isInDirectClient()) {
+        return false;
+    }
+
+    if (execError == ErrorCodes::StaleDbVersion && !_refreshedDatabase) {
+        const auto staleInfo = execError.extraInfo<StaleDbRoutingVersion>();
+        tassert(8462303, "StaleDbVersion must have extraInfo", staleInfo);
+        const auto stableLocalVersion =
+            !staleInfo->getCriticalSectionSignal() && staleInfo->getVersionWanted();
+
+        if (stableLocalVersion && staleInfo->getVersionReceived() < staleInfo->getVersionWanted()) {
+            // The shard is recovered and the router is staler than the shard, so we cannot retry
+            // locally.
+            return false;
+        }
+
+        const auto refreshStatus = _execContext.behaviors.refreshDatabase(opCtx, *staleInfo);
+        if (refreshStatus.isOK()) {
+            _refreshedDatabase = true;
+            return true;
+        } else {
+            LOGV2_WARNING(
+                8462300,
+                "Failed to refresh database metadata cache while handling StaleDbVersion exception",
+                "error"_attr = redact(refreshStatus));
+            return refreshStatus;
+        }
+    } else if (execError == ErrorCodes::StaleConfig && !_refreshedCollection) {
+        const auto staleInfo = execError.extraInfo<StaleConfigInfo>();
+        tassert(8462304, "StaleConfig must have extraInfo", staleInfo);
+        const auto inCriticalSection = staleInfo->getCriticalSectionSignal().has_value();
+        const auto stableLocalVersion = !inCriticalSection && staleInfo->getVersionWanted();
+
+        if (stableLocalVersion &&
+            ShardVersion::isPlacementVersionIgnored(staleInfo->getVersionReceived())) {
+            // Shard is recovered, but the router didn't sent a shard version, therefore we just
+            // need to tell the router how much it needs to advance to (getVersionWanted).
+            return false;
+        }
+
+        if (stableLocalVersion &&
+            staleInfo->getVersionReceived().placementVersion().isOlderThan(
+                staleInfo->getVersionWanted()->placementVersion())) {
+            // Shard is recovered and the router is staler than the shard.
+            return false;
+        }
+
+        if (inCriticalSection) {
+            _execContext.behaviors.handleReshardingCriticalSectionMetrics(opCtx, *staleInfo);
+        }
+
+        const auto refreshStatus = _execContext.behaviors.refreshCollection(opCtx, *staleInfo);
+
+        // Fail the direct shard operation so that a RetryableWriteError label can be returned and
+        // the write can be retried by the driver.
+        const auto fromRouter = OperationShardingState::isComingFromRouter(opCtx);
+        if (opCtx->isRetryableWrite() && !fromRouter) {
+            return false;
+        }
+
+        if (refreshStatus.isOK()) {
+            _refreshedCollection = true;
+            return true;
+        } else {
+            LOGV2_WARNING(
+                8462301,
+                "Failed to refresh collection metadata cache while handling StaleConfig exception",
+                "error"_attr = redact(refreshStatus));
+            return refreshStatus;
+        }
+    } else if (execError == ErrorCodes::ShardCannotRefreshDueToLocksHeld &&
+               !_refreshedCatalogCache) {
+        const auto refreshInfo = execError.extraInfo<ShardCannotRefreshDueToLocksHeldInfo>();
+        tassert(8462305, "ShardCannotRefreshDueToLocksHeld must have extraInfo", refreshInfo);
+        invariant(!shard_role_details::getLocker(opCtx)->isLocked());
+
+        const auto refreshStatus = _execContext.behaviors.refreshCatalogCache(opCtx, *refreshInfo);
+        if (refreshStatus.isOK()) {
+            _refreshedCatalogCache = true;
+            return true;
+        } else {
+            LOGV2_WARNING(8462302,
+                          "Failed to refresh catalog cache while handling "
+                          "ShardCannotRefreshDueToLocksHeld exception",
+                          "error"_attr = redact(refreshStatus));
+            return refreshStatus;
+        }
+    }
+
+    return false;
+}
+
+bool ExecCommandDatabase::_canRetryCommand(const Status& execError) {
+    auto opCtx = _execContext.getOpCtx();
+
+    tassert(8462309, "Expected to find an error in the status of the command", !execError.isOK());
+    tassert(8462310,
+            "Expected to not be in a direct client connection",
+            !opCtx->getClient()->isInDirectClient());
+
+    if (opCtx->isContinuingMultiDocumentTransaction()) {
+        return false;
+    }
+
+    if (execError == ErrorCodes::StaleDbVersion) {
+        const auto staleInfo = execError.extraInfo<StaleDbRoutingVersion>();
+        tassert(8462306, "StaleDbVersion must have extraInfo", staleInfo);
+        const auto inCriticalSection = staleInfo->getCriticalSectionSignal().has_value();
+
+        return !inCriticalSection;
+    }
+
+    // Can not rerun the command when executing a GetMore command as the cursor may already be lost.
+    const auto isRunningGetMoreCmd = _execContext.getCommand()->getNameAtom() == getMoreAtom;
+
+    // Can not rerun the command when executing an aggregation that runs $mergeCursors as it may
+    // have consumed the cursors within.
+    const auto isAggregateWithMergeCursors = [&]() {
+        if (_execContext.getCommand()->getNameAtom() != aggregateAtom) {
+            return false;
+        }
+
+        const auto& opMsgRequest = _execContext.getRequest();
+        SerializationContext serializationCtx = opMsgRequest.getSerializationContext();
+
+        const AggregateCommandRequest aggregationRequest =
+            aggregation_request_helper::parseFromBSON(
+                opMsgRequest.body,
+                opMsgRequest.validatedTenancyScope,
+                boost::none,
+                APIParameters::get(opCtx).getAPIStrict().value_or(false),
+                serializationCtx);
+
+        const auto& pipeline = aggregationRequest.getPipeline();
+        const auto hasMergeCursor =
+            std::any_of(pipeline.begin(), pipeline.end(), [](const BSONObj& stage) {
+                return stage.firstElementFieldNameStringData() ==
+                    DocumentSourceMergeCursors::kStageName;
+            });
+        return hasMergeCursor;
+    }();
+
+    if (execError == ErrorCodes::StaleConfig) {
+        const auto staleInfo = execError.extraInfo<StaleConfigInfo>();
+        tassert(8462307, "StaleConfig must have extraInfo", staleInfo);
+        const auto inCriticalSection = staleInfo->getCriticalSectionSignal().has_value();
+
+        return !inCriticalSection && !isRunningGetMoreCmd && !isAggregateWithMergeCursors;
+    } else if (execError == ErrorCodes::ShardCannotRefreshDueToLocksHeld) {
+        return !isRunningGetMoreCmd && !isAggregateWithMergeCursors;
+    }
+
+    return false;
 }
 
 void ExecCommandDatabase::_handleFailure(Status status) {
@@ -2076,18 +2192,6 @@ void ExecCommandDatabase::_handleFailure(Status status) {
     }
 }
 
-/**
- * Fills out CurOp / OpDebug with basic command info.
- */
-void curOpCommandSetup(OperationContext* opCtx, const OpMsgRequest& request) {
-    auto curop = CurOp::get(opCtx);
-    curop->debug().iscommand = true;
-
-    stdx::lock_guard<Client> lk(*opCtx->getClient());
-    curop->setOpDescription_inlock(request.body);
-    curop->markCommand_inlock();
-}
-
 void parseCommand(HandleRequest::ExecutionContext& execContext) try {
     const auto& msg = execContext.getMessage();
     auto client = execContext.getOpCtx()->getClient();
@@ -2112,7 +2216,6 @@ void executeCommand(HandleRequest::ExecutionContext& execContext) {
     // Prepare environment for command execution (e.g., find command object in registry)
     auto opCtx = execContext.getOpCtx();
     auto& request = execContext.getRequest();
-    curOpCommandSetup(opCtx, request);
 
     // In the absence of a Command object, no redaction is possible. Therefore to avoid
     // displaying potentially sensitive information in the logs, we restrict the log
@@ -2137,13 +2240,6 @@ void executeCommand(HandleRequest::ExecutionContext& execContext) {
                                      : ""),
                 "commandArgs"_attr =
                     redact(ServiceEntryPointCommon::getRedactedCopyForLogging(c, request.body)));
-
-    {
-        // Try to set this as early as possible, as soon as we have figured out the
-        // command.
-        stdx::lock_guard<Client> lk(*opCtx->getClient());
-        CurOp::get(opCtx)->setLogicalOp_inlock(c->getLogicalOp());
-    }
 
     opCtx->setExhaust(OpMsg::isFlagSet(execContext.getMessage(), OpMsg::kExhaustSupported));
 
@@ -2253,7 +2349,6 @@ DbResponse receivedCommands(HandleRequest::ExecutionContext& execContext) {
 void HandleRequest::startOperation() {
     auto opCtx = executionContext.getOpCtx();
     auto& client = executionContext.client();
-    auto& currentOp = executionContext.currentOp();
 
     if (client.isInDirectClient()) {
         if (!opCtx->getLogicalSessionId() || !opCtx->getTxnNumber()) {
@@ -2266,13 +2361,6 @@ void HandleRequest::startOperation() {
 
         // We should not be holding any locks at this point
         invariant(!shard_role_details::getLocker(opCtx)->isLocked());
-    }
-    {
-        stdx::lock_guard<Client> lk(client);
-        // Commands handling code will reset this if the operation is a command
-        // which is logically a basic CRUD operation like query, insert, etc.
-        currentOp.setNetworkOp_inlock(executionContext.op());
-        currentOp.setLogicalOp_inlock(networkOpToLogicalOp(executionContext.op()));
     }
 }
 
@@ -2328,6 +2416,8 @@ void HandleRequest::completeOperation(DbResponse& response) {
         .incrementGlobalLatencyStats(
             opCtx,
             durationCount<Microseconds>(currentOp.elapsedTimeExcludingPauses()),
+            durationCount<Microseconds>(
+                duration_cast<Microseconds>(currentOp.debug().workingTimeMillis)),
             currentOp.getReadWriteType());
 
     if (shouldProfile) {

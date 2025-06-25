@@ -108,7 +108,7 @@ MONGO_FAIL_POINT_DEFINE(hangBeforeExtraIndexKeysCheck);
 MONGO_FAIL_POINT_DEFINE(hangBeforeReverseLookupCatalogSnapshot);
 MONGO_FAIL_POINT_DEFINE(hangAfterReverseLookupCatalogSnapshot);
 MONGO_FAIL_POINT_DEFINE(hangBeforeExtraIndexKeysHashing);
-MONGO_FAIL_POINT_DEFINE(sleepAfterExtraIndexKeysHashing);
+MONGO_FAIL_POINT_DEFINE(primaryHangAfterExtraIndexKeysHashing);
 
 namespace mongo {
 
@@ -132,7 +132,7 @@ repl::OpTime _logOp(OperationContext* opCtx,
     oplogEntry.setTid(nss.tenantId() ? nss.tenantId() : tenantIdForStartStop);
     oplogEntry.setUuid(uuid);
     oplogEntry.setObject(obj);
-    AutoGetOplog oplogWrite(opCtx, OplogAccessMode::kWrite);
+    AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kWrite);
     return writeConflictRetry(
         opCtx, "dbCheck oplog entry", NamespaceString::kRsOplogNamespace, [&] {
             auto const clockSource = opCtx->getServiceContext()->getFastClockSource();
@@ -490,7 +490,6 @@ std::unique_ptr<DbCheckRun> getRun(OperationContext* opCtx,
             opCtx,
             dbName,
             DbCheckSingleInvocation::parse(IDLParserContext("",
-                                                            false /*apiStrict*/,
                                                             auth::ValidatedTenancyScope::get(opCtx),
                                                             dbName.tenantId(),
                                                             SerializationContext::stateDefault()),
@@ -501,7 +500,6 @@ std::unique_ptr<DbCheckRun> getRun(OperationContext* opCtx,
             opCtx,
             dbName,
             DbCheckAllInvocation::parse(IDLParserContext("",
-                                                         false /*apiStrict*/,
                                                          auth::ValidatedTenancyScope::get(opCtx),
                                                          dbName.tenantId(),
                                                          SerializationContext::stateDefault()),
@@ -613,13 +611,11 @@ void DbChecker::doCollection(OperationContext* opCtx) {
 }
 
 
-key_string::Value DbChecker::_stripRecordIdFromKeyString(const key_string::Value& keyString,
-                                                         const key_string::Version& version,
-                                                         const Collection* collection) {
-    const size_t keyStringSize = getKeyStringSizeWithoutRecordId(collection, keyString);
-    key_string::Builder keyStringBuilder(version);
-    keyStringBuilder.resetFromBuffer(keyString.getBuffer(), keyStringSize);
-    return keyStringBuilder.getValueCopy();
+StringData DbChecker::_stripRecordIdFromKeyString(const key_string::Value& keyString,
+                                                  const key_string::Version& version,
+                                                  const Collection* collection) {
+    const size_t keyStringSize = keyString.getSizeWithoutRecordId();
+    return {keyString.getBuffer(), keyStringSize};
 }
 
 void DbChecker::_extraIndexKeysCheck(OperationContext* opCtx) {
@@ -695,11 +691,10 @@ void DbChecker::_extraIndexKeysCheck(OperationContext* opCtx) {
 
         // 3. Run hashing algorithm.
         Status hashStatus = _hashExtraIndexKeysCheck(opCtx, &batchStats);
-        if (MONGO_unlikely(sleepAfterExtraIndexKeysHashing.shouldFail())) {
-            LOGV2_DEBUG(3083201,
-                        3,
-                        "Sleeping for 1 second due to sleepAfterExtraIndexKeysHashing failpoint");
-            opCtx->sleepFor(Milliseconds(1000));
+        if (MONGO_unlikely(primaryHangAfterExtraIndexKeysHashing.shouldFail())) {
+            LOGV2_DEBUG(
+                3083201, 3, "Hanging due to primaryHangAfterExtraIndexKeysHashing failpoint");
+            primaryHangAfterExtraIndexKeysHashing.pauseWhileSet(opCtx);
         }
         if (!hashStatus.isOK()) {
             LOGV2_DEBUG(7844902,
@@ -1140,15 +1135,14 @@ Status DbChecker::_getCatalogSnapshotAndRunReverseLookup(
 
     BSONObj snapshotFirstKeyStringBsonRehydrated = BSONObj();
     boost::optional<KeyStringEntry> currIndexKeyWithRecordId = boost::none;
-    // Create keystring to seek without recordId. This is because if the index
-    // is an older format unique index, the keystring will not have the recordId appended, so we
-    // need to seek for the keystring without the recordId.
-    key_string::Value snapshotFirstKeyWithoutRecordId;
 
     // If we're in the middle of an index check, snapshotFirstKeyWithRecordId should be set.
     // Strip the recordId and seek.
     if (snapshotFirstKeyWithRecordId.is_initialized()) {
-        snapshotFirstKeyWithoutRecordId = _stripRecordIdFromKeyString(
+        // Create keystring to seek without recordId. This is because if the index
+        // is an older format unique index, the keystring will not have the recordId appended, so we
+        // need to seek for the keystring without the recordId.
+        auto snapshotFirstKeyWithoutRecordId = _stripRecordIdFromKeyString(
             snapshotFirstKeyWithRecordId.get(), version, collection.get());
         snapshotFirstKeyStringBsonRehydrated = key_string::rehydrateKey(
             index->keyPattern(),
@@ -1168,10 +1162,9 @@ Status DbChecker::_getCatalogSnapshotAndRunReverseLookup(
             key_string::Builder keyStringBuilder(version);
             keyStringBuilder.resetToKey(_info.start, ordering);
 
-            snapshotFirstKeyWithoutRecordId = keyStringBuilder.getValueCopy();
+            auto snapshotFirstKeyWithoutRecordId = keyStringBuilder.finishAndGetBuffer();
             snapshotFirstKeyStringBsonRehydrated = key_string::rehydrateKey(
-                index->keyPattern(),
-                _keyStringToBsonSafeHelper(snapshotFirstKeyWithoutRecordId, ordering));
+                index->keyPattern(), _builderToBsonSafeHelper(keyStringBuilder, ordering));
 
             // seek for snapshotFirstKeyWithoutRecordId.
             // Note that seekForKeyString always returns a keyString with RecordId appended,
@@ -1439,9 +1432,10 @@ bool DbChecker::_shouldEndCatalogSnapshotOrBatch(
         // key we just checked), we need update it to the next distinct one. We make a keystring to
         // search with kExclusiveAfter so that seekForKeyString will seek to the next distinct
         // keyString after the current one.
+        key_string::Builder builder(version);
         auto keyStringForSeekWithoutRecordId =
             IndexEntryComparison::makeKeyStringFromBSONKeyForSeek(
-                currKeyStringBson, version, ordering, true /*isForward*/, false /*inclusive*/);
+                currKeyStringBson, ordering, true /*isForward*/, false /*inclusive*/, builder);
 
 
         // Check to make sure there are still more distinct keys in the index.

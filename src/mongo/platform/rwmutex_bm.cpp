@@ -42,6 +42,14 @@
 #include "mongo/stdx/thread.h"
 #include "mongo/util/processinfo.h"
 
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+    __has_feature(memory_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+#define MONGO_SANITIZER_BENCHMARK_BUILD
+#endif
+
+// Only run `ResourceMutex` benchmarks locally since they cause timeouts and other issues in CI.
+#define REGISTER_RESOURCE_MUTEX_BENCHMARKS false
+
 namespace mongo {
 namespace {
 
@@ -100,6 +108,24 @@ private:
 };
 
 template <typename DataType>
+class RWMutexController {
+public:
+    explicit RWMutexController(DataType value) {
+        stdx::unique_lock lk(_mutex);
+        _data = value;
+    }
+
+    auto read() const {
+        std::shared_lock lk(_mutex);  // NOLINT
+        return _data;
+    }
+
+private:
+    mutable RWMutex _mutex;
+    DataType _data;
+};
+
+template <typename DataType>
 class ResourceMutexController {
 public:
     explicit ResourceMutexController(DataType value)
@@ -152,6 +178,9 @@ BENCHMARK_TEMPLATE_DEFINE_F(RWMutexBm, SharedMutex, SharedMutexController)(bench
 BENCHMARK_TEMPLATE_DEFINE_F(RWMutexBm, Mutex, MutexController)(benchmark::State& s) {
     run(s);
 }
+BENCHMARK_TEMPLATE_DEFINE_F(RWMutexBm, RWMutex, RWMutexController)(benchmark::State& s) {
+    run(s);
+}
 BENCHMARK_TEMPLATE_DEFINE_F(RWMutexBm, ResourceMutex, ResourceMutexController)
 (benchmark::State& s) {
     run(s);
@@ -161,7 +190,10 @@ const auto kMaxThreads = ProcessInfo::getNumLogicalCores() * 2;
 BENCHMARK_REGISTER_F(RWMutexBm, WriteRarelyRWMutex)->ThreadRange(1, kMaxThreads);
 BENCHMARK_REGISTER_F(RWMutexBm, SharedMutex)->ThreadRange(1, kMaxThreads);
 BENCHMARK_REGISTER_F(RWMutexBm, Mutex)->ThreadRange(1, kMaxThreads);
+BENCHMARK_REGISTER_F(RWMutexBm, RWMutex)->ThreadRange(1, kMaxThreads);
+#if REGISTER_RESOURCE_MUTEX_BENCHMARKS
 BENCHMARK_REGISTER_F(RWMutexBm, ResourceMutex)->ThreadRange(1, kMaxThreads);
+#endif
 
 class RWMutexStressBm : public benchmark::Fixture {
 public:
@@ -227,9 +259,9 @@ BENCHMARK_REGISTER_F(RWMutexStressBm, Write)->Apply([](auto* b) {
  * Run this in a diminished "correctness check" mode with sanitizers since they do not support a
  * large number of threads.
  */
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
-    constexpr std::array threadCounts{1, 10};
-    constexpr std::array readerCounts{0, 1, 2, 4, 8};
+#ifdef MONGO_SANITIZER_BENCHMARK_BUILD
+    constexpr std::array threadCounts{1};
+    constexpr std::array readerCounts{0, 1};
 #else
     constexpr std::array threadCounts{1, 10, 100, 1000, 10000, 20000};
     constexpr std::array readerCounts{0, 1, 2, 4, 8, 16, 32, 64};

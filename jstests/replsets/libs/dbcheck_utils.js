@@ -76,6 +76,12 @@ export const logQueries = {
         "msg": "dbCheck failed waiting for writeConcern",
         "data.dbCheckParameters": {$exists: true}
     },
+    skipApplyingBatchOnSecondaryQuery: {
+        severity: "warning",
+        "msg":
+            "skipping applying dbcheck batch because the 'skipApplyingDbCheckBatchOnSecondary' parameter is on",
+        "data.dbCheckParameters": {$exists: true}
+    }
 };
 
 // Apply function on all secondary nodes except arbiters.
@@ -277,24 +283,6 @@ export const checkHealthLog = (healthlog, query, numExpected, timeout = 60 * 100
                           " found: " + tojson(healthlog.find(query).toArray()));
             }
             return query_count == numExpected;
-        },
-        "health log query returned " + query_count + " entries, expected " + numExpected +
-            "  query: " + tojson(query) + " found: " + tojson(healthlog.find(query).toArray()) +
-            " HealthLog: " + tojson(healthlog.find().toArray()),
-        timeout);
-};
-
-export const checkHealthLogGTE = (healthlog, query, numExpected, timeout = 60 * 1000) => {
-    let query_count;
-    assert.soon(
-        function() {
-            query_count = healthlog.find(query).count();
-            if (query_count != numExpected) {
-                jsTestLog("health log query returned " + query_count + " entries, expected " +
-                          numExpected + "  query: " + tojson(query) +
-                          " found: " + tojson(healthlog.find(query).toArray()));
-            }
-            return query_count >= numExpected;
         },
         "health log query returned " + query_count + " entries, expected " + numExpected +
             "  query: " + tojson(query) + " found: " + tojson(healthlog.find(query).toArray()) +

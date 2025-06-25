@@ -284,10 +284,12 @@ void CursorEstablisher::checkForFailedRequests() {
         return;
     }
 
-    LOGV2(4625501,
-          "Unable to establish remote cursors",
-          "error"_attr = *_maybeFailure,
-          "nRemotes"_attr = _remotesToClean.size());
+    if (!(_maybeFailure->code() == ErrorCodes::CommandOnShardedViewNotSupportedOnMongod)) {
+        LOGV2(4625501,
+              "Unable to establish remote cursors",
+              "error"_attr = *_maybeFailure,
+              "nRemotes"_attr = _remotesToClean.size());
+    }
 
     if (_remotesToClean.empty()) {
         // If we don't have any remotes to clean, throw early.
@@ -391,13 +393,15 @@ void CursorEstablisher::killOpOnShards(ServiceContext* srvCtx,
         // We do not process the response to the killOperations request (we make a good-faith
         // attempt at cleaning up the cursors, but ignore any returned errors).
         uassertStatusOK(executor->scheduleRemoteCommand(request, [host](auto const& args) {
-            if (!args.response.isOK()) {
+            if (args.response.isOK()) {
+                LOGV2_DEBUG(
+                    8928400, 2, "killOperations succeeded", "remoteHost"_attr = host.toString());
+            } else {
                 LOGV2_DEBUG(4625504,
                             2,
                             "killOperations failed",
                             "remoteHost"_attr = host.toString(),
                             "error"_attr = args.response);
-                return;
             }
         }));
     }
@@ -451,13 +455,31 @@ void killRemoteCursor(OperationContext* opCtx,
                       executor::TaskExecutor* executor,
                       RemoteCursor&& cursor,
                       const NamespaceString& nss) {
+    const auto& host = cursor.getHostAndPort();
     BSONObj cmdObj = KillCursorsCommandRequest(nss, {cursor.getCursorResponse().getCursorId()})
                          .toBSON(BSONObj{});
-    executor::RemoteCommandRequest request(cursor.getHostAndPort(), nss.dbName(), cmdObj, opCtx);
+    executor::RemoteCommandRequest request(host, nss.dbName(), cmdObj, opCtx);
 
     // We do not process the response to the killCursors request (we make a good-faith
     // attempt at cleaning up the cursors, but ignore any returned errors).
-    executor->scheduleRemoteCommand(request, [](auto const&) {}).getStatus().ignore();
+    executor
+        ->scheduleRemoteCommand(request,
+                                [host](auto const& args) {
+                                    if (args.response.isOK()) {
+                                        LOGV2_DEBUG(8928415,
+                                                    2,
+                                                    "killCursors succeeded",
+                                                    "remoteHost"_attr = host.toString());
+                                    } else {
+                                        LOGV2_DEBUG(8928414,
+                                                    2,
+                                                    "killCursors failed",
+                                                    "remoteHost"_attr = host.toString(),
+                                                    "error"_attr = args.response);
+                                    }
+                                })
+        .getStatus()
+        .ignore();
 }
 
 std::pair<std::vector<HostAndPort>, StringMap<ShardId>> getHostInfos(

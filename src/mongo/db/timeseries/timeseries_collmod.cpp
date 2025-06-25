@@ -81,7 +81,7 @@ std::unique_ptr<CollMod> makeTimeseriesBucketsCollModCommand(OperationContext* o
 
         uassert(ErrorCodes::IndexNotFound,
                 str::stream() << bucketsIndexSpecWithStatus.getStatus().toString()
-                              << " Command request: " << redact(origCmd.toBSON({})),
+                              << " Command request: " << redact(origCmd.toBSON()),
                 bucketsIndexSpecWithStatus.isOK());
 
         index->setKeyPattern(std::move(bucketsIndexSpecWithStatus.getValue()));
@@ -168,14 +168,14 @@ Status processCollModCommandWithTimeSeriesTranslation(OperationContext* opCtx,
         // end up with incorrect query behavior (namely data missing from some queries).
         auto timeseriesViewCmd = makeTimeseriesViewCollModCommand(opCtx, cmd);
         if (timeseriesViewCmd && performViewChange) {
-            auto status = processCollModCommand(opCtx, nss, *timeseriesViewCmd, result);
+            auto status = processCollModCommand(opCtx, nss, *timeseriesViewCmd, nullptr, result);
             if (!status.isOK()) {
                 return status;
             }
         }
         mainCmd = timeseriesBucketsCmd.get();
     }
-    return processCollModCommand(opCtx, mainCmd->getNamespace(), *mainCmd, result);
+    return processCollModCommand(opCtx, mainCmd->getNamespace(), *mainCmd, nullptr, result);
 }
 
 }  // namespace timeseries

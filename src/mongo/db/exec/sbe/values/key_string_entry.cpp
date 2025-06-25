@@ -31,18 +31,13 @@
 
 namespace mongo::sbe::value {
 
-KeyStringEntry::KeyStringEntry(const SortedDataKeyValueView& view)
-    : _key(view.getKeyStringWithoutRecordIdView()),
-      _typeBits(view.getTypeBitsView()),
-      _rid(view.getRecordIdView()),
-      _version(view.getVersion()) {}
+KeyStringEntry::KeyStringEntry(const SortedDataKeyValueView& view) {
+    _initFromView(view);
+}
 
-KeyStringEntry::KeyStringEntry(std::unique_ptr<key_string::Value> value)
-    : _value(std::move(value)) {
-    _key = {_value->getBuffer(), _value->getSize()};
-    _typeBits = _value->getTypeBitsView();
-    _rid = {};
-    _version = _value->getVersion();
+KeyStringEntry::KeyStringEntry(const key_string::Value& value) : _value(value) {
+    auto view = SortedDataKeyValueView::fromValue(*_value);
+    _initFromView(view);
 }
 
 KeyStringEntry& KeyStringEntry::operator=(KeyStringEntry&& other) noexcept {
@@ -55,14 +50,8 @@ KeyStringEntry& KeyStringEntry::operator=(KeyStringEntry&& other) noexcept {
 }
 
 std::unique_ptr<KeyStringEntry> KeyStringEntry::makeCopy() const {
-    auto newKeyString = std::make_unique<KeyStringEntry>();
-    newKeyString->_value = key_string::Value::makeValue(_version, _key, _rid, _typeBits);
-    // The RecordId will be appended to the key_string::Value buffer, use current key size to
-    // for the new key.
-    newKeyString->_key = {newKeyString->_value->getBuffer(), _key.size()};
-    newKeyString->_rid = {newKeyString->_value->getBuffer() + _key.size(), _rid.size()};
-    newKeyString->_typeBits = newKeyString->_value->getTypeBitsView();
-    return newKeyString;
+    return std::make_unique<KeyStringEntry>(
+        key_string::Value::makeValue(_version, _key, _rid, _typeBits));
 }
 
 void KeyStringEntry::serialize(BufBuilder& buf) const {
@@ -81,5 +70,12 @@ KeyStringEntry* KeyStringEntry::deserialize(BufReader& buf) {
     auto typeBits = buf.readBytes(buf.read<StringData::size_type>());
     auto rid = buf.readBytes(buf.read<StringData::size_type>());
     return new KeyStringEntry{key_string::Value::makeValue(version, key, rid, typeBits)};
+}
+
+void KeyStringEntry::_initFromView(const SortedDataKeyValueView& view) {
+    _key = view.getKeyStringWithoutRecordIdView();
+    _typeBits = view.getTypeBitsView();
+    _rid = view.getRecordIdView();
+    _version = view.getVersion();
 }
 }  // namespace mongo::sbe::value

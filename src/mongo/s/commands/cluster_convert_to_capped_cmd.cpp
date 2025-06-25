@@ -85,6 +85,10 @@ public:
         const NamespaceString nss(CommandHelpers::parseNsCollectionRequired(dbName, cmdObj));
         const long long size = cmdObj.getField("size").safeNumberLong();
 
+        uassert(ErrorCodes::InvalidOptions,
+                "Capped collection size must be greater than zero",
+                size > 0);
+
         ShardsvrConvertToCappedRequest req;
         req.setSize(size);
 
@@ -98,7 +102,7 @@ public:
             opCtx,
             dbName,
             dbInfo,
-            CommandHelpers::appendMajorityWriteConcern(shardSvrConvertToCappedCommand.toBSON({}),
+            CommandHelpers::appendMajorityWriteConcern(shardSvrConvertToCappedCommand.toBSON(),
                                                        opCtx->getWriteConcern()),
             ReadPreferenceSetting(ReadPreference::PrimaryOnly),
             Shard::RetryPolicy::kIdempotent);

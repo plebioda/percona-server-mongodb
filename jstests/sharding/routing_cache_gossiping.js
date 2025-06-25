@@ -9,6 +9,10 @@
 
 import {ShardVersioningUtil} from "jstests/sharding/libs/shard_versioning_util.js";
 
+// This test requires running commands directly against the shard since 'requestGossipRoutingCache'
+// is a shard-only field.
+TestData.replicaSetEndpointIncompatible = true;
+
 const st = new ShardingTest({shards: 1});
 
 const dbName = "test";
@@ -44,9 +48,6 @@ function getGossipedVersion(gossipResponseArray, nss) {
 
 function getExpectedCollectionVersion(nss) {
     let shardMetadata;
-    // TODO (SERVER-88696): Evaluate if the test can be restored if synchronization is implemented.
-    // Since shardCollection asynchronously updates the states queried by this test, we might need
-    // to wait until everything is updated.
     assert.soon(() => {
         shardMetadata = ShardVersioningUtil.getMetadataOnShard(st.shard0, nss);
         return bsonWoCompare(shardMetadata, {});

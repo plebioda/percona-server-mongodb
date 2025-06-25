@@ -28,23 +28,20 @@
  */
 
 #include "mongo/base/error_codes.h"
-#include "mongo/base/status_with.h"
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonmisc.h"
-#include "mongo/db/client.h"
 #include "mongo/db/query/search/mongot_cursor_getmore_strategy.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/session/logical_session_id.h"
 #include "mongo/executor/task_executor_cursor.h"
 #include "mongo/executor/task_executor_cursor_test_fixture.h"
-#include "mongo/stdx/thread.h"
+#include "mongo/idl/server_parameter_test_util.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/bson_test_util.h"
 #include "mongo/unittest/framework.h"
 #include "mongo/unittest/thread_assertion_monitor.h"
 #include "mongo/util/net/hostandport.h"
-#include "mongo/util/time_support.h"
 
 namespace mongo {
 namespace executor {
@@ -102,9 +99,29 @@ public:
     std::unique_ptr<TaskExecutorCursor> makeMongotCursor(
         RemoteCommandRequest rcr,
         std::function<boost::optional<long long>()> calcDocsNeededFn = nullptr,
-        bool preFetchNextBatch = true) {
-        auto mongotGetMoreStrategy = std::make_unique<MongotTaskExecutorCursorGetMoreStrategy>(
-            preFetchNextBatch, calcDocsNeededFn);
+        boost::optional<long long> startingBatchSize = boost::none,
+        DocsNeededBounds minDocsNeededBounds = docs_needed_bounds::Unknown(),
+        DocsNeededBounds maxDocsNeededBounds = docs_needed_bounds::Unknown()) {
+        std::unique_ptr<MongotTaskExecutorCursorGetMoreStrategy> mongotGetMoreStrategy;
+
+        // If calcDocsNeededFn is provided, that enables use of the docsRequested option. Otherwise,
+        // enable use of batchSize option.
+        if (calcDocsNeededFn != nullptr) {
+            mongotGetMoreStrategy = std::make_unique<MongotTaskExecutorCursorGetMoreStrategy>(
+                calcDocsNeededFn,
+                /*startingBatchSize*/ boost::none,
+                minDocsNeededBounds,
+                maxDocsNeededBounds);
+        } else if (startingBatchSize.has_value()) {
+            mongotGetMoreStrategy = std::make_unique<MongotTaskExecutorCursorGetMoreStrategy>(
+                /*calcDocsNeededFn*/ nullptr,
+                startingBatchSize,
+                minDocsNeededBounds,
+                maxDocsNeededBounds);
+        } else {
+            // Use the default startingBatchSize.
+            mongotGetMoreStrategy = std::make_unique<MongotTaskExecutorCursorGetMoreStrategy>();
+        }
         return Base::makeTec(rcr, {std::move(mongotGetMoreStrategy)});
     }
 
@@ -133,7 +150,11 @@ public:
             auto calcDocsNeededFn = []() {
                 return 10;
             };
-            auto tec = makeMongotCursor(rcr, calcDocsNeededFn, /*preFetchNextBatch*/ false);
+            auto tec = makeMongotCursor(rcr,
+                                        calcDocsNeededFn,
+                                        /*startingBatchSize*/ boost::none,
+                                        /*minDocsNeededBounds*/ 10,
+                                        /*maxDocsNeededBounds*/ 10);
 
             // Mock the response for the first batch.
             scheduleSuccessfulCursorResponse(
@@ -143,8 +164,7 @@ public:
             ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 1);
             ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 2);
 
-            // Assert that the TaskExecutorCursor has not requested a GetMore. This enforces that
-            // 'preFetchNextBatch' works as expected.
+            // Assert that the TaskExecutorCursor has not pre-fetched a GetMore.
             ASSERT_FALSE(hasReadyRequests());
 
             // As soon as 'getNext()' is invoked, the TaskExecutorCursor will try to send a GetMore
@@ -171,6 +191,7 @@ public:
             // Schedules the GetMore request and exhausts the cursor.
             ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 3);
             ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 4);
+            ASSERT_FALSE(tec->getNext(opCtx.get()));
 
             // Joining the thread which schedules the cursor response for the GetMore here forces
             // the destructor of NetworkInterfaceMock::InNetworkGuard to run, which ensures that the
@@ -205,8 +226,11 @@ public:
                 docsRequested -= 20;
                 return docsRequested;
             };
-            auto tec = makeMongotCursor(rcr, calcDocsNeededFn, /*preFetchNextBatch*/ false);
-
+            auto tec = makeMongotCursor(rcr,
+                                        calcDocsNeededFn,
+                                        /*startingBatchSize*/ boost::none,
+                                        /*minDocsNeededBounds*/ 50,
+                                        /*maxDocsNeededBounds*/ 100);
             // Mock the response for the first batch.
             scheduleSuccessfulCursorResponse(
                 "firstBatch", 1, 2, cursorId, /*expectedPrefetch*/ false);
@@ -215,8 +239,7 @@ public:
             ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 1);
             ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 2);
 
-            // Assert that the TaskExecutorCursor has not requested a GetMore. This enforces that
-            // 'preFetchNextBatch' works as expected.
+            // Assert that the TaskExecutorCursor has not pre-fetched a GetMore.
             ASSERT_FALSE(hasReadyRequests());
 
             // Schedule another batch, where docsRequested should be set to 50 - 20 = 30;
@@ -248,6 +271,299 @@ public:
 
             // Schedules the GetMore request and exhausts the cursor.
             ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 5);
+            ASSERT_FALSE(tec->getNext(opCtx.get()));
+            responseSchedulerThread.join();
+
+            // Assert no GetMore is requested.
+            ASSERT_FALSE(hasReadyRequests());
+        });
+    }
+
+    void BatchSizeGrowsExponentiallyFromDefaultStartingSizeTest() {
+        // See comments in "BasicDocsRequestedTest" for why this thread monitor setup is necessary
+        // throughout the test.
+        unittest::threadAssertionMonitoredTest([&](auto& monitor) {
+            CursorId cursorId = 1;
+            RemoteCommandRequest rcr(HostAndPort("localhost"),
+                                     DatabaseName::createDatabaseName_forTest(boost::none, "test"),
+                                     BSON("search"
+                                          << "foo"),
+                                     opCtx.get());
+            // Construction of the TaskExecutorCursor enqueues a request in the
+            // NetworkInterfaceMock.
+            auto tec = makeMongotCursor(rcr);
+
+            // Mock the response for the first batch.
+            scheduleSuccessfulCursorResponse(
+                "firstBatch", 1, 101, cursorId, /*expectedPrefetch*/ false);
+
+            // Exhaust the first batch.
+            for (int docNum = 1; docNum <= 101; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+
+            // Assert that the TaskExecutorCursor has not pre-fetched a GetMore.
+            ASSERT_FALSE(hasReadyRequests());
+
+            // Schedule another batch, where the batchSize should have exponentially increased from
+            // the first batchSize. The batchSize should be set to kDefaultMongotBatchSize *
+            // kInternalSearchBatchSizeGrowthFactor = 202.
+            auto responseSchedulerThread = monitor.spawn([&] {
+                auto receivedGetMoreCmd = scheduleSuccessfulCursorResponse(
+                    "nextBatch", 102, 303, cursorId, /*expectedPrefetch*/ false);
+                const auto expectedGetMoreCmd =
+                    BSON("getMore" << 1LL << "collection"
+                                   << "test"
+                                   << "cursorOptions" << BSON("batchSize" << 202));
+                ASSERT_BSONOBJ_EQ(expectedGetMoreCmd, receivedGetMoreCmd);
+            });
+
+            // Schedules the GetMore request and exhausts the cursor.
+            for (int docNum = 102; docNum <= 303; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+            responseSchedulerThread.join();
+
+            // Schedule the final batch, where batchSize should have exponentially increased from
+            // the batchSize in the last GetMore request. The batchSize should be set to
+            // kDefaultMongotBatchSize * (kInternalSearchBatchSizeGrowthFactor)^2 = 404.
+            responseSchedulerThread = monitor.spawn([&] {
+                auto receivedGetMoreCmd = scheduleSuccessfulCursorResponse(
+                    "nextBatch", 303, 303, 0, /*expectedPrefetch*/ false);
+                const auto expectedGetMoreCmd =
+                    BSON("getMore" << 1LL << "collection"
+                                   << "test"
+                                   << "cursorOptions" << BSON("batchSize" << 404));
+                ASSERT_BSONOBJ_EQ(expectedGetMoreCmd, receivedGetMoreCmd);
+            });
+
+            // Schedules the GetMore request and exhausts the cursor.
+            ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 303);
+            ASSERT_FALSE(tec->getNext(opCtx.get()));
+            responseSchedulerThread.join();
+
+            // Assert no GetMore is requested.
+            ASSERT_FALSE(hasReadyRequests());
+        });
+    }
+
+    void BatchSizeGrowsExponentiallyFromCustomStartingSizeTest() {
+        // See comments in "BasicDocsRequestedTest" for why this thread monitor setup is necessary
+        // throughout the test.
+        unittest::threadAssertionMonitoredTest([&](auto& monitor) {
+            CursorId cursorId = 1;
+            RemoteCommandRequest rcr(HostAndPort("localhost"),
+                                     DatabaseName::createDatabaseName_forTest(boost::none, "test"),
+                                     BSON("search"
+                                          << "foo"),
+                                     opCtx.get());
+            // Construction of the TaskExecutorCursor enqueues a request in the
+            // NetworkInterfaceMock.
+            auto tec = makeMongotCursor(rcr,
+                                        /*calcDocsNeededFn*/ nullptr,
+                                        /*startingBatchSize*/ 3);
+            // Mock the response for the first batch.
+            scheduleSuccessfulCursorResponse(
+                "firstBatch", 1, 3, cursorId, /*expectedPrefetch*/ false);
+
+            // Exhaust the first batch.
+            for (int docNum = 1; docNum <= 3; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+
+            // Assert that the TaskExecutorCursor has not pre-fetched a GetMore.
+            ASSERT_FALSE(hasReadyRequests());
+
+            // Schedule another batch, where the batchSize should have exponentially increased from
+            // the first batchSize. The batchSize should be set to startingBatchSize *
+            // kInternalSearchBatchSizeGrowthFactor.
+            auto responseSchedulerThread = monitor.spawn([&] {
+                auto receivedGetMoreCmd = scheduleSuccessfulCursorResponse(
+                    "nextBatch", 3, 8, cursorId, /*expectedPrefetch*/ false);
+                const auto expectedGetMoreCmd =
+                    BSON("getMore" << 1LL << "collection"
+                                   << "test"
+                                   << "cursorOptions" << BSON("batchSize" << 6));
+                ASSERT_BSONOBJ_EQ(expectedGetMoreCmd, receivedGetMoreCmd);
+            });
+
+            // Schedules the GetMore request and exhausts the cursor.
+            for (int docNum = 3; docNum <= 8; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+            responseSchedulerThread.join();
+
+            // Schedule another batch, where batchSize should have exponentially increased from the
+            // batchSize in the last GetMore request. The batchSize should be set to
+            // startingBatchSize * (kInternalSearchBatchSizeGrowthFactor)^2.
+            responseSchedulerThread = monitor.spawn([&] {
+                auto receivedGetMoreCmd = scheduleSuccessfulCursorResponse(
+                    "nextBatch", 9, 9, 0, /*expectedPrefetch*/ false);
+                const auto expectedGetMoreCmd =
+                    BSON("getMore" << 1LL << "collection"
+                                   << "test"
+                                   << "cursorOptions" << BSON("batchSize" << 12));
+                ASSERT_BSONOBJ_EQ(expectedGetMoreCmd, receivedGetMoreCmd);
+            });
+
+            // Schedules the GetMore request and exhausts the cursor.
+            ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 9);
+            ASSERT_FALSE(tec->getNext(opCtx.get()));
+            responseSchedulerThread.join();
+
+            // Assert no GetMore is requested.
+            ASSERT_FALSE(hasReadyRequests());
+        });
+    }
+
+    void BatchSizePausesGrowthWhenBatchNotFilledTest() {
+        // See comments in "BasicDocsRequestedTest" for why this thread monitor setup is necessary
+        // throughout the test.
+        unittest::threadAssertionMonitoredTest([&](auto& monitor) {
+            CursorId cursorId = 1;
+            RemoteCommandRequest rcr(HostAndPort("localhost"),
+                                     DatabaseName::createDatabaseName_forTest(boost::none, "test"),
+                                     BSON("search"
+                                          << "foo"),
+                                     opCtx.get());
+            // Construction of the TaskExecutorCursor enqueues a request in the
+            // NetworkInterfaceMock.
+            auto tec = makeMongotCursor(rcr,
+                                        /*calcDocsNeededFn*/ nullptr,
+                                        /*startingBatchSize*/ 20);
+            // Mock the response for the first batch, which only returns 15 documents, rather than
+            // the requested 20.
+            scheduleSuccessfulCursorResponse(
+                "firstBatch", 1, 15, cursorId, /*expectedPrefetch*/ false);
+
+            // Exhaust the first batch.
+            for (int docNum = 1; docNum <= 15; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+
+            // Assert that the TaskExecutorCursor has not pre-fetched a GetMore.
+            ASSERT_FALSE(hasReadyRequests());
+
+            // Schedule another batch, where the batchSize should remain at 20 since the previous
+            // batchSize requested wasn't fulfilled. This batch will only return 10 documents.
+            auto responseSchedulerThread = monitor.spawn([&] {
+                auto receivedGetMoreCmd = scheduleSuccessfulCursorResponse(
+                    "nextBatch", 16, 25, cursorId, /*expectedPrefetch*/ false);
+                const auto expectedGetMoreCmd =
+                    BSON("getMore" << 1LL << "collection"
+                                   << "test"
+                                   << "cursorOptions" << BSON("batchSize" << 20));
+                ASSERT_BSONOBJ_EQ(expectedGetMoreCmd, receivedGetMoreCmd);
+            });
+
+            // Schedules the GetMore request and exhausts the cursor.
+            for (int docNum = 16; docNum <= 25; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+            responseSchedulerThread.join();
+
+            // Schedule another batch, where the batchSize again remains at 20 since the previous
+            // batchSize requested wasn't fulfilled again.
+            responseSchedulerThread = monitor.spawn([&] {
+                auto receivedGetMoreCmd = scheduleSuccessfulCursorResponse(
+                    "nextBatch", 26, 26, 0, /*expectedPrefetch*/ false);
+                const auto expectedGetMoreCmd =
+                    BSON("getMore" << 1LL << "collection"
+                                   << "test"
+                                   << "cursorOptions" << BSON("batchSize" << 20));
+                ASSERT_BSONOBJ_EQ(expectedGetMoreCmd, receivedGetMoreCmd);
+            });
+
+            // Schedules the GetMore request and exhausts the cursor.
+            ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), 26);
+            ASSERT_FALSE(tec->getNext(opCtx.get()));
+            responseSchedulerThread.join();
+
+            // Assert no GetMore is requested.
+            ASSERT_FALSE(hasReadyRequests());
+        });
+    }
+
+    void BatchSizeGrowthPausesThenResumesTest() {
+        // See comments in "BasicDocsRequestedTest" for why this thread monitor setup is necessary
+        // throughout the test.
+        unittest::threadAssertionMonitoredTest([&](auto& monitor) {
+            CursorId cursorId = 1;
+            RemoteCommandRequest rcr(HostAndPort("localhost"),
+                                     DatabaseName::createDatabaseName_forTest(boost::none, "test"),
+                                     BSON("search"
+                                          << "foo"),
+                                     opCtx.get());
+            // Construction of the TaskExecutorCursor enqueues a request in the
+            // NetworkInterfaceMock.
+            auto tec = makeMongotCursor(rcr,
+                                        /*calcDocsNeededFn*/ nullptr,
+                                        /*startingBatchSize*/ 5);
+            // Mock the response for the first batch, which fulfills the requested batchSize of 5.
+            scheduleSuccessfulCursorResponse(
+                "firstBatch", 1, 5, cursorId, /*expectedPrefetch*/ false);
+
+            // Exhaust the first batch.
+            for (int docNum = 1; docNum <= 5; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+
+            // Assert that the TaskExecutorCursor has not pre-fetched a GetMore.
+            ASSERT_FALSE(hasReadyRequests());
+
+            // Schedule another batch, where the batchSize requested has doubled to 10, but it will
+            // only return 8.
+            auto responseSchedulerThread = monitor.spawn([&] {
+                auto receivedGetMoreCmd = scheduleSuccessfulCursorResponse(
+                    "nextBatch", 6, 13, cursorId, /*expectedPrefetch*/ false);
+                const auto expectedGetMoreCmd =
+                    BSON("getMore" << 1LL << "collection"
+                                   << "test"
+                                   << "cursorOptions" << BSON("batchSize" << 10));
+                ASSERT_BSONOBJ_EQ(expectedGetMoreCmd, receivedGetMoreCmd);
+            });
+
+            // Schedules the GetMore request and exhausts the cursor.
+            for (int docNum = 6; docNum <= 13; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+            responseSchedulerThread.join();
+
+            // Schedule another batch, where the batchSize remains at 10 and returns a filled batch
+            // of 10.
+            responseSchedulerThread = monitor.spawn([&] {
+                auto receivedGetMoreCmd = scheduleSuccessfulCursorResponse(
+                    "nextBatch", 14, 23, cursorId, /*expectedPrefetch*/ false);
+                const auto expectedGetMoreCmd =
+                    BSON("getMore" << 1LL << "collection"
+                                   << "test"
+                                   << "cursorOptions" << BSON("batchSize" << 10));
+                ASSERT_BSONOBJ_EQ(expectedGetMoreCmd, receivedGetMoreCmd);
+            });
+
+            // Schedules the GetMore request and exhausts the cursor.
+            for (int docNum = 14; docNum <= 23; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+            responseSchedulerThread.join();
+
+            // Schedule the final batch, where the batchSize doubling should've resumed and will now
+            // request 20.
+            responseSchedulerThread = monitor.spawn([&] {
+                auto receivedGetMoreCmd = scheduleSuccessfulCursorResponse(
+                    "nextBatch", 24, 40, 0, /*expectedPrefetch*/ false);
+                const auto expectedGetMoreCmd =
+                    BSON("getMore" << 1LL << "collection"
+                                   << "test"
+                                   << "cursorOptions" << BSON("batchSize" << 20));
+                ASSERT_BSONOBJ_EQ(expectedGetMoreCmd, receivedGetMoreCmd);
+            });
+
+            // Schedules the GetMore request and exhausts the cursor.
+            for (int docNum = 24; docNum <= 40; docNum++) {
+                ASSERT_EQUALS(tec->getNext(opCtx.get()).value()["x"].Int(), docNum);
+            }
+            ASSERT_FALSE(tec->getNext(opCtx.get()));
             responseSchedulerThread.join();
 
             // Assert no GetMore is requested.
@@ -279,6 +595,38 @@ TEST_F(NonPinningMongotCursorTestFixture, DecreasingDocsRequestedTest) {
 
 TEST_F(PinnedConnMongotCursorTestFixture, DecreasingDocsRequestedTest) {
     DecreasingDocsRequestedTest();
+}
+
+TEST_F(PinnedConnMongotCursorTestFixture, BatchSizeGrowsExponentiallyFromDefaultStartingSizeTest) {
+    BatchSizeGrowsExponentiallyFromDefaultStartingSizeTest();
+}
+
+TEST_F(NonPinningMongotCursorTestFixture, BatchSizeGrowsExponentiallyFromDefaultStartingSizeTest) {
+    BatchSizeGrowsExponentiallyFromDefaultStartingSizeTest();
+}
+
+TEST_F(PinnedConnMongotCursorTestFixture, BatchSizeGrowsExponentiallyFromCustomStartingSizeTest) {
+    BatchSizeGrowsExponentiallyFromCustomStartingSizeTest();
+}
+
+TEST_F(NonPinningMongotCursorTestFixture, BatchSizeGrowsExponentiallyFromCustomStartingSizeTest) {
+    BatchSizeGrowsExponentiallyFromCustomStartingSizeTest();
+}
+
+TEST_F(PinnedConnMongotCursorTestFixture, BatchSizePausesGrowthWhenBatchNotFilledTest) {
+    BatchSizePausesGrowthWhenBatchNotFilledTest();
+}
+
+TEST_F(NonPinningMongotCursorTestFixture, BatchSizePausesGrowthWhenBatchNotFilledTest) {
+    BatchSizePausesGrowthWhenBatchNotFilledTest();
+}
+
+TEST_F(PinnedConnMongotCursorTestFixture, BatchSizeGrowthPausesThenResumesTest) {
+    BatchSizeGrowthPausesThenResumesTest();
+}
+
+TEST_F(NonPinningMongotCursorTestFixture, BatchSizeGrowthPausesThenResumesTest) {
+    BatchSizeGrowthPausesThenResumesTest();
 }
 }  // namespace
 }  // namespace executor

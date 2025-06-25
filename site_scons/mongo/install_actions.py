@@ -12,14 +12,20 @@ def _copy(src, dst):
 
 
 def _symlink(src, dst):
-    os.symlink(os.path.relpath(src, os.path.dirname(dst)), dst)
+    if os.path.islink(src):
+        _copy(src, dst)
+    else:
+        os.symlink(os.path.relpath(src, os.path.dirname(dst)), dst)
 
 
 def _hardlink(src, dst):
-    try:
-        os.link(src, dst)
-    except:
+    if os.path.islink(src):
         _copy(src, dst)
+    else:
+        try:
+            os.link(src, dst)
+        except:
+            _copy(src, dst)
 
 
 available_actions = {
@@ -34,7 +40,6 @@ class _CopytreeError(EnvironmentError):
 
 
 def _generate_install_actions(base_action):
-
     # This is a patched version of shutil.copytree from python 2.5.  It
     # doesn't fail if the dir exists, which regular copytree does
     # (annoyingly).  Note the XXX comment in the docstring.
@@ -96,8 +101,9 @@ def _generate_install_actions(base_action):
             if os.path.exists(dest):
                 if not os.path.isdir(dest):
                     raise SCons.Errors.UserError(
-                        "cannot overwrite non-directory `%s' with a directory `%s'" % (str(dest),
-                                                                                       str(source)))
+                        "cannot overwrite non-directory `%s' with a directory `%s'"
+                        % (str(dest), str(source))
+                    )
             else:
                 parent = os.path.split(dest)[0]
                 if not os.path.exists(parent):
@@ -118,7 +124,8 @@ def _generate_install_actions(base_action):
 
         if os.path.isdir(source):
             raise SCons.Errors.UserError(
-                "cannot install directory `%s' as a version library" % str(source))
+                "cannot install directory `%s' as a version library" % str(source)
+            )
         else:
             # remove the link if it is already there
             try:
@@ -138,5 +145,5 @@ def setup(env, action):
         return
     base_action = available_actions.get(action, None)
     handlers = _generate_install_actions(base_action)
-    env['INSTALL'] = handlers[0]
-    env['INSTALLVERSIONEDLIB'] = handlers[1]
+    env["INSTALL"] = handlers[0]
+    env["INSTALLVERSIONEDLIB"] = handlers[1]

@@ -35,13 +35,10 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/catalog_raii.h"
-#include "mongo/db/coll_mod_gen.h"
-#include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/op_observer/op_observer.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/repl/oplog.h"
-#include "mongo/db/storage/key_string.h"
 
 namespace mongo {
 
@@ -69,7 +66,7 @@ struct ParsedCollModIndexRequest {
  * Used by collMod implementation only.
  */
 void processCollModIndexRequest(OperationContext* opCtx,
-                                AutoGetCollection* autoColl,
+                                Collection* writableColl,
                                 const ParsedCollModIndexRequest& collModIndexRequest,
                                 boost::optional<IndexCollModInfo>* indexCollModInfo,
                                 BSONObjBuilder* result,
@@ -78,16 +75,15 @@ void processCollModIndexRequest(OperationContext* opCtx,
 /**
  * Scans index to return the record ids of duplicates.
  */
-std::list<std::set<RecordId>> scanIndexForDuplicates(OperationContext* opCtx,
-                                                     const CollectionPtr& collection,
-                                                     const IndexDescriptor* idx);
+std::vector<std::vector<RecordId>> scanIndexForDuplicates(OperationContext* opCtx,
+                                                          const IndexDescriptor* idx);
 
 /**
  * Builds a BSONArray of the violations with duplicate index keys and returns the formatted error
  * status for not being able to convert the index to unique.
  */
 Status buildConvertUniqueErrorStatus(OperationContext* opCtx,
-                                     const CollectionPtr& collection,
-                                     const std::list<std::set<RecordId>>& duplicateRecordsList);
+                                     const Collection* collection,
+                                     const std::vector<std::vector<RecordId>>& allDuplicateRecords);
 
 }  // namespace mongo

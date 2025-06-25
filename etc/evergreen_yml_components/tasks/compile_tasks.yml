@@ -138,9 +138,9 @@ variables:
       - enterprise-amazon2-openssl111
       - enterprise-amazon2-arm64-openssl111
       - enterprise-amazon2023
-      - enterprise-amazon2023-lto
+      # TODO(SERVER-85904) - enterprise-amazon2023-lto
       - enterprise-amazon2023-arm64
-      - enterprise-amazon2023-arm64-lto
+      # TODO(SERVER-85904) - enterprise-amazon2023-arm64-lto
       - enterprise-debian12-64
       - enterprise-linux-64-amazon-ami
       - enterprise-macos
@@ -183,6 +183,7 @@ tasks:
             ${additional_compile_targets|}
           task_compile_flags: >-
             PREFIX=dist-test
+      - func: "f_expansions_write"
       - command: subprocess.exec
         params:
           binary: bash
@@ -223,7 +224,6 @@ tasks:
             install-all
             prove-unittests
           task_compile_flags: >-
-            BAZEL_BUILD_ENABLED=1
             ICECC=
             CCACHE=
             --build-profile=opt
@@ -242,7 +242,6 @@ tasks:
             build/opt/mongo/db/commands/libfsync_locked.a
             build/opt/mongo/db/commands/libtest_commands_enabled.a
           task_compile_flags: >-
-            BAZEL_BUILD_ENABLED=1
             ICECC=
             --build-profile=opt
             --ninja=disabled
@@ -264,7 +263,6 @@ tasks:
             build/opt/mongo/db/commands/fsync_locked.lib
             build/opt/mongo/db/commands/test_commands_enabled.lib
           task_compile_flags: >-
-            BAZEL_BUILD_ENABLED=1
             ICECC=
             --build-profile=opt
             --ninja=disabled
@@ -303,7 +301,6 @@ tasks:
           targets: >-
             build/opt/third_party/unwind/libunwind.a
           task_compile_flags: >-
-            BAZEL_BUILD_ENABLED=1
             ICECC=
             --build-profile=opt
             --ninja=disabled
@@ -326,7 +323,6 @@ tasks:
             build/opt/mongo/platform/visibility_test1
           separate_debug: on
           task_compile_flags: >-
-            BAZEL_BUILD_ENABLED=1
             ICECC=
             --build-profile=opt
             --ninja=disabled
@@ -349,7 +345,6 @@ tasks:
             +visibility_test1 +visibility_test2
           separate_debug: on
           task_compile_flags: >-
-            BAZEL_BUILD_ENABLED=1
             ICECC=
             --build-profile=opt
             --ninja=disabled
@@ -371,7 +366,6 @@ tasks:
             +visibility_test1 +visibility_test2
           separate_debug: on
           task_compile_flags: >-
-            BAZEL_BUILD_ENABLED=1
             ICECC=
             --build-profile=san
             --ninja=disabled
@@ -392,6 +386,18 @@ tasks:
         vars:
           target: >-
             //src/mongo/platform:visibility_test1
+
+  - <<: *clang_tidy_task_template
+    name: run_bazel_clang_tidy
+    commands:
+      - func: "do scons setup"
+      - func: "fetch bazel"
+      - func: "bazel compile (gcc)"
+        vars:
+          compiler: gcc # gcc is required by bazel_compile.sh, but overridden by the --config=clang-tidy flag
+          # Note that we only run clang-tidy on the Mongo-authored targets, not on third-party code.
+          targets: //src/mongo/...
+          args: --config=clang-tidy
 
   - name: run_bazel_program_windows
     tags: ["assigned_to_jira_team_devprod_build", "auxiliary", "bazel_check"]
@@ -480,6 +486,7 @@ tasks:
             archive-dist-test
           task_compile_flags: >-
             PREFIX=dist-test
+      - func: "f_expansions_write"
       - command: subprocess.exec
         params:
           binary: bash
@@ -706,7 +713,6 @@ tasks:
           separate_debug: off
           task_compile_flags: >-
             --build-profile=fast
-            BAZEL_BUILD_ENABLED=1
             CCACHE=
             ICECC=
       - func: "f_expansions_write"
@@ -747,7 +753,6 @@ tasks:
           separate_debug: off
           task_compile_flags: >-
             --build-profile=fast
-            BAZEL_BUILD_ENABLED=1
             BAZEL_INTEGRATION_DEBUG=1
             CCACHE=
             ICECC=icecc
@@ -1203,6 +1208,37 @@ tasks:
           compiling_for_test: true
           separate_debug: off
 
+  - name: archive_jstestshell
+    tags: ["assigned_to_jira_team_devprod_build", "auxiliary"]
+    depends_on:
+      - name: version_expansions_gen
+        variant: generate-tasks-for-version
+    commands:
+      - func: "do scons setup"
+      - func: "f_expansions_write"
+      - func: "scons compile"
+        vars:
+          targets: archive-jstestshell
+          compiling_for_test: true
+          separate_debug: on
+          task_compile_flags: >-
+            PREFIX=dist-test
+            --link-model=static
+            --use-diagnostic-latches=off
+            --dbg=on
+            --opt=on
+            --sanitize=
+      - command: s3.put
+        params:
+          aws_key: ${aws_key}
+          aws_secret: ${aws_secret}
+          local_file: src/mongodb-jstestshell.${ext|tgz}
+          remote_file: ${mongo_jstestshell}
+          bucket: mciuploads
+          permissions: public-read
+          content_type: ${content_type|application/gzip}
+          display_name: Jstestshell
+
   - name: stitch_support_create_lib
     tags:
       [
@@ -1284,6 +1320,8 @@ tasks:
         "assigned_to_jira_team_server_security",
         "release_critical",
         "incompatible_community",
+        "incompatible_tsan",
+        "incompatible_aubsan",
         "requires_compile_variant",
         "requires_large_host_debug_mode",
         "crypt",
@@ -1413,7 +1451,6 @@ tasks:
       - func: "scons compile"
         vars:
           targets: >-
-            distsrc-${ext|tgz}
             archive-dist
             archive-dist-debug
             archive-jstestshell
@@ -1435,20 +1472,6 @@ tasks:
           binary: bash
           args:
             - "src/evergreen/package.sh"
-      - command: s3.put
-        params:
-          aws_key: ${aws_key}
-          aws_secret: ${aws_secret}
-          local_file: src/distsrc.${ext|tgz}
-          remote_file: ${project}/${build_variant}/${revision}/sources/mongo-src-${build_id}.${ext|tgz}
-          bucket: mciuploads
-          permissions: public-read
-          content_type: ${content_type|application/gzip}
-          display_name: Source tarball
-          # We only need to upload the source tarball from one of the build variants
-          # because it should be the same everywhere, so just use rhel79/rhel80/windows.
-          # TODO(SERVER-80479): remove rhel79 when support for it has been dropped.
-          build_variants: [rhel79, rhel80, windows]
       - command: s3.put
         params:
           optional: true
@@ -1545,7 +1568,6 @@ tasks:
             src/mongodb-jstestshell.${ext|tgz}
             src/mongodb-dist-debugsymbols.${ext|tgz}
             src/mongodb-dist.${ext|tgz}
-            src/distsrc.${ext|tgz}
 
   - name: publish_packages
     run_on: rhel8.7-small
@@ -1586,13 +1608,12 @@ tasks:
           aws_secret_remote: ${repo_aws_secret}
       - func: "set up notary client credentials"
       - func: "f_expansions_write"
-      - command: shell.exec
+      - command: subprocess.exec
         params:
-          shell: bash
+          binary: bash
           silent: true
-          script: |
-            set -oe
-            echo "${release_tools_container_registry_password}" | podman login --password-stdin --username ${release_tools_container_registry_username} ${release_tools_container_registry}
+          args:
+            - "./src/evergreen/container_registry_login.sh"
       - command: subprocess.exec
         params:
           binary: bash
@@ -1642,18 +1663,6 @@ tasks:
           bucket: mciuploads
           local_file: src/mongo-cryptd.tgz
           build_variants: *mongocryptd_variants
-      # Fetch the sources (on relevant variants only)
-      - command: s3.get
-        params:
-          aws_key: ${aws_key}
-          aws_secret: ${aws_secret}
-          remote_file: ${project}/${build_variant}/${revision}/sources/mongo-src-${build_id}.${ext|tgz}
-          bucket: mciuploads
-          local_file: src/distsrc.${ext|tgz}
-          # We only need to upload the source tarball from one of the build variants
-          # because it should be the same everywhere, so just use rhel79/rhel80/windows.
-          # TODO(SERVER-80479): remove rhel79 when support for it has been dropped.
-          build_variants: [rhel79, rhel80, windows]
       - func: "f_expansions_write"
       - func: "generate compile expansions"
       - func: "apply compile expansions"
@@ -1666,13 +1675,12 @@ tasks:
       - func: "f_expansions_write"
 
       # login to container registry
-      - command: shell.exec
+      - command: subprocess.exec
         params:
-          shell: bash
+          binary: bash
           silent: true
-          script: |
-            set -oe
-            echo "${release_tools_container_registry_password}" | podman login --password-stdin --username ${release_tools_container_registry_username} ${release_tools_container_registry}
+          args:
+            - "./src/evergreen/container_registry_login.sh"
 
       # signing windows artifacts
       - command: subprocess.exec
@@ -1709,20 +1717,6 @@ tasks:
           content_type: ${content_type|application/gzip}
           remote_file: ${push_path}-STAGE/${push_name}/mongodb-cryptd-${push_name}-${push_arch}-${suffix}-${task_id}.${ext|tgz}
           build_variants: *mongocryptd_variants
-      # Put the source tarball
-      - command: s3.put
-        params:
-          aws_secret: ${aws_secret}
-          local_file: src/mongodb-src-${src_suffix}.${ext|tar.gz}
-          aws_key: ${aws_key}
-          bucket: build-push-testing
-          permissions: public-read
-          content_type: ${content_type|application/gzip}
-          remote_file: ${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}
-          # We only need to upload the source tarball from one of the build variants
-          # because it should be the same everywhere, so just use rhel79/rhel80/windows.
-          # TODO(SERVER-80479): remove rhel79 when support for it has been dropped.
-          build_variants: [rhel79, rhel80, windows]
 
       # Put the debug symbols
       # push directly to repo due to limitations in file size SERVER-63432
@@ -1759,21 +1753,6 @@ tasks:
           content_type: ${content_type|application/gzip}
           remote_file: ${push_path}-STAGE/${push_name}/mongodb-cryptd-${push_name}-${push_arch}-${suffix}-${task_id}.${ext|tgz}.sig
           build_variants: *mongocryptd_variants
-
-      # Put the source tarball signature
-      - command: s3.put
-        params:
-          aws_secret: ${aws_secret}
-          local_file: src/mongodb-src-${src_suffix}.${ext|tar.gz}.sig
-          aws_key: ${aws_key}
-          bucket: build-push-testing
-          permissions: public-read
-          content_type: ${content_type|application/gzip}
-          remote_file: ${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}.sig
-          # We only need to upload the source tarball from one of the build variants
-          # because it should be the same everywhere, so just use rhel79/rhel80/windows.
-          # TODO(SERVER-80479): remove rhel79 when support for it has been dropped.
-          build_variants: [rhel79, rhel80, windows]
 
       # Put the debug symbols signature
       - command: s3.put
@@ -1822,21 +1801,6 @@ tasks:
           remote_file: ${push_path}-STAGE/${push_name}/mongodb-cryptd-${push_name}-${push_arch}-${suffix}-${task_id}.${ext|tgz}.sha1
           build_variants: *mongocryptd_variants
 
-      # Put the source tarball sha1
-      - command: s3.put
-        params:
-          aws_secret: ${aws_secret}
-          local_file: src/mongodb-src-${src_suffix}.${ext|tar.gz}.sha1
-          aws_key: ${aws_key}
-          permissions: public-read
-          bucket: build-push-testing
-          content_type: text/plain
-          remote_file: ${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}.sha1
-          # We only need to upload the source tarball from one of the build variants
-          # because it should be the same everywhere, so just use rhel79/rhel80/windows.
-          # TODO(SERVER-80479): remove rhel79 when support for it has been dropped.
-          build_variants: [rhel79, rhel80, windows]
-
       # Put the debug symbols sha1
       - command: s3.put
         params:
@@ -1884,21 +1848,6 @@ tasks:
           remote_file: ${push_path}-STAGE/${push_name}/mongodb-cryptd-${push_name}-${push_arch}-${suffix}-${task_id}.${ext|tgz}.sha256
           build_variants: *mongocryptd_variants
 
-      # Put the source tarball sha256
-      - command: s3.put
-        params:
-          aws_secret: ${aws_secret}
-          local_file: src/mongodb-src-${src_suffix}.${ext|tar.gz}.sha256
-          permissions: public-read
-          aws_key: ${aws_key}
-          bucket: build-push-testing
-          content_type: text/plain
-          remote_file: ${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}.sha256
-          # We only need to upload the source tarball from one of the build variants
-          # because it should be the same everywhere, so just use rhel79/rhel80/windows.
-          # TODO(SERVER-80479): remove rhel79 when support for it has been dropped.
-          build_variants: [rhel79, rhel80, windows]
-
       # Put the debug symbols sha256
       - command: s3.put
         params:
@@ -1945,21 +1894,6 @@ tasks:
           content_type: text/plain
           remote_file: ${push_path}-STAGE/${push_name}/mongodb-cryptd-${push_name}-${push_arch}-${suffix}-${task_id}.${ext|tgz}.md5
           build_variants: *mongocryptd_variants
-
-      # Put the source tarball md5
-      - command: s3.put
-        params:
-          aws_secret: ${aws_secret}
-          local_file: src/mongodb-src-${src_suffix}.${ext|tar.gz}.md5
-          aws_key: ${aws_key}
-          bucket: build-push-testing
-          permissions: public-read
-          content_type: text/plain
-          remote_file: ${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}.md5
-          # We only need to upload the source tarball from one of the build variants
-          # because it should be the same everywhere, so just use rhel79/rhel80/windows.
-          # TODO(SERVER-80479): remove rhel79 when support for it has been dropped.
-          build_variants: [rhel79, rhel80, windows]
 
       # Put the debug symbols md5
       - command: s3.put
@@ -2081,21 +2015,6 @@ tasks:
                 "build_variants": *mongocryptd_variants,
               }
 
-            #Source tarball
-            - {
-                "source":
-                  {
-                    "path": "${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}",
-                    "bucket": "build-push-testing",
-                  },
-                "destination":
-                  {
-                    "path": "src/mongodb-src-${src_suffix}.${ext|tar.gz}",
-                    "bucket": "${push_bucket}",
-                  },
-                "build_variants": ["rhel79", "windows"],
-              }
-
             #MSI (Windows only)
             - {
                 "source":
@@ -2140,21 +2059,6 @@ tasks:
                 "build_variants": *mongocryptd_variants,
               }
 
-            #Source tarball signature
-            - {
-                "source":
-                  {
-                    "path": "${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}.sig",
-                    "bucket": "build-push-testing",
-                  },
-                "destination":
-                  {
-                    "path": "src/mongodb-src-${src_suffix}.${ext|tar.gz}.sig",
-                    "bucket": "${push_bucket}",
-                  },
-                "build_variants": ["rhel79", "windows"],
-              }
-
             #SHA1 for binaries
             - {
                 "source":
@@ -2182,21 +2086,6 @@ tasks:
                     "bucket": "${push_bucket}",
                   },
                 "build_variants": *mongocryptd_variants,
-              }
-
-            #SHA1 for source tarball
-            - {
-                "source":
-                  {
-                    "path": "${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}.sha1",
-                    "bucket": "build-push-testing",
-                  },
-                "destination":
-                  {
-                    "path": "src/mongodb-src-${src_suffix}.${ext|tar.gz}.sha1",
-                    "bucket": "${push_bucket}",
-                  },
-                "build_variants": ["rhel79", "windows"],
               }
 
             #SHA1 for MSI
@@ -2243,21 +2132,6 @@ tasks:
                 "build_variants": *mongocryptd_variants,
               }
 
-            #SHA256 for source tarball
-            - {
-                "source":
-                  {
-                    "path": "${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}.sha256",
-                    "bucket": "build-push-testing",
-                  },
-                "destination":
-                  {
-                    "path": "src/mongodb-src-${src_suffix}.${ext|tar.gz}.sha256",
-                    "bucket": "${push_bucket}",
-                  },
-                "build_variants": ["rhel79", "windows"],
-              }
-
             #SHA256 for MSI files
             - {
                 "source":
@@ -2300,21 +2174,6 @@ tasks:
                     "bucket": "${push_bucket}",
                   },
                 "build_variants": *mongocryptd_variants,
-              }
-
-            #MD5 for source tarball
-            - {
-                "source":
-                  {
-                    "path": "${push_path}-STAGE/${push_name}/mongodb-src-${src_suffix}-${task_id}.${ext|tar.gz}.md5",
-                    "bucket": "build-push-testing",
-                  },
-                "destination":
-                  {
-                    "path": "src/mongodb-src-${src_suffix}.${ext|tar.gz}.md5",
-                    "bucket": "${push_bucket}",
-                  },
-                "build_variants": ["rhel79", "windows"],
               }
 
             #MD5 for MSIs
@@ -2445,13 +2304,12 @@ tasks:
           aws_secret_remote: ${repo_aws_secret}
       - func: "f_expansions_write"
       # login to container registry
-      - command: shell.exec
+      - command: subprocess.exec
         params:
-          shell: bash
+          binary: bash
           silent: true
-          script: |
-            set -oe
-            echo "${release_tools_container_registry_password}" | podman login --password-stdin --username ${release_tools_container_registry_username} ${release_tools_container_registry}
+          args:
+            - "./src/evergreen/container_registry_login.sh"
       - command: subprocess.exec
         params:
           binary: bash
@@ -2692,7 +2550,8 @@ task_groups:
     name: compile_upload_benchmarks_TG
     tasks:
       - compile_upload_benchmarks
-      - compile_upload_benchmarks_debug
+      # TODO(SERVER-86426): Figure out a workable long-term solution to benchmark debug symbols
+      # - compile_upload_benchmarks_debug
 
   - <<: *compile_task_group_template
     name: compile_and_archive_dist_test_TG
@@ -2867,18 +2726,6 @@ task_groups:
       - archive_dist_test
       - archive_dist_test_debug
 
-  - <<: *compile_task_group_template
-    name: compile_test_benchmark_serial_TG
-    tasks:
-      - compile_dist_test
-      - archive_dist_test
-      - archive_dist_test_debug
-      - compile_dbtest
-      - run_dbtest
-      - archive_dbtest
-      - compile_upload_benchmarks
-      - compile_upload_benchmarks_debug
-
   # The *no_unittests_TG taskgroups are useful for static builds,
   # were the static binaries of the unittests can take up to
   # a terabyte of data.
@@ -2894,7 +2741,8 @@ task_groups:
       - run_dbtest
       - archive_dbtest
       - compile_upload_benchmarks
-      - compile_upload_benchmarks_debug
+      # TODO(SERVER-86426): Figure out a workable long-term solution to benchmark debug symbols
+      # - compile_upload_benchmarks_debug
       - compile_all_but_not_unittests
 
   - <<: *compile_task_group_template

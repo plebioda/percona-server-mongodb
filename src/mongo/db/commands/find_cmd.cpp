@@ -152,6 +152,8 @@
 
 namespace mongo {
 namespace {
+// Ticks for server-side Javascript deprecation log messages.
+Rarely _samplerFunctionJs, _samplerWhereClause;
 
 MONGO_FAIL_POINT_DEFINE(allowExternalReadsForReverseOplogScanRule);
 
@@ -231,6 +233,21 @@ std::unique_ptr<CanonicalQuery> parseQueryAndBeginOperation(
         if (parsedRequest->findCommandRequest->getIncludeQueryStatsMetrics()) {
             CurOp::get(opCtx)->debug().queryStatsInfo.metricsRequested = true;
         }
+    }
+
+    // Check for server-side javascript usage after parsing is complete and the flags have been set
+    // on the expression context.
+    if (expCtx->hasServerSideJs.where && _samplerWhereClause.tick()) {
+        LOGV2_WARNING(8996500,
+                      "$where is deprecated. For more information, see "
+                      "https://www.mongodb.com/docs/manual/reference/operator/query/where/");
+    }
+
+    if (expCtx->hasServerSideJs.function && _samplerFunctionJs.tick()) {
+        LOGV2_WARNING(
+            8996501,
+            "$function is deprecated. For more information, see "
+            "https://www.mongodb.com/docs/manual/reference/operator/aggregation/function/");
     }
 
     // TODO: SERVER-73632 Remove feature flag for PM-635.
@@ -436,6 +453,8 @@ public:
             auto respSc =
                 SerializationContext::stateCommandReply(_cmdRequest->getSerializationContext());
 
+            CurOp::get(opCtx)->beginQueryPlanningTimer();
+
             // The collection may be NULL. If so, getExecutor() should handle it by returning an
             // execution tree with an EOFStage.
             const auto& collectionPtr = collectionOrView->getCollectionPtr();
@@ -620,12 +639,12 @@ public:
             // collections.
             boost::optional<AutoStatsTracker> tracker;
             auto const initializeTracker = [&](const NamespaceString& nss) {
-                tracker.emplace(
-                    opCtx,
-                    nss,
-                    Top::LockType::ReadLocked,
-                    AutoStatsTracker::LogMode::kUpdateTopAndCurOp,
-                    CollectionCatalog::get(opCtx)->getDatabaseProfileLevel(nss.dbName()));
+                tracker.emplace(opCtx,
+                                nss,
+                                Top::LockType::ReadLocked,
+                                AutoStatsTracker::LogMode::kUpdateTopAndCurOp,
+                                0 /* dbProfilingLevel */
+                );
             };
             auto const nssOrUUID = _cmdRequest->getNamespaceOrUUID();
             if (nssOrUUID.isNamespaceString()) {
@@ -640,9 +659,27 @@ public:
                 return req;
             }();
 
+            // The acquireCollection can throw before we raise the profile level, and some callers
+            // expect to see profiler entries on errors that can throw in the acquisition. To avoid
+            // getting an expensive CollectionCatalog snapshot an extra time before the collection
+            // acquisition path, only do this if the collection acquisition fails. Note that this
+            // still doesn't work correctly if UUID resolution fails.
+            auto setProfileLevelOnError = ScopeGuard([&] {
+                if (nssOrUUID.isNamespaceString()) {
+                    CurOp::get(opCtx)->raiseDbProfileLevel(
+                        CollectionCatalog::get(opCtx)->getDatabaseProfileLevel(nssOrUUID.dbName()));
+                }
+            });
+
             boost::optional<CollectionOrViewAcquisition> collectionOrView =
                 acquireCollectionOrViewMaybeLockFree(opCtx, acquisitionRequest);
             const NamespaceString nss = collectionOrView->nss();
+
+            // It is cheaper to raise the profiling level here, now that a CollectionCatalog
+            // snapshot is stashed on the OpCtx.
+            CurOp::get(opCtx)->raiseDbProfileLevel(
+                CollectionCatalog::get(opCtx)->getDatabaseProfileLevel(nss.dbName()));
+            setProfileLevelOnError.dismiss();
 
             if (!tracker) {
                 initializeTracker(nss);
@@ -778,7 +815,8 @@ public:
                 return;
             }
 
-            FindCommon::waitInFindBeforeMakingBatch(opCtx, *exec->getCanonicalQuery());
+            FindCommon::waitInFindBeforeMakingBatch(
+                opCtx, *exec->getCanonicalQuery(), &shardWaitInFindBeforeMakingBatch);
 
             const FindCommandRequest& originalFC =
                 exec->getCanonicalQuery()->getFindCommandRequest();
@@ -835,6 +873,20 @@ public:
                      ReadPreferenceSetting::get(opCtx),
                      _request.body,
                      {Privilege(ResourcePattern::forExactNamespace(nss), ActionType::find)}});
+                ScopeGuard deleteCursorOnError([&] {
+                    // In case of an error while creating and stashing the cursor we have to delete
+                    // the underlying resources since they might have been left in an inconsistent
+                    // state.
+                    pinnedCursor.deleteUnderlying();
+                });
+                ON_BLOCK_EXIT([&] {
+                    // During destruction of the pinned cursor we may discover that the operation
+                    // has been interrupted. This would cause the transaction resources we just
+                    // stashed to be released and destroyed. As we hold a reference here to them in
+                    // the form of the acquisition which modifies the resources, we must release it
+                    // now before destroying the pinned cursor.
+                    collectionOrView.reset();
+                });
                 cursorId = pinnedCursor.getCursor()->cursorid();
 
                 invariant(!exec);
@@ -870,18 +922,16 @@ public:
                 }
 
                 stashTransactionResourcesFromOperationContext(opCtx, pinnedCursor.getCursor());
-                // During destruction of the pinned cursor we may discover that the operation has
-                // been interrupted. This would cause the transaction resources we just stashed to
-                // be released and destroyed. As we hold a reference here to them in the form of the
-                // acquisition which modifies the resources, we must release it now before
-                // destroying the pinned cursor.
-                collectionOrView.reset();
+
+                deleteCursorOnError.dismiss();
             } else {
+                ON_BLOCK_EXIT([&] {
+                    // We want to destroy the executor as soon as possible to release any resources
+                    // locks it may hold.
+                    exec.reset();
+                    collectionOrView.reset();
+                });
                 endQueryOp(opCtx, collectionPtr, *exec, numResults, boost::none, cmdObj);
-                // We want to destroy executor as soon as possible to release any resources locks it
-                // may hold.
-                exec.reset();
-                collectionOrView.reset();
             }
 
             // Generate the response object to send to the client.

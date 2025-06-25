@@ -117,6 +117,7 @@ const allCommands = {
     _shardsvrEndMigrationBlockingOperation: {skip: isAnInternalCommand},
     _shardsvrGetStatsForBalancing: {skip: isAnInternalCommand},
     _shardsvrInsertGlobalIndexKey: {skip: isAnInternalCommand},
+    _shardsvrJoinDDLCoordinators: {skip: isAnInternalCommand},
     _shardsvrDeleteGlobalIndexKey: {skip: isAnInternalCommand},
     _shardsvrWriteGlobalIndexKeys: {skip: isAnInternalCommand},
     _shardsvrJoinMigrations: {skip: isAnInternalCommand},
@@ -142,6 +143,7 @@ const allCommands = {
     _shardsvrValidateShardKeyCandidate: {skip: isAnInternalCommand},
     _shardsvrCollMod: {skip: isAnInternalCommand},
     _shardsvrCollModParticipant: {skip: isAnInternalCommand},
+    _shardsvrConvertToCappedParticipant: {skip: isAnInternalCommand},
     _shardsvrParticipantBlock: {skip: isAnInternalCommand},
     _shardsvrUntrackUnsplittableCollection: {skip: isAnInternalCommand},
     _shardsvrCheckMetadataConsistency: {skip: isAnInternalCommand},
@@ -1040,9 +1042,7 @@ const allCommands = {
         skip: "requires additional authentication setup",
     },
     makeSnapshot: {
-        isAdminCommand: true,
-        command: {makeSnapshot: 1},
-        doesNotRunOnMongos: true,
+        skip: isAnInternalCommand,
     },
     mapReduce: {
         setUp: function(conn) {

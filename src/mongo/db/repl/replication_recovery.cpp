@@ -185,6 +185,8 @@ public:
             : BSON("$gte" << _oplogApplicationStartPoint);
         FindCommandRequest findRequest{NamespaceString::kRsOplogNamespace};
         findRequest.setFilter(BSON("ts" << predicate));
+        // Don't kill the cursor just because applying a batch oplog takes a long time.
+        findRequest.setNoCursorTimeout(true);
         _cursor = _client->find(std::move(findRequest));
 
         // Check that the first document matches our appliedThrough point then skip it since it's
@@ -967,7 +969,7 @@ void ReplicationRecoveryImpl::_truncateOplogIfNeededAndThenClearOplogTruncateAft
 Timestamp ReplicationRecoveryImpl::_adjustStartPointIfNecessary(OperationContext* opCtx,
                                                                 Timestamp startPoint) {
     // Set up read on oplog collection.
-    AutoGetOplog oplogRead(opCtx, OplogAccessMode::kRead);
+    AutoGetOplogFastPath oplogRead(opCtx, OplogAccessMode::kRead);
     const auto& oplogCollection = oplogRead.getCollection();
     if (!oplogCollection) {
         LOGV2_FATAL_NOTRACE(

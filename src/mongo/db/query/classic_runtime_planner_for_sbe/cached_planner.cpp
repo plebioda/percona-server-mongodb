@@ -32,6 +32,7 @@
 #include "mongo/db/exec/trial_period_utils.h"
 #include "mongo/db/query/all_indices_required_checker.h"
 #include "mongo/db/query/bind_input_params.h"
+#include "mongo/db/query/plan_cache_key_factory.h"
 #include "mongo/db/query/plan_executor_factory.h"
 #include "mongo/db/query/planner_analysis.h"
 #include "mongo/db/query/sbe_trial_runtime_executor.h"
@@ -171,7 +172,7 @@ std::unique_ptr<PlannerInterface> replan(PlannerDataForSBE plannerData,
 
     // Use the query planning module to plan the whole query.
     auto solutions =
-        uassertStatusOK(QueryPlanner::plan(*plannerData.cq, plannerData.plannerParams));
+        uassertStatusOK(QueryPlanner::plan(*plannerData.cq, *plannerData.plannerParams));
 
     // There's a single solution, there's a special planner for just this case.
     if (solutions.size() == 1) {
@@ -190,17 +191,15 @@ std::unique_ptr<PlannerInterface> replan(PlannerDataForSBE plannerData,
                 "Query plan after replanning and its cache status",
                 "query"_attr = redact(plannerData.cq->toStringShort()),
                 "shouldCache"_attr = (shouldCache ? "yes" : "no"));
-    const auto cachingMode =
-        shouldCache ? PlanCachingMode::AlwaysCache : PlanCachingMode::NeverCache;
     return std::make_unique<MultiPlanner>(
-        std::move(plannerData), std::move(solutions), cachingMode, std::move(replanReason));
+        std::move(plannerData), std::move(solutions), shouldCache, std::move(replanReason));
 }
 }  // namespace
 
 std::unique_ptr<PlannerInterface> makePlannerForCacheEntry(
     PlannerDataForSBE plannerData, std::unique_ptr<sbe::CachedPlanHolder> cachedPlanHolder) {
     AllIndicesRequiredChecker indexExistenceChecker{plannerData.collections};
-    const auto& decisionReads = cachedPlanHolder->decisionWorks;
+    const auto& decisionReads = cachedPlanHolder->decisionReads();
     auto sbePlan = std::move(cachedPlanHolder->cachedPlan->root);
     auto planStageData = std::move(cachedPlanHolder->cachedPlan->planStageData);
     planStageData.debugInfo = cachedPlanHolder->debugInfo;
@@ -213,7 +212,7 @@ std::unique_ptr<PlannerInterface> makePlannerForCacheEntry(
         // We'd like to check if there is any foreign collection in the hash_lookup stage
         // that is no longer eligible for using a hash_lookup plan. In this case we
         // invalidate the cache and immediately replan without ever running a trial period.
-        const auto& secondaryCollectionsInfo = plannerData.plannerParams.secondaryCollectionsInfo;
+        const auto& secondaryCollectionsInfo = plannerData.plannerParams->secondaryCollectionsInfo;
 
         for (const auto& foreignCollection : foreignHashJoinCollections) {
             const auto collectionInfo = secondaryCollectionsInfo.find(foreignCollection);

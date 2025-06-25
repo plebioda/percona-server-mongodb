@@ -225,6 +225,14 @@ public:
         return _fromOplogApplication;
     }
 
+    void setPreserveEmptyTS(OptionalBool preserveEmptyTS) {
+        _preserveEmptyTS = preserveEmptyTS;
+    }
+
+    OptionalBool getPreserveEmptyTS() const {
+        return _preserveEmptyTS;
+    }
+
     void setExplain(boost::optional<ExplainOptions::Verbosity> verbosity) {
         _explain = verbosity;
     }
@@ -259,6 +267,10 @@ public:
 
     bool shouldReturnAnyDocs() const {
         return shouldReturnOldDocs() || shouldReturnNewDocs();
+    }
+
+    ReturnDocOption getReturnDocs() const {
+        return _returnDocs;
     }
 
     void setYieldPolicy(PlanYieldPolicy::YieldPolicy yieldPolicy) {
@@ -377,6 +389,8 @@ private:
     OptionalBool _allowShardKeyUpdatesWithoutFullShardKeyInQuery;
 
     OptionalBool _isTimeseriesNamespace;
+
+    OptionalBool _preserveEmptyTS;
 
     // Flags controlling the update.
 

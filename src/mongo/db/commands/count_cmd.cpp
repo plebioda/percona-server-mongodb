@@ -222,6 +222,8 @@ public:
             return exceptionToStatus();
         }
 
+        CurOp::get(opCtx)->beginQueryPlanningTimer();
+
         if (shouldDoFLERewrite(request)) {
             if (!request.getEncryptionInformation()->getCrudProcessed().value_or(false)) {
                 processFLECountD(opCtx, nss, &request);
@@ -318,7 +320,7 @@ public:
             : SerializationContext::stateCommandRequest();
 
         auto request = CountCommandRequest::parse(
-            IDLParserContext("count", false /* apiStrict */, vts, dbName.tenantId(), sc), cmdObj);
+            IDLParserContext("count", vts, dbName.tenantId(), sc), cmdObj);
         auto curOp = CurOp::get(opCtx);
         curOp->beginQueryPlanningTimer();
         if (shouldDoFLERewrite(request)) {
@@ -407,7 +409,7 @@ public:
         if (collection) {
             CollectionQueryInfo::get(collection).notifyOfQuery(opCtx, collection, summaryStats);
         }
-        curOp->debug().setPlanSummaryMetrics(summaryStats);
+        curOp->debug().setPlanSummaryMetrics(std::move(summaryStats));
 
         if (curOp->shouldDBProfile()) {
             auto&& explainer = exec->getPlanExplainer();

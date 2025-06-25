@@ -52,10 +52,6 @@ else
   extra_args="$extra_args --release"
 fi
 
-if [ "${project}" = "mongo-release" ]; then
-  extra_args="$extra_args BAZEL_BUILD_ENABLED=0"
-fi
-
 extra_args="$extra_args SPLIT_DWARF=0 GDB_INDEX=0 ENABLE_OOM_RETRY=1 BAZEL_INTEGRATION_DEBUG=1"
 
 echo "Setting evergreen tmp dir to $TMPDIR"
@@ -130,6 +126,16 @@ if [ -n "${build_patch_id}" ]; then
   echo "Could not skip ${task_name} compile, compiling as normal"
 fi
 
+# --build-mongot is a compile flag used by the evergreen build variants that run end-to-end search
+# suites, as it downloads the necessary mongot binary.
+if [ "${build_mongot}" = "true" ]; then
+  if [ "${download_mongot_release}" = "true" ]; then
+    extra_args="$extra_args --build-mongot=release"
+  else
+    extra_args="$extra_args --build-mongot=latest"
+  fi
+fi
+
 set -o pipefail
 
 # Bind mount a new tmp directory to the real /tmp to circumvent "out of disk space" errors on ARM LTO compiles
@@ -137,6 +143,13 @@ set -o pipefail
 if [[ ${compile_flags} == *"--lto"* ]]; then
   set_sudo
   mkdir -p tmp && $sudo mount --bind ./tmp /tmp
+fi
+
+if [[ -n "${bazel_scons_diff_targets}" ]]; then
+  diff_extra_args="--extra_args \"${compile_flags} ${task_compile_flags} ${task_compile_flags_extra} $extra_args\""
+  eval ${compile_env} $python ./buildscripts/bazel_scons_diff.py \
+    ${diff_extra_args} \
+    ${bazel_scons_diff_targets}
 fi
 
 eval ${compile_env} $python ./buildscripts/scons.py \

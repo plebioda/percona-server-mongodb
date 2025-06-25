@@ -29,8 +29,6 @@ DEFAULT_DBTEST_EXECUTABLE = os.path.join(os.curdir, "dbtest")
 DEFAULT_MONGO_EXECUTABLE = "mongo"
 DEFAULT_MONGOD_EXECUTABLE = "mongod"
 DEFAULT_MONGOS_EXECUTABLE = "mongos"
-# TODO SERVER-85977 potentially replace with "mongot" if possible to add a symlink from raw path
-# below as part of setup-mongot-repro.
 DEFAULT_MONGOT_EXECUTABLE = "mongot-localdev/mongot"
 
 DEFAULT_BENCHMARK_REPETITIONS = 3
@@ -132,10 +130,8 @@ DEFAULTS = {
     "shell_tls_certificate_key_file": None,
     "mongos_tls_certificate_key_file": None,
     "mongod_tls_certificate_key_file": None,
-
     # Internal testing options.
     "internal_params": [],
-
     # Evergreen options.
     "evergreen_url": "evergreen.mongodb.com",
     "build_id": None,
@@ -152,65 +148,56 @@ DEFAULTS = {
     "version_id": None,
     "work_dir": None,
     "evg_project_config_path": "etc/evergreen.yml",
-
+    "requester": None,
     # WiredTiger options.
     "wt_coll_config": None,
     "wt_engine_config": None,
     "wt_index_config": None,
-
     # Benchmark options.
     "benchmark_filter": None,
     "benchmark_list_tests": None,
     "benchmark_min_time_secs": None,
     "benchmark_repetitions": None,
-
     # Config Dir
     "config_dir": "buildscripts/resmokeconfig",
-
     # Directory with jstests
     "jstests_dir": "jstests",
-
     # UndoDB options
     "undo_recorder_path": None,
-
     # Generate multiversion exclude tags options
     "exclude_tags_file_path": "generated_resmoke_config/multiversion_exclude_tags.yml",
-
     # Limit the number of tests to execute
     "max_test_queue_size": None,
-
     # Sanity check
     "sanity_check": False,
-
     # otel info
     "otel_trace_id": None,
     "otel_parent_id": None,
     "otel_collector_dir": None,
-
     # The images to build for an External System Under Test
     "docker_compose_build_images": None,
-
     # Where the `--dockerComposeBuildImages` is happening.
     "docker_compose_build_env": "local",
-
     # Tag to use for images built & used for an External System Under Test
     "docker_compose_tag": "development",
-
     # Whether or not this resmoke suite is running against an External System Under Test
     "external_sut": False,
 }
 
-_SuiteOptions = collections.namedtuple("_SuiteOptions", [
-    "description",
-    "fail_fast",
-    "include_tags",
-    "num_jobs",
-    "num_repeat_suites",
-    "num_repeat_tests",
-    "num_repeat_tests_max",
-    "num_repeat_tests_min",
-    "time_repeat_tests_secs",
-])
+_SuiteOptions = collections.namedtuple(
+    "_SuiteOptions",
+    [
+        "description",
+        "fail_fast",
+        "include_tags",
+        "num_jobs",
+        "num_repeat_suites",
+        "num_repeat_tests",
+        "num_repeat_tests_max",
+        "num_repeat_tests_min",
+        "time_repeat_tests_secs",
+    ],
+)
 
 
 class SuiteOptions(_SuiteOptions):
@@ -266,17 +253,22 @@ class SuiteOptions(_SuiteOptions):
         include_tags = None
         parent = dict(
             list(
-                zip(SuiteOptions._fields, [
-                    description,
-                    FAIL_FAST,
-                    include_tags,
-                    JOBS,
-                    REPEAT_SUITES,
-                    REPEAT_TESTS,
-                    REPEAT_TESTS_MAX,
-                    REPEAT_TESTS_MIN,
-                    REPEAT_TESTS_SECS,
-                ])))
+                zip(
+                    SuiteOptions._fields,
+                    [
+                        description,
+                        FAIL_FAST,
+                        include_tags,
+                        JOBS,
+                        REPEAT_SUITES,
+                        REPEAT_TESTS,
+                        REPEAT_TESTS_MAX,
+                        REPEAT_TESTS_MIN,
+                        REPEAT_TESTS_SECS,
+                    ],
+                )
+            )
+        )
 
         options = self._asdict()
         for field in SuiteOptions._fields:
@@ -287,7 +279,8 @@ class SuiteOptions(_SuiteOptions):
 
 
 SuiteOptions.ALL_INHERITED = SuiteOptions(  # type: ignore
-    **dict(list(zip(SuiteOptions._fields, itertools.repeat(SuiteOptions.INHERIT)))))
+    **dict(list(zip(SuiteOptions._fields, itertools.repeat(SuiteOptions.INHERIT))))
+)
 
 
 class MultiversionOptions(object):
@@ -396,6 +389,9 @@ EVERGREEN_WORK_DIR = None
 
 # Path to evergreen project configuration yaml file
 EVERGREEN_PROJECT_CONFIG_PATH = None
+
+# What triggered the task: patch, github_pr, github_tag, commit, trigger, commit_queue, or ad_hoc
+EVERGREEN_REQUESTER = None
 
 # If set, then any jstests that have any of the specified tags will be excluded from the suite(s).
 EXCLUDE_WITH_ANY_TAGS = None
@@ -661,14 +657,19 @@ DEFAULT_LIBFUZZER_TEST_LIST = "build/libfuzzer_tests.txt"
 DEFAULT_PRETTY_PRINTER_TEST_LIST = "build/pretty_printer_tests.txt"
 SPLIT_UNITTESTS_LISTS = [
     f"build/{test_group}_quarter_unittests.txt"
-    for test_group in ['first', 'second', 'third', 'fourth']
+    for test_group in ["first", "second", "third", "fourth"]
 ]
 # External files or executables, used as suite selectors, that are created during the build and
 # therefore might not be available when creating a test membership map.
-EXTERNAL_SUITE_SELECTORS = (DEFAULT_BENCHMARK_TEST_LIST, DEFAULT_UNIT_TEST_LIST,
-                            DEFAULT_INTEGRATION_TEST_LIST, DEFAULT_DBTEST_EXECUTABLE,
-                            DEFAULT_LIBFUZZER_TEST_LIST, DEFAULT_PRETTY_PRINTER_TEST_LIST,
-                            *SPLIT_UNITTESTS_LISTS)
+EXTERNAL_SUITE_SELECTORS = (
+    DEFAULT_BENCHMARK_TEST_LIST,
+    DEFAULT_UNIT_TEST_LIST,
+    DEFAULT_INTEGRATION_TEST_LIST,
+    DEFAULT_DBTEST_EXECUTABLE,
+    DEFAULT_LIBFUZZER_TEST_LIST,
+    DEFAULT_PRETTY_PRINTER_TEST_LIST,
+    *SPLIT_UNITTESTS_LISTS,
+)
 
 # Where to look for logging and suite configuration files
 CONFIG_DIR = None
@@ -690,7 +691,7 @@ USE_LEGACY_MULTIVERSION = True
 # Expansions file location
 # in CI, the expansions file is located in the ${workdir}, one dir up
 # from src, the checkout directory
-EXPANSIONS_FILE = "../expansions.yml" if 'CI' in os.environ else "expansions.yml"
+EXPANSIONS_FILE = "../expansions.yml" if "CI" in os.environ else "expansions.yml"
 
 # Symbolizer secrets
 SYMBOLIZER_CLIENT_SECRET = None

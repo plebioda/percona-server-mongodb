@@ -1182,6 +1182,10 @@ if (!isClustered) {
     explainRes = coll.explain("executionStats").remove({_id: "foo"});
     assert.commandWorked(explainRes);
     planStage = getPlanStage(explainRes.executionStats.executionStages, "IDHACK");
+    if (planStage == null) {
+        // post 8.0 EXPRESS handles delete-by-id
+        planStage = getPlanStage(explainRes.executionStats.executionStages, "EXPRESS_DELETE");
+    }
     assert.neq(null, planStage);
 }
 
@@ -1217,9 +1221,13 @@ if (!isClustered) {
         coll.explain("executionStats").remove({_id: "foo"}, {collation: {locale: "en_US"}});
     assert.commandWorked(explainRes);
     planStage = getPlanStage(explainRes.executionStats.executionStages, "IDHACK");
+    if (planStage == null) {
+        // post 8.0 EXPRESS handles delete-by-id
+        planStage = getPlanStage(explainRes.executionStats.executionStages, "EXPRESS_DELETE");
+    }
     assert.neq(null, planStage);
 
-    // Remove on _id should not use idhack stage when query collation does not match collection
+    // Remove on _id should not use express stage when query collation does not match collection
     // default.
     coll = testDb.collation_remove10;
     coll.drop();
@@ -1228,6 +1236,8 @@ if (!isClustered) {
         coll.explain("executionStats").remove({_id: "foo"}, {collation: {locale: "fr_CA"}});
     assert.commandWorked(explainRes);
     planStage = getPlanStage(explainRes.executionStats.executionStages, "IDHACK");
+    assert.eq(null, planStage);
+    planStage = getPlanStage(explainRes.executionStats.executionStages, "EXPRESS_DELETE");
     assert.eq(null, planStage);
 }
 
@@ -1294,6 +1304,10 @@ if (!isClustered) {
     explainRes = coll.explain("executionStats").update({_id: "foo"}, {$set: {other: 99}});
     assert.commandWorked(explainRes);
     planStage = getPlanStage(explainRes.executionStats.executionStages, "IDHACK");
+    if (planStage == null) {
+        // post 8.0 EXPRESS handles update-by-id
+        planStage = getPlanStage(explainRes.executionStats.executionStages, "EXPRESS_UPDATE");
+    }
     assert.neq(null, planStage);
 }
 
@@ -1330,6 +1344,10 @@ if (!isClustered) {
     });
     assert.commandWorked(explainRes);
     planStage = getPlanStage(explainRes.executionStats.executionStages, "IDHACK");
+    if (planStage == null) {
+        // post 8.0 EXPRESS handles update-by-id
+        planStage = getPlanStage(explainRes.executionStats.executionStages, "EXPRESS_UPDATE");
+    }
     assert.neq(null, planStage);
 
     // Update on _id should not use idhack stage when query collation does not match collection
@@ -1342,6 +1360,10 @@ if (!isClustered) {
     });
     assert.commandWorked(explainRes);
     planStage = getPlanStage(explainRes.executionStats.executionStages, "IDHACK");
+    if (planStage == null) {
+        // post 8.0 EXPRESS handles update-by-id
+        planStage = getPlanStage(explainRes.executionStats.executionStages, "EXPRESS_UPDATE");
+    }
     assert.eq(null, planStage);
 }
 
@@ -1766,6 +1788,7 @@ if (!isMongos) {
 // Test that the collection created with the "cloneCollectionAsCapped" command inherits the
 // default collation of the corresponding collection. We skip running this command in a sharded
 // cluster because it isn't supported by mongos.
+// TODO SERVER-85773: Enale below test for sharded clusters.
 if (!isMongos) {
     const clonedColl = testDb.collation_cloned;
 
@@ -1813,7 +1836,7 @@ let err = assert.throws(() => coll.find()
                                   .max({str: "D"})
                                   .collation({locale: "en_US", strength: 2})
                                   .itcount());
-assert.commandFailedWithCode(err, ErrorCodes.NoQueryExecutionPlans);
+assert.commandFailedWithCode(err, [ErrorCodes.NoQueryExecutionPlans, 51173]);
 
 // Even after building an index with the right key pattern, the query should fail since the
 // collations don't match.

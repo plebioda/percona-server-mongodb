@@ -167,18 +167,13 @@ ServiceContext::ConstructorActionRegisterer queryStatsStoreManagerRegisterer{
         // is the number of cpu cores. However, with performance investigation we found that when
         // the size of the partitions was too large, it took too long to copy out and read one
         // partition. We are now capping each partition at 16MB (the largest size a query shape can
-        // be), or smaller if that gives us fewer partitions than we have cores. The size needs to
-        // be cast to a double since we want to round up the number of partitions, and therefore
-        // need to avoid int division.
+        // be. If that gives us fewer partitions than we have cores, we set it to match the
+        // number of cores. The size needs to be cast to a double since we want to round up the
+        // number of partitions, and therefore need to avoid int division.
         size_t numPartitions = std::ceil(double(size) / (16 * 1024 * 1024));
-        // This is our guess at how big a small-ish query shape (+ metrics) would be, but
-        // intentionally not the smallest possible one. The purpose of this constant is to keep us
-        // from making each partition so small that it does not record anything, while still being
-        // small enough to allow us to shrink the overall memory footprint of the data structure if
-        // the user requested that we do so.
-        constexpr double approxEntrySize = 0.004 * 1024 * 1024;  // 4KB
-        if (numPartitions < ProcessInfo::getNumLogicalCores()) {
-            numPartitions = std::ceil(double(size) / (approxEntrySize * 10));
+        auto numLogicalCores = ProcessInfo::getNumLogicalCores();
+        if (numPartitions < numLogicalCores) {
+            numPartitions = numLogicalCores;
         }
 
         globalQueryStatsStoreManager =
@@ -242,6 +237,8 @@ void updateStatistics(const QueryStatsStore::Partition& proofOfLock,
 
     toUpdate.keysExamined.aggregate(snapshot.keysExamined);
     toUpdate.docsExamined.aggregate(snapshot.docsExamined);
+    toUpdate.bytesRead.aggregate(snapshot.bytesRead);
+    toUpdate.readTimeMicros.aggregate(snapshot.readTimeMicros);
     toUpdate.workingTimeMillis.aggregate(snapshot.workingTimeMillis);
     toUpdate.hasSortStage.aggregate(snapshot.hasSortStage);
     toUpdate.usedDisk.aggregate(snapshot.usedDisk);
@@ -376,6 +373,8 @@ QueryStatsSnapshot captureMetrics(const OperationContext* opCtx,
         static_cast<uint64_t>(metrics.nreturned.value_or(0)),
         static_cast<uint64_t>(metrics.keysExamined.value_or(0)),
         static_cast<uint64_t>(metrics.docsExamined.value_or(0)),
+        static_cast<uint64_t>(metrics.bytesRead.value_or(0)),
+        metrics.readingTime.value_or(Microseconds(0)).count(),
         metrics.clusterWorkingTime.value_or(Milliseconds(0)).count(),
         metrics.hasSortStage,
         metrics.usedDisk,

@@ -188,6 +188,7 @@ functions:
   "get engflow creds":
     - *get_engflow_key
     - *get_engflow_cert
+    - *f_expansions_write
     - *generate_evergreen_bazelrc
 
   "adjust venv": &adjust_venv
@@ -240,6 +241,30 @@ functions:
       bucket: mciuploads
       local_file: src/mongo-binaries.tgz
 
+  "fetch jstestshell": &fetch_jstestshell
+    command: s3.get
+    display_name: "fetch jstestshell"
+    params:
+      aws_key: ${aws_key}
+      aws_secret: ${aws_secret}
+      remote_file: ${mongo_jstestshell}
+      bucket: mciuploads
+      local_file: src/mongodb-jstestshell.tgz
+      optional: true
+
+  "write mongo binary URL to downstream_expansions.yml": &echo_mongo_binary_url
+    command: subprocess.exec
+    params:
+      binary: bash
+      args:
+        - "./src/evergreen/write_mongo_binary_url_to_downstream_expansions.sh"
+
+  "set downstreams expansions": &downstream_expansions
+    command: downstream_expansions.set
+    display_name: "set downstream expansions"
+    params:
+      file: downstream_expansions.yaml
+
   "extract binaries": &extract_binaries
     command: subprocess.exec
     display_name: "extract binaries"
@@ -249,6 +274,20 @@ functions:
         - "src/evergreen/run_python_script.sh"
         - "evergreen/functions/binaries_extract.py"
         - "--tarball=mongo-binaries.tgz"
+        - "--extraction-command=${decompress}"
+        - "--change-dir=${extraction_change_dir}"
+        - "${move_outputs}"
+
+  "extract jstestshell": &extract_jstestshell
+    command: subprocess.exec
+    display_name: "extract jstestshell"
+    params:
+      binary: bash
+      args:
+        - "src/evergreen/run_python_script.sh"
+        - "evergreen/functions/binaries_extract.py"
+        - "--optional"
+        - "--tarball=mongodb-jstestshell.tgz"
         - "--extraction-command=${decompress}"
         - "--change-dir=${extraction_change_dir}"
         - "${move_outputs}"
@@ -285,6 +324,7 @@ functions:
   "get and apply version expansions":
     - *get_version_expansions
     - *apply_version_expansions
+    - *f_expansions_write
 
   "fetch benchmarks": &fetch_benchmarks
     command: s3.get
@@ -350,7 +390,7 @@ functions:
     command: keyval.inc
     display_name: "get buildnumber"
     params:
-      key: "${build_variant}_master"
+      key: "${build_variant}_${project}"
       destination: "builder_num"
 
   "run diskstats": &run_diskstats
@@ -587,6 +627,7 @@ functions:
       display_name: Pip Requirements
 
   "run clang tidy": &run_clang_tidy
+    - *f_expansions_write
     - command: subprocess.exec
       params:
         binary: bash
@@ -656,7 +697,9 @@ functions:
     - *fetch_venv
     - *adjust_venv
     - *fetch_binaries
+    - *fetch_jstestshell
     - *extract_binaries
+    - *extract_jstestshell
     - *get_buildnumber
     - *f_expansions_write
     - *set_up_credentials
@@ -672,6 +715,16 @@ functions:
     - *collect_system_resource_info
     - *collect_ulimit_info
 
+  "write and set downstream expansions":
+    - *f_expansions_write
+    - *fetch_artifacts
+    - *kill_processes
+    - *cleanup_environment
+    - *fetch_venv
+    - *adjust_venv
+    - *echo_mongo_binary_url
+    - *downstream_expansions
+
   "do setup for antithesis":
     - command: s3.get
       params:
@@ -680,6 +733,7 @@ functions:
         remote_file: ${mongo_debugsymbols}
         bucket: mciuploads
         local_file: src/mongo-debugsymbols.${ext|tgz}
+    - *f_expansions_write
     - command: subprocess.exec
       params:
         binary: bash
@@ -951,9 +1005,12 @@ functions:
     - *generate_resmoke_tasks_config
 
   "initialize multiversion tasks": &initialize_multiversion_tasks
-    - command: shell.exec
+    - *f_expansions_write
+    - command: subprocess.exec
       params:
-        script: "echo 'noop'"
+        binary: echo
+        args:
+          - "noop"
 
   "generate resmoke tasks":
     - *fetch_artifacts
@@ -962,6 +1019,7 @@ functions:
     - *cleanup_environment
     - *get_version_expansions
     - *apply_version_expansions
+    - *f_expansions_write
     - *fetch_venv
     - *adjust_venv
     - *f_expansions_write
@@ -1037,6 +1095,7 @@ functions:
     - *configure_evergreen_api_credentials
     - *determine_task_timeout
     - *update_task_timeout_expansions
+    - *f_expansions_write
     - *update_task_timeout
     - *f_expansions_write
     - *sign_macos_dev_binaries
@@ -1159,6 +1218,19 @@ functions:
         updates:
           - key: install_dir
             value: ${install_dir}
+    - *f_expansions_write
+    - command: s3.put
+      display_name: "attach bazel scons diff file"
+      params:
+        optional: true
+        aws_key: ${aws_key}
+        aws_secret: ${aws_secret}
+        local_file: src/build/merged_diff.md
+        remote_file: ${project}/${build_variant}/${revision}/bazel-scons-diff-${task_id}-${execution}.md
+        bucket: mciuploads
+        permissions: public-read
+        content_type: text/markdown
+        display_name: Bazel-SCons Diff File
 
   # This is only used to simulate local dev compilation. Do NOT use for anything else.
   "scons raw compile":
@@ -1174,7 +1246,34 @@ functions:
         args:
           - "src/evergreen/scons_raw_compile.sh"
 
+  "bazel scons diff":
+    - *get_version_expansions
+    - *apply_version_expansions
+    - *f_expansions_write
+    - *scons_splunk
+    - command: subprocess.exec
+      display_name: "bazel scons diff"
+      type: test
+      params:
+        binary: bash
+        args:
+          - "src/evergreen/bazel_scons_diff.sh"
+
+  "attach bazel scons diff file":
+    command: s3.put
+    params:
+      optional: true
+      aws_key: ${aws_key}
+      aws_secret: ${aws_secret}
+      local_file: src/build/merged_diff.md
+      remote_file: ${project}/${build_variant}/${revision}/bazel-scons-diff-${task_id}-${execution}.md
+      bucket: mciuploads
+      permissions: public-read
+      content_type: text/plain
+      display_name: Bazel-SCons Diff File
+
   "fetch bazel":
+    - *f_expansions_write
     - command: subprocess.exec
       display_name: "fetch bazel"
       type: test
@@ -1186,12 +1285,13 @@ functions:
   "verify build output present":
     # Args:
     #   $output (string) - relpath to the file-to-be-checked
-    - command: shell.exec
+    - *f_expansions_write
+    - command: subprocess.exec
       display_name: "verify build output present"
       params:
-        working_dir: src
-        script: |
-          test -f ${output}
+        binary: bash
+        args:
+          - "src/evergreen/verify_build_output_present.sh"
 
   "bazel compile sh": &bazel_compile_sh
     command: subprocess.exec
@@ -1270,6 +1370,7 @@ functions:
       display_name: version expansions
 
   "generate and upload version expansions":
+    - *f_expansions_write
     - *generate_version_expansions
     - *upload_version_expansions
 
@@ -1311,6 +1412,7 @@ functions:
       display_name: resmoke constants
 
   "generate and upload resmoke constants":
+    - *f_expansions_write
     - *generate_resmoke_constants
     - *archive_resmoke_constants
     - *upload_remoske_constants
@@ -1656,11 +1758,12 @@ functions:
           - "./src/evergreen/packager.py_run.sh"
 
   "do watchdog setup":
-    command: subprocess.exec
-    params:
-      binary: bash
-      args:
-        - "./src/evergreen/do_watchdog_setup.sh"
+    - *f_expansions_write
+    - command: subprocess.exec
+      params:
+        binary: bash
+        args:
+          - "./src/evergreen/do_watchdog_setup.sh"
 
   "run package test":
     - *get_version_expansions
@@ -2287,6 +2390,7 @@ functions:
       file_location: ${report_file|src/report.json}
 
   "combine build metrics":
+    - *f_expansions_write
     - command: subprocess.exec
       params:
         binary: bash
@@ -2294,6 +2398,7 @@ functions:
         args:
           - "src/evergreen/run_python_script.sh"
           - "site_scons/site_tools/build_metrics/combine_metrics_unittest.py"
+    - *f_expansions_write
     - command: subprocess.exec
       params:
         binary: bash
@@ -2306,6 +2411,7 @@ functions:
           - "--prefix-name=pull_cache"
 
   "print top N metrics":
+    - *f_expansions_write
     - command: subprocess.exec
       params:
         binary: bash
@@ -2349,6 +2455,7 @@ functions:
         content_type: application/gzip
         display_name: Metrics JSON
 
+    - *f_expansions_write
     - command: subprocess.exec
       params:
         binary: bash
@@ -2411,12 +2518,25 @@ functions:
         optional: true
         aws_key: ${aws_key}
         aws_secret: ${aws_secret}
-        local_file: src/docker_compose.tgz
+        local_file: docker_compose.tgz
         remote_file: ${project}/${build_variant}/${revision}/docker-compose-${task_id}-${execution}.tgz
         bucket: mciuploads
         permissions: public-read
         content_type: application/gzip
         display_name: Docker Compose
+
+  "attach docker logs":
+    command: s3.put
+    params:
+      optional: true
+      aws_key: ${aws_key}
+      aws_secret: ${aws_secret}
+      local_file: src/docker_logs.txt
+      remote_file: ${project}/${build_variant}/${revision}/docker-logs-${task_id}-${execution}.txt
+      bucket: mciuploads
+      permissions: public-read
+      content_type: text/plain
+      display_name: Docker Logs
 
   "attach task errors":
     command: s3.put
@@ -2492,21 +2612,30 @@ functions:
           - "./src/evergreen/antithesis_image_build_and_push.sh"
 
   "cleanup external auth OIDC resources":
+    - *f_expansions_write
     - command: subprocess.exec
       params:
         binary: bash
         args:
           - "./src/evergreen/external_auth_gcp_teardown.sh"
+    - *f_expansions_write
     - command: subprocess.exec
       params:
         binary: bash
         args:
           - "./src/evergreen/external_auth_azure_teardown.sh"
+    - *f_expansions_write
     - command: subprocess.exec
       params:
         binary: bash
         args:
           - "./src/evergreen/external_auth_oidc_teardown.sh"
+    - *f_expansions_write
+    - command: subprocess.exec
+      params:
+        binary: bash
+        args:
+          - "./src/evergreen/sasl_windows_cyrussasl_teardown.sh"
 
   "do scons setup":
     - command: manifest.load

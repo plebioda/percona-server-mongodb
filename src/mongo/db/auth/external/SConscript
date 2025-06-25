@@ -5,26 +5,26 @@ Import("get_option")
 env = env.Clone()
 
 env.Library(
-    target='externalsaslauth',
+    target="externalsaslauth",
     source=[
-        'awsiam_server_mechanism.cpp',
-        'cyrus_sasl_server_session.cpp',
-        'external_sasl_authentication_session.cpp',
-        'gssapi_server_mechanism.cpp',
+        "awsiam_server_mechanism.cpp",
+        "cyrus_sasl_server_session.cpp",
+        "external_sasl_authentication_session.cpp",
+        "gssapi_server_mechanism.cpp",
     ],
     LIBDEPS=[
-        '$BUILD_DIR/mongo/db/auth/saslauth',
+        "$BUILD_DIR/mongo/db/auth/saslauth",
     ],
     LIBDEPS_PRIVATE=[
-        '$BUILD_DIR/mongo/client/sasl_aws_common' if get_option('ssl') == 'on' else [],
-        '$BUILD_DIR/mongo/db/ldap/ldapmanager',
-        '$BUILD_DIR/mongo/db/ldap_options',
-        '$BUILD_DIR/mongo/db/service_context',
-        '$BUILD_DIR/mongo/util/net/http_client',
+        "$BUILD_DIR/mongo/client/sasl_aws_common" if get_option("ssl") == "on" else [],
+        "$BUILD_DIR/mongo/db/ldap/ldapmanager",
+        "$BUILD_DIR/mongo/db/ldap_options",
+        "$BUILD_DIR/mongo/db/service_context",
+        "$BUILD_DIR/mongo/util/net/http_client",
     ],
     SYSLIBDEPS=[
-        'gssapi_krb5',
-        'ldap',
-        'sasl2',
+        "gssapi_krb5",
+        "ldap",
+        "sasl2",
     ],
 )

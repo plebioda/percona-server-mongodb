@@ -162,7 +162,7 @@ bool runAggregationMapReduce(OperationContext* opCtx,
         ? SerializationContext::stateCommandRequest(vts->hasTenantId(), vts->isFromAtlasProxy())
         : SerializationContext::stateStorageRequest();
     auto parsedMr = MapReduceCommandRequest::parse(
-        IDLParserContext("mapReduce", false /* apiStrict */, vts, dbName.tenantId(), sc), cmd);
+        IDLParserContext("mapReduce", vts, dbName.tenantId(), sc), cmd);
 
     auto curop = CurOp::get(opCtx);
     curop->beginQueryPlanningTimer();
@@ -190,7 +190,7 @@ bool runAggregationMapReduce(OperationContext* opCtx,
 
         PlanSummaryStats planSummaryStats;
         explainer.getSummaryStats(&planSummaryStats);
-        CurOp::get(opCtx)->debug().setPlanSummaryMetrics(planSummaryStats);
+        CurOp::get(opCtx)->debug().setPlanSummaryMetrics(std::move(planSummaryStats));
 
         if (!expCtx->explain) {
             if (parsedMr.getOutOptions().getOutputType() == OutputType::InMemory) {

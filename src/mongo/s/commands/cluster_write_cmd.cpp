@@ -501,7 +501,7 @@ bool ClusterWriteCmd::runExplainWithoutShardKey(OperationContext* opCtx,
                 ClusterQueryWithoutShardKey clusterQueryWithoutShardKeyCommand(
                     ClusterExplain::wrapAsExplain(req.toBSON(), verbosity));
                 const auto explainClusterQueryWithoutShardKeyCmd = ClusterExplain::wrapAsExplain(
-                    clusterQueryWithoutShardKeyCommand.toBSON({}), verbosity);
+                    clusterQueryWithoutShardKeyCommand.toBSON(), verbosity);
                 auto opMsg = OpMsgRequestBuilder::create(
                     vts, nss.dbName(), explainClusterQueryWithoutShardKeyCmd);
                 return CommandHelpers::runCommandDirectly(opCtx, opMsg).getOwned();
@@ -517,7 +517,7 @@ bool ClusterWriteCmd::runExplainWithoutShardKey(OperationContext* opCtx,
                         .toString(),
                     write_without_shard_key::targetDocForExplain);
                 const auto explainClusterWriteWithoutShardKeyCmd = ClusterExplain::wrapAsExplain(
-                    clusterWriteWithoutShardKeyCommand.toBSON({}), verbosity);
+                    clusterWriteWithoutShardKeyCommand.toBSON(), verbosity);
 
                 auto opMsg = OpMsgRequestBuilder::create(
                     vts, nss.dbName(), explainClusterWriteWithoutShardKeyCmd);
@@ -585,14 +585,6 @@ bool ClusterWriteCmd::InvocationBase::runImpl(OperationContext* opCtx,
     // If 'batchedRequest' has any let parameters, evaluate them and stash them back on the original
     // request.
     batchedRequest.evaluateAndReplaceLetParams(opCtx);
-
-    // "Fire and forget" batch writes requested by the external clients need to be upgraded
-    // to w: 1 for potential writeErrors to be properly managed.
-    if (auto wc = opCtx->getWriteConcern();
-        !wc.requiresWriteAcknowledgement() && !opCtx->inMultiDocumentTransaction()) {
-        wc.w = 1;
-        opCtx->setWriteConcern(wc);
-    }
 
     // Record the namespace that the write must be run on. It may differ from the request if this is
     // a timeseries collection.

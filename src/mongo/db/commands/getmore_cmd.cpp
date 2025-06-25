@@ -70,6 +70,7 @@
 #include "mongo/db/db_raii.h"
 #include "mongo/db/logical_time.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/op_observer/op_observer.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/change_stream_invalidation_info.h"
 #include "mongo/db/query/canonical_query.h"
@@ -86,6 +87,7 @@
 #include "mongo/db/query/query_stats/query_stats.h"
 #include "mongo/db/read_concern.h"
 #include "mongo/db/read_concern_support_result.h"
+#include "mongo/db/repl/oplog_entry.h"
 #include "mongo/db/repl/optime.h"
 #include "mongo/db/repl/read_concern_args.h"
 #include "mongo/db/repl/read_concern_level.h"
@@ -100,6 +102,7 @@
 #include "mongo/db/stats/top.h"
 #include "mongo/db/storage/recovery_unit.h"
 #include "mongo/db/tenant_id.h"
+#include "mongo/db/transaction/transaction_participant.h"
 #include "mongo/db/transaction_resources.h"
 #include "mongo/idl/idl_parser.h"
 #include "mongo/logv2/log.h"
@@ -456,7 +459,7 @@ public:
                 // Don't check document size here before appending, since we always want to make
                 // progress.
                 nextBatch->append(obj);
-                docUnitsReturned->observeOne(objSize);
+                docUnitsReturned->observeOneDoc(objSize);
                 *numResults = 1;
 
                 // As soon as we get a result, this operation no longer waits.
@@ -546,7 +549,7 @@ public:
                               "getMore command executor error",
                               "error"_attr = exception.toStatus(),
                               "stats"_attr = redact(stats),
-                              "cmd"_attr = cmd.toBSON({}));
+                              "cmd"_attr = cmd.toBSON());
 
                 exception.addContext("Executor error during getMore");
                 throw;
@@ -780,7 +783,7 @@ public:
             exec->getPlanExplainer().getSummaryStats(&postExecutionStats);
             postExecutionStats.totalKeysExamined -= preExecutionStats.totalKeysExamined;
             postExecutionStats.totalDocsExamined -= preExecutionStats.totalDocsExamined;
-            curOp->debug().setPlanSummaryMetrics(postExecutionStats);
+            curOp->debug().setPlanSummaryMetrics(std::move(postExecutionStats));
 
             // We do not report 'execStats' for aggregation or other cursors with the
             // 'kLocksInternally' policy, both in the original request and subsequent getMore. It
@@ -850,6 +853,24 @@ public:
         }
 
         void run(OperationContext* opCtx, rpc::ReplyBuilderInterface* reply) override {
+
+            // Gets the number of write ops in the current multidocument transaction.
+            auto getNumTxnOps = [opCtx]() -> boost::optional<size_t> {
+                if (opCtx->inMultiDocumentTransaction()) {
+                    auto participant = TransactionParticipant::get(opCtx);
+                    return participant.getTransactionOperationsForTest().size();
+                }
+                return boost::optional<size_t>{};
+            };
+
+            // Enforces that getMore does not perform any write ops when executing in a transaction.
+            auto invariantIfHasDoneWrites = [&getNumTxnOps, opCtx](boost::optional<size_t> numPre) {
+                if (numPre) {
+                    boost::optional<size_t> numTxnOps = getNumTxnOps();
+                    invariant(numPre == numTxnOps);
+                }
+            };
+
             // Counted as a getMore, not as a command.
             globalOpCounters.gotGetMore();
             auto curOp = CurOp::get(opCtx);
@@ -898,6 +919,10 @@ public:
             const auto isLinearizableReadConcern = cursorPin->getReadConcernArgs().getLevel() ==
                 repl::ReadConcernLevel::kLinearizableReadConcern;
 
+            // If in a multi-document transaction, save the size of transactionOperations for
+            // later checking of whether this invocation performed a write.
+            boost::optional<size_t> numTxnOpsPre = getNumTxnOps();
+
             acquireLocksAndIterateCursor(opCtx, reply, cursorPin, curOp);
 
             if (MONGO_unlikely(getMoreHangAfterPinCursor.shouldFail())) {
@@ -928,6 +953,9 @@ public:
                     "waitBeforeUnpinningOrDeletingCursorAfterGetMoreBatch");
             }
 
+            // getMore must not write if running inside a multi-document transaction.
+            invariantIfHasDoneWrites(numTxnOpsPre);
+
             if (getTestCommandsEnabled()) {
                 validateResult(opCtx, reply, nss.tenantId());
             }
@@ -940,7 +968,6 @@ public:
 
             // We need to copy the serialization context from the request to the reply object
             CursorGetMoreReply::parse(IDLParserContext("CursorGetMoreReply",
-                                                       false /* apiStrict */,
                                                        auth::ValidatedTenancyScope::get(opCtx),
                                                        tenantId,
                                                        SerializationContext::stateCommandReply(

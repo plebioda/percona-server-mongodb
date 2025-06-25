@@ -48,7 +48,6 @@
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/multitenancy_gen.h"
 #include "mongo/db/namespace_string.h"
-#include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/server_options.h"
 #include "mongo/logv2/redaction.h"
 #include "mongo/s/catalog/type_index_catalog.h"
@@ -319,12 +318,9 @@ StatusWith<MutableOplogEntry> MutableOplogEntry::parse(const BSONObj& object) {
             ? boost::make_optional(auth::ValidatedTenancyScopeFactory::create(
                   *tid, auth::ValidatedTenancyScopeFactory::TrustedForInnerOpMsgRequestTag{}))
             : boost::none;
-        oplogEntry.parseProtected(IDLParserContext("OplogEntryBase",
-                                                   false /* apiStrict */,
-                                                   vts,
-                                                   tid,
-                                                   SerializationContext::stateDefault()),
-                                  object);
+        oplogEntry.parseProtected(
+            IDLParserContext("OplogEntryBase", vts, tid, SerializationContext::stateDefault()),
+            object);
         return oplogEntry;
     } catch (...) {
         return exceptionToStatus();
@@ -383,12 +379,8 @@ DurableOplogEntry::DurableOplogEntry(BSONObj rawInput) : _raw(std::move(rawInput
         ? boost::make_optional(auth::ValidatedTenancyScopeFactory::create(
               *tid, auth::ValidatedTenancyScopeFactory::TrustedForInnerOpMsgRequestTag{}))
         : boost::none;
-    parseProtected(IDLParserContext("OplogEntryBase",
-                                    false /* apiStrict */,
-                                    vts,
-                                    tid,
-                                    SerializationContext::stateDefault()),
-                   _raw);
+    parseProtected(
+        IDLParserContext("OplogEntryBase", vts, tid, SerializationContext::stateDefault()), _raw);
 
     // Parse command type from 'o' and 'o2' fields.
     if (isCommand()) {

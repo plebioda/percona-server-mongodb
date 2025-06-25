@@ -119,7 +119,9 @@ class EchoCommand final : public TypedCommand<EchoCommand> {
 public:
     struct Request {
         static constexpr auto kCommandName = "echo"_sd;
-        static Request parse(const IDLParserContext&, const OpMsgRequest& request) {
+        static Request parse(const IDLParserContext&,
+                             const OpMsgRequest& request,
+                             DeserializationContext* dctx = nullptr) {
             return Request{request, request.parseDbName()};
         }
 
@@ -268,7 +270,7 @@ public:
             auto optDebugLevel = cmd.getDebugLevel();
 
             if (optDebugLevel && (severity != MessageSeverityEnum::kDebug)) {
-                auto obj = cmd.toBSON({});
+                auto obj = cmd.toBSON();
                 LOGV2_DEBUG(5060599,
                             3,
                             "Non-debug severity levels must not pass 'debugLevel'",

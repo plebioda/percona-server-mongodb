@@ -23,8 +23,10 @@ def _check_port(func):
             raise errors.PortAllocationError("Attempted to use a negative port")
 
         if port > PortAllocator.MAX_PORT:
-            raise errors.PortAllocationError("Exhausted all available ports. Consider decreasing"
-                                             " the number of jobs, or using a lower base port")
+            raise errors.PortAllocationError(
+                "Exhausted all available ports. Consider decreasing"
+                " the number of jobs, or using a lower base port"
+            )
 
         return port
 
@@ -58,7 +60,7 @@ class PortAllocator(object):
 
     @classmethod
     @_check_port
-    def next_fixture_port(cls, job_num):
+    def next_fixture_port(cls, job_num: int) -> int:
         """Return the next port for a fixture to use.
 
         Raises a PortAllocationError if the fixture has requested more
@@ -74,14 +76,15 @@ class PortAllocator(object):
 
             if next_port >= start_port + cls._PORTS_PER_FIXTURE:
                 raise errors.PortAllocationError(
-                    "Fixture has requested more than the %d ports reserved per fixture" %
-                    cls._PORTS_PER_FIXTURE)
+                    "Fixture has requested more than the %d ports reserved per fixture"
+                    % cls._PORTS_PER_FIXTURE
+                )
 
             return next_port
 
     @classmethod
     @_check_port
-    def min_test_port(cls, job_num):
+    def min_test_port(cls, job_num: int) -> int:
         """Return the lowest port that is reserved for use by tests, for specified job.
 
         Raises a PortAllocationError if that port is higher than the
@@ -91,7 +94,7 @@ class PortAllocator(object):
 
     @classmethod
     @_check_port
-    def max_test_port(cls, job_num):
+    def max_test_port(cls, job_num: int) -> int:
         """Return the highest port that is reserved for use by tests, for specified job.
 
         Raises a PortAllocationError if that port is higher than the

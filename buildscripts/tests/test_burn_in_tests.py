@@ -4,28 +4,34 @@ from __future__ import absolute_import
 
 import collections
 import datetime
-from io import StringIO
 import os
-import sys
 import subprocess
+import sys
 import unittest
+from io import StringIO
 
-from mock import Mock, patch, MagicMock
 import yaml
+from mock import MagicMock, Mock, patch
 
 import buildscripts.burn_in_tests as under_test
-from buildscripts.ciconfig.evergreen import parse_evergreen_file, VariantTask
 import buildscripts.resmokelib.parser as _parser
+from buildscripts.ciconfig.evergreen import parse_evergreen_file
 
 _parser.set_run_options()
 
 
 def create_tests_by_task_mock(n_tasks, n_tests):
     return {
-        f"task_{i}_gen": under_test.TaskInfo(display_task_name=f"task_{i}", resmoke_args="", tests=[
-            f"jstests/tests_{j}" for j in range(n_tests)
-        ], require_multiversion_setup=False, distro=f"distro_{i}", suite=f"suite_{i}",
-                                             build_variant="dummy_variant")
+        f"task_{i}_gen": under_test.TaskToBurnInInfo(
+            display_task_name=f"task_{i}",
+            suites=[
+                under_test.SuiteToBurnInInfo(
+                    name=f"suite_{i}",
+                    resmoke_args="",
+                    tests=[f"jstests/tests_{j}" for j in range(n_tests)],
+                ),
+            ],
+        )
         for i in range(n_tasks)
     }
 
@@ -87,8 +93,9 @@ class TestRepeatConfig(unittest.TestCase):
             repeat_config.validate()
 
     def test_validate_with_repeat_min_greater_than_max(self):
-        repeat_config = under_test.RepeatConfig(repeat_tests_max=10, repeat_tests_min=100,
-                                                repeat_tests_secs=15)
+        repeat_config = under_test.RepeatConfig(
+            repeat_tests_max=10, repeat_tests_min=100, repeat_tests_secs=15
+        )
 
         with self.assertRaises(ValueError):
             repeat_config.validate()
@@ -130,8 +137,9 @@ class TestRepeatConfig(unittest.TestCase):
         self.assertNotIn("--repeatSuites", repeat_options)
 
     def test_get_resmoke_repeat_options_secs_min_max(self):
-        repeat_config = under_test.RepeatConfig(repeat_tests_secs=5, repeat_tests_min=2,
-                                                repeat_tests_max=2)
+        repeat_config = under_test.RepeatConfig(
+            repeat_tests_secs=5, repeat_tests_min=2, repeat_tests_max=2
+        )
         repeat_options = repeat_config.generate_resmoke_options()
 
         self.assertIn("--repeatTestsSecs=5", repeat_options)
@@ -171,16 +179,18 @@ class TestSetResmokeCmd(unittest.TestCase):
         repeat_config = under_test.RepeatConfig()
         resmoke_cmds = under_test._set_resmoke_cmd(repeat_config, [])
 
-        self.assertListEqual(resmoke_cmds,
-                             [sys.executable, "buildscripts/resmoke.py", "run", '--repeatSuites=2'])
+        self.assertListEqual(
+            resmoke_cmds, [sys.executable, "buildscripts/resmoke.py", "run", "--repeatSuites=2"]
+        )
 
     def test__set_resmoke_cmd_no_opts(self):
         repeat_config = under_test.RepeatConfig()
         resmoke_args = ["arg1", "arg2"]
 
         resmoke_cmd = under_test._set_resmoke_cmd(repeat_config, resmoke_args)
-        expected_resmoke_cmd = [sys.executable, 'buildscripts/resmoke.py', 'run'
-                                ] + resmoke_args + ['--repeatSuites=2']
+        expected_resmoke_cmd = (
+            [sys.executable, "buildscripts/resmoke.py", "run"] + resmoke_args + ["--repeatSuites=2"]
+        )
 
         self.assertListEqual(expected_resmoke_cmd, resmoke_cmd)
 
@@ -189,14 +199,15 @@ class TestSetResmokeCmd(unittest.TestCase):
         resmoke_args = ["arg1", "arg2"]
 
         resmoke_cmd = under_test._set_resmoke_cmd(repeat_config, resmoke_args)
-        expected_resmoke_cmd = [sys.executable, 'buildscripts/resmoke.py', 'run'
-                                ] + resmoke_args + ['--repeatSuites=3']
+        expected_resmoke_cmd = (
+            [sys.executable, "buildscripts/resmoke.py", "run"] + resmoke_args + ["--repeatSuites=3"]
+        )
 
         self.assertListEqual(expected_resmoke_cmd, resmoke_cmd)
 
 
 class RunTests(unittest.TestCase):
-    @patch(ns('subprocess.check_call'))
+    @patch(ns("subprocess.check_call"))
     def test_run_tests_no_tests(self, check_call_mock):
         tests_by_task = {}
         resmoke_cmd = ["python", "buildscripts/resmoke.py", "run", "--continueOnFailure"]
@@ -205,7 +216,7 @@ class RunTests(unittest.TestCase):
 
         check_call_mock.assert_not_called()
 
-    @patch(ns('subprocess.check_call'))
+    @patch(ns("subprocess.check_call"))
     def test_run_tests_some_test(self, check_call_mock):
         n_tasks = 3
         tests_by_task = create_tests_by_task_mock(n_tasks, 5)
@@ -215,15 +226,15 @@ class RunTests(unittest.TestCase):
 
         self.assertEqual(n_tasks, check_call_mock.call_count)
 
-    @patch(ns('sys.exit'))
-    @patch(ns('subprocess.check_call'))
+    @patch(ns("sys.exit"))
+    @patch(ns("subprocess.check_call"))
     def test_run_tests_tests_resmoke_failure(self, check_call_mock, exit_mock):
         error_code = 42
         n_tasks = 3
         tests_by_task = create_tests_by_task_mock(n_tasks, 5)
         resmoke_cmd = ["python", "buildscripts/resmoke.py", "run", "--continueOnFailure"]
         check_call_mock.side_effect = subprocess.CalledProcessError(error_code, "err1")
-        exit_mock.side_effect = ValueError('exiting')
+        exit_mock.side_effect = ValueError("exiting")
 
         with self.assertRaises(ValueError):
             under_test.run_tests(tests_by_task, resmoke_cmd)
@@ -233,8 +244,11 @@ class RunTests(unittest.TestCase):
 
 
 MEMBERS_MAP = {
-    "test1.js": ["suite1", "suite2"], "test2.js": ["suite1", "suite3"], "test3.js": [],
-    "test4.js": ["suite1", "suite2", "suite3"], "test5.js": ["suite2"]
+    "test1.js": ["suite1", "suite2"],
+    "test2.js": ["suite1", "suite3"],
+    "test3.js": [],
+    "test4.js": ["suite1", "suite2", "suite3"],
+    "test5.js": ["suite2"],
 }
 
 SUITE1 = Mock()
@@ -281,8 +295,9 @@ class CreateExecutorList(unittest.TestCase):
 
     @patch(RESMOKELIB + ".testing.suite.Suite")
     @patch(RESMOKELIB + ".suitesconfig.get_named_suites")
-    def test_create_executor_list_ignores_dbtest_suite(self, mock_get_named_suites,
-                                                       mock_suite_class):
+    def test_create_executor_list_ignores_dbtest_suite(
+        self, mock_get_named_suites, mock_suite_class
+    ):
         mock_get_named_suites.return_value = ["dbtest"]
 
         under_test.create_executor_list([], [])
@@ -293,9 +308,8 @@ def create_variant_task_mock(task_name, suite_name, distro="distro"):
     variant_task = MagicMock()
     variant_task.name = task_name
     variant_task.generated_task_name = task_name
-    variant_task.get_suite_name.return_value = suite_name
-    variant_task.resmoke_args = f"--suites={suite_name}"
-    variant_task.require_multiversion_setup.return_value = False
+    variant_task.get_suite_names.return_value = [suite_name]
+    variant_task.combined_suite_to_resmoke_args_map = {suite_name: f"--suites={suite_name}"}
     variant_task.run_on = [distro]
     return variant_task
 
@@ -303,11 +317,9 @@ def create_variant_task_mock(task_name, suite_name, distro="distro"):
 class TestTaskInfo(unittest.TestCase):
     def test_non_generated_task(self):
         suite_name = "suite_1"
-        distro_name = "distro_1"
-        variant = "build_variant"
         evg_conf_mock = MagicMock()
         evg_conf_mock.get_task.return_value.is_generate_resmoke_task = False
-        task_mock = create_variant_task_mock("task 1", suite_name, distro_name)
+        task_mock = create_variant_task_mock("task 1", suite_name)
         test_list = [f"test{i}.js" for i in range(3)]
         tests_by_suite = {
             suite_name: test_list,
@@ -315,91 +327,11 @@ class TestTaskInfo(unittest.TestCase):
             "suite 3": [f"test{i}.js" for i in range(2)],
         }
 
-        task_info = under_test.TaskInfo.from_task(task_mock, tests_by_suite, evg_conf_mock, variant)
+        task_info = under_test.TaskToBurnInInfo.from_task(task_mock, tests_by_suite)
 
-        self.assertIn(suite_name, task_info.resmoke_args)
+        self.assertIn(suite_name, task_info.suites[0].name)
         for test in test_list:
-            self.assertIn(test, task_info.tests)
-        self.assertFalse(task_info.require_multiversion_setup)
-        self.assertEqual(distro_name, task_info.distro)
-
-    def test_generated_task_no_large_on_task(self):
-        suite_name = "suite_1"
-        distro_name = "distro_1"
-        variant = "build_variant"
-        evg_conf_mock = MagicMock()
-        task_def_mock = evg_conf_mock.get_task.return_value
-        task_def_mock.is_generate_resmoke_task = True
-        task_def_mock.generate_resmoke_tasks_command = {"vars": {}}
-        task_mock = create_variant_task_mock("task 1", suite_name, distro_name)
-        test_list = [f"test{i}.js" for i in range(3)]
-        tests_by_suite = {
-            suite_name: test_list,
-            "suite 2": [f"test{i}.js" for i in range(1)],
-            "suite 3": [f"test{i}.js" for i in range(2)],
-        }
-
-        task_info = under_test.TaskInfo.from_task(task_mock, tests_by_suite, evg_conf_mock, variant)
-
-        self.assertIn(suite_name, task_info.resmoke_args)
-        for test in test_list:
-            self.assertIn(test, task_info.tests)
-        self.assertFalse(task_info.require_multiversion_setup)
-        self.assertEqual(distro_name, task_info.distro)
-
-    def test_generated_task_no_large_on_build_variant(self):
-        suite_name = "suite_1"
-        distro_name = "distro_1"
-        variant = "build_variant"
-        evg_conf_mock = MagicMock()
-        task_def_mock = evg_conf_mock.get_task.return_value
-        task_def_mock.is_generate_resmoke_task = True
-        task_def_mock.generate_resmoke_tasks_command = {"vars": {"use_large_distro": True}}
-        task_mock = create_variant_task_mock("task 1", suite_name, distro_name)
-        test_list = [f"test{i}.js" for i in range(3)]
-        tests_by_suite = {
-            suite_name: test_list,
-            "suite 2": [f"test{i}.js" for i in range(1)],
-            "suite 3": [f"test{i}.js" for i in range(2)],
-        }
-
-        task_info = under_test.TaskInfo.from_task(task_mock, tests_by_suite, evg_conf_mock, variant)
-
-        self.assertIn(suite_name, task_info.resmoke_args)
-        for test in test_list:
-            self.assertIn(test, task_info.tests)
-        self.assertFalse(task_info.require_multiversion_setup)
-        self.assertEqual(distro_name, task_info.distro)
-
-    def test_generated_task_large_distro(self):
-        suite_name = "suite_1"
-        distro_name = "distro_1"
-        large_distro_name = "large_distro_1"
-        variant = "build_variant"
-        evg_conf_mock = MagicMock()
-        task_def_mock = evg_conf_mock.get_task.return_value
-        task_def_mock.is_generate_resmoke_task = True
-        task_def_mock.generate_resmoke_tasks_command = {"vars": {"use_large_distro": True}}
-        evg_conf_mock.get_variant.return_value.raw = {
-            "expansions": {
-                "large_distro_name": large_distro_name
-            }
-        }  # yapf: disable
-        task_mock = create_variant_task_mock("task 1", suite_name, distro_name)
-        test_list = [f"test{i}.js" for i in range(3)]
-        tests_by_suite = {
-            suite_name: test_list,
-            "suite 2": [f"test{i}.js" for i in range(1)],
-            "suite 3": [f"test{i}.js" for i in range(2)],
-        }
-
-        task_info = under_test.TaskInfo.from_task(task_mock, tests_by_suite, evg_conf_mock, variant)
-
-        self.assertIn(suite_name, task_info.resmoke_args)
-        for test in test_list:
-            self.assertIn(test, task_info.tests)
-        self.assertFalse(task_info.require_multiversion_setup)
-        self.assertEqual(large_distro_name, task_info.distro)
+            self.assertIn(test, task_info.suites[0].tests)
 
 
 class TestCreateTaskList(unittest.TestCase):
@@ -418,8 +350,9 @@ class TestCreateTaskList(unittest.TestCase):
         }
         exclude_tasks = []
 
-        task_list = under_test.create_task_list(evg_conf_mock, variant, tests_by_suite,
-                                                exclude_tasks)
+        task_list = under_test.create_task_list(
+            evg_conf_mock, variant, tests_by_suite, exclude_tasks
+        )
 
         self.assertIn("task 1", task_list)
         self.assertIn("task 2", task_list)
@@ -438,16 +371,15 @@ class TestCreateTaskList(unittest.TestCase):
         }
         exclude_tasks = []
 
-        task_list = under_test.create_task_list(evg_conf_mock, variant, tests_by_suite,
-                                                exclude_tasks)
+        task_list = under_test.create_task_list(
+            evg_conf_mock, variant, tests_by_suite, exclude_tasks
+        )
 
         self.assertIn("task 1", task_list)
         task_info = task_list["task 1"]
-        self.assertIn("suite_1", task_info.resmoke_args)
+        self.assertIn("suite_1", task_info.suites[0].resmoke_args)
         for i in range(3):
-            self.assertIn(f"test{i}.js", task_info.tests)
-        self.assertFalse(task_info.require_multiversion_setup)
-        self.assertEqual("distro 1", task_info.distro)
+            self.assertIn(f"test{i}.js", task_info.suites[0].tests)
 
     def test_create_task_list_with_excludes(self):
         variant = "variant name"
@@ -464,8 +396,9 @@ class TestCreateTaskList(unittest.TestCase):
         }
         exclude_tasks = ["task 2"]
 
-        task_list = under_test.create_task_list(evg_conf_mock, variant, tests_by_suite,
-                                                exclude_tasks)
+        task_list = under_test.create_task_list(
+            evg_conf_mock, variant, tests_by_suite, exclude_tasks
+        )
 
         self.assertIn("task 1", task_list)
         self.assertNotIn("task 2", task_list)
@@ -560,7 +493,7 @@ class TestLocalFileChangeDetector(unittest.TestCase):
 
 
 class TestYamlBurnInExecutor(unittest.TestCase):
-    @patch('sys.stdout', new_callable=StringIO)
+    @patch("sys.stdout", new_callable=StringIO)
     def test_found_tasks_should_be_reported_as_yaml(self, stdout):
         n_tasks = 5
         n_tests = 3
@@ -573,19 +506,3 @@ class TestYamlBurnInExecutor(unittest.TestCase):
         results = yaml.safe_load(yaml_raw)
         self.assertEqual(n_tasks, len(results["discovered_tasks"]))
         self.assertEqual(n_tests, len(results["discovered_tasks"][0]["test_list"]))
-
-
-class TestBurnInTestsOutput(unittest.TestCase):
-    def test_valid_yaml(self):
-        process = subprocess.run([
-            sys.executable, "buildscripts/burn_in_tests.py", "run", "--build-variant",
-            "enterprise-rhel-80-64-bit-dynamic-classic-engine", "--yaml", "--evg-project-file",
-            "etc/evergreen.yml"
-        ], text=True, capture_output=True)
-        output = process.stdout
-        self.assertEquals(0, process.returncode)
-
-        try:
-            yaml.safe_load(output)
-        except Exception:
-            self.fail(msg="burn_in_tests.py does not output valid yaml.")

@@ -154,7 +154,7 @@ intrusive_ptr<Expression> Expression::parseObject(ExpressionContext* const expCt
                                                   BSONObj obj,
                                                   const VariablesParseState& vps) {
     if (obj.isEmpty()) {
-        return ExpressionObject::create(expCtx, {});
+        return ExpressionConstant::create(expCtx, Value(Document{}));
     }
 
     if (obj.firstElementFieldName()[0] == '$') {
@@ -4899,9 +4899,10 @@ ValueSet arrayToSet(const Value& val, const ValueComparator& valueComparator) {
     return valueSet;
 }
 
-ValueUnorderedSet arrayToUnorderedSet(const Value& val, const ValueComparator& valueComparator) {
+ValueFlatUnorderedSet arrayToUnorderedSet(const Value& val,
+                                          const ValueComparator& valueComparator) {
     const vector<Value>& array = val.getArray();
-    ValueUnorderedSet valueSet = valueComparator.makeUnorderedValueSet();
+    ValueFlatUnorderedSet valueSet = valueComparator.makeFlatUnorderedValueSet();
     valueSet.insert(array.begin(), array.end());
     return valueSet;
 }
@@ -5046,8 +5047,8 @@ void ExpressionSetEquals::validateArguments(const ExpressionVector& args) const 
 }
 
 namespace {
-bool setEqualsHelper(const ValueUnorderedSet& lhs,
-                     const ValueUnorderedSet& rhs,
+bool setEqualsHelper(const ValueFlatUnorderedSet& lhs,
+                     const ValueFlatUnorderedSet& rhs,
                      const ValueComparator& valueComparator) {
     if (lhs.size() != rhs.size()) {
         return false;
@@ -5071,7 +5072,7 @@ Value ExpressionSetEquals::evaluate(const Document& root, Variables* variables) 
                 str::stream() << "All operands of $setEquals must be arrays. " << (index + 1)
                               << "-th argument is of type: " << typeName(entry.getType()),
                 entry.isArray());
-        ValueUnorderedSet entrySet = valueComparator.makeUnorderedValueSet();
+        ValueFlatUnorderedSet entrySet = valueComparator.makeFlatUnorderedValueSet();
         entrySet.insert(entry.getArray().begin(), entry.getArray().end());
         return entrySet;
     };
@@ -5079,11 +5080,11 @@ Value ExpressionSetEquals::evaluate(const Document& root, Variables* variables) 
     size_t lhsIndex = _cachedConstant ? _cachedConstant->first : 0;
     // The $setEquals expression has at least two children, so accessing the first child without
     // check is fine.
-    ValueUnorderedSet lhs = _cachedConstant ? _cachedConstant->second : evaluateChild(0);
+    ValueFlatUnorderedSet lhs = _cachedConstant ? _cachedConstant->second : evaluateChild(0);
 
     for (size_t i = 0; i < n; i++) {
         if (i != lhsIndex) {
-            ValueUnorderedSet rhs = evaluateChild(i);
+            ValueFlatUnorderedSet rhs = evaluateChild(i);
             if (!setEqualsHelper(lhs, rhs, valueComparator)) {
                 return Value(false);
             }
@@ -5111,7 +5112,7 @@ intrusive_ptr<Expression> ExpressionSetEquals::optimize() {
                     nextEntry.isArray());
 
             if (!_cachedConstant) {
-                _cachedConstant = std::make_pair(i, valueComparator.makeUnorderedValueSet());
+                _cachedConstant = std::make_pair(i, valueComparator.makeFlatUnorderedValueSet());
                 _cachedConstant->second.insert(nextEntry.getArray().begin(),
                                                nextEntry.getArray().end());
             }
@@ -5173,7 +5174,7 @@ const char* ExpressionSetIntersection::getOpName() const {
 /* ----------------------- ExpressionSetIsSubset ---------------------------- */
 
 namespace {
-Value setIsSubsetHelper(const vector<Value>& lhs, const ValueUnorderedSet& rhs) {
+Value setIsSubsetHelper(const vector<Value>& lhs, const ValueFlatUnorderedSet& rhs) {
     // do not shortcircuit when lhs.size() > rhs.size()
     // because lhs can have redundant entries
     for (vector<Value>::const_iterator it = lhs.begin(); it != lhs.end(); ++it) {
@@ -5212,7 +5213,7 @@ Value ExpressionSetIsSubset::evaluate(const Document& root, Variables* variables
 class ExpressionSetIsSubset::Optimized : public ExpressionSetIsSubset {
 public:
     Optimized(ExpressionContext* const expCtx,
-              const ValueUnorderedSet& cachedRhsSet,
+              const ValueFlatUnorderedSet& cachedRhsSet,
               const ExpressionVector& operands)
         : ExpressionSetIsSubset(expCtx), _cachedRhsSet(cachedRhsSet) {
         _children = operands;
@@ -5230,7 +5231,7 @@ public:
     }
 
 private:
-    const ValueUnorderedSet _cachedRhsSet;
+    const ValueFlatUnorderedSet _cachedRhsSet;
 };
 
 intrusive_ptr<Expression> ExpressionSetIsSubset::optimize() {
@@ -8314,15 +8315,6 @@ intrusive_ptr<Expression> ExpressionGetField::parse(ExpressionContext* const exp
             str::stream() << kExpressionName << " requires 'input' to be specified",
             inputExpr);
 
-    if (auto constFieldExpr = dynamic_cast<ExpressionConstant*>(fieldExpr.get()); constFieldExpr) {
-        uassert(5654602,
-                str::stream() << kExpressionName
-                              << " requires 'field' to evaluate to type String, "
-                                 "but got "
-                              << typeName(constFieldExpr->getValue().getType()),
-                constFieldExpr->getValue().getType() == BSONType::String);
-    }
-
     return make_intrusive<ExpressionGetField>(expCtx, fieldExpr, inputExpr);
 }
 
@@ -8352,6 +8344,22 @@ Value ExpressionGetField::evaluate(const Document& root, Variables* variables) c
 }
 
 intrusive_ptr<Expression> ExpressionGetField::optimize() {
+    _children[_kField] = _children[_kField]->optimize();
+    // Technically speaking, this check should be done at the parsing phase but we can't get an
+    // ExpressionConstant until we optimize the expression. So we check this here. If this
+    // expression is not optimized, this check is done at run-time (evaluate()).
+    if (auto constFieldExpr = dynamic_cast<ExpressionConstant*>(_children[_kField].get());
+        constFieldExpr) {
+        uassert(5654602,
+                str::stream() << kExpressionName
+                              << " requires 'field' to evaluate to type String, "
+                                 "but got "
+                              << typeName(constFieldExpr->getValue().getType()),
+                constFieldExpr->getValue().getType() == BSONType::String);
+    }
+
+    _children[_kInput] = _children[_kInput]->optimize();
+
     return intrusive_ptr<Expression>(this);
 }
 
@@ -8359,7 +8367,7 @@ Value ExpressionGetField::serialize(const SerializationOptions& options) const {
     Value fieldValue;
 
     if (auto fieldExprConst = dynamic_cast<ExpressionConstant*>(_children[_kField].get());
-        fieldExprConst) {
+        fieldExprConst && fieldExprConst->getValue().getType() == BSONType::String) {
         auto strPath = fieldExprConst->getValue().getString();
 
         Value maybeRedactedPath{options.serializeFieldPathFromString(strPath)};

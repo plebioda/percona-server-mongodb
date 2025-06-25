@@ -111,6 +111,7 @@
 #include "mongo/s/catalog/sharding_catalog_client.h"
 #include "mongo/s/catalog/type_chunk.h"
 #include "mongo/s/catalog/type_index_catalog_gen.h"
+#include "mongo/s/catalog/type_shard.h"
 #include "mongo/s/catalog_cache_loader.h"
 #include "mongo/s/client/shard.h"
 #include "mongo/s/client/shard_registry.h"
@@ -120,6 +121,7 @@
 #include "mongo/s/shard_key_pattern.h"
 #include "mongo/s/sharding_feature_flags_gen.h"
 #include "mongo/s/sharding_index_catalog_cache.h"
+#include "mongo/s/sharding_state.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/clock_source.h"
 #include "mongo/util/database_name_util.h"
@@ -377,6 +379,18 @@ void replaceShardingIndexCatalogInShardIfNeeded(OperationContext* opCtx,
     }
 }
 
+// Throws if this configShard is currently draining.
+void checkConfigShardIsNotDraining(OperationContext* opCtx) {
+    DBDirectClient dbClient(opCtx);
+    const auto thisShardId = ShardingState::get(opCtx)->shardId();
+    const auto doc = dbClient.findOne(NamespaceString::kConfigsvrShardsNamespace,
+                                      BSON(ShardType::name << thisShardId));
+    uassert(ErrorCodes::ShardNotFound, "Shard has been removed", !doc.isEmpty());
+
+    const auto shardDoc = uassertStatusOK(ShardType::fromBSON(doc));
+    uassert(ErrorCodes::ShardNotFound, "Shard is currently draining", !shardDoc.getDraining());
+}
+
 // Enabling / disabling these fail points pauses / resumes MigrateStatus::_go(), the thread which
 // receives a chunk migration from the donor.
 MONGO_FAIL_POINT_DEFINE(migrateThreadHangAtStep1);
@@ -524,6 +538,39 @@ Status MigrationDestinationManager::start(OperationContext* opCtx,
                                           ScopedReceiveChunk scopedReceiveChunk,
                                           const StartChunkCloneRequest& cloneRequest,
                                           const WriteConcernOptions& writeConcern) {
+    // Wait for the session migration thread and the migrate thread to finish. Do not hold the
+    // _mutex while waiting since it could lead to deadlock. It is safe to join _sessionMigration
+    // and _migrateThreadHandle without holding the _mutex since they are only (re)set in start()
+    // and restoreRecoveredMigrationState() and both of them require a ScopedReceiveChunk which
+    // guarantees that there can only be one start() and restoreRecoveredMigrationState() call at
+    // any given time.
+    if (_sessionMigration && _sessionMigration->joinable()) {
+        LOGV2_DEBUG(8991402,
+                    2,
+                    "Start waiting for the session migration thread for the previous migration to "
+                    "complete before starting a new migration",
+                    "previousMigrationSessionId"_attr = _sessionMigration->getMigrationSessionId(),
+                    "nextMigrationSessionId"_attr = cloneRequest.getSessionId());
+        _sessionMigration->join();
+        LOGV2_DEBUG(8991403,
+                    2,
+                    "Finished waiting for the session migration thread for the previous migration "
+                    "to complete before starting a new migration");
+    }
+    if (_migrateThreadHandle.joinable()) {
+        LOGV2_DEBUG(8991404,
+                    2,
+                    "Start waiting for the migrate thread for the previous migration to "
+                    "complete before starting a new migration",
+                    "previousMigrationId"_attr = _migrationId,
+                    "nextMigrationId"_attr = cloneRequest.getMigrationId());
+        _migrateThreadHandle.join();
+        LOGV2_DEBUG(8991405,
+                    2,
+                    "Finished waiting for the migrate thread for the previous migration to "
+                    "complete before starting a new migration");
+    }
+
     stdx::lock_guard<Latch> lk(_mutex);
     invariant(!_sessionId);
     invariant(!_scopedReceiveChunk);
@@ -566,13 +613,6 @@ Status MigrationDestinationManager::start(OperationContext* opCtx,
     invariant(!_migrateThreadFinishedPromise);
     _migrateThreadFinishedPromise = std::make_unique<SharedPromise<State>>();
 
-    // TODO: If we are here, the migrate thread must have completed, otherwise _active above
-    // would be false, so this would never block. There is no better place with the current
-    // implementation where to join the thread.
-    if (_migrateThreadHandle.joinable()) {
-        _migrateThreadHandle.join();
-    }
-
     _sessionMigration = std::make_unique<SessionCatalogMigrationDestination>(
         _nss, _fromShard, *_sessionId, _cancellationSource.token());
     ShardingStatistics::get(opCtx).countRecipientMoveChunkStarted.addAndFetch(1);
@@ -592,7 +632,27 @@ Status MigrationDestinationManager::restoreRecoveredMigrationState(
     OperationContext* opCtx,
     ScopedReceiveChunk scopedReceiveChunk,
     const MigrationRecipientRecoveryDocument& recoveryDoc) {
-    stdx::lock_guard<Latch> sl(_mutex);
+    // Wait for the migrate thread to finish. Do not hold the _mutex while waiting since it could
+    // lead to deadlock. It is safe to join _migrateThreadHandle without holding the _mutex since it
+    // is only (re)set in start() and restoreRecoveredMigrationState() and both of them require a
+    // ScopedReceiveChunk which guarantees that there can only be one start() and
+    // restoreRecoveredMigrationState() call at any given time. It is not necessary to wait for
+    // session migration thread since by design the recovery doc cannot exist if the session
+    // migration has not finished.
+    if (_migrateThreadHandle.joinable()) {
+        LOGV2_DEBUG(
+            8991406,
+            2,
+            "Start waiting for the existing migrate thread to complete before recovering it",
+            "migrationId"_attr = _migrationId);
+        _migrateThreadHandle.join();
+        LOGV2_DEBUG(
+            8991407,
+            2,
+            "Finished waiting for the existing migrate thread to complete before recovering it");
+    }
+
+    stdx::lock_guard<Latch> lk(_mutex);
     invariant(!_sessionId);
 
     _scopedReceiveChunk = std::move(scopedReceiveChunk);
@@ -612,10 +672,6 @@ Status MigrationDestinationManager::restoreRecoveredMigrationState(
     _migrateThreadFinishedPromise = std::make_unique<SharedPromise<State>>();
 
     LOGV2(6064500, "Recovering migration recipient", "sessionId"_attr = *_sessionId);
-
-    if (_migrateThreadHandle.joinable()) {
-        _migrateThreadHandle.join();
-    }
 
     _migrateThreadHandle = stdx::thread([this, cancellationToken = _cancellationSource.token()]() {
         _migrateThread(cancellationToken, true /* skipToCritSecTaken */);
@@ -852,7 +908,8 @@ MigrationDestinationManager::IndexesAndIdIndex MigrationDestinationManager::getC
     const NamespaceString& nss,
     const ShardId& fromShardId,
     const boost::optional<CollectionRoutingInfo>& cri,
-    boost::optional<Timestamp> afterClusterTime) {
+    boost::optional<Timestamp> afterClusterTime,
+    bool expandSimpleCollation) {
     auto fromShard =
         uassertStatusOK(Grid::get(opCtx)->shardRegistry()->getShard(opCtx, fromShardId));
 
@@ -882,15 +939,22 @@ MigrationDestinationManager::IndexesAndIdIndex MigrationDestinationManager::getC
     for (auto&& spec : indexes.docs) {
         if (spec[IndexDescriptor::kClusteredFieldName]) {
             // The 'clustered' index is implicitly created upon clustered collection creation.
-        } else {
-            donorIndexSpecs.push_back(spec);
-            if (auto indexNameElem = spec[IndexDescriptor::kIndexNameFieldName]) {
-                if (indexNameElem.type() == BSONType::String &&
-                    indexNameElem.valueStringData() == "_id_"_sd) {
-                    donorIdIndexSpec = spec;
-                }
-            }
+            continue;
         }
+
+        if (auto indexNameElem = spec[IndexDescriptor::kIndexNameFieldName];
+            indexNameElem.type() == BSONType::String &&
+            indexNameElem.valueStringData() == "_id_"_sd) {
+            // The _id index always uses the collection's default collation and so there is no need
+            // to add the collation field to attempt to disambiguate.
+            donorIdIndexSpec = spec;
+        } else if (expandSimpleCollation && !spec[IndexDescriptor::kCollationFieldName]) {
+            spec = BSONObjBuilder(std::move(spec))
+                       .append(IndexDescriptor::kCollationFieldName, CollationSpec::kSimpleSpec)
+                       .obj();
+        }
+
+        donorIndexSpecs.push_back(spec);
     }
 
     return {donorIndexSpecs, donorIdIndexSpec};
@@ -1270,6 +1334,12 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* outerOpCtx,
     }};
 
     if (!skipToCritSecTaken) {
+        // If this is a configShard, throw if we are draining. This is to avoid creating the
+        // db/collections on the local catalog once we have already completed cleanup after drain.
+        if (serverGlobalParams.clusterRole.has(ClusterRole::ConfigServer)) {
+            checkConfigShardIsNotDraining(outerOpCtx);
+        }
+
         timing.emplace(outerOpCtx, "to", _nss, _min, _max, 8 /* steps */, _toShard, _fromShard);
 
         LOGV2(22000,
@@ -1575,7 +1645,7 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* outerOpCtx,
             runWithoutSession(outerOpCtx, [&] {
                 auto awaitReplicationResult =
                     repl::ReplicationCoordinator::get(opCtx)->awaitReplication(
-                        opCtx, lastOpApplied, _writeConcern);
+                        opCtx, lastOpApplied, WriteConcerns::kMajorityWriteConcernShardingTimeout);
                 uassertStatusOKWithContext(awaitReplicationResult.status,
                                            awaitReplicationResult.status.codeString());
             });
@@ -1986,6 +2056,9 @@ void MigrationDestinationManager::onStepDown() {
 
     // Wait for the migrateThread to finish.
     if (migrateThreadFinishedFuture) {
+        LOGV2(8991401,
+              "Waiting for migrate thread to finish on stepdown",
+              "migrationId"_attr = _migrationId);
         migrateThreadFinishedFuture->wait();
     }
 }

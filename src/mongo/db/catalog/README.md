@@ -695,7 +695,7 @@ unlikely to complete and are disruptive for concurrent operations.
 
 # Read Operations
 
-External reads via the find, count, distint, aggregation and mapReduce cmds do not take collection
+External reads via the find, count, distinct, aggregation, and mapReduce cmds do not take collection
 MODE_IS locks (mapReduce does continue to take MODE_IX collection locks for writes). Internal
 operations continue to take collection locks. Lock-free reads (only take the global lock in MODE_IS)
 achieve this by establishing consistent in-memory and storage engine on-disk state at the start of
@@ -1373,7 +1373,11 @@ of the merge sort algorithm, and streamed to their final destination.
 
 The maximum amount of memory allowed for an index build is controlled by the
 `maxIndexBuildMemoryUsageMegabytes` server parameter. The sorter is passed this value and uses it to
-regulate when to write a chunk of sorted data out to disk in a temporary file.
+regulate when to write a chunk of sorted data out to disk in a temporary file. The sorter keeps track
+of the chunks of data spilled to disk using one Iterator for each spill. The memory needed for the iterators
+is taken out of the `maxIndexBuildMemoryUsageMegabytes` and it is a percentage of `maxIndexBuildMemoryUsageMegabytes`
+define by the `maxIteratorsMemoryUsagePercentage` server parameter with minimum value enough to store one
+iterator and maximum value 1MB.
 
 _Code spelunking starting points:_
 

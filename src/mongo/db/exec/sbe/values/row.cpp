@@ -562,9 +562,10 @@ static void serializeValueIntoKeyString(key_string::Builder& buf,
             }
             break;
         }
+        case TypeTags::bsonObjectId:
         case TypeTags::ObjectId: {
             buf.appendBool(true);
-            buf.appendBytes(getObjectIdView(val), sizeof(ObjectIdType));
+            buf.appendOID(OID::from(getRawPointerView(val)));
             break;
         }
         case TypeTags::bsonObject: {
@@ -585,11 +586,6 @@ static void serializeValueIntoKeyString(key_string::Builder& buf,
             } else {
                 buf.appendArray(BSONArray(BSONObj(bson)));
             }
-            break;
-        }
-        case TypeTags::bsonObjectId: {
-            buf.appendBool(true);
-            buf.appendOID(OID::from(getRawPointerView(val)));
             break;
         }
         case TypeTags::bsonBinData: {
@@ -842,7 +838,7 @@ int getApproximateSize(TypeTags tag, Value val) {
             result += sizeof(TimeZone);
             break;
         case TypeTags::collator:
-        case TypeTags::inListData:
+        case TypeTags::inList:
             // This type points to a block of memory that it doesn't own, so we don't acccount
             // for the size of this block of memory here.
             break;

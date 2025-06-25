@@ -96,6 +96,7 @@
 #include "mongo/db/query/query_planner_common.h"
 #include "mongo/db/query/query_request_helper.h"
 #include "mongo/db/query/query_solution.h"
+#include "mongo/db/query/search/mongot_cursor.h"
 #include "mongo/db/query/sort_pattern.h"
 #include "mongo/db/query/stage_types.h"
 #include "mongo/db/query/util/set_util.h"
@@ -575,7 +576,7 @@ StatusWith<std::unique_ptr<QuerySolution>> tryToBuildSearchQuerySolution(
         // Build a SearchNode in order to retrieve the search info.
         auto searchNode = SearchNode::getSearchNode(query.cqPipeline().front().get());
 
-        if (searchNode->searchQuery.getBoolField(kReturnStoredSourceArg) ||
+        if (searchNode->searchQuery.getBoolField(mongot_cursor::kReturnStoredSourceArg) ||
             searchNode->isSearchMeta) {
             auto querySoln = std::make_unique<QuerySolution>();
             querySoln->setRoot(std::move(searchNode));
@@ -593,7 +594,6 @@ StatusWith<std::unique_ptr<QuerySolution>> tryToBuildSearchQuerySolution(
 }
 }  // namespace
 
-using std::numeric_limits;
 using std::unique_ptr;
 
 namespace dps = ::mongo::dotted_path_support;
@@ -847,6 +847,21 @@ std::unique_ptr<QuerySolution> buildEofOrCollscanSoln(
     return QueryPlannerAnalysis::analyzeDataAccess(query, params, std::move(solnRoot));
 }
 
+std::unique_ptr<QuerySolution> buildVirtScanSoln(const std::vector<BSONArray>& docs,
+                                                 bool hasRecordId,
+                                                 const BSONObj& indexKeyPattern,
+                                                 const CanonicalQuery& query,
+                                                 const QueryPlannerParams& params) {
+    const auto kScanType = indexKeyPattern.isEmpty() ? VirtualScanNode::ScanType::kCollScan
+                                                     : VirtualScanNode::ScanType::kIxscan;
+
+    std::unique_ptr<QuerySolutionNode> solnRoot =
+        std::make_unique<VirtualScanNode>(docs, kScanType, hasRecordId);
+    solnRoot->filter = query.getPrimaryMatchExpression()->clone();
+
+    return QueryPlannerAnalysis::analyzeDataAccess(query, params, std::move(solnRoot));
+}
+
 std::unique_ptr<QuerySolution> buildWholeIXSoln(
     const IndexEntry& index,
     const CanonicalQuery& query,
@@ -1024,6 +1039,18 @@ StatusWith<std::unique_ptr<QuerySolution>> QueryPlanner::planFromCache(
         if (!soln) {
             return Status(ErrorCodes::NoQueryExecutionPlans,
                           "plan cache error: collection scan soln");
+        } else {
+            return {std::move(soln)};
+        }
+    } else if (SolutionCacheData::VIRTSCAN_SOLN == solnCacheData.solnType) {
+        tassert(9049200,
+                "Constructing a virtual scan plan from cache requires 'VirtualScanCacheData",
+                solnCacheData.virtualScanData);
+        const VirtualScanCacheData& vscd = *solnCacheData.virtualScanData;
+        auto soln =
+            buildVirtScanSoln(vscd.docs, vscd.hasRecordId, vscd.indexKeyPattern, query, params);
+        if (!soln) {
+            return Status(ErrorCodes::NoQueryExecutionPlans, "plan cache error: virtual scan soln");
         } else {
             return {std::move(soln)};
         }
@@ -1926,24 +1953,6 @@ std::unique_ptr<QuerySolution> QueryPlanner::extendWithAggPipeline(
 
         auto matchStage = dynamic_cast<DocumentSourceMatch*>(innerStage);
         if (matchStage) {
-            // Parameterize the pushed-down match expression if there is not already a reason not
-            // to.
-            MatchExpression* matchExpr = matchStage->getMatchExpression();
-            if (query.shouldParameterizeSbe(matchExpr)) {
-                bool parameterized;
-                std::vector<const MatchExpression*> newParams =
-                    MatchExpression::parameterize(matchExpr,
-                                                  query.getMaxMatchExpressionParams(),
-                                                  query.numParams(),
-                                                  &parameterized);
-                if (parameterized) {
-                    query.addMatchParams(newParams);
-                } else {
-                    // Avoid plan cache flooding by not fully parameterized plans.
-                    query.setUncacheableSbe();
-                }
-            }
-
             solnForAgg = std::make_unique<MatchNode>(std::move(solnForAgg),
                                                      matchStage->getMatchExpression()->clone());
             continue;

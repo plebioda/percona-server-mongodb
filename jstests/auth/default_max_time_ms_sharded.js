@@ -4,7 +4,7 @@
  *
  * @tags: [
  *   creates_and_authenticates_user,
- *   featureFlagDefaultReadMaxTimeMS,
+ *   requires_fcv_80,
  *   # Transactions aborted upon fcv upgrade or downgrade; cluster parameters use internal txns.
  *   required_auth,
  *   requires_sharding,
@@ -28,6 +28,7 @@ let st = new ShardingTest({
     shards: {nodes: 1},
     config: {nodes: 1},
     other: {keyFile: 'jstests/libs/key1'},
+    mongosOptions: {setParameter: {'failpoint.skipClusterParameterRefresh': "{'mode':'alwaysOn'}"}},
 });
 
 let adminDB = st.s.getDB('admin');

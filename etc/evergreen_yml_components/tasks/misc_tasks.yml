@@ -56,14 +56,85 @@ variables:
     tags:
       - assigned_to_jira_team_devprod_correctness
     commands:
-      - command: shell.exec
+      - func: "f_expansions_write"
+      - command: subprocess.exec
         params:
-          script: "echo 'noop'"
+          binary: echo
+          args:
+            - "noop"
 
 ################################################
 #                    Tasks                     #
 ################################################
 tasks:
+  - <<: *antithesis_task_template
+    name: antithesis_concurrency_sharded_with_stepdowns_and_balancer_and_config_transitions
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "experimental",
+        "antithesis",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "do setup for antithesis"
+      - func: "antithesis image build and push"
+        vars:
+          suite: concurrency_sharded_with_stepdowns_and_balancer_and_config_transitions
+          resmoke_args: >-
+            --runAllFeatureFlagTests
+
+  - <<: *antithesis_task_template
+    name: antithesis_concurrency_sharded_kill_primary_with_balancer_and_config_transitions
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "experimental",
+        "antithesis",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "do setup for antithesis"
+      - func: "antithesis image build and push"
+        vars:
+          suite: concurrency_sharded_kill_primary_with_balancer_and_config_transitions
+          resmoke_args: >-
+            --runAllFeatureFlagTests
+
+  - <<: *antithesis_task_template
+    name: antithesis_concurrency_sharded_replication_with_balancer_and_config_transitions
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "experimental",
+        "antithesis",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "do setup for antithesis"
+      - func: "antithesis image build and push"
+        vars:
+          suite: concurrency_sharded_replication_with_balancer_and_config_transitions
+          resmoke_args: >-
+            --runAllFeatureFlagTests
+
+  - <<: *antithesis_task_template
+    name: antithesis_jstestfuzz_sharded_with_config_transitions
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "experimental",
+        "antithesis",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "do setup for antithesis"
+      - func: "antithesis image build and push"
+        vars:
+          suite: jstestfuzz_sharded_with_config_transitions
+          resmoke_args: >-
+            --runAllFeatureFlagTests
+
   - <<: *antithesis_task_template
     name: antithesis_concurrency_sharded_multi_stmt_txn_kill_primary
     tags:
@@ -240,6 +311,74 @@ tasks:
           resmoke_args: >-
             --runAllFeatureFlagTests
 
+  - <<: *antithesis_task_template
+    name: antithesis_replica_sets_lag_oplog_application_jscore_passthrough
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "experimental",
+        "antithesis",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "do setup for antithesis"
+      - func: "antithesis image build and push"
+        vars:
+          suite: replica_sets_lag_oplog_application_jscore_passthrough
+          resmoke_args: >-
+            --runAllFeatureFlagTests
+
+  - <<: *antithesis_task_template
+    name: antithesis_replica_sets_kill_primary_jscore_passthrough
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "experimental",
+        "antithesis",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "do setup for antithesis"
+      - func: "antithesis image build and push"
+        vars:
+          suite: replica_sets_kill_primary_jscore_passthrough
+          resmoke_args: >-
+            --runAllFeatureFlagTests
+
+  - <<: *antithesis_task_template
+    name: antithesis_replica_sets_kill_secondaries_jscore_passthrough
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "experimental",
+        "antithesis",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "do setup for antithesis"
+      - func: "antithesis image build and push"
+        vars:
+          suite: replica_sets_kill_secondaries_jscore_passthrough
+          resmoke_args: >-
+            --runAllFeatureFlagTests
+
+  - <<: *antithesis_task_template
+    name: antithesis_replica_sets_initsync_lagged_sync_source_jscore_passthrough
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "experimental",
+        "antithesis",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "do setup for antithesis"
+      - func: "antithesis image build and push"
+        vars:
+          suite: replica_sets_initsync_lagged_sync_source_jscore_passthrough
+          resmoke_args: >-
+            --runAllFeatureFlagTests
+
   - name: build_metrics_tasks_gen
     tags: ["assigned_to_jira_team_devprod_build", "auxiliary"]
     depends_on:
@@ -247,6 +386,7 @@ tasks:
         variant: generate-tasks-for-version
     commands:
       - func: "do scons setup"
+      - func: "f_expansions_write"
       - command: subprocess.exec
         params:
           binary: bash
@@ -395,6 +535,7 @@ tasks:
       ]
     commands:
       - func: "do scons setup"
+      - func: "f_expansions_write"
       - command: subprocess.exec
         params:
           binary: bash
@@ -892,31 +1033,6 @@ tasks:
         vars:
           targets: lint-pylinters
 
-  - name: lint_sconslinters
-    tags:
-      [
-        "assigned_to_jira_team_devprod_build",
-        "development_critical_single_variant",
-        "lint",
-      ]
-    commands:
-      - command: timeout.update
-        params:
-          # 40 minutes
-          exec_timeout_secs: 2400
-      - func: "f_expansions_write"
-      - command: manifest.load
-      - func: "git get project and add git tag"
-      - func: "f_expansions_write"
-      - func: "kill processes"
-      - func: "cleanup environment"
-      - func: "set up venv"
-      - func: "upload pip requirements"
-      - func: "get engflow creds"
-      - func: "scons lint"
-        vars:
-          targets: lint-sconslinters
-
   - name: lint_shellscripts
     tags:
       [
@@ -1120,7 +1236,12 @@ tasks:
           gen_task: powercycle_smoke_skip_compile_gen
 
   - name: powercycle_smoke
-    tags: ["assigned_to_jira_team_devprod_correctness", "default"]
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "default",
+        "incompatible_tsan",
+      ]
     exec_timeout_secs: 7200 # 2 hour timeout for the task overall
     depends_on:
       - name: archive_dist_test_debug
@@ -1397,6 +1518,7 @@ tasks:
       - func: "set up venv"
       - func: "upload pip requirements"
       - func: "configure evergreen api credentials"
+      - func: "f_expansions_write"
       - command: subprocess.exec
         type: test
         params:

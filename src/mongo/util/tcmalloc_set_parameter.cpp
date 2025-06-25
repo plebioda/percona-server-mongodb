@@ -330,6 +330,31 @@ Status TCMallocReleaseRateServerParameter::setFromString(StringData tcmallocRele
     return Status::OK();
 }
 
+Status onUpdateHeapProfilingSampleIntervalBytes(long long newValue) {
+#ifdef MONGO_CONFIG_TCMALLOC_GOOGLE
+    tcmalloc::MallocExtension::SetProfileSamplingRate(newValue);
+#else
+    LOGV2_WARNING(
+        8872800,
+        "The heapProfilingSampleIntervalBytes server parameter is only configurable at startup "
+        "when using the old TCMalloc. Setting this parameter will have no effect.");
+#endif
+
+    return Status::OK();
+}
+
+Status validateHeapProfilingSampleIntervalBytes(long long newValue,
+                                                const boost::optional<TenantId>& tenantId) {
+    const long long heapProfilerMinRate = 10000;  // 10kB
+    if (newValue == 0 || newValue >= heapProfilerMinRate) {
+        return Status::OK();
+    }
+
+    return {ErrorCodes::BadValue,
+            "heapProfilingSampleIntervalBytes must have a minimum rate of {} bytes or be disabled "
+            "with a rate of 0."_format(heapProfilerMinRate)};
+}
+
 namespace {
 
 MONGO_INITIALIZER_GENERAL(TcmallocConfigurationDefaults, (), ("BeginStartupOptionHandling"))
@@ -356,7 +381,7 @@ MONGO_INITIALIZER_GENERAL(TcmallocConfigurationDefaults, (), ("BeginStartupOptio
     }
 
 #elif defined(MONGO_CONFIG_TCMALLOC_GOOGLE)
-    tcmalloc::MallocExtension::SetProfileSamplingRate(0);
+    tcmalloc::MallocExtension::SetProfileSamplingRate(HeapProfilingSampleIntervalBytes);
 #endif  // MONGO_CONFIG_TCMALLOC_GPERF
 }
 

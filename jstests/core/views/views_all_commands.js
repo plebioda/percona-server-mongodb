@@ -173,6 +173,7 @@ let viewsCommandTests = {
     _shardsvrDropIndexes: {skip: isAnInternalCommand},
     _shardsvrEndMigrationBlockingOperation: {skip: isAnInternalCommand},
     _shardsvrInsertGlobalIndexKey: {skip: isAnInternalCommand},
+    _shardsvrJoinDDLCoordinators: {skip: isAnInternalCommand},
     _shardsvrDeleteGlobalIndexKey: {skip: isAnInternalCommand},
     _shardsvrWriteGlobalIndexKeys: {skip: isAnInternalCommand},
     _shardsvrCleanupReshardCollection: {skip: isAnInternalCommand},
@@ -213,6 +214,7 @@ let viewsCommandTests = {
     _shardsvrValidateShardKeyCandidate: {skip: isAnInternalCommand},
     _shardsvrCollMod: {skip: isAnInternalCommand},
     _shardsvrCollModParticipant: {skip: isAnInternalCommand},
+    _shardsvrConvertToCappedParticipant: {skip: isAnInternalCommand},
     _shardsvrParticipantBlock: {skip: isAnInternalCommand},
     _shardsvrUnregisterIndex: {skip: isAnInternalCommand},
     streams_startStreamProcessor: {skip: isAnInternalCommand},
@@ -476,8 +478,7 @@ let viewsCommandTests = {
         // This command is only expected to fail with the errors below when it is run against
         // a standalone replica set mongod.
         expectFailure: !TestData.testingReplicaSetEndpoint,
-        expectedErrorCode:
-            [ErrorCodes.ShardingStateNotInitialized, ErrorCodes.NoShardingEnabled_OBSOLETE],
+        expectedErrorCode: ErrorCodes.ShardingStateNotInitialized,
         isAdminCommand: true,
         skipSharded: true,  // mongos is tested in views/views_sharded.js
     },
@@ -717,8 +718,7 @@ let viewsCommandTests = {
         },
         skipSharded: true,
         expectFailure: true,
-        expectedErrorCode:
-            [ErrorCodes.ShardingStateNotInitialized, ErrorCodes.NoShardingEnabled_OBSOLETE],
+        expectedErrorCode: ErrorCodes.ShardingStateNotInitialized,
         isAdminCommand: true,
     },
     splitVector: {

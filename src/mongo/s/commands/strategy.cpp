@@ -76,6 +76,7 @@
 #include "mongo/db/repl/optime.h"
 #include "mongo/db/repl/read_concern_args.h"
 #include "mongo/db/repl/read_concern_level.h"
+#include "mongo/db/replica_set_endpoint_util.h"
 #include "mongo/db/session/logical_session_id.h"
 #include "mongo/db/session/logical_session_id_gen.h"
 #include "mongo/db/stats/api_version_metrics.h"
@@ -519,7 +520,6 @@ void ParseAndRunCommand::_parseCommand() {
     CommandHelpers::uassertShouldAttemptParse(opCtx, command, request);
 
     _requestArgs = CommonRequestArgs::parse(IDLParserContext("request",
-                                                             false,
                                                              request.validatedTenancyScope,
                                                              request.getValidatedTenantId(),
                                                              request.getSerializationContext()),
@@ -567,7 +567,10 @@ void ParseAndRunCommand::_parseCommand() {
                           : _invocation->ns());
 
     // Fill out all currentOp details.
-    CurOp::get(opCtx)->setGenericOpRequestDetails(nss, command, request.body, _opType);
+    {
+        stdx::lock_guard<Client> lk(*client);
+        CurOp::get(opCtx)->setGenericOpRequestDetails_inlock(nss, command, request.body, _opType);
+    }
 
     _osi = initializeOperationSessionInfo(opCtx,
                                           request.getValidatedTenantId(),
@@ -587,11 +590,7 @@ void ParseAndRunCommand::_parseCommand() {
     if (_invocation->allNamespaces().size() > 1) {
         namespaces = _invocation->allNamespaces();
     }
-    validateSessionOptions(_osi,
-                           opCtx->getService(),
-                           command->getName(),
-                           namespaces,
-                           allowTransactionsOnConfigDatabase);
+    validateSessionOptions(_osi, command, namespaces, allowTransactionsOnConfigDatabase);
 
     _wc.emplace(uassertStatusOK(WriteConcernOptions::extractWCFromCommand(request.body)));
 
@@ -636,12 +635,13 @@ Status ParseAndRunCommand::RunInvocation::_setup() {
     auto requestArgs = _parc->getCommonRequestArgs();
 
     if (command->getLogicalOp() != LogicalOp::opGetMore) {
-        auto [requestOrDefaultMaxTimeMS, _] = getRequestOrDefaultMaxTimeMS(
+        auto [requestOrDefaultMaxTimeMS, usesDefaultMaxTimeMS] = getRequestOrDefaultMaxTimeMS(
             opCtx, requestArgs.getMaxTimeMS(), invocation->isReadOperation());
         if (auto maxTimeMS = requestOrDefaultMaxTimeMS.value_or(Milliseconds{0});
             requestOrDefaultMaxTimeMS > Milliseconds::zero()) {
             opCtx->setDeadlineAfterNowBy(maxTimeMS, ErrorCodes::MaxTimeMSExpired);
         }
+        opCtx->setUsesDefaultMaxTimeMS(usesDefaultMaxTimeMS);
     }
 
     if (MONGO_unlikely(
@@ -778,7 +778,7 @@ Status ParseAndRunCommand::RunInvocation::_setup() {
     }
 
     if (TransactionRouter::get(opCtx)) {
-        validateWriteConcernForTransaction(opCtx->getService(), *_parc->_wc, _parc->_commandName);
+        validateWriteConcernForTransaction(*_parc->_wc, command);
     }
 
     if (supportsWriteConcern) {
@@ -944,6 +944,10 @@ Status ParseAndRunCommand::RunInvocation::_setup() {
 
     if (command->shouldAffectQueryCounter()) {
         globalOpCounters.gotQuery();
+    }
+
+    if (opCtx->routedByReplicaSetEndpoint()) {
+        replica_set_endpoint::checkIfCanRunCommand(opCtx, request);
     }
 
     return Status::OK();

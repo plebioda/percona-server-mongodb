@@ -36,7 +36,6 @@
 #include <limits>
 #include <memory>
 #include <random>
-#include <type_traits>
 
 #include <boost/move/utility_core.hpp>
 #include <boost/none.hpp>
@@ -51,6 +50,7 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/s/balancer/balancer_policy.h"
 #include "mongo/db/s/config/sharding_catalog_manager.h"
+#include "mongo/db/s/sharding_util.h"
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
 #include "mongo/logv2/log_component.h"
@@ -58,6 +58,7 @@
 #include "mongo/platform/compiler.h"
 #include "mongo/s/catalog/sharding_catalog_client.h"
 #include "mongo/s/catalog/type_tags.h"
+#include "mongo/s/grid.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/namespace_string_util.h"
@@ -70,9 +71,7 @@ namespace mongo {
 
 MONGO_FAIL_POINT_DEFINE(balancerShouldReturnRandomMigrations);
 
-using std::map;
 using std::numeric_limits;
-using std::set;
 using std::string;
 using std::vector;
 using namespace fmt::literals;
@@ -371,9 +370,20 @@ int getRandomIndex(int max) {
 
 // Returns a randomly chosen pair of source -> destination shards for testing.
 boost::optional<MigrateInfo> chooseRandomMigration(
-    const stdx::unordered_set<ShardId>& availableShards, const DistributionStatus& distribution) {
+    const ShardStatisticsVector& shardStats,
+    const stdx::unordered_set<ShardId>& availableShards,
+    const DistributionStatus& distribution) {
 
     if (availableShards.size() < 2) {
+        return boost::none;
+    }
+
+    // Do not perform random migrations if there is a shard that is draining to avoid starving
+    // them of eligible shards to migrate to.
+    auto drainingShardIter = std::find_if(
+        shardStats.begin(), shardStats.end(), [](const auto& stat) { return stat.isDraining; });
+
+    if (drainingShardIter != shardStats.end()) {
         return boost::none;
     }
 
@@ -441,27 +451,6 @@ MigrateInfosWithReason BalancerPolicy::balance(
     bool forceJumbo) {
     vector<MigrateInfo> migrations;
     MigrationReason firstReason = MigrationReason::none;
-
-    if (MONGO_unlikely(balancerShouldReturnRandomMigrations.shouldFail()) &&
-        !distribution.nss().isConfigDB()) {
-        LOGV2_DEBUG(21881, 1, "balancerShouldReturnRandomMigrations failpoint is set");
-
-        auto migration = chooseRandomMigration(*availableShards, distribution);
-
-        if (migration) {
-            migrations.push_back(migration.get());
-            firstReason = MigrationReason::chunksImbalance;
-
-            tassert(8245223,
-                    "Migration's from shard does not exist in available shards",
-                    availableShards->erase(migration.get().from));
-            tassert(8245224,
-                    "Migration's to shard does not exist in available shards",
-                    availableShards->erase(migration.get().to));
-        }
-
-        return std::make_pair(std::move(migrations), firstReason);
-    }
 
     // 1) Check for shards, which are in draining mode
     {
@@ -545,6 +534,30 @@ MigrateInfosWithReason BalancerPolicy::balance(
             if (availableShards->size() < 2) {
                 return std::make_pair(std::move(migrations), firstReason);
             }
+        }
+    }
+
+    // Select random migrations after checking for draining shards so tests with removeShard or
+    // transitionToDedicatedConfigServer can eventually drain shards.
+    // NOTE: randomly chosen migrations do not respect zones.
+    if (MONGO_unlikely(balancerShouldReturnRandomMigrations.shouldFail()) &&
+        !distribution.nss().isConfigDB()) {
+        LOGV2_DEBUG(21881, 1, "balancerShouldReturnRandomMigrations failpoint is set");
+
+        auto migration = chooseRandomMigration(shardStats, *availableShards, distribution);
+
+        if (migration) {
+            migrations.push_back(migration.get());
+            firstReason = MigrationReason::chunksImbalance;
+
+            tassert(8245223,
+                    "Migration's from shard does not exist in available shards",
+                    availableShards->erase(migration.get().from));
+            tassert(8245224,
+                    "Migration's to shard does not exist in available shards",
+                    availableShards->erase(migration.get().to));
+
+            return std::make_pair(std::move(migrations), firstReason);
         }
     }
 
@@ -942,5 +955,62 @@ DataSizeInfo::DataSizeInfo(const ShardId& shardId,
       keyPattern(keyPattern),
       estimatedValue(estimatedValue),
       maxSize(maxSize) {}
+
+NamespaceStringToShardDataSizeMap getStatsForBalancing(
+    OperationContext* opCtx,
+    const std::vector<ShardId>& shardIds,
+    const std::vector<NamespaceWithOptionalUUID>& namespacesWithUUIDsForStatsRequest) {
+
+    ShardsvrGetStatsForBalancing req{namespacesWithUUIDsForStatsRequest};
+    req.setScaleFactor(1);
+    const auto reqObj = req.toBSON();
+
+    const auto executor = Grid::get(opCtx)->getExecutorPool()->getFixedExecutor();
+    auto responsesFromShards = sharding_util::sendCommandToShards(
+        opCtx, DatabaseName::kAdmin, reqObj, shardIds, executor, false /* throwOnError */);
+
+    using namespace fmt::literals;
+    NamespaceStringToShardDataSizeMap namespaceToShardDataSize;
+    for (auto&& response : responsesFromShards) {
+        try {
+            const auto& shardId = response.shardId;
+            auto errorContext =
+                "Failed to get stats for balancing from shard '{}'"_format(shardId.toString());
+            const auto responseValue =
+                uassertStatusOKWithContext(std::move(response.swResponse), errorContext);
+
+            const ShardsvrGetStatsForBalancingReply reply =
+                ShardsvrGetStatsForBalancingReply::parse(
+                    IDLParserContext("ShardsvrGetStatsForBalancingReply"), responseValue.data);
+            const auto collStatsFromShard = reply.getStats();
+
+            tassert(8245200,
+                    "Collection count mismatch",
+                    collStatsFromShard.size() == namespacesWithUUIDsForStatsRequest.size());
+
+            for (const auto& stats : collStatsFromShard) {
+                namespaceToShardDataSize[stats.getNs()][shardId] = stats.getCollSize();
+            }
+        } catch (const ExceptionFor<ErrorCodes::ShardNotFound>& ex) {
+            // Handle `removeShard`: skip shards removed during a balancing round
+            LOGV2_DEBUG(6581603,
+                        1,
+                        "Skipping shard for the current balancing round",
+                        "error"_attr = redact(ex));
+        }
+    }
+    return namespaceToShardDataSize;
+}
+
+ShardDataSizeMap getStatsForBalancing(
+    OperationContext* opCtx,
+    const std::vector<ShardId>& shardIds,
+    const NamespaceWithOptionalUUID& namespaceWithUUIDsForStatsRequest) {
+    return getStatsForBalancing(
+               opCtx,
+               shardIds,
+               std::vector<NamespaceWithOptionalUUID>{namespaceWithUUIDsForStatsRequest})
+        .at(namespaceWithUUIDsForStatsRequest.getNs());
+}
 
 }  // namespace mongo

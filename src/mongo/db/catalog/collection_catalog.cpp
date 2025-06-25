@@ -46,7 +46,7 @@
 #include <exception>
 #include <list>
 #include <mutex>
-#include <type_traits>
+#include <shared_mutex>
 
 #include "collection_catalog.h"
 
@@ -64,10 +64,8 @@
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/server_options.h"
-#include "mongo/db/storage/bson_collection_catalog_entry.h"
 #include "mongo/db/storage/capped_snapshots.h"
 #include "mongo/db/storage/durable_catalog.h"
-#include "mongo/db/storage/ident.h"
 #include "mongo/db/storage/kv/kv_engine.h"
 #include "mongo/db/storage/record_store.h"
 #include "mongo/db/storage/recovery_unit.h"
@@ -76,11 +74,11 @@
 #include "mongo/db/transaction_resources.h"
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
-#include "mongo/logv2/log_component.h"
 #include "mongo/logv2/log_tag.h"
 #include "mongo/logv2/redaction.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/platform/mutex.h"
+#include "mongo/platform/rwmutex.h"
 #include "mongo/stdx/condition_variable.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/database_name_util.h"
@@ -108,22 +106,34 @@ const SharedCollectionDecorations::Decoration<AtomicWord<bool>>
 namespace {
 constexpr auto kNumDurableCatalogScansDueToMissingMapping = "numScansDueToMissingMapping"_sd;
 
-struct LatestCollectionCatalog {
-    std::shared_ptr<CollectionCatalog> catalog = std::make_shared<CollectionCatalog>();
-};
-const ServiceContext::Decoration<LatestCollectionCatalog> getCatalog =
-    ServiceContext::declareDecoration<LatestCollectionCatalog>();
+class LatestCollectionCatalog {
+public:
+    std::shared_ptr<CollectionCatalog> load() const {
+        std::shared_lock lk(_mutex);  // NOLINT
+        return _catalog;
+    }
 
-// Catalog instance for batched write when ongoing. The atomic bool is used to determine if a
-// batched write is ongoing without having to take locks.
-std::shared_ptr<CollectionCatalog> batchedCatalogWriteInstance;
-AtomicWord<bool> ongoingBatchedWrite{false};
-// Set to keep track of all collection instances cloned in this batched writer that do not currently
-// need to be re-cloned.
-absl::flat_hash_set<const Collection*> batchedCatalogClonedCollections;
-// Set to keep track of all collection instances that have been cloned in a WUOW that needs to be
-// restored in case of rollback.
-CollectionCatalog::BatchedCollectionWrite* ongoingBatchedWOUWCollectionWrite = nullptr;
+    bool compareAndSet(const std::shared_ptr<CollectionCatalog>& oldCatalog,
+                       std::shared_ptr<CollectionCatalog>&& newCatalog) {
+        std::lock_guard lk(_mutex);
+        if (oldCatalog != _catalog)
+            return false;
+        _catalog = std::move(newCatalog);
+        return true;
+    }
+
+    void store(std::shared_ptr<CollectionCatalog>&& newCatalog) {
+        std::lock_guard lk(_mutex);
+        _catalog = std::move(newCatalog);
+    }
+
+private:
+    mutable RWMutex _mutex;
+    // TODO SERVER-56428: Replace with std::atomic<std::shared_ptr> when supported in our toolchain
+    std::shared_ptr<CollectionCatalog> _catalog = std::make_shared<CollectionCatalog>();
+};
+const ServiceContext::Decoration<LatestCollectionCatalog> getCatalogStore =
+    ServiceContext::declareDecoration<LatestCollectionCatalog>();
 
 const RecoveryUnit::Snapshot::Decoration<std::shared_ptr<const CollectionCatalog>> stashedCatalog =
     RecoveryUnit::Snapshot::declareDecoration<std::shared_ptr<const CollectionCatalog>>();
@@ -494,97 +504,6 @@ private:
     UncommittedCatalogUpdates& _uncommittedCatalogUpdates;
 };
 
-/**
- * Helper to manage the lifetime of cloned collection instances during batch writes.
- *
- * Batched writes and writes under the exclusive global lock are special in the way that they do not
- * require a WUOW to perform the writes. However, WUOW may be used and they may roll back for any
- * reason even when the global lock is held in exclusive mode. The copy-on-write semantics on the
- * Collection type should behave as close in this case as regular Collection writes under exclusive
- * Collection lock.
- *
- * The first request for a writable Collection should make a clone that may be used for writes until
- * any of the following:
- * 1. The WUOW commits
- * 2. The WUOW rolls back
- * 3. The batched catalog write ends (the case when no WUOW is used)
- *
- * If the WUOW rolls back, the cloned collection instance should be discarded and the original
- * instance should be stored in the catalog instance used for the batched write.
- *
- * If further writes to this collection is needed within the same batched write but after the WUOW
- * has committed or rolled back a new clone is needed.
- */
-class CollectionCatalog::BatchedCollectionWrite : public RecoveryUnit::Change {
-public:
-    static void setup(OperationContext* opCtx,
-                      std::shared_ptr<Collection> original,
-                      std::shared_ptr<Collection> clone) {
-        const Collection* clonePtr = clone.get();
-        // Mark this instance as cloned for the batched writer, this will prevent further clones for
-        // this Collection.
-        batchedCatalogClonedCollections.emplace(clonePtr);
-
-        // Do not update min valid timestamp in batched write as the write is not corresponding to
-        // an oplog entry. If the write require an update to this timestamp it is the responsibility
-        // of the user.
-        PublishCatalogUpdates::setCollectionInCatalog(
-            *batchedCatalogWriteInstance, std::move(clone), boost::none);
-
-        // Nothing more to do if we are not in a WUOW.
-        if (!shard_role_details::getLocker(opCtx)->inAWriteUnitOfWork()) {
-            return;
-        }
-
-        // Register one change to the recovery unit, as we are in a batched write it is likely that
-        // we will clone multiple collections. This allows all of them to re-use a single recovery
-        // unit change.
-        if (!ongoingBatchedWOUWCollectionWrite) {
-            std::unique_ptr<BatchedCollectionWrite> batchedWrite(new BatchedCollectionWrite());
-
-            ongoingBatchedWOUWCollectionWrite = batchedWrite.get();
-
-            // Register commit/rollback handlers _if_ we are in an WUOW.
-            shard_role_details::getRecoveryUnit(opCtx)->registerChange(std::move(batchedWrite));
-        }
-
-        // Push this instance to the set of collections cloned in this WUOW.
-        ongoingBatchedWOUWCollectionWrite->addManagedClone(clonePtr, std::move(original));
-    }
-
-    void commit(OperationContext* opCtx, boost::optional<Timestamp> ts) override {
-        for (auto&& [clone, original] : _clones) {
-            // Clear the flag that this instance is used for batch write, this will trigger new
-            // copy-on-write next time it is needed.
-            batchedCatalogClonedCollections.erase(clone);
-        }
-
-        // Mark that this WUOW is finished.
-        ongoingBatchedWOUWCollectionWrite = nullptr;
-    }
-    void rollback(OperationContext* opCtx) override {
-        for (auto&& [clone, original] : _clones) {
-            // Restore the original collection instances to the batched catalog
-            PublishCatalogUpdates::setCollectionInCatalog(
-                *batchedCatalogWriteInstance, std::move(original), boost::none);
-
-            // Clear the flag that this instance is used for batch write, this will trigger new
-            // copy-on-write next time it is needed.
-            batchedCatalogClonedCollections.erase(clone);
-        }
-
-        // Mark that this WUOW is finished.
-        ongoingBatchedWOUWCollectionWrite = nullptr;
-    }
-
-    void addManagedClone(const Collection* clone, std::shared_ptr<Collection> original) {
-        _clones[clone] = std::move(original);
-    }
-
-private:
-    absl::flat_hash_map<const Collection*, std::shared_ptr<Collection>> _clones;
-};
-
 CollectionCatalog::iterator::iterator(const DatabaseName& dbName,
                                       OrderedCollectionMap::iterator it,
                                       const OrderedCollectionMap& map)
@@ -635,7 +554,7 @@ bool CollectionCatalog::Range::empty() const {
 }
 
 std::shared_ptr<const CollectionCatalog> CollectionCatalog::latest(ServiceContext* svcCtx) {
-    return atomic_load(&getCatalog(svcCtx).catalog);
+    return getCatalogStore(svcCtx).load();
 }
 
 std::shared_ptr<const CollectionCatalog> CollectionCatalog::get(OperationContext* opCtx) {
@@ -647,17 +566,6 @@ std::shared_ptr<const CollectionCatalog> CollectionCatalog::get(OperationContext
 }
 
 std::shared_ptr<const CollectionCatalog> CollectionCatalog::latest(OperationContext* opCtx) {
-    // If there is a batched catalog write ongoing and we are the one doing it return this instance
-    // so we can observe our own writes. There may be other callers that reads the CollectionCatalog
-    // without any locks, they must see the immutable regular instance. We can do a relaxed load
-    // here because the value only matters for the thread that set it. The wrong value for other
-    // threads always results in the non-batched write branch to be taken. Futhermore, the second
-    // part of the condition is checking the lock state will give us sequentially consistent
-    // ordering.
-    if (ongoingBatchedWrite.loadRelaxed() && shard_role_details::getLocker(opCtx)->isW()) {
-        return batchedCatalogWriteInstance;
-    }
-
     return latest(opCtx->getServiceContext());
 }
 
@@ -667,11 +575,6 @@ void CollectionCatalog::stash(OperationContext* opCtx,
 }
 
 void CollectionCatalog::write(ServiceContext* svcCtx, CatalogWriteFn job) {
-    // We should never have ongoing batching here. When batching is in progress the caller should
-    // use the overload with OperationContext so we can verify that the global exlusive lock is
-    // being held.
-    invariant(!ongoingBatchedWrite.load());
-
     // It is potentially expensive to copy the collection catalog so we batch the operations by only
     // having one concurrent thread copying the catalog and executing all the write jobs.
 
@@ -742,9 +645,9 @@ void CollectionCatalog::write(ServiceContext* svcCtx, CatalogWriteFn job) {
     std::list<JobEntry> completed;
     std::exception_ptr myException;
 
-    auto& storage = getCatalog(svcCtx);
+    auto& storage = getCatalogStore(svcCtx);
     // hold onto base so if we need to delete it we can do it outside of the lock
-    auto base = atomic_load(&storage.catalog);
+    auto base = storage.load();
     // copy the collection catalog, this could be expensive, but we will only have one pending
     // collection in flight at a given time
     auto clone = std::make_shared<CollectionCatalog>(*base);
@@ -768,7 +671,7 @@ void CollectionCatalog::write(ServiceContext* svcCtx, CatalogWriteFn job) {
         stdx::lock_guard lock(mutex);
         if (queue.empty()) {
             // Queue is empty, store catalog and relinquish responsibility of being worker thread
-            atomic_store(&storage.catalog, std::move(clone));
+            storage.store(std::move(clone));
             workerExists = false;
             break;
         }
@@ -794,22 +697,6 @@ void CollectionCatalog::write(ServiceContext* svcCtx, CatalogWriteFn job) {
 
 void CollectionCatalog::write(OperationContext* opCtx,
                               std::function<void(CollectionCatalog&)> job) {
-    // Calling the writer must be done with the GlobalLock held. Otherwise we risk having the
-    // BatchedCollectionCatalogWriter and this caller concurrently modifying the catalog. This is
-    // because normal operations calling this will all be serialized, but
-    // BatchedCollectionCatalogWriter skips this mechanism as it knows it is the sole user of the
-    // server by holding a Global MODE_X lock.
-    invariant(shard_role_details::getLocker(opCtx)->isLocked());
-
-    // If global MODE_X lock are held we can re-use a cloned CollectionCatalog instance when
-    // 'ongoingBatchedWrite' and 'batchedCatalogWriteInstance' are set. Make sure we are the one
-    // holding the write lock.
-    if (ongoingBatchedWrite.load()) {
-        invariant(shard_role_details::getLocker(opCtx)->isW());
-        job(*batchedCatalogWriteInstance);
-        return;
-    }
-
     write(opCtx->getServiceContext(), std::move(job));
 }
 
@@ -952,11 +839,17 @@ Status CollectionCatalog::dropView(OperationContext* opCtx, const NamespaceStrin
         ViewsForDatabase writable{viewsForDb};
         writable.remove(opCtx, systemViews, viewName);
 
-        auto& uncommittedCatalogUpdates = UncommittedCatalogUpdates::get(opCtx);
-        uncommittedCatalogUpdates.removeView(viewName);
-        uncommittedCatalogUpdates.replaceViewsForDatabase(viewName.dbName(), std::move(writable));
+        // Reload the view catalog with the changes applied.
+        result = writable.reload(opCtx, systemViews);
+        if (result.isOK()) {
+            auto& uncommittedCatalogUpdates = UncommittedCatalogUpdates::get(opCtx);
+            uncommittedCatalogUpdates.removeView(viewName);
+            uncommittedCatalogUpdates.replaceViewsForDatabase(viewName.dbName(),
+                                                              std::move(writable));
 
-        PublishCatalogUpdates::ensureRegisteredWithRecoveryUnit(opCtx, uncommittedCatalogUpdates);
+            PublishCatalogUpdates::ensureRegisteredWithRecoveryUnit(opCtx,
+                                                                    uncommittedCatalogUpdates);
+        }
     }
 
     return result;
@@ -1669,31 +1562,20 @@ Collection* CollectionCatalog::lookupCollectionByUUIDForMetadataWrite(OperationC
     if (!coll)
         return nullptr;
 
-    if (coll->ns().isOplog())
-        return coll.get();
-
     invariant(shard_role_details::getLocker(opCtx)->isCollectionLockedForMode(coll->ns(), MODE_X));
-
-    // Skip cloning and return directly if allowed.
-    if (_alreadyClonedForBatchedWriter(coll)) {
-        return coll.get();
-    }
 
     auto cloned = coll->clone();
     auto ptr = cloned.get();
 
-    // If we are in a batch write, set this Collection instance in the batched catalog write
-    // instance. We don't want to store as uncommitted in this case as we need to observe the write
-    // on the thread doing the batch write and it would trigger the regular path where we do a
-    // copy-on-write on the catalog when committing.
-    if (_isCatalogBatchWriter()) {
-        BatchedCollectionWrite::setup(opCtx, std::move(coll), std::move(cloned));
-        return ptr;
-    }
-
     uncommittedCatalogUpdates.writableCollection(std::move(cloned));
 
-    PublishCatalogUpdates::ensureRegisteredWithRecoveryUnit(opCtx, uncommittedCatalogUpdates);
+    if (shard_role_details::getRecoveryUnit(opCtx)->inUnitOfWork() || opCtx->readOnly()) {
+        PublishCatalogUpdates::ensureRegisteredWithRecoveryUnit(opCtx, uncommittedCatalogUpdates);
+    } else {
+        invariant(shard_role_details::getLocker(opCtx)->isW(),
+                  "either a WriteUnitOfWork or exclusive global lock is expected");
+        PublishCatalogUpdates(uncommittedCatalogUpdates).commit(opCtx, boost::none);
+    }
 
     return ptr;
 }
@@ -1761,11 +1643,6 @@ std::shared_ptr<const Collection> CollectionCatalog::_getCollectionByNamespace(
 
 Collection* CollectionCatalog::lookupCollectionByNamespaceForMetadataWrite(
     OperationContext* opCtx, const NamespaceString& nss) const {
-    // Oplog is special and can only be modified in a few contexts. It is modified inplace and care
-    // need to be taken for concurrency.
-    if (nss.isOplog()) {
-        return const_cast<Collection*>(lookupCollectionByNamespace(opCtx, nss));
-    }
 
     auto& uncommittedCatalogUpdates = UncommittedCatalogUpdates::get(opCtx);
     auto [found, uncommittedPtr, newColl] = UncommittedCatalogUpdates::lookupCollection(opCtx, nss);
@@ -1794,26 +1671,18 @@ Collection* CollectionCatalog::lookupCollectionByNamespaceForMetadataWrite(
 
     invariant(shard_role_details::getLocker(opCtx)->isCollectionLockedForMode(nss, MODE_X));
 
-    // Skip cloning and return directly if allowed.
-    if (_alreadyClonedForBatchedWriter(coll)) {
-        return coll.get();
-    }
-
     auto cloned = coll->clone();
     auto ptr = cloned.get();
 
-    // If we are in a batch write, set this Collection instance in the batched catalog write
-    // instance. We don't want to store as uncommitted in this case as we need to observe the write
-    // on the thread doing the batch write and it would trigger the regular path where we do a
-    // copy-on-write on the catalog when committing.
-    if (_isCatalogBatchWriter()) {
-        BatchedCollectionWrite::setup(opCtx, std::move(coll), std::move(cloned));
-        return ptr;
-    }
-
     uncommittedCatalogUpdates.writableCollection(std::move(cloned));
 
-    PublishCatalogUpdates::ensureRegisteredWithRecoveryUnit(opCtx, uncommittedCatalogUpdates);
+    if (shard_role_details::getRecoveryUnit(opCtx)->inUnitOfWork() || opCtx->readOnly()) {
+        PublishCatalogUpdates::ensureRegisteredWithRecoveryUnit(opCtx, uncommittedCatalogUpdates);
+    } else {
+        invariant(shard_role_details::getLocker(opCtx)->isW(),
+                  "either a WriteUnitOfWork or exclusive global lock is expected");
+        PublishCatalogUpdates(uncommittedCatalogUpdates).commit(opCtx, boost::none);
+    }
 
     return ptr;
 }
@@ -2491,49 +2360,6 @@ const HistoricalCatalogIdTracker& CollectionCatalog::catalogIdTracker() const {
 }
 HistoricalCatalogIdTracker& CollectionCatalog::catalogIdTracker() {
     return _catalogIdTracker;
-}
-
-bool CollectionCatalog::_isCatalogBatchWriter() const {
-    return ongoingBatchedWrite.load() && batchedCatalogWriteInstance.get() == this;
-}
-
-bool CollectionCatalog::_alreadyClonedForBatchedWriter(
-    const std::shared_ptr<Collection>& collection) const {
-    // We may skip cloning the Collection instance if and only if have already cloned it for write
-    // use in this batch writer.
-    return _isCatalogBatchWriter() && batchedCatalogClonedCollections.contains(collection.get());
-}
-
-BatchedCollectionCatalogWriter::BatchedCollectionCatalogWriter(OperationContext* opCtx)
-    : _opCtx(opCtx) {
-    invariant(shard_role_details::getLocker(_opCtx)->isW());
-    invariant(!batchedCatalogWriteInstance);
-    invariant(batchedCatalogClonedCollections.empty());
-
-    auto& storage = getCatalog(_opCtx->getServiceContext());
-    // hold onto base so if we need to delete it we can do it outside of the lock
-    _base = atomic_load(&storage.catalog);
-    // copy the collection catalog, this could be expensive, store it for future writes during this
-    // batcher
-    batchedCatalogWriteInstance = std::make_shared<CollectionCatalog>(*_base);
-    _batchedInstance = batchedCatalogWriteInstance.get();
-    ongoingBatchedWrite.store(true);
-}
-BatchedCollectionCatalogWriter::~BatchedCollectionCatalogWriter() {
-    invariant(shard_role_details::getLocker(_opCtx)->isW());
-    invariant(_batchedInstance == batchedCatalogWriteInstance.get());
-
-    // Publish out batched instance, validate that no other writers have been able to write during
-    // the batcher.
-    auto& storage = getCatalog(_opCtx->getServiceContext());
-    invariant(
-        atomic_compare_exchange_strong(&storage.catalog, &_base, batchedCatalogWriteInstance));
-
-    // Clear out batched pointer so no more attempts of batching are made
-    ongoingBatchedWrite.store(false);
-    _batchedInstance = nullptr;
-    batchedCatalogWriteInstance = nullptr;
-    batchedCatalogClonedCollections.clear();
 }
 
 }  // namespace mongo

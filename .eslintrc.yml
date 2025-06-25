@@ -146,6 +146,7 @@ globals:
   indentStr: true
   _forgetReplSet: true
   _fnvHashToHexString: true
+  getStringWidth: true
 
   # likely could be replaced with `path`
   _copyFileRange: true
@@ -237,3 +238,4 @@ globals:
   helloStatePrompt: true
   _validateMemberIndex: true
   help: true
+  retryOnRetryableError: true

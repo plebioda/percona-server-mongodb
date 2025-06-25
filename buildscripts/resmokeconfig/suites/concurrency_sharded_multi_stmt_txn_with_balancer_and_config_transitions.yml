@@ -1,6 +1,9 @@
 # Based on the concurrency_sharded_multi_stmt_txn_with_balancer and
 # concurrency_sharded_replication_with_balancer_and_transitions suites. This suite runs continuous
 # background config transitions and wraps test state functions in multi document transactions.
+config_variables:
+  - &movePrimaryComment continuousConfigShardTransitionMovePrimary
+
 test_kind: fsm_workload_test
 
 selector:
@@ -68,24 +71,25 @@ selector:
     # retry logic for this hook leads to breaking a test assertion.
     - jstests/concurrency/fsm_workloads/timeseries_mirrored_writes.js
 
-    # TODO SERVER-89838: Check metadata consistency hook detects different time series options on
-    # shards after collMod.
-    - jstests/concurrency/fsm_workloads/timeseries_collmod_granularity_update.js
-    - jstests/concurrency/fsm_workloads/timeseries_agg_out.js
-
     # TODO SERVER-89840: Inconsistent UUIDs for config.system.sessions across config shard and
     # removed/re-added shard.
     - jstests/concurrency/fsm_workloads/add_remove_shards_killop.js
 
     # TODO SERVER-89841: Performs many sharding DDL operations and can time out taking the DDL lock
     # on slower variants.
+    - jstests/concurrency/fsm_workloads/agg_lookup.js
+    - jstests/concurrency/fsm_workloads/agg_lookup_in_txn.js
+    - jstests/concurrency/fsm_workloads/agg_out.js
     - jstests/concurrency/fsm_workloads/agg_sort.js
     - jstests/concurrency/fsm_workloads/map_reduce_interrupt.js
     - jstests/concurrency/fsm_workloads/map_reduce_replace.js
     - jstests/concurrency/fsm_workloads/map_reduce_replace_remove.js
     - jstests/concurrency/fsm_workloads/map_reduce_replace_nonexistent.js
-    - jstests/concurrency/fsm_workloads/random_DDL_operations.js
-    - jstests/concurrency/fsm_workloads/rename_sharded_collection.js
+    - jstests/concurrency/fsm_workloads/rename_capped_collection_chain.js
+    - jstests/concurrency/fsm_workloads/rename_capped_collection_droptarget.js
+    - jstests/concurrency/fsm_workloads/rename_capped_collection_dbname_chain.js
+    - jstests/concurrency/fsm_workloads/rename_capped_collection_dbname_droptarget.js
+    - jstests/concurrency/fsm_workloads/timeseries_agg_out.js
 
     ##
     # Denylists from concurrency_sharded_multi_stmt_txn_with_balancer
@@ -145,13 +149,6 @@ selector:
     - config_shard_incompatible
     - assumes_stable_shard_list
 
-    # This suites execute random moveCollections in the background that cause open cursors on the
-    # collection to be killed.
-    - requires_getmore
-
-    # TODO SERVER-90239 Enable time series tests.
-    - requires_timeseries
-
 executor:
   archive:
     hooks:
@@ -171,9 +168,11 @@ executor:
           traceExceptions: false
           runningWithBalancer: true
           transitioningConfigShard: true
+          shardCollectionProbability: 0.5
           fsmPreOverridesLoadedCallback: import("jstests/libs/override_methods/implicitly_retry_on_migration_in_progress.js");
   hooks:
     - class: ContinuousConfigShardTransition
+      move_primary_comment: *movePrimaryComment
     - class: CheckShardFilteringMetadata
     - class: CheckReplDBHashInBackground
     - class: CheckReplDBHash
@@ -212,6 +211,11 @@ executor:
             skipMoveCollectionThreshold: 0.5
           mode: alwaysOn
         balancerMigrationsThrottlingMs: 100
+        featureFlagReshardingForTimeseries: true
+        failpoint.movePrimaryFailIfNeedToCloneMovableCollections:
+          data:
+            comment: *movePrimaryComment
+          mode: alwaysOn
     num_rs_nodes_per_shard: 3
     # Use 3 shards so there's always at least two for workloads with manual migrations, etc.
     num_shards: 3

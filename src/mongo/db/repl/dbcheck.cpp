@@ -73,14 +73,13 @@
 #include "mongo/util/debug_util.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/fail_point.h"
-#include "mongo/util/md5.hpp"
 #include "mongo/util/uuid.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kCommand
 namespace mongo {
 
 MONGO_FAIL_POINT_DEFINE(SleepDbCheckInBatch);
-MONGO_FAIL_POINT_DEFINE(hangAfterGeneratingHashForExtraIndexKeysCheck);
+MONGO_FAIL_POINT_DEFINE(secondaryHangAfterExtraIndexKeysHashing);
 
 namespace {
 
@@ -390,7 +389,7 @@ DbCheckHasher::DbCheckHasher(
       _dataThrottle(dataThrottle) {
 
     // Get the MD5 hasher set up.
-    md5_init(&_state);
+    md5_init_state(&_state);
 
     auto& collection = acquisition.coll.getCollectionPtr();
 
@@ -922,13 +921,12 @@ Status dbCheckBatchOnSecondary(OperationContext* opCtx,
 
                     uassertStatusOK(hasher->hashForExtraIndexKeysCheck(
                         opCtx, collection.get(), batchStart, batchEnd));
-                    if (MONGO_unlikely(
-                            hangAfterGeneratingHashForExtraIndexKeysCheck.shouldFail())) {
+                    if (MONGO_unlikely(secondaryHangAfterExtraIndexKeysHashing.shouldFail())) {
                         LOGV2_DEBUG(3083200,
                                     3,
-                                    "Hanging due to hangAfterGeneratingHashForExtraIndexKeysCheck "
+                                    "Hanging due to secondaryHangAfterExtraIndexKeysHashing "
                                     "failpoint");
-                        hangAfterGeneratingHashForExtraIndexKeysCheck.pauseWhileSet(opCtx);
+                        secondaryHangAfterExtraIndexKeysHashing.pauseWhileSet(opCtx);
                     }
                     break;
                 }
@@ -1051,7 +1049,6 @@ Status dbCheckOplogCommand(OperationContext* opCtx,
     }
     const auto type = OplogEntries_parse(IDLParserContext("type"), cmd.getStringField("type"));
     const IDLParserContext ctx("o",
-                               false /*apiStrict*/,
                                auth::ValidatedTenancyScope::get(opCtx),
                                entry.getTid(),
                                SerializationContext::stateDefault());

@@ -1,6 +1,9 @@
 # Based on the concurrency_sharded_replication_with_balancer_and_config_transitions and
 # concurrency_sharded_kill_primary_with_balancer suite. This suite runs continuous config
 # transitions in the background.
+config_variables:
+  - &movePrimaryComment continuousConfigShardTransitionMovePrimary
+
 test_kind: fsm_workload_test
 
 selector:
@@ -64,26 +67,22 @@ selector:
     # retry logic for this hook leads to breaking a test assertion.
     - jstests/concurrency/fsm_workloads/timeseries_mirrored_writes.js
 
-    # TODO SERVER-89838: Check metadata consistency hook detects different time series options on
-    # shards after collMod.
-    - jstests/concurrency/fsm_workloads/timeseries_collmod_granularity_update.js
-    - jstests/concurrency/fsm_workloads/timeseries_agg_out.js
-
-    # TODO SERVER-89839: Seem to time out waiting for TTL deletion to finish in teardown while
-    # balancing is disabled, which leads config transition hook to timeout.
-    - jstests/concurrency/fsm_workloads/indexed_insert_ttl.js
-    - jstests/concurrency/fsm_workloads/insert_ttl_timeseries.js
-    - jstests/concurrency/fsm_workloads/insert_ttl_retry_writes_timeseries.js
-
     # TODO SERVER-89840: Inconsistent UUIDs for config.system.sessions across config shard and
     # removed/re-added shard.
     - jstests/concurrency/fsm_workloads/add_remove_shards_killop.js
 
     # TODO SERVER-89841: Performs many sharding DDL operations and can time out taking the DDL lock
     # on slower variants.
+    - jstests/concurrency/fsm_workloads/agg_lookup.js
+    - jstests/concurrency/fsm_workloads/agg_lookup_in_txn.js
+    - jstests/concurrency/fsm_workloads/agg_out.js
     - jstests/concurrency/fsm_workloads/agg_sort.js
-    - jstests/concurrency/fsm_workloads/random_DDL_operations.js
     - jstests/concurrency/fsm_workloads/rename_sharded_collection.js
+    - jstests/concurrency/fsm_workloads/rename_capped_collection_chain.js
+    - jstests/concurrency/fsm_workloads/rename_capped_collection_droptarget.js
+    - jstests/concurrency/fsm_workloads/rename_capped_collection_dbname_chain.js
+    - jstests/concurrency/fsm_workloads/rename_capped_collection_dbname_droptarget.js
+    - jstests/concurrency/fsm_workloads/timeseries_agg_out.js
 
     ##
     # Denylists from concurrency_sharded_kill_primary_with_balancer
@@ -111,12 +110,15 @@ selector:
     - jstests/concurrency/fsm_workloads/kill_aggregation.js
     - jstests/concurrency/fsm_workloads/kill_rooted_or.js
 
-    # Uses getmores.
+    # Uses getmores. This suite executes random moveCollections in the background that cause open
+    # cursors on the collection to be killed.
     - jstests/concurrency/fsm_workloads/agg_base.js
+    - jstests/concurrency/fsm_workloads/agg_graph_lookup.js
     - jstests/concurrency/fsm_workloads/agg_unionWith_interrupt_cleanup.js
     - jstests/concurrency/fsm_workloads/create_capped_collection.js
     - jstests/concurrency/fsm_workloads/create_capped_collection_maxdocs.js
     - jstests/concurrency/fsm_workloads/create_index_background.js
+    - jstests/concurrency/fsm_workloads/create_index_background_unique.js
     - jstests/concurrency/fsm_workloads/create_index_background_partial_filter.js
     - jstests/concurrency/fsm_workloads/create_index_background_wildcard.js
     - jstests/concurrency/fsm_workloads/globally_managed_cursors.js
@@ -131,6 +133,8 @@ selector:
     - jstests/concurrency/fsm_workloads/reindex_background.js
     - jstests/concurrency/fsm_workloads/remove_multiple_documents.js
     - jstests/concurrency/fsm_workloads/server_status_with_time_out_cursors.js
+    - jstests/concurrency/fsm_workloads/updateOne_with_sort_update_queue.js
+    - jstests/concurrency/fsm_workloads/updateOne_with_sort_update_queue_unindexed.js
     - jstests/concurrency/fsm_workloads/update_where.js
     - jstests/concurrency/fsm_workloads/yield.js
     - jstests/concurrency/fsm_workloads/yield_fetch.js
@@ -188,15 +192,9 @@ selector:
     - config_shard_incompatible
     - assumes_stable_shard_list
 
-    # TODO SERVER-89342: Enable these tests
-    - requires_capped
-
-    # This suites execute random moveCollections in the background that cause open cursors on the
+    # This suite executes random moveCollections in the background that cause open cursors on the
     # collection to be killed.
     - requires_getmore
-
-    # TODO SERVER-90239 Enable time series tests.
-    - requires_timeseries
 
 executor:
   archive:
@@ -213,9 +211,11 @@ executor:
         TestData:
           runningWithConfigStepdowns: true
           runningWithShardStepdowns: true
+          killShards: true
           useActionPermittedFile: true
           runningWithBalancer: true
           transitioningConfigShard: true
+          shardCollectionProbability: 0.5
           fsmPreOverridesLoadedCallback: import("jstests/libs/override_methods/implicitly_retry_on_migration_in_progress.js");
   hooks:
     - class: ContinuousStepdown
@@ -224,9 +224,14 @@ executor:
       use_action_permitted_file: true
       kill: true
     - class: ContinuousConfigShardTransition
+      move_primary_comment: *movePrimaryComment
     - class: CheckShardFilteringMetadata
     - class: CheckReplDBHash
     - class: CheckMetadataConsistencyInBackground
+      shell_options:
+        global_vars:
+          TestData:
+            transitioningConfigShard: true
     - class: CheckOrphansDeleted
     - class: CheckRoutingTableConsistency
     - class: ValidateCollections # Validation can interfere with other operations, so this goes last.
@@ -275,6 +280,11 @@ executor:
             skipMoveCollectionThreshold: 0.5
           mode: alwaysOn
         balancerMigrationsThrottlingMs: 100
+        featureFlagReshardingForTimeseries: true
+        failpoint.movePrimaryFailIfNeedToCloneMovableCollections:
+          data:
+            comment: *movePrimaryComment
+          mode: alwaysOn
     num_rs_nodes_per_shard: 3
     # Use 3 shards so there's always at least two for workloads with manual migrations, etc.
     num_shards: 3

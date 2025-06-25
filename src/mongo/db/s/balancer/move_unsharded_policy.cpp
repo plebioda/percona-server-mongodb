@@ -269,6 +269,7 @@ void MoveUnshardedPolicy::applyActionResult(OperationContext* opCtx,
                 case ErrorCodes::LockBusy:
                 case ErrorCodes::NamespaceNotFound:
                 case ErrorCodes::NotImplemented:
+                case ErrorCodes::OplogOperationUnsupported:
                 case ErrorCodes::OplogQueryMinTsMissing:
                 case ErrorCodes::ReshardCollectionAborted:
                 case ErrorCodes::ReshardCollectionInProgress:
@@ -276,6 +277,7 @@ void MoveUnshardedPolicy::applyActionResult(OperationContext* opCtx,
                 case ErrorCodes::SnapshotTooOld:
                 case ErrorCodes::StaleDbVersion:
                 case ErrorCodes::ConflictingOperationInProgress:
+                case ErrorCodes::UserWritesBlocked:
                     return true;
                 default:
                     return false;
@@ -397,6 +399,14 @@ MigrateInfoVector MoveUnshardedPolicy::selectCollectionsToMove(
             opCtx, availableShards, randomizedDrainingShards, randomizedAvailableShards);
         if (drainingShardMigration) {
             result.emplace_back(*drainingShardMigration);
+            return result;
+        }
+
+        // Skip random moveCollections if at least one shard is draining, so we don't starve it of
+        // available shards to migrate data to.
+        auto drainingShardIter = std::find_if(
+            allShards.begin(), allShards.end(), [](const auto& stat) { return stat.isDraining; });
+        if (drainingShardIter != allShards.end()) {
             return result;
         }
 

@@ -952,7 +952,8 @@ int WiredTigerUtil::verifyTable(WiredTigerRecoveryUnit& ru,
     WT_SESSION* session;
 
     if (gFeatureFlagPrefetch.isEnabled(
-            serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
+            serverGlobalParams.featureCompatibility.acquireFCVSnapshot()) &&
+        !sessionCache->isEphemeral()) {
         invariantWTOK(conn->open_session(conn, &eventHandler, "prefetch=(enabled=true)", &session),
                       nullptr);
     } else {
@@ -1015,11 +1016,9 @@ bool WiredTigerUtil::useTableLogging(const NamespaceString& nss) {
 
     // We only turn off logging in the case of:
     // 1) Replication is enabled (the typical deployment), or
-    // 2) We're running as a standalone with recoverFromOplogAsStandalone=true or
-    // 3) We're running in magic restore mode
+    // 2) We're running as a standalone with recoverFromOplogAsStandalone=true
     const bool journalWritesBecauseStandalone = !getGlobalReplSettings().isReplSet() &&
-        !repl::ReplSettings::shouldRecoverFromOplogAsStandalone() &&
-        !storageGlobalParams.magicRestore;
+        !repl::ReplSettings::shouldRecoverFromOplogAsStandalone();
     if (journalWritesBecauseStandalone) {
         return true;
     }

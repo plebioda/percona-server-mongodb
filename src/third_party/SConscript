@@ -175,6 +175,12 @@ if "tom" in env["MONGO_CRYPTO"]:
         'CPPPATH': ['#/src/third_party/tomcrypt' + tomcryptSuffix + '/src/headers'],
     }
 
+if not use_system_version_of_library('tomcrypt'):
+    thirdPartyEnvironmentModifications['tomcrypt_md5'] = {
+        'CPPPATH': ['#/src/third_party/tomcrypt' + tomcryptSuffix + '/src/headers'],
+        'CPPDEFINES': ['LTC_NO_PROTOTYPES'] if env.TargetOSIs('windows') else [],
+    }
+
 if not use_system_version_of_library('stemmer'):
     thirdPartyEnvironmentModifications['stemmer'] = {
         'CPPPATH': ['#/src/third_party/libstemmer_c/include'],
@@ -281,11 +287,19 @@ if not use_system_version_of_library('grpc'):
         ],
     }
 
+# Vendored libunwind can be configured to use liblzma for decompressing
+# minidebuginfo sections, but we disable that feature via
+# `unwind/scripts/host-config.sh`. If vendored libunwind ever needs
+# minidebuginfo support, we'd say so here, and we'd dynamically link with
+# system lzma. Until then, it would be an unnecessary dynamic dependency.
+# However, the system libunwind is assumed to need `lzma` unconditionally.
+vendored_libunwind_needs_lzma = False
+
 if use_system_libunwind:
     thirdPartyEnvironmentModifications['unwind'] = {
         'SYSLIBDEPS_PRIVATE': [env['LIBDEPS_UNWIND_SYSLIBDEP'], env['LIBDEPS_LZMA_SYSLIBDEP']],
     }
-elif use_vendored_libunwind:
+elif use_vendored_libunwind and vendored_libunwind_needs_lzma:
     thirdPartyEnvironmentModifications['unwind'] = {
         'SYSLIBDEPS_PRIVATE': [env['LIBDEPS_LZMA_SYSLIBDEP']],
     }
@@ -382,7 +396,11 @@ if use_libunwind:
                 thirdPartyEnvironmentModifications['unwind'][k] = v
 
         unwindEnv.AddMethod(registerConsumerModifications, 'RegisterConsumerModifications')
-        unwindEnv.SConscript('unwind/SConscript', exports={'env': unwindEnv})
+        unwindEnv.SConscript(
+            'unwind/SConscript', exports={
+                'env': unwindEnv,
+                'vendored_libunwind_needs_lzma': vendored_libunwind_needs_lzma,
+            })
         unwindEnv.Append(LIBDEPS_INTERFACE=[
             'unwind/unwind',
         ])
@@ -514,6 +532,21 @@ if "tom" in env["MONGO_CRYPTO"]:
     ])
 
     tomcryptEnv.ShimLibrary(name="tomcrypt", )
+
+md5Env = env.Clone()
+if use_system_version_of_library("tomcrypt"):
+    md5Env = md5Env.Clone(SYSLIBDEPS=[
+        env['LIBDEPS_TOMCRYPT_SYSLIBDEP'],
+    ])
+else:
+    md5Env = md5Env.Clone()
+    md5Env.InjectThirdParty(libraries=['tomcrypt_md5'])
+    md5Env.SConscript('tomcrypt' + tomcryptSuffix + '/SConscript', exports={'env': md5Env})
+    md5Env = md5Env.Clone(LIBDEPS_INTERFACE=[
+        'tomcrypt' + tomcryptSuffix + '/tomcrypt_md5',
+    ])
+
+md5Env.ShimLibrary(name="tomcrypt_md5")
 
 # libunwind and tcmalloc are both added as global dependencies. Skip
 # inheriting global dependencies to avoid a circular dependency.

@@ -1,5 +1,4 @@
 """The unittest.TestCase for JavaScript tests."""
-import unittest
 
 import copy
 import os
@@ -8,13 +7,10 @@ import sys
 import shutil
 import threading
 import uuid
+from typing import Optional
 from bson.objectid import ObjectId
 
-from buildscripts.resmokelib import config
-from buildscripts.resmokelib import core
-from buildscripts.resmokelib import logging
-from buildscripts.resmokelib import utils
-from buildscripts.resmokelib import errors
+from buildscripts.resmokelib import config, core, logging, utils, errors
 from buildscripts.resmokelib.testing.testcases import interface
 from buildscripts.resmokelib.utils import registry
 
@@ -24,18 +20,28 @@ class _SingleJSTestCase(interface.ProcessTestCase):
 
     REGISTERED_NAME = registry.LEAVE_UNREGISTERED
 
-    def __init__(self, logger, js_filename, _id, shell_executable=None, shell_options=None):
+    def __init__(
+        self,
+        logger: logging.Logger,
+        js_filenames: list[str],
+        test_name: str,
+        _id: uuid.UUID,
+        shell_executable: Optional[str] = None,
+        shell_options: Optional[dict] = None,
+    ):
         """Initialize the _SingleJSTestCase with the JS file to run."""
-        interface.ProcessTestCase.__init__(self, logger, "JSTest", js_filename)
+        interface.ProcessTestCase.__init__(self, logger, "JSTest", test_name)
 
         # Command line options override the YAML configuration.
-        self.shell_executable = utils.default_if_none(config.MONGO_EXECUTABLE, shell_executable)
+        self.shell_executable: Optional[str] = utils.default_if_none(
+            config.MONGO_EXECUTABLE, shell_executable
+        )
 
-        self.js_filename = js_filename
+        self.js_filenames = js_filenames
         self._id = _id
-        self.shell_options = utils.default_if_none(shell_options, {}).copy()
+        self.shell_options: dict = utils.default_if_none(shell_options, {}).copy()
 
-    def configure(self, fixture, *args, **kwargs):
+    def configure(self, fixture: "interface.Fixture", *args, **kwargs):
         """Configure the jstest."""
         interface.ProcessTestCase.configure(self, fixture, *args, **kwargs)
 
@@ -68,8 +74,12 @@ class _SingleJSTestCase(interface.ProcessTestCase):
 
         # The tests in 'timeseries' directory need to use a different logic for implicity sharding
         # the collection. Make sure that we consider both unix and windows directory structures.
-        test_data["implicitlyShardOnCreateCollectionOnly"] = "/timeseries/" in self.js_filename or \
-        "\\timeseries\\" in self.js_filename
+        # Check if any test being run is a timeseries test
+        for js_filename in self.js_filenames:
+            is_timeseries_file = "/timeseries/" in js_filename or "\\timeseries\\" in js_filename
+            test_data["implicitlyShardOnCreateCollectionOnly"] = is_timeseries_file
+            if is_timeseries_file:
+                break
 
         global_vars["TestData"] = test_data
         self.shell_options["global_vars"] = global_vars
@@ -84,10 +94,12 @@ class _SingleJSTestCase(interface.ProcessTestCase):
 
         process_kwargs = copy.deepcopy(self.shell_options.get("process_kwargs", {}))
 
-        if process_kwargs \
-            and "env_vars" in process_kwargs \
-            and "KRB5_CONFIG" in process_kwargs["env_vars"] \
-            and "KRB5CCNAME" not in process_kwargs["env_vars"]:
+        if (
+            process_kwargs
+            and "env_vars" in process_kwargs
+            and "KRB5_CONFIG" in process_kwargs["env_vars"]
+            and "KRB5CCNAME" not in process_kwargs["env_vars"]
+        ):
             # Use a job-specific credential cache for JavaScript tests involving Kerberos.
             krb5_dir = os.path.join(data_dir, "krb5")
 
@@ -100,45 +112,67 @@ class _SingleJSTestCase(interface.ProcessTestCase):
 
         self.shell_options["process_kwargs"] = process_kwargs
 
-    def _get_data_dir(self, global_vars):
+    def _get_data_dir(self, global_vars: dict) -> str:
         """Return the value that mongo shell should set for the MongoRunner.dataDir property."""
         # Command line options override the YAML configuration.
-        data_dir_prefix = utils.default_if_none(config.DBPATH_PREFIX,
-                                                global_vars.get("MongoRunner.dataDir"))
+        data_dir_prefix = utils.default_if_none(
+            config.DBPATH_PREFIX, global_vars.get("MongoRunner.dataDir")
+        )
         data_dir_prefix = utils.default_if_none(data_dir_prefix, config.DEFAULT_DBPATH_PREFIX)
         return os.path.abspath(
-            os.path.join(data_dir_prefix, "job%d" % self.fixture.job_num,
-                         config.MONGO_RUNNER_SUBDIR))
+            os.path.join(
+                data_dir_prefix, "job%d" % self.fixture.job_num, config.MONGO_RUNNER_SUBDIR
+            )
+        )
 
-    def _make_process(self):
+    def _make_process(self) -> "process.Process":
         return core.programs.mongo_shell_program(
-            self.logger, executable=self.shell_executable, filename=self.js_filename,
-            connection_string=self.fixture.get_shell_connection_url(), **self.shell_options)
+            self.logger,
+            executable=self.shell_executable,
+            filenames=self.js_filenames,
+            test_name=os.path.splitext(os.path.basename(self.test_name))[0],
+            connection_string=self.fixture.get_shell_connection_url(),
+            **self.shell_options,
+        )
 
 
 class JSTestCaseBuilder(interface.TestCaseFactory):
     """Build the real TestCase in the JSTestCase wrapper."""
 
-    def __init__(self, logger, js_filename, test_id, shell_executable=None, shell_options=None):
+    def __init__(
+        self,
+        logger: logging.Logger,
+        js_filenames: list[str],
+        test_name: str,
+        test_id: uuid.UUID,
+        shell_executable: Optional[str] = None,
+        shell_options: Optional[dict] = None,
+    ):
         """Initialize the JSTestCase with the JS file to run."""
-        self.test_case_template = _SingleJSTestCase(logger, js_filename, test_id, shell_executable,
-                                                    shell_options)
+        self.test_case_template = _SingleJSTestCase(
+            logger, js_filenames, test_name, test_id, shell_executable, shell_options
+        )
         interface.TestCaseFactory.__init__(self, _SingleJSTestCase, shell_options)
 
-    def configure(self, fixture, *args, **kwargs):
+    def configure(self, fixture: "interface.Fixture", *args, **kwargs):
         """Configure the jstest."""
         self.test_case_template.configure(fixture, *args, **kwargs)
         self.test_case_template.configure_shell()
         self.shell_options = self.test_case_template.shell_options
 
-    def make_process(self):
+    def make_process(self) -> "process.Process":
         # This function should only be called by MultiClientsTestCase's _make_process().
         return self.test_case_template._make_process()  # pylint: disable=protected-access
 
-    def create_test_case(self, logger, shell_options):
-        test_case = _SingleJSTestCase(logger, self.test_case_template.js_filename,
-                                      self.test_case_template._id,
-                                      self.test_case_template.shell_executable, shell_options)
+    def create_test_case(self, logger: logging.Logger, shell_options: dict) -> _SingleJSTestCase:
+        test_case = _SingleJSTestCase(
+            logger,
+            self.test_case_template.js_filenames,
+            self.test_case_template.test_name,
+            self.test_case_template._id,
+            self.test_case_template.shell_executable,
+            shell_options,
+        )
         test_case.configure(self.test_case_template.fixture)
         return test_case
 
@@ -164,7 +198,14 @@ class MultiClientsTestCase(interface.TestCase, interface.UndoDBUtilsMixin):
             except:  # pylint: disable=bare-except
                 self.exc_info = sys.exc_info()
 
-    def __init__(self, logger, test_kind, test_name, test_id, factory):
+    def __init__(
+        self,
+        logger: logging.Logger,
+        test_kind: str,
+        test_name: str,
+        test_id: uuid.UUID,
+        factory: interface.TestCaseFactory,
+    ):
         """Initialize the TestCase for running test."""
         super().__init__(logger, test_kind, test_name)
         self._id = test_id
@@ -173,8 +214,13 @@ class MultiClientsTestCase(interface.TestCase, interface.UndoDBUtilsMixin):
         self._factory = factory
 
     def configure(  # pylint: disable=arguments-differ,keyword-arg-before-vararg
-            self, fixture, num_clients=DEFAULT_CLIENT_NUM, use_tenant_client=False, *args,
-            **kwargs):
+        self,
+        fixture: "interface.Fixture",
+        num_clients: int = DEFAULT_CLIENT_NUM,
+        use_tenant_client: bool = False,
+        *args,
+        **kwargs,
+    ):
         """Configure the test case and its factory."""
         super().configure(fixture, *args, **kwargs)
         self.num_clients = num_clients
@@ -187,8 +233,9 @@ class MultiClientsTestCase(interface.TestCase, interface.UndoDBUtilsMixin):
 
     def _run_single_copy(self):
         tenant_id = str(ObjectId()) if self.use_tenant_client else None
-        test_case = self._factory.create_test_case_for_thread(self.logger, num_clients=1,
-                                                              thread_id=0, tenant_id=tenant_id)
+        test_case = self._factory.create_test_case_for_thread(
+            self.logger, num_clients=1, thread_id=0, tenant_id=tenant_id
+        )
 
         try:
             test_case.run_test()
@@ -204,18 +251,21 @@ class MultiClientsTestCase(interface.TestCase, interface.UndoDBUtilsMixin):
             # If there are multiple clients, make a new thread for each client.
             for thread_id in range(self.num_clients):
                 tenant_id = str(ObjectId()) if self.use_tenant_client else None
-                logger = logging.loggers.new_test_thread_logger(self.logger, self.test_kind,
-                                                                str(thread_id), tenant_id)
+                logger = logging.loggers.new_test_thread_logger(
+                    self.logger, self.test_kind, str(thread_id), tenant_id
+                )
                 test_case = self._factory.create_test_case_for_thread(
-                    logger, num_clients=self.num_clients, thread_id=thread_id, tenant_id=tenant_id)
+                    logger, num_clients=self.num_clients, thread_id=thread_id, tenant_id=tenant_id
+                )
                 test_cases.append(test_case)
 
                 thread = self.ThreadWithException(target=test_case.run_test)
                 threads.append(thread)
                 thread.start()
         except:
-            self.logger.exception("Encountered an error starting threads for jstest %s.",
-                                  self.basename())
+            self.logger.exception(
+                "Encountered an error starting threads for jstest %s.", self.basename()
+            )
             raise
         finally:
             for thread in threads:
@@ -229,12 +279,15 @@ class MultiClientsTestCase(interface.TestCase, interface.UndoDBUtilsMixin):
                     return_code = test_case.return_code
             self.return_code = return_code
 
-            for (thread_id, thread) in enumerate(threads):
+            for thread_id, thread in enumerate(threads):
                 if thread.exc_info is not None:
                     if not isinstance(thread.exc_info[1], self.failureException):
                         self.logger.error(
-                            "Encountered an error inside thread %d running jstest %s.", thread_id,
-                            self.basename(), exc_info=thread.exc_info)
+                            "Encountered an error inside thread %d running jstest %s.",
+                            thread_id,
+                            self.basename(),
+                            exc_info=thread.exc_info,
+                        )
                     raise thread.exc_info[1]
 
     def run_test(self):
@@ -251,14 +304,15 @@ class MultiClientsTestCase(interface.TestCase, interface.UndoDBUtilsMixin):
             self._cull_recordings("mongo")
             raise
 
-    def _raise_if_unsafe_exit(self, return_code):
+    def _raise_if_unsafe_exit(self, return_code: int):
         """Determine if a return code represents and unsafe exit."""
         # 252 and 253 may be returned in failed test executions.
         # (i.e. -4 and -3 in mongo_main.cpp)
         if return_code not in (252, 253, 0):
             self.propagate_error = errors.UnsafeExitError(
                 f"Mongo shell exited with code {return_code} while running jstest {self.basename()}."
-                " Further test execution may be unsafe.")
+                " Further test execution may be unsafe."
+            )
             raise self.propagate_error  # pylint: disable=raising-bad-type
 
 
@@ -268,12 +322,29 @@ class JSTestCase(MultiClientsTestCase):
     REGISTERED_NAME = "js_test"
     TEST_KIND = "JSTest"
 
-    def __init__(self, logger, js_filename, shell_executable=None, shell_options=None):
+    def __init__(
+        self,
+        logger: logging.Logger,
+        js_filenames: list[str],
+        shell_executable: Optional[str] = None,
+        shell_options: Optional[dict] = None,
+    ):
         """Initialize the TestCase for running JS files."""
-
+        assert len(js_filenames) >= 1
         test_id = uuid.uuid4()
-        factory = JSTestCaseBuilder(logger, js_filename, test_id, shell_executable, shell_options)
-        MultiClientsTestCase.__init__(self, logger, self.TEST_KIND, js_filename, test_id, factory)
+        if len(js_filenames) > 1:
+            test_name = "combination_test"
+        else:
+            test_name = js_filenames[0]
+        factory = JSTestCaseBuilder(
+            logger,
+            js_filenames,
+            test_name,
+            test_id,
+            shell_executable,
+            shell_options,
+        )
+        MultiClientsTestCase.__init__(self, logger, self.TEST_KIND, test_name, test_id, factory)
 
 
 class AllVersionsJSTestCase(JSTestCase):

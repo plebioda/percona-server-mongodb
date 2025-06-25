@@ -501,8 +501,6 @@ ExitCode _initAndListen(ServiceContext* serviceContext, int listenPort) {
         cc().setSystemOperationUnkillableByStepdown(lk);
     }
 
-    serviceContext->setFastClockSource(FastClockSourceFactory::create(Milliseconds(10)));
-
     BSONObjBuilder startupTimeElapsedBuilder;
     BSONObjBuilder startupInfoBuilder;
 
@@ -2158,8 +2156,6 @@ int mongod_main(int argc, char* argv[]) {
 
     waitForDebugger();
 
-    registerShutdownTask(shutdownTask);
-
     setupSignalHandlers();
 
     srand(static_cast<unsigned>(curTimeMicros64()));  // NOLINT
@@ -2174,10 +2170,21 @@ int mongod_main(int argc, char* argv[]) {
         quickExit(ExitCode::fail);
     }
 
+    // There is no single-threaded guarantee beyond this point.
+    ThreadSafetyContext::getThreadSafetyContext()->allowMultiThreading();
+
+    // Per SERVER-7434, startSignalProcessingThread must run after any forks (i.e.
+    // initialize_server_global_state::forkServerOrDie) and before the creation of any other threads
+    startSignalProcessingThread();
+
     auto* service = [] {
         try {
             auto serviceContextHolder = ServiceContext::make();
             auto* serviceContext = serviceContextHolder.get();
+
+            // This FastClockSourceFactory creates a background thread ClockSource. It must be set
+            // on ServiceContext before any other threads can get and use it.
+            serviceContext->setFastClockSource(FastClockSourceFactory::create(Milliseconds(10)));
             setGlobalServiceContext(std::move(serviceContextHolder));
 
             return serviceContext;
@@ -2191,6 +2198,8 @@ int mongod_main(int argc, char* argv[]) {
             quickExit(ExitCode::fail);
         }
     }();
+
+    registerShutdownTask(shutdownTask);
 
     {
         // Create the durable history registry prior to calling the `setUp*` methods. They may
@@ -2227,13 +2236,7 @@ int mongod_main(int argc, char* argv[]) {
     if (!initialize_server_global_state::checkSocketPath())
         quickExit(ExitCode::fail);
 
-    // There is no single-threaded guarantee beyond this point.
-    ThreadSafetyContext::getThreadSafetyContext()->allowMultiThreading();
     LOGV2(5945603, "Multi threading initialized");
-
-    // Per SERVER-7434, startSignalProcessingThread must run after any forks (i.e.
-    // initialize_server_global_state::forkServerOrDie) and before the creation of any other threads
-    startSignalProcessingThread();
 
     startAllocatorThread();
 

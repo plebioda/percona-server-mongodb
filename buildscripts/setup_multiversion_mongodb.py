@@ -76,7 +76,6 @@ def download_file(url, file_name, download_retries=5):
     """Return True if download was successful. Raises error if download fails."""
 
     while download_retries > 0:
-
         with requests.Session() as session:
             adapter = requests.adapters.HTTPAdapter(max_retries=download_retries)
             session.mount(url, adapter)
@@ -101,9 +100,10 @@ def download_file(url, file_name, download_retries=5):
             if url_content_length != file_size:
                 download_retries -= 1
                 if download_retries == 0:
-                    raise Exception("Downloaded file size ({} bytes) doesn't match content length"
-                                    "({} bytes) for URL {}".format(file_size, url_content_length,
-                                                                   url))
+                    raise Exception(
+                        "Downloaded file size ({} bytes) doesn't match content length"
+                        "({} bytes) for URL {}".format(file_size, url_content_length, url)
+                    )
                 continue
 
         return True
@@ -115,7 +115,8 @@ class MultiVersionDownloader(object):  # pylint: disable=too-many-instance-attri
     """Class to support multiversion downloads."""
 
     def __init__(  # pylint: disable=too-many-arguments
-            self, install_dir, link_dir, edition, platform, architecture, use_latest=False):
+        self, install_dir, link_dir, edition, platform, architecture, use_latest=False
+    ):
         """Initialize MultiVersionDownloader."""
         self.install_dir = install_dir
         self.link_dir = link_dir
@@ -153,7 +154,10 @@ class MultiVersionDownloader(object):  # pylint: disable=too-many-instance-attri
         """Return the download and generic download links."""
         temp_file = tempfile.mktemp()
         # the upstream file was at: https://downloads.mongodb.org/full.json
-        download_file("https://raw.githubusercontent.com/Percona-QA/psmdb-misc-scripts/master/psmdb_download_links.json", temp_file)
+        download_file(
+            "https://raw.githubusercontent.com/Percona-QA/psmdb-misc-scripts/master/psmdb_download_links.json",
+            temp_file,
+        )
         with open(temp_file) as file_handle:
             full_json = json.load(file_handle)
         os.remove(temp_file)
@@ -165,18 +169,22 @@ class MultiVersionDownloader(object):  # pylint: disable=too-many-instance-attri
         # The generic target contains a platform and architecture.
         generic_target = "{}_{}".format(self.generic_platform, self.generic_architecture)
         for json_version in full_json["versions"]:
-            if "version" not in json_version or 'downloads' not in json_version:
+            if "version" not in json_version or "downloads" not in json_version:
                 continue
             version = json_version["version"]
             for download in json_version["downloads"]:
                 if "target" not in download or "edition" not in download:
                     continue
-                if (download["target"].lower() == self.platform
-                        and download["arch"].lower() == self.architecture
-                        and download["edition"].lower() == self.edition):
+                if (
+                    download["target"].lower() == self.platform
+                    and download["arch"].lower() == self.architecture
+                    and download["edition"].lower() == self.edition
+                ):
                     links[version] = download["archive"]["url"]
-                elif (download["target"].lower() == generic_target
-                      and download["edition"].lower() == "base"):
+                elif (
+                    download["target"].lower() == generic_target
+                    and download["edition"].lower() == "base"
+                ):
                     generic_links[version] = download["archive"]["url"]
 
         return links, generic_links
@@ -206,7 +214,7 @@ class MultiVersionDownloader(object):  # pylint: disable=too-many-instance-attri
         requested_version_parts = get_version_parts(version)
         for link_version, link_url in self.links.items():
             link_version_parts = get_version_parts(link_version)
-            if link_version_parts[:len(requested_version_parts)] == requested_version_parts:
+            if link_version_parts[: len(requested_version_parts)] == requested_version_parts:
                 # The 'link_version' is a candidate for the requested 'version' if
                 #   (a) it is a prefix of the requested version, or if
                 #   (b) it is the "<branchname>-latest" version and the requested version is for a
@@ -223,21 +231,25 @@ class MultiVersionDownloader(object):  # pylint: disable=too-many-instance-attri
         if not urls:
             print(
                 "Cannot find a link for version {}, versions {} found.".format(version, self.links),
-                file=sys.stderr)
+                file=sys.stderr,
+            )
             for ver, generic_url in self.generic_links.items():
                 parts = get_version_parts(ver)
-                if parts[:len(requested_version_parts)] == requested_version_parts:
+                if parts[: len(requested_version_parts)] == requested_version_parts:
                     if "-" in version and ver != version:
                         continue
                     urls.append((ver, generic_url))
             if not urls:
                 if version not in ["4.7", "4.8"]:
                     raise Exception(
-                        "No fall-back generic link available or version {}.".format(version))
+                        "No fall-back generic link available or version {}.".format(version)
+                    )
 
                 print(
-                    "manually constructing URL for {} releases; please note that only the latest release is available"
-                    .format(version))
+                    "manually constructing URL for {} releases; please note that only the latest release is available".format(
+                        version
+                    )
+                )
 
                 url_template = "https://downloads.mongodb.com/{bucket}/mongodb-{os_family}-{arch}-enterprise-{platform}-{version}.{suffix}"
 
@@ -263,9 +275,14 @@ class MultiVersionDownloader(object):  # pylint: disable=too-many-instance-attri
                 else:
                     platform = self.platform
 
-                url = url_template.format(bucket=bucket, os_family=os_family,
-                                          arch=self.architecture, platform=platform,
-                                          version=version, suffix=suffix)
+                url = url_template.format(
+                    bucket=bucket,
+                    os_family=os_family,
+                    arch=self.architecture,
+                    platform=platform,
+                    version=version,
+                    suffix=suffix,
+                )
 
                 # URLs with missing sections lead to double dashes.
                 url = url.replace("--", "-")
@@ -284,8 +301,11 @@ class MultiVersionDownloader(object):  # pylint: disable=too-many-instance-attri
         # of the 'extract_dir' cannot be derived from the URL, since it contains the githash.
         already_downloaded = os.path.isdir(os.path.join(self.install_dir, extract_dir))
         if already_downloaded:
-            print("Skipping download for version {} ({}) since the dest already exists '{}'".format(
-                version, full_version, extract_dir))
+            print(
+                "Skipping download for version {} ({}) since the dest already exists '{}'".format(
+                    version, full_version, extract_dir
+                )
+            )
             return None
         else:
             temp_file = tempfile.mktemp(suffix=file_suffix)
@@ -370,7 +390,6 @@ class MultiVersionDownloader(object):  # pylint: disable=too-many-instance-attri
                 raise
 
         for executable in os.listdir(os.path.join(installed_dir, "bin")):
-
             executable_name, executable_extension = os.path.splitext(executable)
             link_name = "{}-{}{}".format(executable_name, version, executable_extension)
 
@@ -382,6 +401,7 @@ class MultiVersionDownloader(object):  # pylint: disable=too-many-instance-attri
                     def symlink_ms(source, link_name):
                         """Provide symlink for Windows."""
                         import ctypes
+
                         csl = ctypes.windll.kernel32.CreateSymbolicLinkW
                         csl.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
                         csl.restype = ctypes.c_ubyte
@@ -407,7 +427,8 @@ def main():
     except AttributeError:
         print("Cannot catch signals on Windows")
 
-    parser = optparse.OptionParser(usage="""
+    parser = optparse.OptionParser(
+        usage="""
 Downloads and installs particular mongodb versions (each binary is renamed
 to include its version) into an install directory and symlinks the binaries
 with versions to another directory. This script supports community and
@@ -435,34 +456,73 @@ You should then add ./link/ to your path so multi-version tests will work.
 
 Note: If "rc" is included in the version name, we'll use the exact rc, otherwise
 we'll pull the highest non-rc version compatible with the version specified.
-""")
+"""
+    )
 
-    parser.add_option("-i", "--installDir", dest="install_dir",
-                      help="Directory to install the download archive. [REQUIRED]", default=None)
     parser.add_option(
-        "-l", "--linkDir", dest="link_dir",
-        help=("Directory to contain links to all binaries for each version in"
-              " the install directory. [REQUIRED]"), default=None)
+        "-i",
+        "--installDir",
+        dest="install_dir",
+        help="Directory to install the download archive. [REQUIRED]",
+        default=None,
+    )
+    parser.add_option(
+        "-l",
+        "--linkDir",
+        dest="link_dir",
+        help=(
+            "Directory to contain links to all binaries for each version in"
+            " the install directory. [REQUIRED]"
+        ),
+        default=None,
+    )
     editions = ["base", "enterprise", "targeted"]
     parser.add_option(
-        "-e", "--edition", dest="edition", choices=editions,
-        help=("Edition of the build to download, choose from {}, [default:"
-              " '%default'].".format(editions)), default="base")
+        "-e",
+        "--edition",
+        dest="edition",
+        choices=editions,
+        help=(
+            "Edition of the build to download, choose from {}, [default:" " '%default'].".format(
+                editions
+            )
+        ),
+        default="base",
+    )
     parser.add_option(
-        "-p", "--platform", dest="platform",
-        help=("Platform to download [REQUIRED]. Examples include: 'linux',"
-              " 'osx', 'rhel62', 'windows'."), default=None)
+        "-p",
+        "--platform",
+        dest="platform",
+        help=(
+            "Platform to download [REQUIRED]. Examples include: 'linux',"
+            " 'osx', 'rhel62', 'windows'."
+        ),
+        default=None,
+    )
     parser.add_option(
-        "-a", "--architecture", dest="architecture",
-        help=("Architecture to download, [default: '%default']. Examples include:"
-              " 'arm64', 'ppc64le', 's390x' and 'x86_64'."), default="x86_64")
+        "-a",
+        "--architecture",
+        dest="architecture",
+        help=(
+            "Architecture to download, [default: '%default']. Examples include:"
+            " 'arm64', 'ppc64le', 's390x' and 'x86_64'."
+        ),
+        default="x86_64",
+    )
     parser.add_option(
-        "-u", "--useLatest", dest="use_latest", action="store_true",
-        help=("If specified, the latest (nightly) version will be downloaded,"
-              " if it exists, for the version specified. For example, if specifying"
-              " version 3.2 for download, the nightly version for 3.2 will be"
-              " downloaded if it exists, otherwise the 'highest' version will be"
-              " downloaded, i.e., '3.2.17'"), default=False)
+        "-u",
+        "--useLatest",
+        dest="use_latest",
+        action="store_true",
+        help=(
+            "If specified, the latest (nightly) version will be downloaded,"
+            " if it exists, for the version specified. For example, if specifying"
+            " version 3.2 for download, the nightly version for 3.2 will be"
+            " downloaded if it exists, otherwise the 'highest' version will be"
+            " downloaded, i.e., '3.2.17'"
+        ),
+        default=False,
+    )
 
     options, versions = parser.parse_args()
 
@@ -471,8 +531,14 @@ we'll pull the highest non-rc version compatible with the version specified.
         parser.print_help()
         parser.exit(1)
 
-    downloader = MultiVersionDownloader(options.install_dir, options.link_dir, options.edition,
-                                        options.platform, options.architecture, options.use_latest)
+    downloader = MultiVersionDownloader(
+        options.install_dir,
+        options.link_dir,
+        options.edition,
+        options.platform,
+        options.architecture,
+        options.use_latest,
+    )
 
     for version in versions:
         downloader.download_install(version)

@@ -45,8 +45,6 @@
 
 namespace mongo {
 
-using std::unique_ptr;
-
 namespace {
 
 typedef unsigned char HashDigest[16];
@@ -87,7 +85,7 @@ private:
 };
 
 Hasher::Hasher(HashSeed seed) : _seed(seed) {
-    md5_init(&_md5State);
+    md5_init_state(&_md5State);
     addSeed(seed);
 }
 

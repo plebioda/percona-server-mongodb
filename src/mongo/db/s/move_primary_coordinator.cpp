@@ -82,6 +82,7 @@
 #include "mongo/s/client/shard_registry.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/request_types/move_primary_gen.h"
+#include "mongo/s/resharding/resharding_feature_flag_gen.h"
 #include "mongo/s/sharding_state.h"
 #include "mongo/util/database_name_util.h"
 #include "mongo/util/duration.h"
@@ -94,7 +95,28 @@
 namespace mongo {
 using namespace fmt::literals;
 
+namespace {
+
 MONGO_FAIL_POINT_DEFINE(hangBeforeCloningData);
+MONGO_FAIL_POINT_DEFINE(movePrimaryFailIfNeedToCloneMovableCollections);
+
+/**
+ * Returns true if this unsharded collection can be moved by a moveCollection command.
+ */
+bool isMovableUnshardedCollection(const NamespaceString& nss) {
+    if (nss.isFLE2StateCollection()) {
+        return false;
+    }
+
+    if (nss.isTimeseriesBucketsCollection()) {
+        const auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
+        return fcvSnapshot.isVersionInitialized() &&
+            resharding::gFeatureFlagReshardingForTimeseries.isEnabled(fcvSnapshot);
+    }
+    return false;
+}
+
+}  // namespace
 
 MovePrimaryCoordinator::MovePrimaryCoordinator(ShardingDDLCoordinatorService* service,
                                                const BSONObj& initialState)
@@ -476,6 +498,31 @@ std::vector<NamespaceString> MovePrimaryCoordinator::getCollectionsToClone(
                         collectionsToIgnore.cend(),
                         std::back_inserter(collectionsToClone));
 
+    for (const auto& nss : collectionsToClone) {
+        movePrimaryFailIfNeedToCloneMovableCollections.executeIf(
+            [&](const BSONObj& data) {
+                if (isMovableUnshardedCollection(nss)) {
+                    AutoGetCollection autoColl(opCtx, nss, MODE_IS);
+                    uassert(9046501,
+                            str::stream() << "Found a user collection to clone: "
+                                          << nss.toStringForErrorMsg(),
+                            !autoColl);
+                }
+            },
+            [&](const BSONObj& data) {
+                if (!data.hasField("comment")) {
+                    return true;
+                }
+                // If this failpoint is configured with a "comment", only fail the command if
+                // its "comment" matches the failpoint's "comment".
+                if (!opCtx->getComment()) {
+                    return false;
+                }
+                return opCtx->getComment()->checkAndGetStringData() ==
+                    data.getStringField("comment");
+            });
+    }
+
     return collectionsToClone;
 }
 
@@ -663,7 +710,7 @@ void MovePrimaryCoordinator::dropStaleDataOnDonor(OperationContext* opCtx) const
                                nssToDrop,
                                &unusedDropReply,
                                DropCollectionSystemCollectionMode::kAllowSystemCollectionDrops,
-                               false /* fromMigrate */));
+                               true /* fromMigrate */));
         } catch (const DBException& e) {
             LOGV2_WARNING(7120210,
                           "Failed to drop stale collection on donor",
@@ -695,7 +742,7 @@ void MovePrimaryCoordinator::dropOrphanedDataOnRecipient(
             {_doc.getToShardId()},
             **executor,
             getNewSession(opCtx),
-            false /* fromMigrate */,
+            true /* fromMigrate */,
             true /* dropSystemCollections */);
     }
 }

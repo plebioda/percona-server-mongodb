@@ -6,6 +6,7 @@
  *  # TODO SERVER-84659: remove the following tag once the old create collection
  *  # coordinator is fixed
  *  featureFlagAuthoritativeShardCollection,
+ *  featureFlagTrackUnshardedCollectionsUponCreation,
  *  # this test swallow expected errors caused by concurrent DDL operations
  *  catches_command_failures,
  *  requires_fcv_80
@@ -128,7 +129,7 @@ export const $config = (function() {
                 shardCollection: coll.getFullName(),
                 key: {time: 1},
                 unique: false,
-                timseries: {timeField: "time"}
+                timeseries: {timeField: "time"}
             });
             const errorCodes = [
                 // Concurrent creation on the same namespace.

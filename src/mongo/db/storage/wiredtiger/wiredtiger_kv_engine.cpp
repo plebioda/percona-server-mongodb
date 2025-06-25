@@ -957,7 +957,8 @@ WiredTigerKVEngine::WiredTigerKVEngine(
     }
 
     if (gFeatureFlagPrefetch.isEnabled(
-            serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
+            serverGlobalParams.featureCompatibility.acquireFCVSnapshot()) &&
+        !_ephemeral) {
         ss << "prefetch=(available=true,default=false),";
     }
 

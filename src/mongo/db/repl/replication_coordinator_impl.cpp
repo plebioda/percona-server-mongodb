@@ -239,7 +239,6 @@ using CallbackArgs = executor::TaskExecutor::CallbackArgs;
 using CallbackFn = executor::TaskExecutor::CallbackFn;
 using CallbackHandle = executor::TaskExecutor::CallbackHandle;
 using EventHandle = executor::TaskExecutor::EventHandle;
-using executor::NetworkInterface;
 using NextAction = Fetcher::NextAction;
 
 void lockAndCall(stdx::unique_lock<Latch>* lk, const std::function<void()>& fn) {
@@ -1023,7 +1022,7 @@ void ReplicationCoordinatorImpl::startup(OperationContext* opCtx,
     }
 
     invariant(_settings.isReplSet());
-    invariant(!ReplSettings::shouldRecoverFromOplogAsStandalone());
+    fassertNoTrace(5923500, !ReplSettings::shouldRecoverFromOplogAsStandalone());
 
     // Do not modify local replication metadata if we are starting in magic restore mode.
     if (storageGlobalParams.magicRestore) {

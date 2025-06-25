@@ -793,7 +793,7 @@ makeFlushRoutingTableCacheUpdatesOptions(const NamespaceString& nss,
     auto cmd = FlushRoutingTableCacheUpdatesWithWriteConcern(nss);
     cmd.setSyncFromConfig(true);
     cmd.setDbName(nss.dbName());
-    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
+    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args, kMajorityWriteConcern);
     auto opts =
         std::make_shared<async_rpc::AsyncRPCOptions<FlushRoutingTableCacheUpdatesWithWriteConcern>>(
             exec, token, cmd, args);
@@ -1470,6 +1470,26 @@ ReshardingCoordinator::ReshardingCoordinator(
         _reshardingCoordinatorObserver->onReshardingParticipantTransition(coordinatorDoc);
     }
 
+    /*
+     * _originalReshardingStatus is used to return the final status of the operation
+     * if set. If we are in the quiesced state here, it means we completed the
+     * resharding operation on a different primary and failed over. Since we
+     * completed the operation previously we do not want to report a failure status
+     * from aborting (if _originalReshardingStatus is empty). Explicitly set the
+     * previous status to Status:OK() unless we actually had an abort reason from
+     * before the failover.
+     *
+     * If we are in the aborting state, we do want to preserve the original abort reason
+     * to report in the final status.
+     */
+    if (coordinatorDoc.getAbortReason()) {
+        invariant(coordinatorDoc.getState() == CoordinatorStateEnum::kQuiesced ||
+                  coordinatorDoc.getState() == CoordinatorStateEnum::kAborting);
+        _originalReshardingStatus.emplace(resharding::getStatusFromAbortReason(coordinatorDoc));
+    } else if (coordinatorDoc.getState() == CoordinatorStateEnum::kQuiesced) {
+        _originalReshardingStatus.emplace(Status::OK());
+    }
+
     _metrics->onStateTransition(boost::none, coordinatorDoc.getState());
 }
 
@@ -1539,7 +1559,7 @@ createShardsvrCommitReshardCollectionOptions(const NamespaceString& nss,
     ShardsvrCommitReshardCollection cmd(nss);
     cmd.setDbName(DatabaseName::kAdmin);
     cmd.setReshardingUUID(reshardingUUID);
-    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
+    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args, kMajorityWriteConcern);
     auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrCommitReshardCollection>>(
         exec, token, cmd, args);
     return opts;
@@ -1634,11 +1654,15 @@ ExecutorFuture<void> ReshardingCoordinator::_initializeCoordinator(
             }
 
             auto nss = _coordinatorDoc.getSourceNss();
+
+            // If we have an original resharding status due to a failover occurring, we want to
+            // log the original abort reason from before the failover in lieu of the generic
+            // ReshardCollectionAborted status.
             LOGV2(4956903,
                   "Resharding failed",
                   logAttrs(nss),
                   "newShardKeyPattern"_attr = _coordinatorDoc.getReshardingKey(),
-                  "error"_attr = status);
+                  "error"_attr = _originalReshardingStatus ? *_originalReshardingStatus : status);
 
             // Allow abort to continue except when stepped down.
             _cancelableOpCtxFactory.emplace(_ctHolder->getStepdownToken(), _markKilledExecutor);
@@ -1646,13 +1670,6 @@ ExecutorFuture<void> ReshardingCoordinator::_initializeCoordinator(
             // If we're already quiesced here it means we failed over and need to preserve the
             // original abort reason.
             if (_coordinatorDoc.getState() == CoordinatorStateEnum::kQuiesced) {
-                _originalReshardingStatus.emplace(Status::OK());
-                auto originalAbortReason = _coordinatorDoc.getAbortReason();
-                if (originalAbortReason) {
-                    _originalReshardingStatus.emplace(
-                        sharding_ddl_util_deserializeErrorStatusFromBSON(
-                            BSON("status" << *originalAbortReason).firstElement()));
-                }
                 markCompleted(*_originalReshardingStatus, _metrics.get());
                 // We must return status here, not _originalReshardingStatus, because the latter
                 // may be Status::OK() and not abort the future flow.
@@ -2209,8 +2226,6 @@ void ReshardingCoordinator::_insertCoordDocAndChangeOrigCollEntry() {
         if (_coordinatorDoc.getState() == CoordinatorStateEnum::kAborting ||
             _coordinatorDoc.getState() == CoordinatorStateEnum::kQuiesced) {
             _ctHolder->abort();
-            // Force future chain to enter onError flow
-            uasserted(ErrorCodes::ReshardCollectionAborted, "aborted");
         }
 
         return;
@@ -2560,7 +2575,7 @@ void ReshardingCoordinator::_generateOpEventOnCoordinatingShard(
     // In case the recipient is running a legacy binary, swallow the error.
     try {
         GenericArguments args;
-        async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
+        async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args, kMajorityWriteConcern);
         const auto opts =
             std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrNotifyShardingEventRequest>>(
                 **executor, _ctHolder->getStepdownToken(), request, args);
@@ -2608,7 +2623,8 @@ ExecutorFuture<void> ReshardingCoordinator::_awaitAllParticipantShardsDone(
                     nss, notMatchingThisUUID);
 
                 GenericArguments args;
-                async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
+                async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(
+                    args, kMajorityWriteConcern);
                 auto opts = std::make_shared<async_rpc::AsyncRPCOptions<
                     ShardsvrDropCollectionIfUUIDNotMatchingWithWriteConcernRequest>>(
                     **executor, _ctHolder->getStepdownToken(), cmd, args);
@@ -2700,7 +2716,7 @@ void ReshardingCoordinator::_establishAllDonorsAsParticipants(
     const std::shared_ptr<executor::ScopedTaskExecutor>& executor) {
     invariant(_coordinatorDoc.getState() == CoordinatorStateEnum::kPreparingToDonate);
     GenericArguments args;
-    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
+    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args, kMajorityWriteConcern);
     auto opts = makeFlushRoutingTableCacheUpdatesOptions(
         _coordinatorDoc.getSourceNss(), **executor, _ctHolder->getStepdownToken(), args);
     opts->cmd.setDbName(DatabaseName::kAdmin);
@@ -2711,7 +2727,7 @@ void ReshardingCoordinator::_establishAllRecipientsAsParticipants(
     const std::shared_ptr<executor::ScopedTaskExecutor>& executor) {
     invariant(_coordinatorDoc.getState() == CoordinatorStateEnum::kPreparingToDonate);
     GenericArguments args;
-    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
+    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args, kMajorityWriteConcern);
     auto opts = makeFlushRoutingTableCacheUpdatesOptions(
         _coordinatorDoc.getTempReshardingNss(), **executor, _ctHolder->getStepdownToken(), args);
     opts->cmd.setDbName(DatabaseName::kAdmin);
@@ -2773,7 +2789,7 @@ void ReshardingCoordinator::_tellAllParticipantsToAbort(
     ShardsvrAbortReshardCollection abortCmd(_coordinatorDoc.getReshardingUUID(), isUserAborted);
     abortCmd.setDbName(DatabaseName::kAdmin);
     GenericArguments args;
-    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
+    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args, kMajorityWriteConcern);
     auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrAbortReshardCollection>>(
         **executor, _ctHolder->getStepdownToken(), abortCmd, args);
     _sendCommandToAllParticipants(executor, opts);

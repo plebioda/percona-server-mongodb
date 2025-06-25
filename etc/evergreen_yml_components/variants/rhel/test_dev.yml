@@ -33,6 +33,7 @@ variables:
 
   # THIS HAS COPIES IN:
   # - etc/evergreen_yml_components/variants/rhel/test_dev_master_branch_only.yml
+  # - etc/evergreen_yml_components/variants/rhel/test_dev_master_and_lts_branches_only.yml
   # - etc/evergreen_yml_components/variants/rhel/test_dev.yml
   # - etc/evergreen_yml_components/variants/sanitizer/test_dev_master_branch_only.yml
   # ANY MODIFICATIONS HERE SHOULD ALSO BE MADE IN THOSE FILES
@@ -50,6 +51,7 @@ variables:
 
   # THIS HAS COPIES IN:
   # - etc/evergreen_yml_components/variants/rhel/test_dev_master_branch_only.yml
+  # - etc/evergreen_yml_components/variants/rhel/test_dev_master_and_lts_branches_only.yml
   # - etc/evergreen_yml_components/variants/rhel/test_dev.yml
   # - etc/evergreen_yml_components/variants/sanitizer/test_dev_master_branch_only.yml
   # ANY MODIFICATIONS HERE SHOULD ALSO BE MADE IN THOSE FILES
@@ -327,6 +329,7 @@ buildvariants:
       scons_cache_mode: all
       compile_variant: *enterprise-rhel-80-64-mongot-integration
       has_packages: false
+      build_mongot: true
       compile_flags: >-
         --ssl
         MONGO_DISTMOD=rhel80
@@ -334,7 +337,6 @@ buildvariants:
         --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
         --link-model=dynamic
         --use-diagnostic-latches=on
-        --build-mongot
     tasks:
       - name: compile_and_archive_dist_test_TG
         distros:

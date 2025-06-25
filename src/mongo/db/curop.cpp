@@ -439,13 +439,14 @@ void CurOp::setEndOfOpMetrics(long long nreturned) {
         // no harm in recording it since we've already computed the value.
         metrics.executionTime = elapsed;
         metrics.clusterWorkingTime = metrics.clusterWorkingTime.value_or(Milliseconds(0)) +
-            (duration_cast<Milliseconds>(elapsed - (_sumBlockedTimeTotal() - _blockedTimeAtStart)));
+            (duration_cast<Milliseconds>(
+                elapsed - (std::get<0>(_getAndSumBlockedTimeTotal()) - _blockedTimeAtStart)));
 
         try {
             // If we need them, try to fetch the storage stats. We use an unlimited timeout here,
-            // but the lock acquisition could still be interrupted, which we catch, log, and
-            // re-throw. We need to be careful of the priority, it has to match that of this
-            // operation. If we choose a fixed priority other than kExempt (e.g., kNormal), it may
+            // but the lock acquisition could still be interrupted, which we catch and log.
+            // We need to be careful of the priority, it has to match that of this operation.
+            // If we choose a fixed priority other than kExempt (e.g., kNormal), it may
             // be lower than the operation's current priority, which would cause an exception to be
             // thrown.
             const auto& admCtx = ExecutionAdmissionContext::get(opCtx());
@@ -455,8 +456,6 @@ void CurOp::setEndOfOpMetrics(long long nreturned) {
                           "Failed to gather storage statistics for query stats",
                           "opId"_attr = opCtx()->getOpID(),
                           "error"_attr = redact(ex));
-            ex.addContext("Failed to gather storage statistics for query stats");
-            throw;
         }
 
         if (_debug.storageStats) {
@@ -533,10 +532,7 @@ TickSource::Tick CurOp::startTime() {
         _cpuTimer->start();
     }
 
-    _debug.waitForTicketDurationMillis = duration_cast<Milliseconds>(
-        shard_role_details::getLocker(opCtx())->getTimeQueuedForTicketMicros() - _ticketWaitBase +
-        _ticketWaitWhenStashed);
-    _blockedTimeAtStart = _sumBlockedTimeTotal();
+    std::tie(_blockedTimeAtStart, std::ignore) = _getAndSumBlockedTimeTotal();
 
     // The '_start' value is initialized to 0 and gets assigned on demand the first time it gets
     // accessed. The above thread ownership requirement ensures that there will never be
@@ -569,11 +565,16 @@ Microseconds CurOp::computeElapsedTimeTotal(TickSource::Tick startTime,
     return _tickSource->ticksTo<Microseconds>(endTime - startTime);
 }
 
-Milliseconds CurOp::_sumBlockedTimeTotal() {
+std::tuple<Milliseconds, Milliseconds> CurOp::_getAndSumBlockedTimeTotal() {
     auto locker = shard_role_details::getLocker(opCtx());
     auto lockStats = locker->getLockerInfo(_lockStatsBase).stats;
 
-    auto waitForTickets = _debug.waitForTicketDurationMillis +
+    // The ticket wait time from the locker reports wait times from preceding operations in the
+    // CurOpStack. The precise time queued for tickets of a sub-operation is the ticket wait time
+    // from the locker minus the ticket wait time taken when this operation started.
+    auto waitForTicketDurationMillis = duration_cast<Milliseconds>(
+        locker->getTimeQueuedForTicketMicros() - _ticketWaitBase + _ticketWaitWhenStashed);
+    auto waitForTickets = waitForTicketDurationMillis +
         duration_cast<Milliseconds>(
                               Microseconds(locker->getFlowControlStats().timeAcquiringMicros));
 
@@ -583,7 +584,7 @@ Milliseconds CurOp::_sumBlockedTimeTotal() {
     auto waitForLocks =
         duration_cast<Milliseconds>(Microseconds(lockStats.getCumulativeWaitTimeMicros()));
 
-    return waitForTickets + waitForLocks;
+    return std::make_tuple(waitForTickets + waitForLocks, waitForTicketDurationMillis);
 }
 
 void CurOp::enter_inlock(NamespaceString nss, int dbProfileLevel) {
@@ -643,15 +644,10 @@ bool CurOp::completeAndLogOperation(const logv2::LogOptions& logOptions,
         oplogGetMoreStats.recordMillis(executionTimeMillis);
     }
 
-    // The ticket wait time from the locker reports wait times from preceding operations in the
-    // CurOpStack. The precise time queued for tickets of a sub-operation is the ticket wait time
-    // from the locker minus the ticket wait time taken when this operation started.
-    _debug.waitForTicketDurationMillis = duration_cast<Milliseconds>(
-        shard_role_details::getLocker(opCtx)->getTimeQueuedForTicketMicros() - _ticketWaitBase +
-        _ticketWaitWhenStashed);
-
-    auto totalBlockedTime = _sumBlockedTimeTotal() - _blockedTimeAtStart;
-    auto workingMillis = Milliseconds(executionTimeMillis) - totalBlockedTime;
+    Milliseconds totalBlockedTime;
+    std::tie(totalBlockedTime, _debug.waitForTicketDurationMillis) = _getAndSumBlockedTimeTotal();
+    auto workingMillis =
+        Milliseconds(executionTimeMillis) - (totalBlockedTime - _blockedTimeAtStart);
     // Round up to zero if necessary to allow precision errors from FastClockSource used by flow
     // control ticketholder.
     _debug.workingTimeMillis = (workingMillis < Milliseconds(0) ? Milliseconds(0) : workingMillis);

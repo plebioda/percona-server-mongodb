@@ -4,7 +4,7 @@
 # If bazel is not installed, run the following:
 #  python buildscripts/install_bazel.py
 # The documentation for the OWNERS.yml files can be found here:
-# https://github.com/10gen/mongo/blob/master/docs/owners_format.md
+# https://github.com/10gen/mongo/blob/master/docs/owners/owners_format.md
 
 # The following patterns are parsed from ./OWNERS.yml
 OWNERS.yml @IamXander
@@ -60,6 +60,15 @@ WORKSPACE.bazel @10gen/devprod-build
 # The following patterns are parsed from ./buildscripts/tracing_profiler/OWNERS.yml
 /buildscripts/tracing_profiler/**/* @10gen/query
 
+# The following patterns are parsed from ./docs/OWNERS.yml
+/docs/**/bazel.md @10gen/devprod-build
+/docs/**/build_system_reference.md @10gen/devprod-build
+/docs/**/build_system.md @10gen/devprod-build
+/docs/**/building.md @10gen/devprod-build
+/docs/**/poetry_execution.md @10gen/devprod-correctness
+/docs/**/linting.md @10gen/devprod-build
+/docs/owners/** @10gen/devprod-correctness
+
 # The following patterns are parsed from ./jstests/concurrency/fsm_workloads/OWNERS.yml
 /jstests/concurrency/fsm_workloads/**/server_status.js @10gen/server-service-architecture
 /jstests/concurrency/fsm_workloads/**/server_status_with_time_out_cursors.js @10gen/server-service-architecture
@@ -112,6 +121,7 @@ WORKSPACE.bazel @10gen/devprod-build
 /src/mongo/db/**/record_id* @10gen/server-storage-execution
 /src/mongo/db/**/repair* @10gen/server-storage-execution
 /src/mongo/db/**/ttl* @10gen/server-storage-execution
+/src/mongo/db/**/service_entry_point_common* @10gen/server-service-architecture
 
 # The following patterns are parsed from ./src/mongo/db/catalog/OWNERS.yml
 /src/mongo/db/catalog/**/capped* @10gen/server-storage-execution
@@ -205,9 +215,6 @@ WORKSPACE.bazel @10gen/devprod-build
 # The following patterns are parsed from ./src/mongo/unittest/OWNERS.yml
 /src/mongo/unittest/**/* @10gen/server-service-architecture
 
-# The following patterns are parsed from ./src/mongo/util/OWNERS.yml
-/src/mongo/util/**/* @10gen/query
-
 # The following patterns are parsed from ./src/mongo/util/concurrency/OWNERS.yml
 /src/mongo/util/concurrency/**/idle_thread_block.* @10gen/server-service-architecture
 /src/mongo/util/concurrency/**/mutex.* @10gen/server-service-architecture
@@ -222,9 +229,16 @@ WORKSPACE.bazel @10gen/devprod-build
 # The following patterns are parsed from ./src/mongo/util/net/OWNERS.yml
 /src/mongo/util/net/**/* @10gen/server-service-architecture
 
+# The following patterns are parsed from ./src/mongo/util/tracing_profiler/OWNERS.yml
+/src/mongo/util/tracing_profiler/**/* @10gen/query
+
 # The following patterns are parsed from ./src/mongo/watchdog/OWNERS.yml
 /src/mongo/watchdog/**/* @10gen/server-service-architecture
 
 # The following patterns are parsed from ./src/third_party/OWNERS.yml
+/src/third_party/**/* @10gen/server-security
 /src/third_party/**/SConscript @10gen/devprod-build
 /src/third_party/**/*.bazel @10gen/devprod-build
+
+# The following patterns are parsed from ./src/third_party/wiredtiger/OWNERS.yml
+/src/third_party/wiredtiger/**/*

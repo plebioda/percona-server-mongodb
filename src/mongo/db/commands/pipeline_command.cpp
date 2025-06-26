@@ -113,12 +113,11 @@ public:
 
         SerializationContext serializationCtx = opMsgRequest.getSerializationContext();
 
-        const auto aggregationRequest = aggregation_request_helper::parseFromBSON(
-            opMsgRequest.body,
-            opMsgRequest.validatedTenancyScope,
-            explainVerbosity,
-            APIParameters::get(opCtx).getAPIStrict().value_or(false),
-            serializationCtx);
+        const auto aggregationRequest =
+            aggregation_request_helper::parseFromBSON(opMsgRequest.body,
+                                                      opMsgRequest.validatedTenancyScope,
+                                                      explainVerbosity,
+                                                      serializationCtx);
 
         auto privileges = uassertStatusOK(
             auth::getPrivilegesForAggregate(AuthorizationSession::get(opCtx->getClient()),
@@ -237,6 +236,10 @@ public:
             return !_liteParsedPipeline.endsWithWriteStage();
         }
 
+        const GenericArguments& getGenericArguments() const override {
+            return _aggregationRequest.getGenericArguments();
+        }
+
     private:
         bool supportsWriteConcern() const override {
             return true;
@@ -255,10 +258,7 @@ public:
         ReadConcernSupportResult supportsReadConcern(repl::ReadConcernLevel level,
                                                      bool isImplicitDefault) const override {
             return _liteParsedPipeline.supportsReadConcern(
-                level,
-                isImplicitDefault,
-                _aggregationRequest.getExplain(),
-                serverGlobalParams.enableMajorityReadConcern);
+                level, isImplicitDefault, _aggregationRequest.getExplain());
         }
 
         bool allowsSpeculativeMajorityReads() const override {

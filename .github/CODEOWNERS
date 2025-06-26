@@ -21,13 +21,14 @@ OWNERS.yml @IamXander
 .pylintrc @10gen/devprod-build @10gen/devprod-correctness
 .style.yapf @10gen/devprod-build @10gen/devprod-correctness
 BUILD.bazel @10gen/devprod-build
-copybara.sky @IamXander
+copy.bara.sky @IamXander
 copybara.staging.sky @10gen/devprod-correctness
 jsconfig.json @10gen/devprod-correctness
 package.json @10gen/devprod-correctness
 pnpm-lock.yaml @10gen/devprod-correctness
 poetry.lock @10gen/devprod-build @10gen/devprod-correctness
 pyproject.toml @10gen/devprod-build @10gen/devprod-correctness
+sbom.json @10gen/server-security
 SConstruct @10gen/devprod-build
 WORKSPACE.bazel @10gen/devprod-build
 

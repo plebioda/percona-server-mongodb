@@ -596,7 +596,6 @@ StatusWith<std::unique_ptr<QuerySolution>> tryToBuildSearchQuerySolution(
 
 using std::unique_ptr;
 
-namespace dps = ::mongo::dotted_path_support;
 // Copied verbatim from db/index.h
 static bool isIdIndex(const BSONObj& pattern) {
     BSONObjIterator i(pattern);
@@ -674,6 +673,9 @@ string optionString(size_t options) {
                 break;
             case QueryPlannerParams::IGNORE_QUERY_SETTINGS:
                 ss << "IGNORE_QUERY_SETTINGS ";
+                break;
+            case QueryPlannerParams::TARGET_SBE_STAGE_BUILDER:
+                ss << "TARGET_SBE_STAGE_BUILDER ";
                 break;
             case QueryPlannerParams::DEFAULT:
                 MONGO_UNREACHABLE;
@@ -1859,7 +1861,7 @@ std::unique_ptr<QuerySolution> QueryPlanner::extendWithAggPipeline(
     std::unique_ptr<QuerySolution>&& solution,
     const std::map<NamespaceString, CollectionInfo>& secondaryCollInfos) {
     if (query.cqPipeline().empty()) {
-        return nullptr;
+        return std::move(solution);
     }
 
     std::unique_ptr<QuerySolutionNode> solnForAgg = std::make_unique<SentinelNode>();

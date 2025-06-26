@@ -1569,6 +1569,441 @@ TEST(IDLFieldTests, TestOptionalFieldsWithNullAndUndefined) {
     TestWeakType<UndefinedLabeler>(BSONUndefined);
 }
 
+// Types used to test that (1) we can call the setter for any type that implicitly converts
+// to the storage type (for types with storage type setters) and (2) that the implicit
+// conversion to the storage type is used rather than the implicit conversion to the other
+// setter overload's type.
+struct ImplicitlyConvertsToString {
+    operator std::string() const {
+        return "ImplicitlyConvertsToString";
+    }
+    operator StringData() const {
+        ASSERT(false) << "Conversion to StringData should not be used.";
+        MONGO_UNREACHABLE;
+    }
+};
+
+struct ImplicitlyConvertsToOptionalString {
+    operator boost::optional<std::string>() const {
+        return boost::optional<std::string>{"ImplicitlyConvertsToOptionalString"};
+    }
+    operator boost::optional<StringData>() const {
+        ASSERT(false) << "Conversion to optional<StringData> should not be used.";
+        MONGO_UNREACHABLE;
+    }
+};
+
+struct ImplicitlyConvertsToVectorString {
+    operator std::vector<std::string>() const {
+        return {"ImplicitlyConvertsToVectorString"};
+    }
+    operator std::vector<StringData>() const {
+        ASSERT(false) << "Conversion to vector<StringData> should not be used.";
+        MONGO_UNREACHABLE;
+    }
+};
+
+struct ImplicitlyConvertsToOptionalVectorString {
+    operator boost::optional<std::vector<std::string>>() const {
+        return boost::optional<std::vector<std::string>>(
+            {"ImplicitlyConvertsToOptionalVectorString"});
+    }
+    operator boost::optional<std::vector<StringData>>() const {
+        ASSERT(false) << "Conversion to optional<vector<StringData>> should not be used.";
+        MONGO_UNREACHABLE;
+    }
+};
+
+template <typename T>
+T makeSetterOverloadTestStruct() {
+    IDLParserContext ctxt("root");
+    using StrArr = std::vector<std::string>;
+    auto testDoc = BSONObjBuilder{}
+                       .append("fieldString", "foo")
+                       .append("fieldOptionalString", "bar")
+                       .append("fieldStringWithValidator", "xfoo")
+                       .append("fieldOptionalStringWithValidator", "xbar")
+                       .append("fieldArrayString", StrArr{"foo", "bar"})
+                       .append("fieldArrayStringWithValidator", StrArr{"FOO", "BAR"})
+                       .append("fieldOptionalArrayString", StrArr{"baz", "qux"})
+                       .append("fieldOptionalArrayStringWithValidator", StrArr{"BAZ", "QUX"})
+                       .obj();
+    return T::parse(ctxt, testDoc);
+}
+
+template <typename T>
+void testSetterOverloadsForStringField() {
+    {
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_EQ(testStruct.getFieldString(), "foo");
+    }
+
+    {
+        // Set from const char*.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldString("bar");
+        ASSERT_EQ(testStruct.getFieldString(), "bar");
+    }
+
+    {
+        // Set from StringData.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldString("baz"_sd);
+        ASSERT_EQ(testStruct.getFieldString(), "baz");
+    }
+
+    {
+        // Set from string.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldString(std::string{"qux"});
+        ASSERT_EQ(testStruct.getFieldString(), "qux");
+    }
+
+    {
+        // Set from implicit conversion.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldString(ImplicitlyConvertsToString{});
+        ASSERT_EQ(testStruct.getFieldString(), "ImplicitlyConvertsToString");
+    }
+}
+
+TEST(SetterOverloadTest, StringField) {
+    testSetterOverloadsForStringField<StructWithOverloadedSetters>();
+}
+
+TEST(SetterOverloadTest, InlineChainedStringField) {
+    testSetterOverloadsForStringField<StructWithInlineChainedOverloadedSetters>();
+}
+
+template <typename T>
+void testSetterOverloadsForStringFieldWithValidator() {
+    {
+        // The validator requires the string to start with "x"
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_EQ(testStruct.getFieldStringWithValidator(), "xfoo");
+    }
+
+    {
+        // Set from various types with validation failure.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_THROWS(testStruct.setFieldStringWithValidator("one"), AssertionException);
+        ASSERT_THROWS(testStruct.setFieldStringWithValidator("one"_sd), AssertionException);
+        ASSERT_THROWS(testStruct.setFieldStringWithValidator(std::string{"one"}),
+                      AssertionException);
+        ASSERT_THROWS(testStruct.setFieldStringWithValidator(ImplicitlyConvertsToString{}),
+                      AssertionException);
+    }
+
+    {
+        // Set from const char*.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldStringWithValidator("xone");
+        ASSERT_EQ(testStruct.getFieldStringWithValidator(), "xone");
+    }
+
+    {
+        // Set from StringData.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldStringWithValidator("xtwo"_sd);
+        ASSERT_EQ(testStruct.getFieldStringWithValidator(), "xtwo");
+    }
+
+    {
+        // Set from string.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldStringWithValidator(std::string{"xthree"});
+        ASSERT_EQ(testStruct.getFieldStringWithValidator(), "xthree");
+    }
+}
+
+TEST(SetterOverloadTest, StringFieldWithValidator) {
+    testSetterOverloadsForStringFieldWithValidator<StructWithOverloadedSetters>();
+}
+
+TEST(SetterOverloadTest, InlineChainedStringFieldWithValidator) {
+    testSetterOverloadsForStringFieldWithValidator<StructWithInlineChainedOverloadedSetters>();
+}
+
+template <typename T>
+void testSetterOverloadsForOptionalStringField() {
+    {
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_EQ(testStruct.getFieldOptionalString().value(), "bar");
+    }
+
+    // Note: const char[] is not convertible to boost::optional<string>, so a C-style string literal
+    // like "one" will not work as an argument.
+
+    {
+        // Set from boost::none.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalString(boost::none);
+        ASSERT_EQ(testStruct.getFieldOptionalString(), boost::none);
+    }
+
+    {
+        // Set from implicit conversion.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalString(ImplicitlyConvertsToOptionalString{});
+        ASSERT_EQ(*testStruct.getFieldOptionalString(), "ImplicitlyConvertsToOptionalString");
+    }
+
+    {
+        // Set from StringData.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalString("two"_sd);
+        ASSERT_EQ(*testStruct.getFieldOptionalString(), "two");
+    }
+
+    {
+        // Set from string.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalString(std::string{"three"});
+        ASSERT_EQ(*testStruct.getFieldOptionalString(), "three");
+    }
+}
+
+TEST(SetterOverloadTest, OptionalStringField) {
+    testSetterOverloadsForOptionalStringField<StructWithOverloadedSetters>();
+}
+
+TEST(SetterOverloadTest, InlineChainedOptionalStringField) {
+    testSetterOverloadsForOptionalStringField<StructWithInlineChainedOverloadedSetters>();
+}
+
+template <typename T>
+void testSetterOverloadsForOptionalStringFieldWithValidator() {
+    // The validator requires the string to start with "x"
+    {
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_EQ(testStruct.getFieldOptionalStringWithValidator().value(), "xbar");
+    }
+
+    // Note: const char[] is not convertible to boost::optional<string>, so a C-style string literal
+    // like "one" will not work as an argument.
+
+    {
+        // Set from various types with validation failure.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_THROWS(testStruct.setFieldOptionalStringWithValidator(std::string{"one"}),
+                      AssertionException);
+        ASSERT_THROWS(testStruct.setFieldOptionalStringWithValidator("one"_sd), AssertionException);
+        ASSERT_THROWS(
+            testStruct.setFieldOptionalStringWithValidator(ImplicitlyConvertsToOptionalString{}),
+            AssertionException);
+    }
+
+    {
+        // Set from boost::none.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalStringWithValidator(boost::none);
+        ASSERT_EQ(testStruct.getFieldOptionalStringWithValidator(), boost::none);
+    }
+
+    {
+        // Set from StringData.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalStringWithValidator("xtwo"_sd);
+        ASSERT_EQ(*testStruct.getFieldOptionalStringWithValidator(), "xtwo");
+    }
+
+    {
+        // Set from string.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalStringWithValidator(std::string{"xthree"});
+        ASSERT_EQ(*testStruct.getFieldOptionalStringWithValidator(), "xthree");
+    }
+}
+
+TEST(SetterOverloadTest, OptionalStringFieldWithValidator) {
+    testSetterOverloadsForOptionalStringFieldWithValidator<StructWithOverloadedSetters>();
+}
+
+TEST(SetterOverloadTest, InlineChainedOptionalStringFieldWithValidator) {
+    testSetterOverloadsForOptionalStringFieldWithValidator<
+        StructWithInlineChainedOverloadedSetters>();
+}
+
+template <typename T>
+void testSetterOverloadsForArrayOfStringField() {
+    {
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_EQ(testStruct.getFieldArrayString(), (std::vector{"foo"_sd, "bar"_sd}));
+    }
+
+    {
+        // Set from implicit conversion.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldArrayString(ImplicitlyConvertsToVectorString{});
+        ASSERT_EQ(testStruct.getFieldArrayString(),
+                  std::vector{"ImplicitlyConvertsToVectorString"_sd});
+    }
+
+    {
+        // Set from vector<string>.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldArrayString(std::vector<std::string>{"one"});
+        ASSERT_EQ(testStruct.getFieldArrayString(), std::vector{"one"_sd});
+    }
+
+    {
+        // Set from vector<StringData>.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldArrayString(std::vector{"two"_sd});
+        ASSERT_EQ(testStruct.getFieldArrayString(), std::vector{"two"_sd});
+    }
+}
+
+TEST(SetterOverloadTest, ArrayofStringField) {
+    testSetterOverloadsForArrayOfStringField<StructWithOverloadedSetters>();
+}
+
+TEST(SetterOverloadTest, InlineChainedArrayOfStringField) {
+    testSetterOverloadsForArrayOfStringField<StructWithInlineChainedOverloadedSetters>();
+}
+
+template <typename T>
+void testSetterOverloadsForArrayOfStringFieldWithValidator() {
+    // The validator requires the elements to be all caps.
+    {
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_EQ(testStruct.getFieldArrayStringWithValidator(), (std::vector{"FOO"_sd, "BAR"_sd}));
+    }
+
+    {
+        // Set from various types with validation failure.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_THROWS(
+            testStruct.setFieldArrayStringWithValidator(ImplicitlyConvertsToVectorString{}),
+            AssertionException);
+        ASSERT_THROWS(testStruct.setFieldArrayStringWithValidator(std::vector<std::string>{"one"}),
+                      AssertionException);
+        ASSERT_THROWS(testStruct.setFieldArrayStringWithValidator(std::vector{"one"_sd}),
+                      AssertionException);
+    }
+
+    {
+        // Set from vector<string>.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldArrayStringWithValidator(std::vector<std::string>{"ONE"});
+        ASSERT_EQ(testStruct.getFieldArrayStringWithValidator(), std::vector{"ONE"_sd});
+    }
+
+    {
+        // Set from vector<StringData>.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldArrayStringWithValidator(std::vector{"TWO"_sd});
+        ASSERT_EQ(testStruct.getFieldArrayStringWithValidator(), std::vector{"TWO"_sd});
+    }
+}
+
+TEST(SetterOverloadTest, ArrayofStringFieldWithValidator) {
+    testSetterOverloadsForArrayOfStringFieldWithValidator<StructWithOverloadedSetters>();
+}
+
+TEST(SetterOverloadTest, InlineChainedArrayOfStringFieldWithValidator) {
+    testSetterOverloadsForArrayOfStringFieldWithValidator<
+        StructWithInlineChainedOverloadedSetters>();
+}
+
+template <typename T>
+void testSetterOverloadsForOptionalArrayOfStringField() {
+    {
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_EQ(testStruct.getFieldOptionalArrayString(), (std::vector{"baz"_sd, "qux"_sd}));
+    }
+
+    {
+        // Set from boost::none.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalArrayString(boost::none);
+        ASSERT_EQ(testStruct.getFieldOptionalArrayString(), boost::none);
+    }
+
+    {
+        // Set from implicit conversion.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalArrayString(ImplicitlyConvertsToOptionalVectorString{});
+        ASSERT_EQ(*testStruct.getFieldOptionalArrayString(),
+                  std::vector{"ImplicitlyConvertsToOptionalVectorString"_sd});
+    }
+
+    {
+        // Set from vector<string>.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalArrayString(std::vector<std::string>{"one"});
+        ASSERT_EQ(*testStruct.getFieldOptionalArrayString(), std::vector{"one"_sd});
+    }
+
+    {
+        // Set from vector<StringData>.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalArrayString(std::vector{"two"_sd});
+        ASSERT_EQ(*testStruct.getFieldOptionalArrayString(), std::vector{"two"_sd});
+    }
+}
+
+TEST(SetterOverloadTest, OptionalArrayOfStringField) {
+    testSetterOverloadsForOptionalArrayOfStringField<StructWithOverloadedSetters>();
+}
+
+TEST(SetterOverloadTest, InlineChainedOptionalArrayOfStringField) {
+    testSetterOverloadsForOptionalArrayOfStringField<StructWithInlineChainedOverloadedSetters>();
+}
+
+template <typename T>
+void testSetterOverloadsForOptionalArrayOfStringFieldWithValidator() {
+    // The validator requires the elements to be all caps.
+    {
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_EQ(testStruct.getFieldOptionalArrayStringWithValidator(),
+                  (std::vector{"BAZ"_sd, "QUX"_sd}));
+    }
+
+    {
+        // Set from various types with validation failure.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        ASSERT_THROWS(testStruct.setFieldOptionalArrayStringWithValidator(
+                          ImplicitlyConvertsToOptionalVectorString{}),
+                      AssertionException);
+        ASSERT_THROWS(
+            testStruct.setFieldOptionalArrayStringWithValidator(std::vector<std::string>{"one"}),
+            AssertionException);
+        ASSERT_THROWS(testStruct.setFieldOptionalArrayStringWithValidator(std::vector{"one"_sd}),
+                      AssertionException);
+    }
+
+    {
+        // Set from boost::none.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalArrayStringWithValidator(boost::none);
+        ASSERT_EQ(testStruct.getFieldOptionalArrayStringWithValidator(), boost::none);
+    }
+
+    {
+        // Set from vector<string>.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalArrayStringWithValidator(std::vector<std::string>{"ONE"});
+        ASSERT_EQ(*testStruct.getFieldOptionalArrayStringWithValidator(), std::vector{"ONE"_sd});
+    }
+
+    {
+        // Set from vector<StringData>.
+        auto testStruct = makeSetterOverloadTestStruct<T>();
+        testStruct.setFieldOptionalArrayStringWithValidator(std::vector{"TWO"_sd});
+        ASSERT_EQ(*testStruct.getFieldOptionalArrayStringWithValidator(), std::vector{"TWO"_sd});
+    }
+}
+
+TEST(SetterOverloadTest, OptionalArrayOfStringFieldWithValidator) {
+    testSetterOverloadsForOptionalArrayOfStringFieldWithValidator<StructWithOverloadedSetters>();
+}
+
+TEST(SetterOverloadTest, InlineChainedOptionalArrayOfStringFieldWithValidator) {
+    testSetterOverloadsForOptionalArrayOfStringFieldWithValidator<
+        StructWithInlineChainedOverloadedSetters>();
+}
+
 // Positive: Test a nested struct
 TEST(IDLNestedStruct, TestDuplicateTypes) {
     IDLParserContext ctxt("root");
@@ -3098,7 +3533,7 @@ TEST(IDLDocSequence, TestBasic) {
 
     // Positive: Test we can round trip to a document sequence from the just parsed document
     {
-        OpMsgRequest loopbackRequest = testStruct.serialize(BSONObj());
+        OpMsgRequest loopbackRequest = testStruct.serialize();
 
         assertOpMsgEquals(request, loopbackRequest);
         ASSERT_EQUALS(loopbackRequest.sequences.size(), 2UL);
@@ -3134,7 +3569,7 @@ TEST(IDLDocSequence, TestBasic) {
         objects.push_back(BSON("foo" << 1));
         one_new.setObjects(objects);
 
-        OpMsgRequest serializeRequest = one_new.serialize(BSONObj());
+        OpMsgRequest serializeRequest = one_new.serialize();
 
         assertOpMsgEquals(request, serializeRequest);
     }
@@ -3189,7 +3624,7 @@ void TestDocSequence(StringData name) {
     ASSERT_EQUALS("hello", testStruct.getStructs()[0].getValue());
     ASSERT_EQUALS("world", testStruct.getStructs()[1].getValue());
 
-    auto opmsg = testStruct.serialize(BSONObj());
+    auto opmsg = testStruct.serialize();
     ASSERT_EQUALS(2UL, opmsg.sequences.size());
 
     assertOpMsgEquals(opmsg, request);
@@ -3385,98 +3820,6 @@ TEST(IDLDocSequence, TestEmptySequence) {
     }
 }
 
-// Positive: Test all the OpMsg well known fields are ignored
-TEST(IDLDocSequence, TestWellKnownFieldsAreIgnored) {
-    IDLParserContext ctxt("root");
-
-    auto knownFields = {"$audit",
-                        "$client",
-                        "$configServerState",
-                        "$oplogQueryData",
-                        "$queryOptions",
-                        "$readPreference",
-                        "$replData",
-                        "$clusterTime",
-                        "maxTimeMS",
-                        "readConcern",
-                        "shardVersion",
-                        "tracking_info",
-                        "writeConcern"};
-
-    for (auto knownField : knownFields) {
-        auto testTempDoc = BSON("DocSequenceCommand"
-                                << "coll1"
-                                << "field1" << 3 << "field2"
-                                << "five" << knownField << "extra"
-                                << "structs"
-                                << BSON_ARRAY(BSON("value"
-                                                   << "hello")
-                                              << BSON("value"
-                                                      << "world"))
-                                << "objects" << BSON_ARRAY(BSON("foo" << 1)));
-
-
-        OpMsgRequest request =
-            OpMsgRequestBuilder::create(auth::ValidatedTenancyScope::kNotRequired,
-                                        DatabaseName::createDatabaseName_forTest(boost::none, "db"),
-                                        testTempDoc);
-
-        // Validate it can be parsed as a OpMsgRequest.
-        {
-            auto testStruct = DocSequenceCommand::parse(ctxt, request);
-            ASSERT_EQUALS(2UL, testStruct.getStructs().size());
-        }
-
-        // Validate it can be parsed as just a BSON document.
-        {
-            auto testStruct = DocSequenceCommand::parse(ctxt, request.body);
-            ASSERT_EQUALS(2UL, testStruct.getStructs().size());
-        }
-    }
-}
-
-// Positive: Test all the OpMsg well known fields are passed through except $db.
-TEST(IDLDocSequence, TestWellKnownFieldsPassthrough) {
-    IDLParserContext ctxt("root");
-
-    auto knownFields = {"$audit",
-                        "$client",
-                        "$configServerState",
-                        "$oplogQueryData",
-                        "$queryOptions",
-                        "$readPreference",
-                        "$replData",
-                        "$clusterTime",
-                        "maxTimeMS",
-                        "readConcern",
-                        "shardVersion",
-                        "tracking_info",
-                        "writeConcern"};
-
-    for (auto knownField : knownFields) {
-        auto testTempDoc = BSON("DocSequenceCommand"
-                                << "coll1"
-                                << "field1" << 3 << "field2"
-                                << "five"
-                                << "$db"
-                                << "db" << knownField << "extra"
-                                << "structs"
-                                << BSON_ARRAY(BSON("value"
-                                                   << "hello")
-                                              << BSON("value"
-                                                      << "world"))
-                                << "objects" << BSON_ARRAY(BSON("foo" << 1)));
-
-        OpMsgRequest request;
-        request.body = testTempDoc;
-        auto testStruct = DocSequenceCommand::parse(ctxt, request);
-        ASSERT_EQUALS(2UL, testStruct.getStructs().size());
-
-        auto reply = testStruct.serialize(testTempDoc);
-        assertOpMsgEquals(request, reply);
-    }
-}
-
 // Postive: Extra Fields in non-strict parser
 TEST(IDLDocSequence, TestNonStrict) {
     IDLParserContext ctxt("root");
@@ -3552,7 +3895,7 @@ TEST(IDLDocSequence, TestArrayVariant) {
 
     // Positive: Test we can round trip to a document sequence from the just parsed document
     {
-        OpMsgRequest loopbackRequest = testStruct.serialize(BSONObj());
+        OpMsgRequest loopbackRequest = testStruct.serialize();
 
         assertOpMsgEquals(request, loopbackRequest);
         ASSERT_EQUALS(loopbackRequest.sequences.size(), 1UL);  // just "structs"
@@ -3566,52 +3909,6 @@ TEST(IDLDocSequence, TestArrayVariant) {
         ASSERT_EQ(get<Insert_variant_struct>(testStruct.getStructs()[1]).getInsert(), 12);
     }
 }
-
-// Postive: Test a Command known field does not propagate from passthrough to the final BSON if it
-// is included as a field in the command.
-TEST(IDLCommand, TestKnownFieldDuplicate) {
-    IDLParserContext ctxt("root");
-
-    auto testPassthrough = BSON("$db"
-                                << "foo"
-                                << "maxTimeMS" << 6 << "$client"
-                                << "foo");
-
-    auto testDoc = BSON("KnownFieldCommand"
-                        << "coll1"
-                        << "$db"
-                        << "db"
-                        << "field1" << 28 << "maxTimeMS" << 42);
-
-    auto testStruct = KnownFieldCommand::parse(ctxt, makeOMR(testDoc));
-    ASSERT_EQUALS(28, testStruct.getField1());
-    ASSERT_EQUALS(42, testStruct.getMaxTimeMS());
-
-    // OpMsg request serializes original '$db' out because it is part of the OP_MSG request
-    auto expectedOpMsgDoc = BSON("KnownFieldCommand"
-                                 << "coll1"
-
-                                 << "field1" << 28 << "maxTimeMS" << 42 << "$db"
-                                 << "db"
-
-                                 << "$client"
-                                 << "foo");
-
-    ASSERT_BSONOBJ_EQ(expectedOpMsgDoc, testStruct.serialize(testPassthrough).body);
-
-    // BSON serialize does not round-trip '$db' because it can passed in passthrough data
-    auto expectedBSONDoc = BSON("KnownFieldCommand"
-                                << "coll1"
-
-                                << "field1" << 28 << "maxTimeMS" << 42 << "$db"
-                                << "foo"
-
-                                << "$client"
-                                << "foo");
-
-    ASSERT_BSONOBJ_EQ(expectedBSONDoc, testStruct.toBSON(testPassthrough));
-}
-
 
 // Positive: Test an inline nested chain struct works
 TEST(IDLChainedStruct, TestInline) {
@@ -3968,7 +4265,7 @@ TEST(IDLTypeCommand, TestString) {
         CommandTypeStringCommand one_new("foo");
         one_new.setField1(3);
         one_new.setDbName(DatabaseName::createDatabaseName_forTest(boost::none, "db"));
-        OpMsgRequest reply = one_new.serialize(BSONObj());
+        OpMsgRequest reply = one_new.serialize();
         ASSERT_BSONOBJ_EQ(testDoc, serializeCmd(one_new));
     }
 }
@@ -4354,6 +4651,61 @@ TEST(IDLCommand, TestCommandTypeNamespaceCommand_WithMultitenancySupportOn) {
     ASSERT_BSONOBJ_EQ(testDoc, serializeCmd(testStruct));
 }
 
+// Verifies that parsed structs that are marked is_generic_cmd_list: "arg" are automatically chained
+// to command structs by the IDL compiler. In particular, this test verifies that the arguments
+// defined in TestGenericArguments in unittest.idl are chained properly.
+TEST(IDLCommand, TestCommandGenericArguments) {
+    IDLParserContext ctxt("root");
+
+    {
+        auto testDoc = BSON(CommandTypeStringCommand::kCommandName
+                            << "foo"
+                            << "field1" << 3 << TestGenericArguments::kGenericArgFieldName << "here"
+                            << TestGenericArguments::kUnstableGenericArgFieldName << "also here"
+                            << "$db"
+                            << "db");
+
+        DeserializationContext dctx;
+        auto testStruct = CommandTypeStringCommand::parse(ctxt, testDoc, &dctx);
+
+        // Verify that the command struct is properly identified as a view due to the chained
+        // generic arguments even though the command's own fields are not views.
+        ASSERT_FALSE(testStruct.isOwned());
+
+        // Verify that both generic arguments included in the TestGenericArguments struct were
+        // automatically bound to the command and have working getters/setters.
+        ASSERT_TRUE(testStruct.getGenericArg());
+        ASSERT_EQ(testStruct.getGenericArg()->getElement().String(), "here");
+        auto newArg = BSON(TestGenericArguments::kGenericArgFieldName << "now here");
+        testStruct.setGenericArg(IDLAnyType(newArg.firstElement()));
+        ASSERT_TRUE(testStruct.getGenericArg());
+        ASSERT_EQ(testStruct.getGenericArg()->getElement().String(), "now here");
+
+        ASSERT_EQ(testStruct.getUnstableGenericArg(), "also here"_sd);
+        testStruct.setUnstableGenericArg("unstable here"_sd);
+        ASSERT_EQ(testStruct.getUnstableGenericArg(), "unstable here"_sd);
+
+        // Verify that apiStrict validation fails due to the presence of the unstable argument.
+        ASSERT_THROWS_CODE(dctx.validateApiStrict(), DBException, ErrorCodes::APIStrictError);
+
+        // Verify that serializing the command back to BSON does not omit the generic arguments.
+        ASSERT_BSONOBJ_EQ(serializeCmd(CommandTypeStringCommand::parse(ctxt, testDoc)), testDoc);
+    }
+
+    // Verify that apiStrict validation succeeds when no unstable generic arguments are present.
+    {
+        auto stableDoc =
+            BSON(CommandTypeStringCommand::kCommandName << "foo"
+                                                        << "field1" << 3 << "genericArg"
+                                                        << "here"
+                                                        << "$db"
+                                                        << "db");
+        DeserializationContext dctx;
+        auto testStruct = CommandTypeStringCommand::parse(ctxt, stableDoc, &dctx);
+        ASSERT_DOES_NOT_THROW(dctx.validateApiStrict());
+    }
+}
+
 TEST(IDLTypeCommand, TestCommandWithNamespaceMember_WithTenant) {
     RAIIServerParameterControllerForTest multitenanyController("multitenancySupport", true);
     RAIIServerParameterControllerForTest featureFlagController("featureFlagRequireTenantID", true);
@@ -4426,7 +4778,7 @@ TEST(IDLTypeCommand, TestCommandWithNamespaceStruct_WithTenant) {
 
     // Positive: Test we can round trip to a document sequence from the just parsed document
     {
-        OpMsgRequest loopbackRequest = testStruct.serialize(BSONObj());
+        OpMsgRequest loopbackRequest = testStruct.serialize();
         OpMsgRequest request = makeOMR(testDoc);
 
         assertOpMsgEquals(request, loopbackRequest);

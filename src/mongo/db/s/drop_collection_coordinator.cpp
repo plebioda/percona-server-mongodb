@@ -282,11 +282,11 @@ void DropCollectionCoordinator::_enterCriticalSection(
     blockCRUDOperationsRequest.setBlockType(mongo::CriticalSectionBlockTypeEnum::kReadsAndWrites);
     blockCRUDOperationsRequest.setReason(_critSecReason);
 
-    GenericArguments args;
-    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
-    async_rpc::AsyncRPCCommandHelpers::appendOSI(args, getNewSession(opCtx));
+    generic_argument_util::setMajorityWriteConcern(blockCRUDOperationsRequest);
+    generic_argument_util::setOperationSessionInfo(blockCRUDOperationsRequest,
+                                                   getNewSession(opCtx));
     auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrParticipantBlock>>(
-        **executor, token, blockCRUDOperationsRequest, args);
+        **executor, token, blockCRUDOperationsRequest);
     sharding_ddl_util::sendAuthenticatedCommandToShards(
         opCtx, opts, Grid::get(opCtx)->shardRegistry()->getAllShardIds(opCtx));
 
@@ -381,13 +381,13 @@ void DropCollectionCoordinator::_exitCriticalSection(
     unblockCRUDOperationsRequest.setBlockType(CriticalSectionBlockTypeEnum::kUnblock);
     unblockCRUDOperationsRequest.setReason(_critSecReason);
 
-    GenericArguments args;
-    async_rpc::AsyncRPCCommandHelpers::appendMajorityWriteConcern(args);
-    async_rpc::AsyncRPCCommandHelpers::appendOSI(args, getNewSession(opCtx));
+    generic_argument_util::setMajorityWriteConcern(unblockCRUDOperationsRequest);
+    generic_argument_util::setOperationSessionInfo(unblockCRUDOperationsRequest,
+                                                   getNewSession(opCtx));
     auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrParticipantBlock>>(
-        **executor, token, unblockCRUDOperationsRequest, args);
+        **executor, token, unblockCRUDOperationsRequest);
     sharding_ddl_util::sendAuthenticatedCommandToShards(
-        opCtx, opts, getAllShardsAndConfigServerIds(opCtx));
+        opCtx, opts, Grid::get(opCtx)->shardRegistry()->getAllShardIds(opCtx));
 
     LOGV2_DEBUG(7038103, 2, "Released critical section", logAttrs(nss()));
 }

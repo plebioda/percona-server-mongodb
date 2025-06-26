@@ -227,7 +227,7 @@ void SessionsCollection::_doRemove(const NamespaceString& ns,
     };
 
     auto add = [](BSONArrayBuilder* builder, const LogicalSessionId& lsid) {
-        builder->append(BSON("q" << lsidQuery(lsid) << "limit" << 0));
+        builder->append(BSON("q" << lsidQuery(lsid) << "limit" << 1));
     };
 
     runBulkCmd("deletes", init, add, send, sessions);
@@ -248,7 +248,7 @@ LogicalSessionIdSet SessionsCollection::_doFindRemoved(
     auto wrappedSend = [&](BSONObj batch) {
         BSONObjBuilder batchWithReadConcernLocal(batch);
         batchWithReadConcernLocal.append(repl::ReadConcernArgs::kReadConcernFieldName,
-                                         repl::ReadConcernArgs::kLocal);
+                                         repl::ReadConcernArgs::kLocal.toBSONInner());
         auto swBatchResult = send(batchWithReadConcernLocal.obj());
 
         auto result = SessionsCollectionFetchResult::parse(
@@ -289,9 +289,8 @@ BSONObj SessionsCollection::generateCreateIndexesCmd() {
 
     CreateIndexesCommand createIndexes(NamespaceString::kLogicalSessionsNamespace);
     createIndexes.setIndexes({index.toBSON()});
-
-    return createIndexes.toBSON(BSON(WriteConcernOptions::kWriteConcernField
-                                     << WriteConcernOptions::kInternalWriteDefault));
+    createIndexes.setWriteConcern(WriteConcernOptions());
+    return createIndexes.toBSON();
 }
 
 BSONObj SessionsCollection::generateCollModCmd() {

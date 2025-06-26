@@ -120,7 +120,7 @@ components:
     homepage_url: https://pypi.org/project/discover/
     open_hub_url: N/A
     release_monitoring_id: -1
-    local_directory_path: src/third_party/wiredtiger/test/3rdparty/discover-0.4.0
+    local_directory_path: src/third_party/wiredtiger/test/3rdparty/discover-0.4.0-locally-modified
     is_test_only: true
     team_owner: "Storage Engines"
 
@@ -252,8 +252,6 @@ components:
     release_monitoring_id: 10712
     local_directory_path: src/third_party/libbson
     team_owner: "Server Security"
-    upgrade_suppression: TODO SERVER-72019
-    vulnerability_suppression: TODO SERVER-72019
 
   mongo-cxx-driver:
     homepage_url: https://github.com/mongodb/mongo-cxx-driver
@@ -278,6 +276,14 @@ components:
     local_directory_path: src/third_party/wiredtiger/test/3rdparty/nlohmann
     is_test_only: true
     team_owner: "Storage Engines"
+
+  node:
+    homepage_url: https://github.com/nodejs/node
+    open_hub_url: https://openhub.net/p/node
+    release_monitoring_id: 8251
+    local_directory_path: src/third_party/node
+    is_test_only: true
+    team_owner: "Workload Scheduling"
 
   ocspbuilder:
     homepage_url: https://github.com/wbond/ocspbuilder
@@ -312,6 +318,14 @@ components:
     local_directory_path: src/third_party/protobuf
     team_owner: "Service Arch"
     upgrade_suppression: TODO SERVER-75761
+
+  pyiso8601:
+    homepage_url: https://github.com/micktwomey/pyiso8601
+    open_hub_url: https://openhub.net/p/pyiso8601
+    release_monitoring_id: 17228
+    local_directory_path: src/third_party/wiredtiger/test/3rdparty/iso8601-2.1.0
+    is_test_only: true
+    team_owner: "Storage Engines"
 
   testscenarios:
     homepage_url: https://launchpad.net/testscenarios
@@ -373,7 +387,7 @@ components:
     homepage_url: https://launchpad.net/subunit
     open_hub_url: N/A
     release_monitoring_id: 85461
-    local_directory_path: src/third_party/wiredtiger/test/3rdparty/python-subunit-0.0.16
+    local_directory_path: src/third_party/wiredtiger/test/3rdparty/python-subunit-1.4.4
     is_test_only: true
     team_owner: "Storage Engines"
 
@@ -396,7 +410,7 @@ components:
     homepage_url: https://launchpad.net/testtools
     open_hub_url: https://www.openhub.net/p/python-testtools
     release_monitoring_id: 4047
-    local_directory_path: src/third_party/wiredtiger/test/3rdparty/testtools-0.9.34
+    local_directory_path: src/third_party/wiredtiger/test/3rdparty/testtools-2.7.1
     is_test_only: true
     team_owner: "Storage Engines"
 

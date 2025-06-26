@@ -2,10 +2,12 @@
  * Tests that when the 'movePrimaryFailIfNeedToCloneMovableCollections' failpoint is enabled, a
  * movePrimary command would only fail if:
  * - The command is run with the same 'comment' as specified in the failpoint.
- * - The donor shard still has user data for that database (i.e. untracked unsharded collections).
+ * - The donor shard still has user data for that database (i.e. untracked unsharded
+ *   collections that are movable by moveCollection).
  *
  * @tags: [requires_fcv_80]
  */
+import {EncryptedClient} from "jstests/fle2/libs/encrypted_client_util.js";
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {extractUUIDFromObject} from "jstests/libs/uuid_util.js";
 
@@ -15,8 +17,9 @@ function getCollectionUuid(db, collName) {
     return listCollectionRes.cursor.firstBatch[0].info.uuid;
 }
 
-function runTest({featureFlagTrackUnshardedCollectionsUponCreation}) {
-    jsTest.log("Running test " + tojson({featureFlagTrackUnshardedCollectionsUponCreation}));
+function testUserCollections({featureFlagTrackUnshardedCollectionsUponCreation}) {
+    jsTest.log("Running tests for user collections " +
+               tojson({featureFlagTrackUnshardedCollectionsUponCreation}));
     const st = new ShardingTest({
         shards: 3,
         configShard: true,
@@ -157,5 +160,161 @@ function runTest({featureFlagTrackUnshardedCollectionsUponCreation}) {
     st.stop();
 }
 
-runTest({featureFlagTrackUnshardedCollectionsUponCreation: false});
-runTest({featureFlagTrackUnshardedCollectionsUponCreation: true});
+function testInternalCollections({featureFlagReshardingForTimeseries}) {
+    // Disable this feature flag since movePrimary doesn't move tracked unsharded collections.
+    const featureFlagTrackUnshardedCollectionsUponCreation = false;
+    jsTest.log("Running tests for internal collections " + tojson({
+                   featureFlagTrackUnshardedCollectionsUponCreation,
+                   featureFlagReshardingForTimeseries
+               }));
+
+    const st = new ShardingTest({
+        shards: 2,
+        configShard: true,
+        rs: {
+            setParameter: {
+                featureFlagTrackUnshardedCollectionsUponCreation,
+                featureFlagReshardingForTimeseries
+            }
+        },
+    });
+    const shard0Primary = st.rs0.getPrimary();
+
+    const collName = "testColl";
+    const viewName = "testCollView";
+
+    const movePrimaryFp =
+        configureFailPoint(shard0Primary, "movePrimaryFailIfNeedToCloneMovableCollections");
+
+    jsTest.log("Testing a database with a view");
+
+    const dbName0 = "testDbWithView";
+    const testDB0 = st.s.getDB(dbName0);
+    // Make shard0 the primary shard for dbName0.
+    assert.commandWorked(
+        st.s.adminCommand({enableSharding: dbName0, primaryShard: st.shard0.shardName}));
+    // Create a test collection and a view on it.
+    assert.commandWorked(testDB0.getCollection(collName).insert({x: 1}));
+    assert.commandWorked(
+        testDB0.runCommand({create: viewName, viewOn: collName, pipeline: [{$match: {}}]}));
+
+    assert.commandFailedWithCode(st.s.adminCommand({movePrimary: dbName0, to: st.shard1.shardName}),
+                                 9046501);
+    assert.commandWorked(st.s.adminCommand(
+        {moveCollection: dbName0 + "." + collName, toShard: st.shard1.shardName}));
+    assert.commandFailedWithCode(
+        st.s.adminCommand(
+            {moveCollection: dbName0 + ".system.views", toShard: st.shard1.shardName}),
+        // Tracking of a system.views collection is not supported.
+        ErrorCodes.IllegalOperation);
+    assert.commandFailedWithCode(
+        st.s.adminCommand({moveCollection: dbName0 + "." + viewName, toShard: st.shard1.shardName}),
+        // Tracking of a view is not supported.
+        ErrorCodes.NamespaceNotFound);
+    // movePrimary should be allowed to move the system.views collection and the view.
+    assert.commandWorked(st.s.adminCommand({movePrimary: dbName0, to: st.shard1.shardName}));
+
+    if (buildInfo().modules.includes("enterprise")) {
+        jsTest.log("Testing a database with an FLE collection");
+
+        const dbName1 = "testDbWithFLE";
+        // Make shard0 the primary shard for dbName1.
+        assert.commandWorked(
+            st.s.adminCommand({enableSharding: dbName1, primaryShard: st.shard0.shardName}));
+        // Create a test collection with FLE enabled.
+        const encryptedClient = new EncryptedClient(st.s, dbName1);
+        assert.commandWorked(encryptedClient.createEncryptionCollection(collName, {
+            encryptedFields: {
+                "fields": [
+                    {"path": "x", "bsonType": "int", "queries": {"queryType": "equality"}},
+                ]
+            }
+        }));
+        assert.commandFailedWithCode(
+            st.s.adminCommand({movePrimary: dbName1, to: st.shard1.shardName}), 9046501);
+        assert.commandWorked(st.s.adminCommand(
+            {moveCollection: dbName1 + "." + collName, toShard: st.shard1.shardName}));
+        // movePrimary should be allowed to move the FLE internal collections but not the keystore
+        // collection.
+        assert.commandFailedWithCode(
+            st.s.adminCommand({movePrimary: dbName1, to: st.shard1.shardName}), 9046501);
+        assert.commandWorked(st.s.adminCommand(
+            {moveCollection: dbName1 + ".keystore", toShard: st.shard1.shardName}));
+        assert.commandWorked(st.s.adminCommand({movePrimary: dbName1, to: st.shard1.shardName}));
+    }
+
+    jsTest.log("Testing a database with a timeseries collection");
+
+    const dbName2 = "testDbWithTimeSeries";
+    const testDB2 = st.s.getDB(dbName2);
+    // Make shard0 the primary shard for dbName2.
+    assert.commandWorked(
+        st.s.adminCommand({enableSharding: dbName2, primaryShard: st.shard0.shardName}));
+    // Create a test timeseries collection.
+    assert.commandWorked(
+        testDB2.runCommand({create: collName, timeseries: {timeField: "x", metaField: "y"}}));
+    if (featureFlagReshardingForTimeseries) {
+        // If this feature flag is enabled, moveCollection should be allowed to move the timeseries
+        // bucket collection but movePrimary shouldn't be allowed to.
+        assert.commandFailedWithCode(
+            st.s.adminCommand({movePrimary: dbName2, to: st.shard1.shardName}), 9046501);
+        assert.commandWorked(st.s.adminCommand(
+            {moveCollection: dbName2 + "." + collName, toShard: st.shard1.shardName}));
+        assert.commandWorked(st.s.adminCommand({movePrimary: dbName2, to: st.shard1.shardName}));
+    } else {
+        // If this feature flag is disabled, moveCollection should not be allowed to move the
+        // timeseries bucket collection but movePrimary should be allowed to.
+        assert.commandFailedWithCode(
+            st.s.adminCommand(
+                {moveCollection: dbName2 + "." + collName, toShard: st.shard1.shardName}),
+            ErrorCodes.NotImplemented);
+        assert.commandWorked(st.s.adminCommand({movePrimary: dbName2, to: st.shard1.shardName}));
+    }
+
+    jsTest.log("Testing a database with a system.js collection");
+
+    const dbName3 = "testDbWithSystemJS";
+    const testDB3 = st.s.getDB(dbName3);
+    // Make shard0 the primary shard for dbName3.
+    assert.commandWorked(
+        st.s.adminCommand({enableSharding: dbName3, primaryShard: st.shard0.shardName}));
+    assert.commandWorked(testDB3.getCollection("system.js").insert({
+        _id: "addOne",
+        value: function(x) {
+            return x + 1;
+        }
+    }));
+    assert.commandFailedWithCode(
+        st.s.adminCommand({moveCollection: dbName3 + ".system.js", toShard: st.shard1.shardName}),
+        // Tracking of a system.js collection is not supported.
+        ErrorCodes.IllegalOperation);
+    // movePrimary should be allowed to move the system.js collection.
+    assert.commandWorked(st.s.adminCommand({movePrimary: dbName3, to: st.shard1.shardName}));
+
+    jsTest.log("Testing a database with system.resharding. collection");
+
+    const dbName4 = "testDbWithSystemResharding";
+    const testDB4 = st.s.getDB(dbName4);
+    // Make shard0 the primary shard for dbName4.
+    assert.commandWorked(
+        st.s.adminCommand({enableSharding: dbName4, primaryShard: st.shard0.shardName}));
+    assert.commandWorked(testDB4.createCollection("system.resharding.foo"));
+    // moveCollection does not have a way to tell that this is not a real resharding temporary
+    // collection.
+    assert.commandFailedWithCode(
+        st.s.adminCommand(
+            {moveCollection: dbName4 + ".system.resharding.foo", toShard: st.shard1.shardName}),
+        // Can't move an internal resharding collection.
+        ErrorCodes.IllegalOperation);
+    // movePrimary should be allowed to move the system.resharding. collection.
+    assert.commandWorked(st.s.adminCommand({movePrimary: dbName4, to: st.shard1.shardName}));
+
+    movePrimaryFp.off();
+
+    st.stop();
+}
+
+testUserCollections({featureFlagTrackUnshardedCollectionsUponCreation: false});
+testUserCollections({featureFlagTrackUnshardedCollectionsUponCreation: true});
+testInternalCollections({featureFlagReshardingForTimeseries: false});
+testInternalCollections({featureFlagReshardingForTimeseries: true});

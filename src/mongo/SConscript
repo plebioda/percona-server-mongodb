@@ -91,6 +91,7 @@ config_header_substs = (
         "MONGO_CONFIG_HAVE_BASIC_STRINGBUF_STR_RVALUE",
     ),
     ("@percona_fipsmode_enabled@", "PERCONA_FIPSMODE_ENABLED"),
+    ("@mongo_config_streams@", "MONGO_CONFIG_STREAMS"),
 )
 
 

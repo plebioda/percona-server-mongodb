@@ -2,7 +2,7 @@
  * Tests that reads through the shell uses the correct read concern.
  * @tags: [requires_replication, uses_transactions, requires_majority_read_concern]
  */
-const rst = new ReplSetTest({nodes: 2, nodeOptions: {enableMajorityReadConcern: ""}});
+const rst = new ReplSetTest({nodes: 2});
 rst.startSet();
 rst.initiate();
 
@@ -38,7 +38,7 @@ assert.eq(getMajorityRCCount(), 3);
 
 // Check that the session read concern doesn't break explain.
 assert.commandWorked(coll.runCommand(
-    {explain: {count: collName, query: {"_id": 0}, readConcern: {level: "available"}}}));
+    {explain: {count: collName, query: {"_id": 0}, readConcern: {level: "local"}}}));
 assert.commandWorked(coll.runCommand({explain: {count: collName, query: {"_id": 0}}}));
 
 // Transaction-level

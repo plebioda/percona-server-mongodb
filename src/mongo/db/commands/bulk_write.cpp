@@ -151,6 +151,7 @@
 #include "mongo/util/intrusive_counter.h"
 #include "mongo/util/log_and_backoff.h"
 #include "mongo/util/scopeguard.h"
+#include "mongo/util/serialization_context.h"
 #include "mongo/util/uuid.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kWrite
@@ -444,7 +445,7 @@ private:
 void finishCurOp(OperationContext* opCtx, CurOp* curOp, LogicalOp logicalOp) {
     try {
         curOp->done();
-        auto executionTimeMicros = duration_cast<Microseconds>(curOp->elapsedTimeExcludingPauses());
+        auto executionTimeMicros = curOp->elapsedTimeExcludingPauses();
         curOp->debug().additiveMetrics.executionTime = executionTimeMicros;
 
         recordCurOpMetrics(opCtx);
@@ -497,7 +498,7 @@ void setCurOpInfoAndEnsureStarted(OperationContext* opCtx,
     curOp->setNS_inlock(nsEntry.getIsTimeseriesNamespace()
                             ? nsEntry.getNs().getTimeseriesViewNamespace()
                             : nsEntry.getNs());
-    curOp->setNetworkOp_inlock(NetworkOp::dbBulkWrite);
+    curOp->setNetworkOp_inlock(NetworkOp::dbMsg);
     curOp->setLogicalOp_inlock(LogicalOp::opBulkWrite);
     curOp->setOpDescription_inlock(opDescription);
     curOp->ensureStarted();
@@ -1028,9 +1029,12 @@ BSONObj makeSingleOpSampledBulkWriteCommandRequest(OperationContext* opCtx,
     singleOpRequest.setStmtId(bulk_write_common::getStatementId(req, opIdx));
     singleOpRequest.setDbName(DatabaseName::kAdmin);
 
-    return singleOpRequest.toBSON(
-        BSON(BulkWriteCommandRequest::kDbNameFieldName << DatabaseNameUtil::serialize(
-                 DatabaseName::kAdmin, SerializationContext::stateCommandRequest())));
+    // Need to manually append "$db" since it is only included when serializing directly to OP_MSG.
+    BSONObjBuilder bob(singleOpRequest.toBSON());
+    bob.append(BulkWriteCommandRequest::kDbNameFieldName,
+               DatabaseNameUtil::serialize(DatabaseName::kAdmin,
+                                           SerializationContext::stateCommandRequest()));
+    return bob.obj();
 }
 
 bool handleDeleteOp(OperationContext* opCtx,

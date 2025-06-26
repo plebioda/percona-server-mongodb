@@ -321,6 +321,9 @@ buildvariants:
       - name: .default .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
         distros:
           - rhel80-medium
+      # TODO(SERVER-90936): Remove this once streams_kafka* tests can work with the "default" tag.
+      - name: streams_kafka
+      - name: streams_kafka_gwproxy
 
   # This build variant is used to test suites that use sharded cluster fixture with embedded router mode.
   # Also supports ProgramRunner/ShardingTest driven suites that look for an embedded router flag in TestData.
@@ -348,6 +351,25 @@ buildvariants:
         --excludeWithAnyTags=embedded_router_incompatible,temp_disabled_embedded_router_num_routers,temp_disabled_embedded_router_uncategorized,temp_disabled_embedded_router_health_monitor,temp_disabled_embedded_router_metrics,temp_disabled_embedded_router_known_issues,temp_disabled_embedded_router_mongo_bridge
     tasks:
       - name: sharding_gen
+
+  # This build variant is used to test feature parity between replica set and sharded cluster
+  # connected via replica set endpoint.
+  - &enterprise-rhel-80-64-bit-dynamic-replica-set-endpoint-all-feature-flags
+    <<: *linux_x86_dynamic_compile_variant_dependency
+    name: enterprise-rhel-80-64-bit-dynamic-replica-set-endpoint
+    display_name: "* Shared Library Enterprise RHEL 8.0 (Replica Set Endpoint all feature flags)"
+    tags: ["suggested"]
+    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
+    run_on:
+      - rhel80-small
+    stepback: false
+    activate: true
+    expansions: &enterprise-rhel-80-64-bit-dynamic-replica-set-endpoint-expansions
+      <<: *enterprise-rhel-80-64-bit-dynamic-expansions
+      test_flags: >-
+        --runAllFeatureFlagTests
+    tasks:
+      - name: .replica_set_endpoint
 
   - name: &enterprise-rhel-80-benchmarks enterprise-rhel-80-benchmarks
     display_name: "* Enterprise RHEL 8.0 (Benchmarks)"

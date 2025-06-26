@@ -365,12 +365,17 @@ public:
                                       const ReplSetRequestVotesArgs& args,
                                       ReplSetRequestVotesResponse* response) override;
 
-    void prepareReplMetadata(const CommonRequestArgs& requestArgs,
+    void prepareReplMetadata(const GenericArguments& genericArgs,
                              const OpTime& lastOpTimeFromClient,
                              BSONObjBuilder* builder) const override;
 
     Status processHeartbeatV1(const ReplSetHeartbeatArgsV1& args,
                               ReplSetHeartbeatResponse* response) override;
+
+    /**
+     * Set the value for getWriteConcernMajorityShouldJournal()
+     */
+    void setWriteConcernMajorityShouldJournal(bool shouldJournal);
 
     bool getWriteConcernMajorityShouldJournal() override;
 
@@ -546,6 +551,8 @@ private:
 
     Seconds _secondaryDelaySecs = Seconds(0);
     OplogSyncState _oplogSyncState = OplogSyncState::Running;
+
+    bool _writeConcernMajorityShouldJournal = true;
 };
 
 }  // namespace repl

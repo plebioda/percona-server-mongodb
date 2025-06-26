@@ -42,7 +42,6 @@ executor:
     all_nodes_electable: true
     class: ReplicaSetFixture
     mongod_options:
-      enableMajorityReadConcern: ''
       set_parameters:
         enableElectionHandoff: 0
         enableTestCommands: 1
@@ -106,6 +105,7 @@ selector:
   - jstests/core/**/geo_s2ordering.js
   - jstests/fle2/**/*.js
   - src/mongo/db/modules/*/jstests/fle2/**/*.js
+  - jstests/core/mixed_version_replica_set.js
   exclude_with_any_tags:
   - assumes_standalone_mongod
   - requires_getmore

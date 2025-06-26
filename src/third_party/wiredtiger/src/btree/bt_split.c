@@ -1191,9 +1191,9 @@ __split_internal_lock(WT_SESSION_IMPL *session, WT_REF *ref, bool trylock, WT_PA
         /* Page locks live in the modify structure. */
         WT_RET(__wt_page_modify_init(session, parent));
 
-        if (trylock)
+        if (trylock) {
             WT_RET(WT_PAGE_TRYLOCK(session, parent));
-        else
+        } else
             WT_PAGE_LOCK(session, parent);
         if (parent == ref->home)
             break;
@@ -1251,7 +1251,7 @@ __split_internal_should_split(WT_SESSION_IMPL *session, WT_REF *ref)
      * Deepen the tree if the page's memory footprint is larger than the maximum size for a page in
      * memory (presumably putting eviction pressure on the cache).
      */
-    if (page->memory_footprint > btree->maxmempage)
+    if (__wt_atomic_loadsize(&page->memory_footprint) > btree->maxmempage)
         return (true);
 
     /*
@@ -1485,6 +1485,7 @@ __split_multi_inmem(WT_SESSION_IMPL *session, WT_PAGE *orig, WT_MULTI *multi, WT
             for (; tmp != NULL && tmp != supd->onpage_upd; tmp = tmp->next)
                 WT_ASSERT(session, tmp == supd->onpage_tombstone || tmp->txnid == WT_TXN_ABORTED);
 #endif
+            /* Discard updates/tombstone after prev_onpage. */
             prev_onpage->next = NULL;
         }
 

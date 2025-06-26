@@ -105,6 +105,7 @@ MONGO_FAIL_POINT_DEFINE(movePrimaryFailIfNeedToCloneMovableCollections);
  */
 bool isMovableUnshardedCollection(const NamespaceString& nss) {
     if (nss.isFLE2StateCollection()) {
+        // TODO (SERVER-83713): Reconsider isFLE2StateCollection check.
         return false;
     }
 
@@ -113,7 +114,13 @@ bool isMovableUnshardedCollection(const NamespaceString& nss) {
         return fcvSnapshot.isVersionInitialized() &&
             resharding::gFeatureFlagReshardingForTimeseries.isEnabled(fcvSnapshot);
     }
-    return false;
+
+    if (nss.isLegalClientSystemNS()) {
+        // TODO (SERVER-90876): Make movePrimaryFailIfNeedToCloneMovableCollections only allow
+        // movePrimary to move unsharded collections that are not movable by moveCollection.
+        return false;
+    }
+    return true;
 }
 
 }  // namespace

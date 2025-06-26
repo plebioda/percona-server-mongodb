@@ -86,7 +86,7 @@ struct __wt_background_compact_exclude {
  *	Structure dedicated to the background compaction server
  */
 struct __wt_background_compact {
-    bool running;             /* Compaction supposed to run */
+    wt_shared bool running;   /* Compaction supposed to run */
     bool run_once;            /* Background compaction is executed once */
     bool signalled;           /* Compact signalled */
     bool tid_set;             /* Thread set */
@@ -285,10 +285,10 @@ struct __wt_name_flag {
  * WT_CONN_HOTBACKUP_START --
  *	Macro to set connection data appropriately for when we commence hot backup.
  */
-#define WT_CONN_HOTBACKUP_START(conn)                        \
-    do {                                                     \
-        (conn)->hot_backup_start = (conn)->ckpt_most_recent; \
-        (conn)->hot_backup_list = NULL;                      \
+#define WT_CONN_HOTBACKUP_START(conn)                                             \
+    do {                                                                          \
+        __wt_atomic_store64(&(conn)->hot_backup_start, (conn)->ckpt_most_recent); \
+        (conn)->hot_backup_list = NULL;                                           \
     } while (0)
 
 /*
@@ -431,7 +431,7 @@ struct __wt_connection_impl {
     /* Locked: handles in each bucket */
     uint64_t *dh_bucket_count;
     uint64_t dhandle_count;                  /* Locked: handles in the queue */
-    u_int open_btree_count;                  /* Locked: open writable btree count */
+    wt_shared u_int open_btree_count;        /* Locked: open writable btree count */
     uint32_t next_file_id;                   /* Locked: file ID counter */
     wt_shared uint32_t open_file_count;      /* Atomic: open file handle count */
     wt_shared uint32_t open_cursor_count;    /* Atomic: open cursor handle count */
@@ -467,8 +467,9 @@ struct __wt_connection_impl {
     uint32_t recovery_ckpt_snapshot_count;
 
     WT_RWLOCK hot_backup_lock; /* Hot backup serialization */
-    uint64_t hot_backup_start; /* Clock value of most recent checkpoint needed by hot backup */
-    char **hot_backup_list;    /* Hot backup file list */
+    wt_shared uint64_t
+      hot_backup_start;     /* Clock value of most recent checkpoint needed by hot backup */
+    char **hot_backup_list; /* Hot backup file list */
     uint32_t *partial_backup_remove_ids; /* Remove btree id list for partial backup */
 
     WT_SESSION_IMPL *ckpt_session;       /* Checkpoint thread session */
@@ -749,11 +750,6 @@ struct __wt_connection_impl {
     uint16_t debug_flags;
 
 /* AUTOMATIC FLAG VALUE GENERATION START 0 */
-#define WT_CONN_HEURISTIC_OBSOLETE_CHECK 0x1u
-    /* AUTOMATIC FLAG VALUE GENERATION STOP 16 */
-    uint16_t heuristic_controls;
-
-/* AUTOMATIC FLAG VALUE GENERATION START 0 */
 #define WT_DIAGNOSTIC_ALL 0x001ull
 #define WT_DIAGNOSTIC_CHECKPOINT_VALIDATE 0x002ull
 #define WT_DIAGNOSTIC_CURSOR_CHECK 0x004ull
@@ -797,20 +793,21 @@ struct __wt_connection_impl {
 #define WT_TIMING_STRESS_HS_CHECKPOINT_DELAY 0x00001000ull
 #define WT_TIMING_STRESS_HS_SEARCH 0x00002000ull
 #define WT_TIMING_STRESS_HS_SWEEP 0x00004000ull
-#define WT_TIMING_STRESS_PREFIX_COMPARE 0x00008000ull
-#define WT_TIMING_STRESS_PREPARE_CHECKPOINT_DELAY 0x00010000ull
-#define WT_TIMING_STRESS_PREPARE_RESOLUTION_1 0x00020000ull
-#define WT_TIMING_STRESS_PREPARE_RESOLUTION_2 0x00040000ull
-#define WT_TIMING_STRESS_SLEEP_BEFORE_READ_OVERFLOW_ONPAGE 0x00080000ull
-#define WT_TIMING_STRESS_SPLIT_1 0x00100000ull
-#define WT_TIMING_STRESS_SPLIT_2 0x00200000ull
-#define WT_TIMING_STRESS_SPLIT_3 0x00400000ull
-#define WT_TIMING_STRESS_SPLIT_4 0x00800000ull
-#define WT_TIMING_STRESS_SPLIT_5 0x01000000ull
-#define WT_TIMING_STRESS_SPLIT_6 0x02000000ull
-#define WT_TIMING_STRESS_SPLIT_7 0x04000000ull
-#define WT_TIMING_STRESS_SPLIT_8 0x08000000ull
-#define WT_TIMING_STRESS_TIERED_FLUSH_FINISH 0x10000000ull
+#define WT_TIMING_STRESS_PREFETCH_DELAY 0x00008000ull
+#define WT_TIMING_STRESS_PREFIX_COMPARE 0x00010000ull
+#define WT_TIMING_STRESS_PREPARE_CHECKPOINT_DELAY 0x00020000ull
+#define WT_TIMING_STRESS_PREPARE_RESOLUTION_1 0x00040000ull
+#define WT_TIMING_STRESS_PREPARE_RESOLUTION_2 0x00080000ull
+#define WT_TIMING_STRESS_SLEEP_BEFORE_READ_OVERFLOW_ONPAGE 0x00100000ull
+#define WT_TIMING_STRESS_SPLIT_1 0x00200000ull
+#define WT_TIMING_STRESS_SPLIT_2 0x00400000ull
+#define WT_TIMING_STRESS_SPLIT_3 0x00800000ull
+#define WT_TIMING_STRESS_SPLIT_4 0x01000000ull
+#define WT_TIMING_STRESS_SPLIT_5 0x02000000ull
+#define WT_TIMING_STRESS_SPLIT_6 0x04000000ull
+#define WT_TIMING_STRESS_SPLIT_7 0x08000000ull
+#define WT_TIMING_STRESS_SPLIT_8 0x10000000ull
+#define WT_TIMING_STRESS_TIERED_FLUSH_FINISH 0x20000000ull
     /* AUTOMATIC FLAG VALUE GENERATION STOP 64 */
     uint64_t timing_stress_flags;
 

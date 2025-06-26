@@ -2295,27 +2295,6 @@ __wti_json_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
 }
 
 /*
- * __wt_heuristic_controls_config --
- *     Set heuristic_controls configuration.
- */
-int
-__wt_heuristic_controls_config(WT_SESSION_IMPL *session, const char *cfg[])
-{
-    WT_CONFIG_ITEM cval;
-    WT_CONNECTION_IMPL *conn;
-
-    conn = S2C(session);
-
-    WT_RET(__wt_config_gets(session, cfg, "heuristic_controls.obsolete_check_aggressive", &cval));
-    if (cval.val)
-        FLD_SET(conn->heuristic_controls, WT_CONN_HEURISTIC_OBSOLETE_CHECK);
-    else
-        FLD_CLR(conn->heuristic_controls, WT_CONN_HEURISTIC_OBSOLETE_CHECK);
-
-    return (0);
-}
-
-/*
  * __wt_verbose_config --
  *     Set verbose configuration.
  */
@@ -3129,6 +3108,9 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
 
     WT_ERR(__wt_config_gets(session, cfg, "prefetch.available", &cval));
     conn->prefetch_available = cval.val != 0;
+    if (F_ISSET(conn, WT_CONN_IN_MEMORY) && conn->prefetch_available)
+        WT_ERR_MSG(
+          session, EINVAL, "prefetch configuration is incompatible with in-memory configuration");
     WT_ERR(__wt_config_gets(session, cfg, "prefetch.default", &cval));
     conn->prefetch_auto_on = cval.val != 0;
     if (conn->prefetch_auto_on && !conn->prefetch_available)
@@ -3175,9 +3157,6 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
      * is set up.
      */
     WT_ERR(__wti_debug_mode_config(session, cfg));
-
-    /* Parse the heuristic_controls configuration. */
-    WT_ERR(__wt_heuristic_controls_config(session, cfg));
 
     /*
      * Load the extensions after initialization completes; extensions expect everything else to be

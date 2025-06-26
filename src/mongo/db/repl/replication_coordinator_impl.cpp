@@ -2344,13 +2344,17 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
     OperationContext* opCtx, const OpTime& opTime, const WriteConcernOptions& writeConcern) {
     // It is illegal to wait for replication with a session checked out because it can lead to
     // deadlocks.
-    invariant(OperationContextSession::get(opCtx) == nullptr);
+    tassert(8731900,
+            "session must be checked out before waiting for replication",
+            OperationContextSession::get(opCtx) == nullptr);
 
     Timer timer;
 
     // We should never wait for replication if we are holding any locks, because this can
     // potentially block for long time while doing network activity.
-    invariant(!shard_role_details::getLocker(opCtx)->isLocked());
+    tassert(8731901,
+            "no locks should be held when waiting for replication",
+            !shard_role_details::getLocker(opCtx)->isLocked());
 
     auto interruptStatus = opCtx->checkForInterruptNoAssert();
     if (!interruptStatus.isOK()) {
@@ -2365,8 +2369,10 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
         if (writeConcern.wTimeout == WriteConcernOptions::kNoTimeout) {
             return Date_t::max();
         }
-        return clockSource->now() + clockSource->getPrecision() +
-            Milliseconds{writeConcern.wTimeout};
+        if (writeConcern.wTimeout == WriteConcernOptions::kNoWaiting) {
+            return clockSource->now();
+        }
+        return clockSource->now() + clockSource->getPrecision() + writeConcern.wTimeout.duration();
     }();
 
     const auto opCtxDeadline = opCtx->getDeadline();
@@ -6072,12 +6078,12 @@ Status ReplicationCoordinatorImpl::processReplSetRequestVotes(
     return Status::OK();
 }
 
-void ReplicationCoordinatorImpl::prepareReplMetadata(const CommonRequestArgs& requestArgs,
+void ReplicationCoordinatorImpl::prepareReplMetadata(const GenericArguments& genericArgs,
                                                      const OpTime& lastOpTimeFromClient,
                                                      BSONObjBuilder* builder) const {
 
-    bool hasReplSetMetadata = !!requestArgs.getReplData();
-    bool hasOplogQueryMetadata = !!requestArgs.getOplogQueryData();
+    bool hasReplSetMetadata = genericArgs.getDollarReplData().has_value();
+    bool hasOplogQueryMetadata = genericArgs.getDollarOplogQueryData().has_value();
     // Don't take any locks if we do not need to.
     if (!hasReplSetMetadata && !hasOplogQueryMetadata) {
         return;
@@ -6114,8 +6120,7 @@ void ReplicationCoordinatorImpl::prepareReplMetadata(const CommonRequestArgs& re
 }
 
 bool ReplicationCoordinatorImpl::getWriteConcernMajorityShouldJournal() {
-    stdx::unique_lock lock(_mutex);
-    return getWriteConcernMajorityShouldJournal(lock);
+    return _rsConfig.getConfig().getWriteConcernMajorityShouldJournal();
 }
 
 bool ReplicationCoordinatorImpl::getWriteConcernMajorityShouldJournal(WithLock lk) const {

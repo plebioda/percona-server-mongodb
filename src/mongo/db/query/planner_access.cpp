@@ -102,7 +102,6 @@ namespace {
 using namespace mongo;
 
 namespace wcp = ::mongo::wildcard_planning;
-namespace dps = ::mongo::dotted_path_support;
 
 /**
  * Casts 'node' to a FetchNode* if it is a FetchNode, otherwise returns null.
@@ -699,6 +698,9 @@ std::unique_ptr<QuerySolutionNode> QueryPlannerAccess::makeLeafNode(
     const MatchExpression* expr,
     IndexBoundsBuilder::BoundsTightness* tightnessOut,
     interval_evaluation_tree::Builder* ietBuilder) {
+    // TODO SERVER-90975: Consider moving this interrupt check into IndexBoundsBuilder::translate
+    query.getOpCtx()->checkForInterrupt();
+
     // We're guaranteed that all GEO_NEARs are first.  This slightly violates the "sort index
     // predicates by their position in the compound index" rule but GEO_NEAR isn't an ixscan.
     // This saves our bacon when we have {foo: 1, bar: "2dsphere"} and the predicate on bar is a
@@ -1726,6 +1728,18 @@ std::unique_ptr<QuerySolutionNode> QueryPlannerAccess::buildIndexedAnd(
         }
         andResult = std::move(ixscanNodes[0]);
     } else {
+        if ((params.mainCollectionInfo.options & QueryPlannerParams::TARGET_SBE_STAGE_BUILDER) &&
+            !internalQueryForceIntersectionPlans.load()) {
+            // When targeting the SBE Stage Builder, we don't allow sort-based intersection or
+            // hash-based intersection when 'internalQueryForceIntersectionPlans' is false because
+            // SBE's implementation of STAGE_AND_HASH and STAGE_AND_SORTED is not complete.
+            LOGV2_DEBUG(9081800,
+                        5,
+                        "Can't build index intersection solution: AND_SORTED and AND_HASH are not "
+                        "possible due to TARGET_SBE_STAGE_BUILDER option being set");
+            return nullptr;
+        }
+
         // $** indexes are prohibited from participating in either AND_SORTED or AND_HASH.
         const bool wildcardIndexInvolvedInIntersection =
             std::any_of(ixscanNodes.begin(), ixscanNodes.end(), [](const auto& ixScan) {

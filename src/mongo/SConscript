@@ -92,6 +92,7 @@ config_header_substs = (
     ),
     ("@percona_fipsmode_enabled@", "PERCONA_FIPSMODE_ENABLED"),
     ("@percona_fcbis_enabled@", "PERCONA_FCBIS_ENABLED"),
+    ("@mongo_config_streams@", "MONGO_CONFIG_STREAMS"),
 )
 
 

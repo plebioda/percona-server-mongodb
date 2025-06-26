@@ -39,6 +39,8 @@ last-continuous:
       ticket: SERVER-77073
     - test_file: jstests/core/query/query_settings/query_settings_index_application_aggregate.js
       ticket: SERVER-88629
+    - test_file: jstests/core/index/elemmatch_index.js
+      ticket: SERVER-90747
     - test_file: jstests/core/command_let_variables_expressions.js
       ticket: SERVER-89268
     - test_file: jstests/sharding/analyze_shard_key/sample_write_queries_sharded.js
@@ -97,8 +99,6 @@ last-continuous:
       ticket: SERVER-89744
     - test_file: jstests/sharding/move_chunk_deferred_lookup.js
       ticket: SERVER-89859
-    - test_file: jstests/sharding/move_collection_capped_collection.js
-      ticket: SERVER-89342
     - test_file: jstests/sharding/secondaries_clear_filtering_metadata.js
       ticket: SERVER-86669
     - test_file: jstests/sharding/cluster_cardinality_parameter_interrupt.js
@@ -109,10 +109,18 @@ last-continuous:
       ticket: SERVER-90173
     - test_file: jstests/aggregation/unwind_sort.js
       ticket: SERVER-90485
+    - test_file: jstests/sharding/move_collection_capped_collection.js
+      ticket: SERVER-89826
     - test_file: jstests/core/index/index_count_scan.js
       ticket: SERVER-90461
     - test_file: jstests/noPassthrough/move_primary_failpoint.js
       ticket: SERVER-90465
+    - test_file: jstests/core/timeseries/timeseries_ixscan_clusteredidxscan_union.js
+      ticket: SERVER-90818
+    - test_file: jstests/sharding/migration_blocking_operation/implicit_create_from_upsert_with_paused_migrations.js
+      ticket: SERVER-90157
+    - test_file: jstests/core/timeseries/bucket_unpacking_with_sort_negative.js
+      ticket: SERVER-90833
   suites: null
 last-lts:
   all:
@@ -134,6 +142,8 @@ last-lts:
       ticket: SERVER-77073
     - test_file: jstests/core/query/query_settings/query_settings_index_application_aggregate.js
       ticket: SERVER-88629
+    - test_file: jstests/core/index/elemmatch_index.js
+      ticket: SERVER-90747
     - test_file: jstests/core/command_let_variables_expressions.js
       ticket: SERVER-89268
     - test_file: jstests/sharding/analyze_shard_key/sample_write_queries_sharded.js
@@ -192,8 +202,6 @@ last-lts:
       ticket: SERVER-89744
     - test_file: jstests/sharding/move_chunk_deferred_lookup.js
       ticket: SERVER-89859
-    - test_file: jstests/sharding/move_collection_capped_collection.js
-      ticket: SERVER-89342
     - test_file: jstests/sharding/secondaries_clear_filtering_metadata.js
       ticket: SERVER-86669
     - test_file: jstests/sharding/cluster_cardinality_parameter_interrupt.js
@@ -204,8 +212,16 @@ last-lts:
       ticket: SERVER-90173
     - test_file: jstests/aggregation/unwind_sort.js
       ticket: SERVER-90485
+    - test_file: jstests/sharding/move_collection_capped_collection.js
+      ticket: SERVER-89826
     - test_file: jstests/core/index/index_count_scan.js
       ticket: SERVER-90461
     - test_file: jstests/noPassthrough/move_primary_failpoint.js
       ticket: SERVER-90465
+    - test_file: jstests/core/timeseries/timeseries_ixscan_clusteredidxscan_union.js
+      ticket: SERVER-90818
+    - test_file: jstests/sharding/migration_blocking_operation/implicit_create_from_upsert_with_paused_migrations.js
+      ticket: SERVER-90157
+    - test_file: jstests/core/timeseries/bucket_unpacking_with_sort_negative.js
+      ticket: SERVER-90833
   suites: null

@@ -239,6 +239,7 @@ export class MagicRestoreUtils {
 
         // These fields are set during the restore process.
         this.backupCursor = undefined;
+        this.backupId = undefined;
         this.checkpointTimestamp = undefined;
         this.pointInTimeTimestamp = undefined;
     }
@@ -260,9 +261,11 @@ export class MagicRestoreUtils {
     }
 
     /**
-     * Takes a checkpoint and opens the backup cursor on the source.
+     * Takes a checkpoint and opens the backup cursor on the source. backupCursorOpts is an optional
+     * parameter which will be passed to the openBackupCursor call if provided. This function
+     * returns the backup cursor metadata object.
      */
-    takeCheckpointAndOpenBackup() {
+    takeCheckpointAndOpenBackup(backupCursorOpts = {}) {
         // Take the initial checkpoint.
         assert.commandWorked(this.backupSource.adminCommand({fsync: 1}));
 
@@ -271,18 +274,20 @@ export class MagicRestoreUtils {
         mkdir(this.backupDbPath + "/journal");
 
         // Open a backup cursor on the checkpoint.
-        this.backupCursor = openBackupCursor(this.backupSource.getDB("admin"));
+        this.backupCursor = openBackupCursor(this.backupSource.getDB("admin"), backupCursorOpts);
         // Print the backup metadata document.
         assert(this.backupCursor.hasNext());
         const {metadata} = this.backupCursor.next();
         jsTestLog("Backup cursor metadata document: " + tojson(metadata));
+        this.backupId = metadata.backupId;
         this.checkpointTimestamp = metadata.checkpointTimestamp;
+        return metadata;
     }
 
     /**
-     * Copies data files from the source dbpath to the backup dbpath. Closes the backup cursor.
+     * Copies data files from the source dbpath to the backup dbpath.
      */
-    copyFilesAndCloseBackup() {
+    copyFiles() {
         while (this.backupCursor.hasNext()) {
             const doc = this.backupCursor.next();
             jsTestLog("Copying for backup: " + tojson(doc));
@@ -290,6 +295,26 @@ export class MagicRestoreUtils {
                             this.backupSource.dbpath,
                             this.backupDbPath);
         }
+    }
+
+    /**
+     * Copies data files from the source dbpath to the backup dbpath. Closes the backup cursor.
+     */
+    copyFilesAndCloseBackup() {
+        this.copyFiles();
+        this.backupCursor.close();
+    }
+
+    /**
+     * Extends the backup cursor, copies the extend files and closes the backup cursor.
+     */
+    extendAndCloseBackup(mongo, maxCheckpointTs) {
+        extendBackupCursor(mongo, this.backupId, maxCheckpointTs);
+        copyBackupCursorExtendFiles(this.backupCursor,
+                                    [] /*namespacesToSkip*/,
+                                    this.backupSource.dbpath,
+                                    this.backupDbPath,
+                                    false /*async*/);
         this.backupCursor.close();
     }
 
@@ -347,6 +372,80 @@ export class MagicRestoreUtils {
     }
 
     /**
+     * Avoids nested loops (some including the config servers and some without) in the test itself.
+     */
+    static getAllNodes(numShards, numNodes) {
+        const result = [];
+        for (let rsIndex = 0; rsIndex < numShards; rsIndex++) {
+            for (let nodeIndex = 0; nodeIndex < numNodes; nodeIndex++) {
+                result.push([rsIndex, nodeIndex]);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Helper function that lists databases on the given ShardingTest, calls dbHash for each and
+     * returns those as a dbName-to-shardIdx-to-nodeIdx-to-dbHash dictionary.
+     */
+    static getDbHashes(st, numShards, numNodes, expectedDBCount) {
+        const dbHashes = {};
+        const res = assert.commandWorked(st.s.adminCommand({"listDatabases": 1, "nameOnly": true}));
+        assert.eq(res["databases"].length, expectedDBCount);
+
+        const allNodes = this.getAllNodes(numShards + 1, numNodes);
+        for (let dbEntry of res["databases"]) {
+            const dbName = dbEntry["name"];
+            dbHashes[dbName] = {};
+            for (const [rsIndex, nodeIndex] of allNodes) {
+                const node = rsIndex < numShards ? st["rs" + rsIndex].nodes[nodeIndex]
+                                                 : st.configRS.nodes[nodeIndex];
+                const dbHash = node.getDB(dbName).runCommand({dbHash: 1});
+                if (dbHashes[dbName][rsIndex] == undefined) {
+                    dbHashes[dbName][rsIndex] = {};
+                }
+                dbHashes[dbName][rsIndex][nodeIndex] = dbHash;
+            }
+        }
+
+        return dbHashes;
+    }
+
+    /**
+     * Helper function that compares outputs of dbHash on the given replicaSets against the output
+     * of a previous getDbHashes call. The config server replica set can be passed in replicaSets
+     * too. Collection names in excludedCollections are excluded from the comparison.
+     */
+    static checkDbHashes(dbHashes, replicaSets, excludedCollections, numShards, numNodes) {
+        for (const [rsIndex, nodeIndex] of this.getAllNodes(numShards + 1, numNodes)) {
+            for (const dbName in dbHashes) {
+                if (dbHashes[dbName][rsIndex] != undefined) {
+                    let dbhash =
+                        replicaSets[rsIndex].nodes[nodeIndex].getDB(dbName).runCommand({dbHash: 1});
+                    for (let collectionName in dbhash["collections"]) {
+                        if (excludedCollections.includes(collectionName)) {
+                            continue;
+                        }
+                        assert.eq(
+                            dbhash["collections"][collectionName],
+                            dbHashes[dbName][rsIndex][nodeIndex]["collections"][collectionName],
+                            `Comparing ${collectionName} in ${dbName} on replicaSets[${
+                                rsIndex}], node ${nodeIndex} failed`);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Replaces the trailing "_0" from the backupPath of the first node of a replica set by "_$node"
+     * so startSet uses the correct dbpath for each node in the replica set.
+     */
+    static parameterizeDbpath(backupPath) {
+        return backupPath.slice(0, -1) + "$node";
+    }
+
+    /**
      * Retrieves all oplog entries that occurred after the checkpoint timestamp on the source node.
      * Returns an object with the timestamp of the last oplog entry, as well as the oplog
      * entry array
@@ -359,6 +458,42 @@ export class MagicRestoreUtils {
             lastOplogEntryTs: entriesAfterBackup[entriesAfterBackup.length - 1].ts,
             entriesAfterBackup
         };
+    }
+
+    /**
+     * A helper function that makes multiple assertions on the restore node. Helpful to avoid
+     * needing to make each individual assertion in each test.
+     */
+    postRestoreChecks({
+        node,
+        expectedConfig,
+        dbName,
+        collName,
+        expectedOplogCountForNs,
+        opFilter,
+        expectedNumDocsSnapshot,
+        rolesCollUuid,
+        userCollUuid,
+        logPath,
+        shardLastOplogEntryTs
+    }) {
+        node.setSecondaryOk();
+        const restoredConfig =
+            assert.commandWorked(node.adminCommand({replSetGetConfig: 1})).config;
+        this._assertConfigIsCorrect(expectedConfig, restoredConfig);
+        this.assertOplogCountForNamespace(
+            node, dbName + "." + collName, expectedOplogCountForNs, opFilter);
+        this._assertMinValidIsCorrect(node);
+        this._assertStableCheckpointIsCorrectAfterRestore(node, shardLastOplogEntryTs);
+        this._assertCannotDoSnapshotRead(
+            node, expectedNumDocsSnapshot /* expectedNumDocsSnapshot */, dbName, collName);
+        if (rolesCollUuid && userCollUuid) {
+            assert.eq(rolesCollUuid, this.getCollUuid(node, "admin", "system.roles"));
+            assert.eq(userCollUuid, this.getCollUuid(node, "admin", "system.users"));
+        }
+        if (logPath) {
+            this._checkRestoreSpecificLogs(logPath);
+        }
     }
 
     /**
@@ -404,7 +539,7 @@ export class MagicRestoreUtils {
      * Asserts that two config arguments are equal. If we are testing higher term behavior in the
      * test, modifies the expected term on the source config.
      */
-    assertConfigIsCorrect(srcConfig, dstConfig) {
+    _assertConfigIsCorrect(srcConfig, dstConfig) {
         // If we passed in a value for the 'restoreToHigherTermThan' field in the restore config, a
         // no-op oplog entry was inserted in the oplog with that term value + 100. On startup, the
         // replica set node sets its term to this value. A new election occurred when the replica
@@ -412,6 +547,8 @@ export class MagicRestoreUtils {
         // higher term value.
         const expectedTerm = this.insertHigherTermOplogEntry ? this.restoreToHigherTermThan + 101
                                                              : srcConfig.term + 1;
+        // Make a copy to not modify the object passed by the caller.
+        srcConfig = Object.assign({}, srcConfig);
         srcConfig.term = expectedTerm;
         assert.eq(srcConfig, dstConfig);
     }
@@ -423,9 +560,17 @@ export class MagicRestoreUtils {
      * inserts a no-op oplog entry with a higher term, the stable checkpoint timestamp should be
      * equal to the timestamp of that entry.
      */
-    assertStableCheckpointIsCorrectAfterRestore(restoreNode) {
+    _assertStableCheckpointIsCorrectAfterRestore(restoreNode, lastOplogEntryTs = undefined) {
         let lastStableCheckpointTs =
             this.isPit ? this.pointInTimeTimestamp : this.checkpointTimestamp;
+
+        // For a PIT restore on a sharded cluster, the lastStableCheckpointTs of a given shard might
+        // be behind the global pointInTimeTimestamp. This allows the caller to specify
+        // lastOplogEntryTs instead.
+        if (lastOplogEntryTs != undefined) {
+            lastStableCheckpointTs = lastOplogEntryTs;
+        }
+
         if (this.insertHigherTermOplogEntry) {
             const oplog = restoreNode.getDB("local").getCollection('oplog.rs');
             const incrementTermEntry =
@@ -441,13 +586,16 @@ export class MagicRestoreUtils {
         // 0, this means the magic restore took a stable checkpoint on shutdown.
         const {lastStableRecoveryTimestamp} =
             assert.commandWorked(restoreNode.adminCommand({replSetGetStatus: 1}));
-        assert(timestampCmp(lastStableRecoveryTimestamp, lastStableCheckpointTs) == 0);
+        assert(timestampCmp(lastStableRecoveryTimestamp, lastStableCheckpointTs) == 0,
+               `timestampCmp(${tojson(lastStableRecoveryTimestamp)}, ${
+                   tojson(lastStableCheckpointTs)}) is ${
+                   timestampCmp(lastStableRecoveryTimestamp, lastStableCheckpointTs)}, not 0`);
     }
 
     /**
      * Assert that the minvalid document has been set correctly in magic restore.
      */
-    assertMinValidIsCorrect(restoreNode) {
+    _assertMinValidIsCorrect(restoreNode) {
         const minValid = restoreNode.getCollection('local.replset.minvalid').findOne();
         assert.eq(minValid,
                   {_id: ObjectId("000000000000000000000000"), t: -1, ts: Timestamp(0, 1)});
@@ -457,13 +605,13 @@ export class MagicRestoreUtils {
      * Assert that a restored node cannot complete a snapshot read at a timestamp earlier than the
      * last stable checkpoint timestamp.
      */
-    assertCannotDoSnapshotRead(restoreNode, expectedNumDocs) {
+    _assertCannotDoSnapshotRead(restoreNode, expectedNumDocsSnapshot, db = "db", coll = "coll") {
         const {lastStableRecoveryTimestamp} =
             assert.commandWorked(restoreNode.adminCommand({replSetGetStatus: 1}));
         // A restored node will not preserve any history. The oldest timestamp should be set to the
         // stable timestamp at the end of a non-PIT restore.
-        let res = restoreNode.getDB("db").runCommand({
-            find: "coll",
+        let res = restoreNode.getDB(db).runCommand({
+            find: coll,
             readConcern: {
                 level: "snapshot",
                 atClusterTime: Timestamp(lastStableRecoveryTimestamp.getTime() - 1,
@@ -473,12 +621,12 @@ export class MagicRestoreUtils {
         assert.commandFailedWithCode(res, ErrorCodes.SnapshotTooOld);
 
         // A snapshot read at the last stable timestamp should succeed.
-        res = restoreNode.getDB("db").runCommand({
-            find: "coll",
+        res = restoreNode.getDB(db).runCommand({
+            find: coll,
             readConcern: {level: "snapshot", atClusterTime: lastStableRecoveryTimestamp}
         });
         assert.commandWorked(res);
-        assert.eq(res.cursor.firstBatch.length, expectedNumDocs);
+        assert.eq(res.cursor.firstBatch.length, expectedNumDocsSnapshot);
     }
 
     /**
@@ -486,5 +634,21 @@ export class MagicRestoreUtils {
      */
     getCollUuid(node, dbName, collName) {
         return node.getDB(dbName).getCollectionInfos({name: collName})[0].info.uuid;
+    }
+
+    /**
+     * Checks the log file specified at 'logpath', and ensures that it contains logs with the
+     * 'RESTORE' component. The function also ensures the first and last log lines are as expected.
+     */
+    _checkRestoreSpecificLogs(logpath) {
+        // When splitting the logs on new lines, the last element will be an empty string, so we
+        // should filter it out.
+        let logs = cat(logpath)
+                       .split("\n")
+                       .filter(line => line.trim() !== "")
+                       .map(line => JSON.parse(line))
+                       .filter(json => json.c === 'RESTORE');
+        assert.eq(logs[0].msg, "Beginning magic restore");
+        assert.eq(logs[logs.length - 1].msg, "Finished magic restore");
     }
 }

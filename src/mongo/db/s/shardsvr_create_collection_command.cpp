@@ -106,8 +106,10 @@ void runCreateCommandDirectClient(OperationContext* opCtx,
                                   const CreateCommand& cmd) {
     BSONObj createRes;
     DBDirectClient localClient(opCtx);
+    CreateCommand c = cmd;
+    APIParameters::get(opCtx).setInfo(c);
     // Forward the api check rules enforced by the client
-    localClient.runCommand(ns.dbName(), cmd.toBSON(APIParameters::get(opCtx).toBSON()), createRes);
+    localClient.runCommand(ns.dbName(), c.toBSON(), createRes);
     auto createStatus = getStatusFromCommandResult(createRes);
     uassertStatusOK(createStatus);
 }
@@ -227,9 +229,7 @@ public:
                 // Validates and sets missing time-series options fields automatically. This may
                 // modify the options by setting default values. Due to modifying the durable
                 // format it is feature flagged to 7.1+
-                if (requestToForward.getTimeseries() &&
-                    gFeatureFlagValidateAndDefaultValuesForShardedTimeseries.isEnabled(
-                        (*optFixedFcvRegion)->acquireFCVSnapshot())) {
+                if (requestToForward.getTimeseries()) {
                     auto timeseriesOptions = *requestToForward.getTimeseries();
                     uassertStatusOK(
                         timeseries::validateAndSetBucketingParameters(timeseriesOptions));

@@ -12,9 +12,9 @@ const kInterval = 200;
 const kNoRetry = true;
 const kRetry = false;
 
-// TODO SERVER-89555: Remove ErrorCodes.MovePrimaryInProgress when operations on tracked unsharded
-// collections don't hit MovePrimaryInProgress errors.
 const kRetryableErrors = [
+    // Not all collections can be moved with moveCollection, and must be moved with movePrimary,
+    // e.g. FLE state collections, so operations against them may fail with MovePrimaryInProgress.
     {code: ErrorCodes.MovePrimaryInProgress},
     {code: ErrorCodes.ReshardCollectionInProgress},
     {
@@ -26,7 +26,10 @@ const kRetryableErrors = [
     // lower in testing than in production, dropCollection is scheduled almost immediately.
     // Similarly, the collection rename step in resharding (moveCollection) can cause a query to
     // get killed.
-    {code: ErrorCodes.QueryPlanKilled}
+    {code: ErrorCodes.QueryPlanKilled},
+    // TODO SERVER-90609: Stop ignoring this error. Currently an index build may fail because a
+    // concurrent movePrimary triggered by the transition hook drops the collection.
+    {code: ErrorCodes.IndexBuildAborted},
 ];
 
 // Commands known not to work with transitions so tests can fail immediately with a clear error.
@@ -100,9 +103,8 @@ function runCommandWithRetries(conn, dbName, cmdName, cmdObj, func, makeFuncArgs
                 return kRetry;
             }
 
-            // TODO SERVER-89555: Remove once we never retry on MovePrimaryInProgress. Several
-            // workloads use bulk inserts to load data and can fail with duplicate key errors on
-            // retry if the first attempt failed part way through because of a movePrimary.
+            // Some workloads use bulk inserts to load data and can fail with duplicate key errors
+            // on retry if the first attempt failed part way through because of a movePrimary.
             if (cmdName === "insert" && attempt > 1 && res.hasOwnProperty("writeErrors")) {
                 const hasOnlyDuplicateKeyErrors = res.writeErrors.every((err) => {
                     return err.code === ErrorCodes.DuplicateKey;

@@ -1101,6 +1101,47 @@ structs:
 
 ##################################################################################################
 #
+# Test setter overloads
+#
+##################################################################################################
+
+    StructWithOverloadedSetters:
+        description: A struct with fields that generate additional setter overloads.
+        strict: false
+        fields:
+            fieldString: string
+            fieldOptionalString:
+                type: string
+                optional: true
+            fieldStringWithValidator:
+                type: string
+                validator: { callback: "validateStartsWith<'x'>" }
+            fieldOptionalStringWithValidator:
+                type: string
+                optional: true
+                validator: { callback: "validateStartsWith<'x'>" }
+            fieldArrayString:
+                type: array<string>
+            fieldArrayStringWithValidator:
+                type: array<string>
+                validator: { callback: "validateAllCapsArray" }
+            fieldOptionalArrayString:
+                type: array<string>
+                optional: true
+            fieldOptionalArrayStringWithValidator:
+                type: array<string>
+                optional: true
+                validator: { callback: "validateAllCapsArray" }
+
+
+    StructWithInlineChainedOverloadedSetters:
+        description: A struct with an inline chained struct that generates setter overloads.
+        inline_chained_structs: true
+        chained_structs:
+            StructWithOverloadedSetters: StructWithOverloadedSetters
+
+##################################################################################################
+#
 # Test unsafe_dangerous_disable_extra_field_duplicate_checks ignores extra fields
 #
 ##################################################################################################
@@ -1120,12 +1161,37 @@ structs:
             swim:
                 type: IDLAnyType
                 forward_to_shards: false
+                optional: true
             swimmer:
                 type: IDLAnyType
                 forward_to_shards: false
+                optional: true
             swimmed: # Note: spelled wrong on purpose
                 type: IDLAnyType
                 forward_to_shards: false
+                optional: true
+
+##################################################################################################
+#
+# Generic argument structs
+#
+##################################################################################################
+
+    TestGenericArguments:
+        description: "List of generic arguments"
+        is_generic_cmd_list: "arg"
+        strict: false
+        fields:
+            genericArg:
+                type: IDLAnyType
+                forward_to_shards: true
+                optional: true
+                stability: "stable"
+            unstableGenericArg:
+                type: string
+                forward_to_shards: false
+                optional: true
+                stability: "unstable"
 
 ##################################################################################################
 #
@@ -1169,15 +1235,6 @@ commands:
         non_const_getter: true
         fields:
             field1: int
-
-    KnownFieldCommand:
-        description: UnitTest for a command that has a field that is special known generic command field
-        command_name: KnownFieldCommand
-        namespace: concatenate_with_db
-        api_version: ""
-        fields:
-            field1: int
-            maxTimeMS: int
 
     DocSequenceCommand:
         description: UnitTest for a basic command with fields marked with supports_doc_sequence

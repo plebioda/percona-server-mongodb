@@ -9,9 +9,6 @@
  *  uses_transactions,
  *  resource_intensive,
  *  incompatible_with_concurrency_simultaneous,
- *  # TODO SERVER-89503 Re-enable this test in suites with balancer once
- *  # the relative issue is solved.
- *  assumes_balancer_off,
  * ]
  */
 import {interruptedQueryErrors} from "jstests/concurrency/fsm_libs/assert.js";
@@ -699,6 +696,14 @@ export const $config = extendWorkload(kBaseConfig, function($config, $super) {
                   `collection is empty. ${tojsononeline(err)}`);
             // Inaccurate fast count is only expected when there is unclean shutdown.
             return TestData.runningWithShardStepdowns;
+        }
+        // TODO SERVER-91030: Remove special handling of error code 7826507.
+        if (err.code == 7826507) {
+            print(
+                `Failed to analyze the shard key because the number of sampled documents is zero. ${
+                    tojsononeline(err)}`);
+            // This may be due to chunk migrations.
+            return true;
         }
         if (err.code == ErrorCodes.IllegalOperation && err.errmsg &&
             err.errmsg.includes("monotonicity") && err.errmsg.includes("empty collection")) {

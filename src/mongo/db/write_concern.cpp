@@ -87,19 +87,16 @@ auto& gleDefaultUnsatisfiable = *MetricBuilder<Counter64>{"getLastError.default.
 
 MONGO_FAIL_POINT_DEFINE(hangBeforeWaitingForWriteConcern);
 
-bool commandSpecifiesWriteConcern(const CommonRequestArgs& requestArgs) {
+bool commandSpecifiesWriteConcern(const GenericArguments& requestArgs) {
     return !!requestArgs.getWriteConcern();
 }
 
 StatusWith<WriteConcernOptions> extractWriteConcern(OperationContext* opCtx,
-                                                    const BSONObj& cmdObj,
+                                                    const GenericArguments& genericArgs,
+                                                    StringData commandName,
                                                     bool isInternalClient) {
-    auto wcResult = WriteConcernOptions::extractWCFromCommand(cmdObj);
-    if (!wcResult.isOK()) {
-        return wcResult.getStatus();
-    }
-
-    WriteConcernOptions writeConcern = wcResult.getValue();
+    WriteConcernOptions writeConcern =
+        genericArgs.getWriteConcern().value_or_eval([]() { return WriteConcernOptions(); });
 
     // This is the WC extracted from the command object, so the CWWC or implicit default hasn't been
     // applied yet, which is why "usedDefaultConstructedWC" flag can be used an indicator of whether
@@ -117,7 +114,7 @@ StatusWith<WriteConcernOptions> extractWriteConcern(OperationContext* opCtx,
     bool canApplyDefaultWC = serverGlobalParams.clusterRole.has(ClusterRole::None) &&
         repl::ReplicationCoordinator::get(opCtx)->getSettings().isReplSet() &&
         (!opCtx->inMultiDocumentTransaction() ||
-         isTransactionCommand(opCtx->getService(), cmdObj.firstElementFieldName())) &&
+         isTransactionCommand(opCtx->getService(), commandName)) &&
         !opCtx->getClient()->isInDirectClient() && !isInternalClient;
 
 
@@ -143,10 +140,8 @@ StatusWith<WriteConcernOptions> extractWriteConcern(OperationContext* opCtx,
                 if (wcDefault) {
                     LOGV2_DEBUG(22548,
                                 2,
-                                "Applying default writeConcern on {cmdObj_firstElementFieldName} "
-                                "of {wcDefault}",
-                                "cmdObj_firstElementFieldName"_attr =
-                                    cmdObj.firstElementFieldName(),
+                                "Applying default writeConcern",
+                                "commandName"_attr = commandName,
                                 "wcDefault"_attr = wcDefault->toBSON());
                     return *wcDefault;
                 }
@@ -180,6 +175,20 @@ StatusWith<WriteConcernOptions> extractWriteConcern(OperationContext* opCtx,
             provenance.setSource(ReadWriteConcernProvenance::Source::internalWriteDefault);
         } else {
             provenance.setSource(ReadWriteConcernProvenance::Source::implicitDefault);
+        }
+    }
+
+    if (writeConcern.syncMode == WriteConcernOptions::SyncMode::NONE && writeConcern.isMajority() &&
+        !opCtx->getServiceContext()->getStorageEngine()->isEphemeral()) {
+        auto* const replCoord = repl::ReplicationCoordinator::get(opCtx);
+        if (replCoord && replCoord->getSettings().isReplSet() &&
+            replCoord->getWriteConcernMajorityShouldJournal()) {
+            LOGV2_DEBUG(8668500,
+                        1,
+                        "Overriding write concern majority j:false to j:true",
+                        "writeConcern"_attr = writeConcern);
+            writeConcern.majorityJFalseOverridden = true;
+            writeConcern.syncMode = WriteConcernOptions::SyncMode::JOURNAL;
         }
     }
 

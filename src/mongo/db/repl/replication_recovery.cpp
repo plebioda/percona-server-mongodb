@@ -427,9 +427,7 @@ void ReplicationRecoveryImpl::recoverFromOplogUpTo(OperationContext* opCtx, Time
 
     boost::optional<Timestamp> startPoint =
         _storageInterface->getRecoveryTimestamp(opCtx->getServiceContext());
-    if (!startPoint) {
-        fassert(31436, "No recovery timestamp, cannot recover from the oplog");
-    }
+    fassert(31436, !!startPoint);  // No recovery timestamp, cannot recover from the oplog
 
     startPoint = _adjustStartPointIfNecessary(opCtx, startPoint.value());
 
@@ -482,10 +480,10 @@ boost::optional<Timestamp> ReplicationRecoveryImpl::recoverFromOplog(
 
     // If we were passed in a stable timestamp, we are in rollback recovery and should recover from
     // that stable timestamp. Otherwise, we're recovering at startup. If this storage engine
-    // supports recover to stable timestamp or enableMajorityReadConcern=false, we ask it for the
-    // recovery timestamp. If the storage engine returns a timestamp, we recover from that point.
-    // However, if the storage engine returns "none", the storage engine does not have a stable
-    // checkpoint and we must recover from an unstable checkpoint instead.
+    // supports recover to stable timestamp, we ask it for the recovery timestamp. If the storage
+    // engine returns a timestamp, we recover from that point. However, if the storage engine
+    // returns "none", the storage engine does not have a stable checkpoint and we must recover from
+    // an unstable checkpoint instead.
     bool isRollbackRecovery = stableTimestamp != boost::none;
     const bool supportsRecoveryTimestamp =
         _storageInterface->supportsRecoveryTimestamp(opCtx->getServiceContext());

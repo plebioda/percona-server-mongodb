@@ -90,11 +90,11 @@ selector:
     - jstests/aggregation/query_limits_test.js
     - jstests/aggregation/accumulators/accumulator_js_size_limits.js
 
-    # TODO SERVER-90619 Investigate missing DISTINCT_SCAN in explain output in aggregation config transition suite.
+    # This test sets an index filter on a particular shard which is only in memory and thus not copied over to a new shard
+    # after a config transition moves the collection.
     - jstests/aggregation/group_conversion_to_distinct_scan.js
 
-    # TODO (SERVER-90738): Re-enable collection_uuid_coll_stats_index_stats.js in
-    # aggregation_unsplittable_collections_on_random_shard_passthrough_with_config_transitions.
+    # This test expects a stable collection UUID, which isn't true with background moveCollections.
     - jstests/aggregation/collection_uuid_coll_stats_index_stats.js
 
   exclude_with_any_tags:
@@ -122,7 +122,8 @@ executor:
         await import("jstests/libs/override_methods/implicitly_retry_on_migration_in_progress.js");
         await import("jstests/libs/override_methods/implicitly_retry_on_config_transition_errors.js");
   hooks:
-    - class: ContinuousConfigShardTransition
+    - class: ContinuousAddRemoveShard
+      transition_configsvr: true
       move_primary_comment: *movePrimaryComment
     - class: CheckReplDBHash
     - class: CheckMetadataConsistencyInBackground

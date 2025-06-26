@@ -30,6 +30,7 @@
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/search_index_commands_gen.h"
+#include "mongo/db/generic_argument_util.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/query/search/search_index_common.h"
 #include "mongo/db/query/search/search_index_process_interface.h"
@@ -90,15 +91,16 @@ public:
         CreateSearchIndexesReply typedRun(OperationContext* opCtx) {
             throwIfNotRunningWithRemoteSearchIndexManagement();
 
-            const auto& cmd = request();
+            auto cmd = request();
+            generic_argument_util::prepareRequestForSearchIndexManagerPassthrough(cmd);
             const auto& nss = cmd.getNamespace();
 
             auto collectionUUID =
                 SearchIndexProcessInterface::get(opCtx)->fetchCollectionUUIDOrThrow(opCtx, nss);
 
             // Run the search index command against the remote search index management server.
-            BSONObj manageSearchIndexResponse = getSearchIndexManagerResponse(
-                opCtx, nss, collectionUUID, cmd.toBSON(BSONObj() /* commandPassthroughFields */));
+            BSONObj manageSearchIndexResponse =
+                getSearchIndexManagerResponse(opCtx, nss, collectionUUID, cmd.toBSON());
 
             IDLParserContext ctx("CreateSearchIndexesReply Parser");
             return CreateSearchIndexesReply::parseOwned(ctx, std::move(manageSearchIndexResponse));
@@ -164,7 +166,8 @@ public:
         DropSearchIndexReply typedRun(OperationContext* opCtx) {
             throwIfNotRunningWithRemoteSearchIndexManagement();
 
-            const auto& cmd = request();
+            auto cmd = request();
+            generic_argument_util::prepareRequestForSearchIndexManagerPassthrough(cmd);
 
             uassert(ErrorCodes::InvalidOptions,
                     "Cannot set both 'name' and 'id'.",
@@ -175,8 +178,8 @@ public:
             auto collectionUUID =
                 SearchIndexProcessInterface::get(opCtx)->fetchCollectionUUIDOrThrow(opCtx, nss);
 
-            BSONObj manageSearchIndexResponse = getSearchIndexManagerResponse(
-                opCtx, nss, collectionUUID, cmd.toBSON(BSONObj() /* commandPassthroughFields */));
+            BSONObj manageSearchIndexResponse =
+                getSearchIndexManagerResponse(opCtx, nss, collectionUUID, cmd.toBSON());
 
             IDLParserContext ctx("DropSearchIndexReply Parser");
             return DropSearchIndexReply::parseOwned(ctx, std::move(manageSearchIndexResponse));
@@ -245,8 +248,8 @@ public:
         UpdateSearchIndexReply typedRun(OperationContext* opCtx) {
             throwIfNotRunningWithRemoteSearchIndexManagement();
 
-            const auto& cmd = request();
-            cmd.getName();
+            auto cmd = request();
+            generic_argument_util::prepareRequestForSearchIndexManagerPassthrough(cmd);
 
             uassert(ErrorCodes::InvalidOptions,
                     "Cannot set both 'name' and 'id'.",
@@ -261,8 +264,8 @@ public:
             auto collectionUUID =
                 SearchIndexProcessInterface::get(opCtx)->fetchCollectionUUIDOrThrow(opCtx, nss);
 
-            BSONObj manageSearchIndexResponse = getSearchIndexManagerResponse(
-                opCtx, nss, collectionUUID, cmd.toBSON(BSONObj() /* commandPassthroughFields */));
+            BSONObj manageSearchIndexResponse =
+                getSearchIndexManagerResponse(opCtx, nss, collectionUUID, cmd.toBSON());
 
             IDLParserContext ctx("UpdateSearchIndexReply Parser");
             return UpdateSearchIndexReply::parseOwned(ctx, std::move(manageSearchIndexResponse));
@@ -331,6 +334,9 @@ MONGO_REGISTER_COMMAND(CmdUpdateSearchIndexCommand).forShard().forRouter();
  * }
  *
  */
+
+// We don't want to log the deprecation warning for every call, instead log rarely.
+Rarely listSearchIndexesCall;
 class CmdListSearchIndexesCommand final : public TypedCommand<CmdListSearchIndexesCommand> {
 public:
     using Request = ListSearchIndexesCommand;
@@ -364,9 +370,15 @@ public:
         }
 
         ListSearchIndexesReply typedRun(OperationContext* opCtx) {
+            if (listSearchIndexesCall.tick()) {
+                LOGV2_WARNING(9090900,
+                              "Use of the listSearchIndexes command is deprecated. Instead use the "
+                              "'$listSearchIndexes' aggregation stage.");
+            }
             throwIfNotRunningWithRemoteSearchIndexManagement();
 
-            const auto& cmd = request();
+            auto cmd = request();
+            generic_argument_util::prepareRequestForSearchIndexManagerPassthrough(cmd);
 
             uassert(ErrorCodes::InvalidOptions,
                     "Cannot set both 'name' and 'id'.",
@@ -377,8 +389,8 @@ public:
             auto collectionUUID =
                 SearchIndexProcessInterface::get(opCtx)->fetchCollectionUUIDOrThrow(opCtx, nss);
 
-            BSONObj manageSearchIndexResponse = getSearchIndexManagerResponse(
-                opCtx, nss, collectionUUID, cmd.toBSON(BSONObj() /* commandPassthroughFields */));
+            BSONObj manageSearchIndexResponse =
+                getSearchIndexManagerResponse(opCtx, nss, collectionUUID, cmd.toBSON());
 
             IDLParserContext ctx("ListSearchIndexesReply Parser");
             return ListSearchIndexesReply::parseOwned(ctx, std::move(manageSearchIndexResponse));

@@ -33,7 +33,6 @@ executor:
         TestData:
           alwaysInjectTransactionNumber: true
           defaultReadConcernLevel: majority
-          enableMajorityReadConcern: ''
           hashTestNamesForMultitenancy: true
           logRetryAttempts: true
           multitenancyExpectPrefix: true
@@ -55,7 +54,6 @@ executor:
     class: ReplicaSetFixture
     mongod_options:
       bind_ip_all: ''
-      enableMajorityReadConcern: ''
       noscripting: ''
       serverless: true
       set_parameters:
@@ -136,6 +134,7 @@ selector:
   - jstests/core/**/startup_log.js
   - jstests/core/**/shell_connection_strings.js
   - jstests/core/**/geo_s2ordering.js
+  - jstests/core/mixed_version_replica_set.js
   - jstests/aggregation/**/*.js
   exclude_with_any_tags:
   - simulate_atlas_proxy_incompatible

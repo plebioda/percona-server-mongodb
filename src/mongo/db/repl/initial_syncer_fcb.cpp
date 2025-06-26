@@ -1479,7 +1479,7 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
             {BSON("$backupCursor" << BSONObj())});
         // We must set a writeConcern on internal commands.
         aggRequest.setWriteConcern(WriteConcernOptions());
-        return aggRequest.toBSON(BSONObj());
+        return aggRequest.toBSON();
     }();
 
     LOGV2_DEBUG(128407, 1, "Opening backup cursor on sync source", "syncSource"_attr = _syncSource);

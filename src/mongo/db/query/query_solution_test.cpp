@@ -48,6 +48,7 @@
 #include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/query/collation/collator_interface_mock.h"
+#include "mongo/db/query/eof_node_type.h"
 #include "mongo/db/query/index_bounds_builder.h"
 #include "mongo/db/query/index_entry.h"
 #include "mongo/db/query/interval.h"
@@ -72,8 +73,6 @@ std::ostream& operator<<(std::ostream& os, FieldAvailability value) {
             return os << "NotProvided";
         case FieldAvailability::kHashedValueProvided:
             return os << "HashedValueProvided";
-        case FieldAvailability::kCollatedProvided:
-            return os << "CollatedValueProvided";
         case FieldAvailability::kFullyProvided:
             return os << "FullyProvided";
     }
@@ -125,25 +124,6 @@ IndexEntry buildSimpleIndexEntry(const BSONObj& kp) {
             nullptr,
             {},
             nullptr,
-            nullptr};
-}
-
-/**
- * Make a minimal IndexEntry from just a key pattern and a collation. A dummy name will be added.
- */
-IndexEntry buildSimpleIndexEntry(const BSONObj& kp, CollatorInterface* ci) {
-    return {kp,
-            IndexNames::nameToType(IndexNames::findPluginName(kp)),
-            IndexDescriptor::kLatestIndexVersion,
-            false,
-            {},
-            {},
-            false,
-            false,
-            CoreIndexInfo::Identifier("test_foo"),
-            nullptr,
-            {},
-            ci,
             nullptr};
 }
 
@@ -566,27 +546,6 @@ TEST(QuerySolutionTest, GetFieldsWithStringBoundsIdentifiesStringsWithInclusiveB
     auto fields = IndexScanNode::getFieldsWithStringBounds(bounds, keyPattern);
     ASSERT_EQUALS(fields.size(), 1U);
     ASSERT_TRUE(fields.count("a"));
-}
-
-TEST(QuerySolutionTest, IndexScanWithCollatedValues) {
-    IndexBounds bounds;
-    CollatorInterfaceMock queryCollator(CollatorInterfaceMock::MockType::kReverseString);
-
-    BSONObj keyPattern = BSON("a" << 1);
-    bounds.isSimpleRange = true;
-    bounds.startKey = fromjson("{'a': 1}");
-    bounds.endKey = fromjson("{'a': ''}");
-    bounds.boundInclusion = BoundInclusion::kIncludeBothStartAndEndKeys;
-
-    IndexScanNode node{buildSimpleIndexEntry(BSON("a" << 1))};
-    node.bounds = bounds;
-    node.index.collator = &queryCollator;
-    node.queryCollator = &queryCollator;
-    node.computeProperties();
-
-    ASSERT_TRUE(node.hasStringBounds("a"));
-    ASSERT_EQ(node.getFieldAvailability("a"), FieldAvailability::kCollatedProvided);
-    ASSERT_EQ(node.getFieldAvailability("any_field"), FieldAvailability::kNotProvided);
 }
 
 TEST(QuerySolutionTest, IndexScanNodeRemovesNonMatchingCollatedFieldsFromSortsOnSimpleBounds) {
@@ -1708,16 +1667,12 @@ TEST(QuerySolutionTest, FieldAvailabilityOutputStreamOperator) {
     ASSERT_EQ(ex1.str(), "NotProvided");
 
     std::stringstream ex2;
-    ex2 << FieldAvailability::kHashedValueProvided;
-    ASSERT_EQ(ex2.str(), "HashedValueProvided");
+    ex2 << FieldAvailability::kFullyProvided;
+    ASSERT_EQ(ex2.str(), "FullyProvided");
 
     std::stringstream ex3;
-    ex3 << FieldAvailability::kCollatedProvided;
-    ASSERT_EQ(ex3.str(), "CollatedValueProvided");
-
-    std::stringstream ex4;
-    ex4 << FieldAvailability::kFullyProvided;
-    ASSERT_EQ(ex4.str(), "FullyProvided");
+    ex3 << FieldAvailability::kHashedValueProvided;
+    ASSERT_EQ(ex3.str(), "HashedValueProvided");
 }
 
 TEST(QuerySolutionTest, GetSecondaryNamespaceVectorOverSingleEqLookupNode) {
@@ -1763,6 +1718,70 @@ TEST(QuerySolutionTest, AssertSameHashes) {
         return qs;
     };
     ASSERT(makeQs()->hash() == makeQs()->hash());
+}
+
+TEST(QuerySolutionTest, VerifyHashCorrectness) {
+    auto makeScan = [](const int direction, const BSONObj interval) {
+        auto scanNode =
+            std::make_unique<IndexScanNode>(buildSimpleIndexEntry(BSON("t" << direction)));
+        OrderedIntervalList oil{"t"};
+        oil.intervals.push_back(IndexBoundsBuilder::makeRangeInterval(
+            std::move(interval), BoundInclusion::kIncludeBothStartAndEndKeys));
+        scanNode->bounds.fields.push_back(oil);
+        scanNode->computeProperties();
+        return scanNode;
+    };
+
+    auto makeScans = [&] {
+        std::vector<std::unique_ptr<QuerySolutionNode>> ixScans;
+        ixScans.push_back(makeScan(1, BSON("" << 1 << "" << 2)));
+        ixScans.push_back(makeScan(-1, BSON("" << 2 << "" << 1)));
+        return ixScans;
+    };
+
+    auto makeOr = [&] {
+        auto orNode = std::make_unique<OrNode>();
+        orNode->addChildren(makeScans());
+        orNode->computeProperties();
+        return orNode;
+    };
+
+    auto makeFetch = [&] {
+        auto fetchNode = std::make_unique<FetchNode>(makeOr());
+        auto filter = std::make_unique<LTMatchExpression>("a"_sd, Value(false));
+        filter->setInputParamId(1);
+        fetchNode->filter = std::move(filter);
+        fetchNode->computeProperties();
+        return fetchNode;
+    };
+
+    auto verifyHashCorrectness = [&](HashValuesOrParams hashValuesOrParams) {
+        auto scans = makeScans();
+        auto orNode = makeOr();
+        auto fetch = makeFetch();
+
+        std::vector<QuerySolutionHashParams> cases = {
+            QuerySolutionHashParams{*scans.at(0).get(), hashValuesOrParams},
+            QuerySolutionHashParams{*scans.at(1).get(), hashValuesOrParams},
+            QuerySolutionHashParams{*orNode.get(), hashValuesOrParams},
+            QuerySolutionHashParams{*fetch.get(), hashValuesOrParams},
+        };
+
+        // Abseil is currently missing the 'gmock.h' dependency. If we add it (in SPM-2926), we
+        // could use 'absl::VerifyTypeImplementsAbslHashCorrectly' here for more complete
+        // validation.
+        for (size_t i = 0; i < cases.size(); i++) {
+            for (size_t j = 0; j < cases.size(); j++) {
+                const bool sameObject = i == j;
+                const auto hash1 = absl::Hash<QuerySolutionHashParams>()(cases[i]);
+                const auto hash2 = absl::Hash<QuerySolutionHashParams>()(cases[j]);
+                ASSERT((hash1 == hash2) == sameObject);
+            }
+        }
+    };
+
+    verifyHashCorrectness(HashValuesOrParams::kHashValues);
+    verifyHashCorrectness(HashValuesOrParams::kHashParamIds);
 }
 
 TEST(QuerySolutionTest, GetSecondaryNamespaceVectorDeduplicatesMainNss) {
@@ -1917,12 +1936,12 @@ TEST(QuerySolutionTest, ShouldCacheEofPlanTree) {
 
     // QuerySolution with root EOF node is eligible for the plan cache.
     auto solution1 = std::make_unique<QuerySolution>();
-    solution1->setRoot(std::make_unique<EofNode>());
+    solution1->setRoot(std::make_unique<EofNode>(eof_node::EOFType::PredicateEvalsToFalse));
     ASSERT_TRUE(solution1->isEligibleForPlanCache());
 
     // QuerySolution with child EOF node is eligible for the plan cache.
     std::vector<std::unique_ptr<QuerySolutionNode>> indexScanList;
-    indexScanList.push_back(std::make_unique<EofNode>());
+    indexScanList.push_back(std::make_unique<EofNode>(eof_node::EOFType::NonExistentNamespace));
     auto orNode = std::make_unique<OrNode>();
     orNode->addChildren(std::move(indexScanList));
 

@@ -2174,24 +2174,24 @@ if not env["HOST_ARCH"]:
 
 env["TARGET_OS_FAMILY"] = "posix" if env.TargetOSIs("posix") else env.GetTargetOSName()
 
-# Currently we only use tcmalloc on windows and linux x86_64. Other
-# linux targets (power, s390x, arm) do not currently support tcmalloc.
-#
+if env.TargetOSIs("linux") or "tcmalloc-google" == get_option("allocator"):
+    # tcmalloc from google has some requirements on the kernel version for rseq support
+    # here we check if it should be available
+    try:
+        kernel_version = platform.release().split(".")
+        kernel_major = int(kernel_version[0])
+        kernel_minor = int(kernel_version[1])
+    except (ValueError, IndexError):
+        print(
+            f"Failed to extract kernel major and minor versions, tcmalloc-google will not be available for use: {kernel_version}"
+        )
+        kernel_major = 0
+        kernel_minor = 0
+
 # Normalize the allocator option and store it in the Environment. It
 # would be nicer to use SetOption here, but you can't reset user
 # options for some strange reason in SCons. Instead, we store this
 # option as a new variable in the environment.
-try:
-    kernel_version = platform.release().split(".")
-    kernel_major = int(kernel_version[0])
-    kernel_minor = int(kernel_version[1])
-except (ValueError, IndexError):
-    print(
-        f"Failed to extract kernel major and minor versions, tcmalloc-google will not be available for use: {kernel_version}"
-    )
-    kernel_major = 0
-    kernel_minor = 0
-
 if get_option("allocator") == "auto":
     if env.TargetOSIs("linux") and env["TARGET_ARCH"] in ("x86_64", "aarch64"):
         env["MONGO_ALLOCATOR"] = "tcmalloc-google"
@@ -2545,12 +2545,12 @@ if not env.TargetOSIs("windows"):
     env["LINKCOM"] = env["LINKCOM"].replace("$LINKFLAGS", "$PROGLINKFLAGS")
     env["PROGLINKFLAGS"] = ["$LINKFLAGS"]
 
-    # CPPFLAGS is used for assembler commands, this condition below assumes assembler files
+    # ASPPFLAGS is used for assembler commands, this condition below assumes assembler files
     # will be only directly assembled in librarys and not programs
     if link_model.startswith("dynamic"):
-        env.Append(CPPFLAGS=["-fPIC"])
+        env.Append(ASPPFLAGS=["-fPIC"])
     else:
-        env.Append(CPPFLAGS=["-fPIE"])
+        env.Append(ASPPFLAGS=["-fPIE"])
 
 # When it is necessary to supply additional SHLINKFLAGS without modifying the toolset default,
 # following appends contents of SHLINKFLAGS_EXTRA variable to the linker command
@@ -4666,7 +4666,7 @@ def doConfigure(myenv):
             # reporting thread leaks, which we have because we don't
             # do a clean shutdown of the ServiceContext.
             #
-            tsan_options = f"abort_on_error=1:disable_coredump=0:handle_abort=1:halt_on_error=1:report_thread_leaks=0:die_after_fork=0:history_size=6:suppressions={myenv.File('#etc/tsan.suppressions').abspath}"
+            tsan_options = f"abort_on_error=1:disable_coredump=0:handle_abort=1:halt_on_error=1:report_thread_leaks=0:die_after_fork=0:history_size=5:suppressions={myenv.File('#etc/tsan.suppressions').abspath}"
             myenv["ENV"]["TSAN_OPTIONS"] = tsan_options + symbolizer_option
             myenv.AppendUnique(CPPDEFINES=["THREAD_SANITIZER"])
 
@@ -6751,13 +6751,6 @@ Export(
 )
 
 
-def injectMongoIncludePaths(thisEnv):
-    thisEnv.AppendUnique(CPPPATH=["$BUILD_DIR"])
-
-
-env.AddMethod(injectMongoIncludePaths, "InjectMongoIncludePaths")
-
-
 def injectModule(env, module, **kwargs):
     injector = env["MODULE_INJECTORS"].get(module)
     if injector:
@@ -6808,8 +6801,8 @@ env.Alias("distsrc-zip", distSrcZip)
 env.Alias("distsrc", "distsrc-tgz")
 
 # Do this as close to last as possible before reading SConscripts, so
-# that any tools that may have injected other things via emitters are included
-# among the side effect adornments.
+# that any tools that may have injected other things via emitters are
+# included among the side effect adornments.
 env.Tool("task_limiter")
 if has_option("jlink"):
     link_jobs = env.SetupTaskLimiter(
@@ -6973,15 +6966,23 @@ else:
     env.AddMethod(noop, "WaitForBazel")
     env.AddMethod(noop, "BazelAutoInstall")
 
+
+def injectMongoIncludePaths(thisEnv):
+    thisEnv.AppendUnique(CPPPATH=["$BUILD_DIR"])
+    if thisEnv.get("BAZEL_OUT_DIR"):
+        thisEnv.AppendUnique(CPPPATH=["#$BAZEL_OUT_DIR/src"])
+
+
+env.AddMethod(injectMongoIncludePaths, "InjectMongoIncludePaths")
+
+gen_header_paths = [
+    (pathlib.Path(env.Dir("$BUILD_DIR").path) / "mongo").as_posix(),
+    (pathlib.Path(env.Dir("$BAZEL_OUT_DIR").path) / "src" / "mongo").as_posix(),
+]
+
 replacements = {
-    "@MONGO_BUILD_DIR@": (
-        ";".join(
-            [
-                (pathlib.Path(env.Dir("$BUILD_DIR").path) / "mongo").as_posix(),
-                (pathlib.Path(env.Dir("$BAZEL_OUT_DIR").path) / "src" / "mongo").as_posix(),
-            ]
-        )
-    ),
+    "@MONGO_BUILD_DIR@": ("|".join([path + "/.*" for path in gen_header_paths])),
+    "@MONGO_BRACKET_BUILD_DIR@": (";".join(gen_header_paths)),
 }
 
 clang_tidy_config = env.Substfile(

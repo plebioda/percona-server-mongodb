@@ -105,6 +105,8 @@ last-continuous:
       ticket: SERVER-90334
     - test_file: jstests/sharding/change_streams_survive_move_primary.js
       ticket: SERVER-69933
+    - test_file: jstests/core/write/update/upsert_nor.js
+      ticket: SERVER-91700
     - test_file: jstests/aggregation/group_by_objectid.js
       ticket: SERVER-90173
     - test_file: jstests/aggregation/unwind_sort.js
@@ -115,12 +117,58 @@ last-continuous:
       ticket: SERVER-90461
     - test_file: jstests/noPassthrough/move_primary_failpoint.js
       ticket: SERVER-90465
+    - test_file: jstests/sharding/change_streams_with_config_transitions.js
+      ticket: SERVER-90358
+    - test_file: jstests/sharding/txn_participant_adds_additional_participants.js
+      ticket: SERVER-89806
+    - test_file: jstests/aggregation/match_swapping_renamed_fields.js
+      ticket: SERVER-90869
     - test_file: jstests/core/timeseries/timeseries_ixscan_clusteredidxscan_union.js
       ticket: SERVER-90818
     - test_file: jstests/sharding/migration_blocking_operation/implicit_create_from_upsert_with_paused_migrations.js
       ticket: SERVER-90157
     - test_file: jstests/core/timeseries/bucket_unpacking_with_sort_negative.js
       ticket: SERVER-90833
+    - test_file: jstests/core/query/find/finda.js
+      ticket: SERVER-87285
+    - test_file: jstests/core/query/find/find9.js
+      ticket: SERVER-87285
+    - test_file: jstests/core/query/find/find_getmore_cmd.js
+      ticket: SERVER-87285
+    - test_file: jstests/core/exhaust.js
+      ticket: SERVER-87285
+    - test_file: jstests/sharding/timeseries_sharding_admin_commands.js
+      ticket: SERVER-80690
+    - test_file: jstests/core/sparse_index_supports_ne_null.js
+      ticket: SERVER-37164
+    - test_file: jstests/sharding/move_collection_joins_existing_operation.js
+      ticket: SERVER-90846
+    - test_file: jstests/core/write/bypass_empty_ts_replacement.js
+      ticket: SERVER-88750
+    - test_file: jstests/core/write/bypass_empty_ts_replacement_bulk_write.js
+      ticket: SERVER-88750
+    - test_file: jstests/core/write/bypass_empty_ts_replacement_timeseries.js
+      ticket: SERVER-88750
+    - test_file: jstests/sharding/updateOne_without_shard_key/write_without_shard_key_single_shard_data_placement_change.js
+      ticket: SERVER-91114
+    - test_file: jstests/aggregation/sources/redact/root_redact.js
+      ticket: SERVER-91339
+    - test_file: jstests/change_streams/split_large_event.js
+      ticket: SERVER-91406
+    - test_file: jstests/core/timeseries/timeseries_shadowing_meta_project_pushdown.js
+      ticket: SERVER-90995
+    - test_file: jstests/core/timeseries/timeseries_cursor_batches.js
+      ticket: SERVER-91512
+    - test_file: jstests/core/index/index_bounds_pipe.js
+      ticket: SERVER-91616
+    - test_file: jstests/core/query/and/and3.js
+      ticket: SERVER-91616
+    - test_file: jstests/core/query/explain/explain6.js
+      ticket: SERVER-91616
+    - test_file: jstests/core/query/regex/regex6.js
+      ticket: SERVER-91616
+    - test_file: jstests/core/query/regex/regex3.js
+      ticket: SERVER-91616
   suites: null
 last-lts:
   all:
@@ -208,6 +256,8 @@ last-lts:
       ticket: SERVER-90334
     - test_file: jstests/sharding/change_streams_survive_move_primary.js
       ticket: SERVER-69933
+    - test_file: jstests/core/write/update/upsert_nor.js
+      ticket: SERVER-91700
     - test_file: jstests/aggregation/group_by_objectid.js
       ticket: SERVER-90173
     - test_file: jstests/aggregation/unwind_sort.js
@@ -218,10 +268,84 @@ last-lts:
       ticket: SERVER-90461
     - test_file: jstests/noPassthrough/move_primary_failpoint.js
       ticket: SERVER-90465
+    - test_file: jstests/sharding/change_streams_with_config_transitions.js
+      ticket: SERVER-90358
+    - test_file: jstests/sharding/txn_participant_adds_additional_participants.js
+      ticket: SERVER-89806
+    - test_file: jstests/aggregation/match_swapping_renamed_fields.js
+      ticket: SERVER-90869
     - test_file: jstests/core/timeseries/timeseries_ixscan_clusteredidxscan_union.js
       ticket: SERVER-90818
     - test_file: jstests/sharding/migration_blocking_operation/implicit_create_from_upsert_with_paused_migrations.js
       ticket: SERVER-90157
     - test_file: jstests/core/timeseries/bucket_unpacking_with_sort_negative.js
       ticket: SERVER-90833
+    - test_file: jstests/core/query/find/finda.js
+      ticket: SERVER-87285
+    - test_file: jstests/core/query/find/find9.js
+      ticket: SERVER-87285
+    - test_file: jstests/core/query/find/find_getmore_cmd.js
+      ticket: SERVER-87285
+    - test_file: jstests/core/exhaust.js
+      ticket: SERVER-87285
+    - test_file: jstests/sharding/timeseries_sharding_admin_commands.js
+      ticket: SERVER-80690
+    - test_file: jstests/core/sparse_index_supports_ne_null.js
+      ticket: SERVER-37164
+    - test_file: jstests/sharding/move_collection_joins_existing_operation.js
+      ticket: SERVER-90846
+    - test_file: jstests/core/write/bypass_empty_ts_replacement.js
+      ticket: SERVER-88750
+    - test_file: jstests/core/write/bypass_empty_ts_replacement_bulk_write.js
+      ticket: SERVER-88750
+    - test_file: jstests/core/write/bypass_empty_ts_replacement_timeseries.js
+      ticket: SERVER-88750
+    - test_file: jstests/sharding/updateOne_without_shard_key/write_without_shard_key_single_shard_data_placement_change.js
+      ticket: SERVER-91114
+    - test_file: jstests/aggregation/sources/redact/root_redact.js
+      ticket: SERVER-91339
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/basic_create_collection.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/basic_delete_range.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/basic_find_and_modify_range.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/basic_insert_range.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/basic_update_range.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/compact_collection_range.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/query/find_range_explain_collscan.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/query/range/one_sided_agg.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/query/range/one_sided_find.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/query/range/trim_factor.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/query/range/two_sided_agg.js
+      ticket: SERVER-91075
+    - test_file: src/mongo/db/modules/enterprise/jstests/fle2/query/range/two_sided_find.js
+      ticket: SERVER-91075
+    - test_file: jstests/change_streams/split_large_event.js
+      ticket: SERVER-91406
+    - test_file: jstests/core/timeseries/timeseries_shadowing_meta_project_pushdown.js
+      ticket: SERVER-90995
+    - test_file: jstests/core/timeseries/timeseries_cursor_batches.js
+      ticket: SERVER-91512
+    - test_file: jstests/sharding/migration_coordinator_abort_failover.js
+      ticket: SERVER-91331
+    - test_file: jstests/sharding/migration_coordinator_commit_failover.js
+      ticket: SERVER-91331
+    - test_file: jstests/core/index/index_bounds_pipe.js
+      ticket: SERVER-91616
+    - test_file: jstests/core/query/and/and3.js
+      ticket: SERVER-91616
+    - test_file: jstests/core/query/explain/explain6.js
+      ticket: SERVER-91616
+    - test_file: jstests/core/query/regex/regex6.js
+      ticket: SERVER-91616
+    - test_file: jstests/core/query/regex/regex3.js
+      ticket: SERVER-91616
   suites: null

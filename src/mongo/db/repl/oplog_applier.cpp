@@ -101,8 +101,8 @@ bool OplogApplier::inShutdown() const {
     return _inShutdown;
 }
 
-void OplogApplier::waitForSpace(OperationContext* opCtx, std::size_t size) {
-    _oplogBuffer->waitForSpace(opCtx, size);
+void OplogApplier::waitForSpace(OperationContext* opCtx, std::size_t size, std::size_t count) {
+    _oplogBuffer->waitForSpace(opCtx, size, count);
 }
 
 /**
@@ -149,6 +149,14 @@ StatusWith<OplogApplierBatch> OplogApplier::getNextApplierBatch(OperationContext
 
 const OplogApplier::Options& OplogApplier::getOptions() const {
     return _options;
+}
+
+const OpTime& OplogApplier::getMinValid() {
+    return _minValid;
+}
+
+void OplogApplier::setMinValid(const OpTime& minValid) {
+    _minValid = minValid;
 }
 
 std::unique_ptr<ThreadPool> makeReplWorkerPool() {

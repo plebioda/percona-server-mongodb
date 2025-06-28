@@ -136,12 +136,6 @@ void ConfigServerOpObserver::onInserts(OperationContext* opCtx,
         return;
     }
 
-    // When doing a magic restore, we want to be able to write config.shards without triggering the
-    // below.
-    if (storageGlobalParams.magicRestore) {
-        return;
-    }
-
     // (Ignore FCV check): Auto-bootstrapping happens irrespective of the FCV when
     // gFeatureFlagAllMongodsAreSharded is enabled.
     if (gFeatureFlagAllMongodsAreSharded.isEnabledAndIgnoreFCVUnsafe() &&
@@ -162,7 +156,8 @@ void ConfigServerOpObserver::onInserts(OperationContext* opCtx,
         }
     }
 
-    if (!repl::ReplicationCoordinator::get(opCtx)->isDataRecovering()) {
+    // TODO (SERVER-91505): Determine if we should change this to check isDataConsistent.
+    if (!repl::ReplicationCoordinator::get(opCtx)->isInInitialSyncOrRollback()) {
         boost::optional<Timestamp> maxTopologyTime;
         for (auto it = begin; it != end; it++) {
             Timestamp newTopologyTime = it->doc[ShardType::topologyTime.name()].timestamp();

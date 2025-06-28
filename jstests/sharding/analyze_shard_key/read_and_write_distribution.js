@@ -5,7 +5,8 @@
  *
  * @tags: [
  *   requires_fcv_71,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
@@ -471,7 +472,6 @@ function runTest(fixture, {isShardedColl, shardKeyField, isHashed}) {
     // Verify that the analyzeShardKey command fails while calculating the read and write
     // distribution if the cardinality of the shard key is lower than analyzeShardKeyNumRanges.
     assert.commandWorked(sampledColl.insert({[shardKeyField]: 1}));
-
     // Wait for the write to be applied on the secondary node.
     fixture.waitForReplicationFn();
 
@@ -487,6 +487,9 @@ function runTest(fixture, {isShardedColl, shardKeyField, isHashed}) {
         docs.push({_id: i, x: i, y: i, ts: new Date()});
     }
     assert.commandWorked(sampledColl.insert(docs));
+    // Wait for the write to be applied on the secondary node.
+    fixture.waitForReplicationFn();
+
     const sampledCollUuid =
         QuerySamplingUtil.getCollectionUuid(fixture.conn.getDB(dbName), sampledCollName);
 

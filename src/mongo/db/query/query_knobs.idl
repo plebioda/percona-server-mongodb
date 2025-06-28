@@ -210,6 +210,15 @@ server_parameters:
     on_update: plan_cache_util::clearSbeCacheOnParameterChange
     redact: false
 
+  internalQueryDeduplicateQuerySolutions:
+    description: "Deduplicates query solutions based on their hashes."
+    set_at: [ startup, runtime ]
+    cpp_varname: "internalQueryDeduplicateQuerySolutions"
+    cpp_vartype: AtomicWord<bool>
+    default: true
+    on_update: plan_cache_util::clearSbeCacheOnParameterChange
+    redact: false
+
   #
   # Plan cache
   #
@@ -438,6 +447,15 @@ server_parameters:
     cpp_varname: "internalQueryIgnoreUnknownJSONSchemaKeywords"
     cpp_vartype: AtomicWord<bool>
     default: false
+    redact: false
+
+  internalQueryPlannerIgnoreIndexWithCollationForRegex:
+    description: "Do we want to leverage indexes with collation for regex predicates?"
+    set_at: [ startup, runtime ]
+    cpp_varname: "internalQueryPlannerIgnoreIndexWithCollationForRegex"
+    cpp_vartype: AtomicWord<bool>
+    default: true
+    on_update: plan_cache_util::clearSbeCacheOnParameterChange
     redact: false
 
   #
@@ -1662,6 +1680,17 @@ server_parameters:
     cpp_varname:  internalQueryCollectOptimizerMetrics
     cpp_vartype: AtomicWord<bool>
     default: false
+    redact: false
+
+  internalQueryFindCommandBatchSize:
+    description: "The batch size used for find commands as a default if none is specified."
+    set_at: [ startup, runtime ]
+    cpp_varname: "internalQueryFindCommandBatchSize"
+    cpp_vartype: AtomicWord<long long>
+    default:
+      expr: 101
+    validator:
+      gt: 0
     redact: false
 
   internalQueryEnableAggressiveSpillsInGroup:

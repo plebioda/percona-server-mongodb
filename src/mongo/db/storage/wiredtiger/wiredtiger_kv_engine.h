@@ -94,6 +94,23 @@ class WiredTigerSizeStorer;
 
 class WiredTigerEngineRuntimeConfigParameter;
 
+/**
+ * With the absolute path to an ident and the parent dbpath, return the ident.
+ *
+ * Note that the ident can have 4 different forms depending on the combination
+ * of server parameters present (directoryperdb / wiredTigerDirectoryForIndexes).
+ * With any one of these server parameters enabled, a directory could be included
+ * in the returned ident.
+ * See the unit test WiredTigerKVEngineTest::ExtractIdentFromPath for example usage.
+ *
+ * Note (2) idents use unix-style separators (always, see
+ * durable_catalog.cpp:generateUniqueIdent) but ident paths are platform-dependant.
+ * This method returns the unix-style "/" separators always.
+ */
+std::string extractIdentFromPath(const boost::filesystem::path& dbpath,
+                                 const boost::filesystem::path& identAbsolutePath);
+
+
 Status validateExtraDiagnostics(const std::vector<std::string>& value,
                                 const boost::optional<TenantId>& tenantId);
 
@@ -413,8 +430,6 @@ public:
 
     bool supportsOplogTruncateMarkers() const final;
 
-    bool supportsReadConcernMajority() const final;
-
     // wiredtiger specific
     // Calls WT_CONNECTION::reconfigure on the underlying WT_CONNECTION
     // held by this class
@@ -729,8 +744,6 @@ private:
     AtomicWord<std::uint64_t> _initialDataTimestamp;
 
     AtomicWord<std::uint64_t> _oplogNeededForCrashRecovery;
-
-    std::unique_ptr<WiredTigerEngineRuntimeConfigParameter> _runTimeConfigParam;
 
     mutable Mutex _oldestTimestampPinRequestsMutex =
         MONGO_MAKE_LATCH("WiredTigerKVEngine::_oldestTimestampPinRequestsMutex");

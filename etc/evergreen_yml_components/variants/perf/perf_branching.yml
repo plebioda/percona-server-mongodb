@@ -77,7 +77,6 @@ variables:
     - name: misc_workloads
     - name: mongos_large_catalog_workloads
     - name: mongos_workloads
-      cron: *high-value-workload-cron
     - name: move_chunk_workloads
       cron: *high-value-workload-cron
     - name: smoke_test
@@ -86,6 +85,7 @@ variables:
     - name: tsbs_query_sharded
     - name: tsbs_query_sharded_balancer
     - name: ycsb.2023-09
+      cron: *high-value-workload-cron
     - name: ycsb_read_concern_available.2023-09
     - name: ycsb_single_thread
     - name: ycsb_w1.2023-09
@@ -157,7 +157,7 @@ buildvariants:
       storageEngine: wiredTiger
       compile_variant: amazon2-arm64-compile
     run_on:
-      - "rhel70-perf-atlas-large"
+      - "rhel94-perf-atlas-large"
     tasks:
       - *schedule_patch_auto_tasks_task
       - *schedule_variant_auto_tasks_task
@@ -199,7 +199,7 @@ buildvariants:
       project_dir: *perf_project_dir
       storageEngine: wiredTiger
     run_on:
-      - "rhel70-perf-atlas-large"
+      - "rhel94-perf-atlas-large"
     tasks: # Cannot use *3nodetasks because secondary_performance uses a special mongodb setup
       - *schedule_patch_auto_tasks_task
       - *schedule_variant_auto_tasks_task
@@ -239,7 +239,7 @@ buildvariants:
       compile_variant: amazon2-arm64-compile
       requires_mongocrypt_shlib: true
     run_on:
-      - "rhel70-perf-shard-lite"
+      - "rhel94-perf-shard-lite"
     tasks:
       - *schedule_patch_auto_tasks_task
       - *schedule_variant_auto_tasks_task
@@ -267,7 +267,7 @@ buildvariants:
       storageEngine: wiredTiger
       compile_variant: amazon2-arm64-compile
     run_on:
-      - "rhel70-perf-shard"
+      - "rhel94-perf-shard"
     tasks: *linux_3_shard_tasks
 
   - <<: *amazon_linux2_arm64_compile_variant_dependency
@@ -287,7 +287,7 @@ buildvariants:
       storageEngine: wiredTiger
       compile_variant: amazon2-arm64-compile
     run_on:
-      - "rhel70-perf-replset"
+      - "rhel94-perf-replset"
     tasks:
       - *schedule_patch_auto_tasks_task
       - *schedule_variant_auto_tasks_task
@@ -352,6 +352,8 @@ buildvariants:
         cron: *high-value-workload-cron
       - name: time_series_sort_high_value
         cron: *high-value-workload-cron
+      - name: array_traversal_high_value
+        cron: *high-value-workload-cron
 
   - <<: *amazon2_x86_compile_variant_dependency
     name: perf-3-node-replSet-intel.intel.aws.2023-11
@@ -370,7 +372,7 @@ buildvariants:
       storageEngine: wiredTiger
       compile_variant: amazon2-x86-compile
     run_on:
-      - "rhel70-perf-replset"
+      - "rhel94-perf-replset"
     tasks: *3node-intel-tasks
 
   - <<: *amazon_linux2_arm64_openssl111_compile_variant_dependency
@@ -383,18 +385,57 @@ buildvariants:
       mongodb_setup: replica.2024-05
       infrastructure_provisioning_release: 2023-09
       infrastructure_provisioning: replica.2024-05
-      workload_setup: 2022-11
+      workload_setup: 2024-05
       platform: linux
       project_dir: *perf_project_dir
       authentication: enabled
       storageEngine: wiredTiger
       compile_variant: amazon2-arm64-openssl111-compile
     run_on:
-      - "rhel70-perf-replset"
+      - "rhel94-perf-replset"
     tasks:
       - *schedule_patch_auto_tasks_task
       - *schedule_variant_auto_tasks_task
+      - name: linkbench2.2024-05
+        cron: *high-value-workload-cron
       - name: smoke_test
+      - name: top_ten_queries
+      - name: tsbs_load.2024-05
+        cron: *high-value-workload-cron
+      - name: tsbs_query
+        cron: *high-value-workload-cron
+      - name: tsbs_query_finance
+      # This variant is targeted at AWS instances with 30GB of RAM. As such, a database size of ~30GB is larger
+      # than the WiredTigerCache and Linux FS Cache (assuming incompressible data).
+      # 100 Read tests
+      - name: ycsb.100read.2024-05
+        cron: *high-value-workload-cron
+      - name: ycsb_30GB.100read.2024-05
+        cron: *high-value-workload-cron
+      - name: ycsb_30GB.100read.rate_limited.2024-05
+        cron: *high-value-workload-cron
+      # 95Read5Update tests
+      - name: ycsb.95read5update.2024-05
+        cron: *high-value-workload-cron
+      - name: ycsb_30GB.95read5update.2024-05
+        cron: *high-value-workload-cron
+      - name: ycsb_30GB.95read5update.rate_limited.2024-05
+        cron: *high-value-workload-cron
+      # TODO: PERF-5540 Consider making the following high value once the noise levels are low enough.
+      # 50Read50Update tests
+      - name: ycsb.50read50update.2024-05
+        activate: false
+      - name: ycsb_30GB.50read50update.2024-05
+        activate: false
+      - name: ycsb_30GB.50read50update.rate_limited.2024-05
+        activate: false
+      # 100Update tests
+      - name: ycsb.100update.2024-05
+        activate: false
+      - name: ycsb_30GB.100update.2024-05
+        activate: false
+      - name: ycsb_30GB.100update.rate_limited.2024-05
+        activate: false
 
   # On PERF-730 we changed the initial sync tests to use two nodes instead of three. To avoid
   # losing history, the name remains unchanged, but the display_name reflects the change to 2-Node.
@@ -415,7 +456,7 @@ buildvariants:
       compile_variant: amazon2-arm64-compile
       project_dir: *perf_project_dir
     run_on:
-      - "rhel70-perf-replset"
+      - "rhel94-perf-replset"
     tasks:
       - *schedule_patch_auto_tasks_task
       - *schedule_variant_auto_tasks_task
@@ -429,7 +470,7 @@ buildvariants:
     cron: *linux-mongo-perf-cron
     expansions: *standalone-arm-expansions
     run_on:
-      - "rhel70-perf-microbenchmarks"
+      - "rhel94-perf-microbenchmarks"
     tasks:
       - name: big_collection
       - name: genny_scale_InsertRemove
@@ -469,7 +510,7 @@ buildvariants:
     modules: *perf_modules
     expansions: *standalone-intel-expansions
     run_on:
-      - "rhel70-perf-microbenchmarks"
+      - "rhel94-perf-microbenchmarks"
     tasks:
       - name: big_collection
       - name: genny_scale_InsertRemove

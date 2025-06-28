@@ -479,12 +479,6 @@ bool isIndexBuildResumable(OperationContext* opCtx,
         return false;
     }
 
-    // This check may be unnecessary due to current criteria for resumable index build support in
-    // storage engine.
-    if (!serverGlobalParams.enableMajorityReadConcern) {
-        return false;
-    }
-
     // The last optime could be null if the node is in initial sync while building the index.
     // This check may be redundant with the 'applicationMode' check and the replication requirement
     // for two phase index builds.
@@ -502,10 +496,6 @@ bool isIndexBuildResumable(OperationContext* opCtx,
               "Index build: in replication recovery. Not waiting for last optime before "
               "interceptors to be majority committed",
               "buildUUID"_attr = replState.buildUUID);
-        return false;
-    }
-
-    if (!opCtx->getServiceContext()->getStorageEngine()->supportsResumableIndexBuilds()) {
         return false;
     }
 
@@ -2734,7 +2724,8 @@ void runOnAlternateContext(OperationContext* opCtx, std::string name, Func func)
     auto newClient =
         opCtx->getServiceContext()->getService(ClusterRole::ShardServer)->makeClient(name);
 
-    // TODO(SERVER-74657): Please revisit if this thread could be made killable.
+    // The cleanup doesn't involve WT operations, and notifies the primary with a networking
+    // message, it's safe and better to keep it unkillable.
     {
         stdx::lock_guard<Client> lk(*newClient.get());
         newClient.get()->setSystemOperationUnkillableByStepdown(lk);

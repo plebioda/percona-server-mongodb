@@ -110,26 +110,26 @@ env.Library(
 )
 
 env.Library(
-    target='encryption_status',
+    target="encryption_status",
     source=[
-        'encryption_status.cpp',
+        "encryption_status.cpp",
     ],
     LIBDEPS=[
-        '$BUILD_DIR/mongo/base',
-        '$BUILD_DIR/mongo/db/commands/server_status_core',
-        'encryption_options',
-        'key_management',
+        "$BUILD_DIR/mongo/base",
+        "$BUILD_DIR/mongo/db/commands/server_status_core",
+        "encryption_options",
+        "key_management",
     ],
 )
 
 env.CppUnitTest(
-    target='encryption_status_test',
+    target="encryption_status_test",
     source=[
-        'encryption_status_test.cpp',
+        "encryption_status_test.cpp",
     ],
     LIBDEPS=[
-        '$BUILD_DIR/mongo/db/commands/server_status_core',
-        '$BUILD_DIR/mongo/db/service_context',
-        'encryption_status',
+        "$BUILD_DIR/mongo/db/commands/server_status_core",
+        "$BUILD_DIR/mongo/db/service_context",
+        "encryption_status",
     ],
 )

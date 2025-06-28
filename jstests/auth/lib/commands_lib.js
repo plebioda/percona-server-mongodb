@@ -6572,6 +6572,27 @@ export const authCommandsLib = {
           ]
         },
         {
+          testname: "rotateFTDC",
+          command: {rotateFTDC: 1},
+          testcases: [
+              {
+                runOnDb: adminDbName,
+                roles: roles_monitoring,
+                privileges: [
+                    {resource: {cluster: true}, actions: ["serverStatus"]},
+                    {resource: {cluster: true}, actions: ["replSetGetStatus"]},
+                    {resource: {db: "local", collection: "oplog.rs"}, actions: ["collStats"]},
+                    {
+                      resource: {cluster: true},
+                      actions: ["connPoolStats"]
+                    },  // Only needed against mongos
+                ]
+              },
+              {runOnDb: firstDbName, roles: {}},
+              {runOnDb: secondDbName, roles: {}}
+          ]
+        },
+        {
           testname: "serverStatus",
           command: {serverStatus: 1},
           testcases: [
@@ -7363,7 +7384,7 @@ export const authCommandsLib = {
               apiParameters: {version: "1", strict: true}
           },
           setup: function(db) {
-              const collName = "validate_db_metadata_command_specific_db"
+              const collName = "validate_db_metadata_command_specific_db";
               assert.commandWorked(db.getSiblingDB(firstDbName).createCollection(collName));
               assert.commandWorked(db.getSiblingDB(secondDbName).createCollection(collName));
               assert.commandWorked(db.getSiblingDB("ThirdDB").createCollection(collName));
@@ -7397,7 +7418,7 @@ export const authCommandsLib = {
           testname: "validate_db_metadata_command_all_dbs",
           command: {validateDBMetadata: 1, apiParameters: {version: "1", strict: true}},
           setup: function(db) {
-              const collName = "validate_db_metadata_command_all_dbs"
+              const collName = "validate_db_metadata_command_all_dbs";
               assert.commandWorked(db.getSiblingDB(firstDbName).createCollection(collName));
               assert.commandWorked(db.getSiblingDB(secondDbName).createCollection(collName));
           },

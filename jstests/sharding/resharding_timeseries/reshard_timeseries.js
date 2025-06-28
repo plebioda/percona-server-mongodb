@@ -1,6 +1,7 @@
 // Basic tests for resharding for timeseries collection.
 // @tags: [
 //   featureFlagReshardingForTimeseries,
+//   requires_fcv_80,
 // ]
 //
 import {ReshardingTest} from "jstests/sharding/libs/resharding_test_fixture.js";
@@ -15,7 +16,7 @@ const recipientShardNames = reshardingTest.recipientShardNames;
 const timeseriesInfo = {
     timeField: 'ts',
     metaField: 'meta'
-}
+};
 
 const timeseriesCollection = reshardingTest.createShardedCollection({
     ns: ns,
@@ -32,10 +33,10 @@ const timeseriesCollection = reshardingTest.createShardedCollection({
 const bucketNss = "reshardingDb.system.buckets.coll";
 const st = reshardingTest._st;
 
-let timeseriesCollDoc = st.config.collections.findOne({_id: bucketNss})
-assert.eq(timeseriesCollDoc.timeseriesFields.timeField, timeseriesInfo.timeField)
-assert.eq(timeseriesCollDoc.timeseriesFields.metaField, timeseriesInfo.metaField)
-assert.eq(timeseriesCollDoc.key, {"meta.x": 1})
+let timeseriesCollDoc = st.config.collections.findOne({_id: bucketNss});
+assert.eq(timeseriesCollDoc.timeseriesFields.timeField, timeseriesInfo.timeField);
+assert.eq(timeseriesCollDoc.timeseriesFields.metaField, timeseriesInfo.metaField);
+assert.eq(timeseriesCollDoc.key, {"meta.x": 1});
 
 // Insert some docs
 assert.commandWorked(timeseriesCollection.insert([
@@ -68,12 +69,12 @@ reshardingTest.withReshardingInBackground({
                                               ]));
                                           });
 
-let timeseriesCollDocPostResharding = st.config.collections.findOne({_id: bucketNss})
+let timeseriesCollDocPostResharding = st.config.collections.findOne({_id: bucketNss});
 // Resharding keeps timeseries fields.
-assert.eq(timeseriesCollDocPostResharding.timeseriesFields.timeField, timeseriesInfo.timeField)
-assert.eq(timeseriesCollDocPostResharding.timeseriesFields.metaField, timeseriesInfo.metaField)
+assert.eq(timeseriesCollDocPostResharding.timeseriesFields.timeField, timeseriesInfo.timeField);
+assert.eq(timeseriesCollDocPostResharding.timeseriesFields.metaField, timeseriesInfo.metaField);
 // Resharding has updated shard key.
-assert.eq(timeseriesCollDocPostResharding.key, {"meta.y": 1})
+assert.eq(timeseriesCollDocPostResharding.key, {"meta.y": 1});
 
 assert.eq(0, st.rs0.getPrimary().getCollection(bucketNss).countDocuments({}));
 assert.eq(0, st.rs1.getPrimary().getCollection(bucketNss).countDocuments({}));

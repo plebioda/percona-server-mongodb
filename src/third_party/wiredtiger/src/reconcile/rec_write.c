@@ -1943,7 +1943,8 @@ __rec_split_write_header(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_REC_CHUNK
     }
 
     /* Set the fast-truncate proxy cell information flag. */
-    if (page->type == WT_PAGE_COL_INT || page->type == WT_PAGE_ROW_INT)
+    if ((page->type == WT_PAGE_COL_INT || page->type == WT_PAGE_ROW_INT) &&
+      __wt_process.fast_truncate_2022)
         F_SET(dsk, WT_PAGE_FT_UPDATE);
 
     dsk->unused = 0;
@@ -2217,7 +2218,7 @@ __wt_bulk_init(WT_SESSION_IMPL *session, WT_CURSOR_BULK *cbulk)
      * Get a reference to the empty leaf page; we have exclusive access so we can take a copy of the
      * page, confident the parent won't split.
      */
-    pindex = WT_INTL_INDEX_GET_SAFE(btree->root.page);
+    WT_INTL_INDEX_GET_SAFE(btree->root.page, pindex);
     cbulk->ref = pindex->index[0];
     cbulk->leaf = cbulk->ref->page;
 

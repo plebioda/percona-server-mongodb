@@ -48,7 +48,7 @@
 #include "mongo/db/s/collection_sharding_state_factory_shard.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/service_context.h"
-#include "mongo/db/service_entry_point_mongod.h"
+#include "mongo/db/service_entry_point_shard_role.h"
 #include "mongo/db/session_manager_mongod.h"
 #include "mongo/db/storage/control/storage_control.h"
 #include "mongo/db/storage/recovery_unit_noop.h"
@@ -95,15 +95,6 @@ ServiceContextMongoDTest::ServiceContextMongoDTest(Options options)
         std::exchange(storageGlobalParams.engineSetByUser, true);
     _stashedStorageParams.repair =
         std::exchange(storageGlobalParams.repair, (options._repair == RepairAction::kRepair));
-    _stashedServerParams.enableMajorityReadConcern = serverGlobalParams.enableMajorityReadConcern;
-
-    if (storageGlobalParams.engine == "devnull") {
-        // The devnull storage engine does not support majority read concern.
-        LOGV2(4939201,
-              "Disabling majority read concern as it isn't supported by the storage engine",
-              "storageEngine"_attr = storageGlobalParams.engine);
-        serverGlobalParams.enableMajorityReadConcern = false;
-    }
 
     auto const serviceContext = getServiceContext();
 
@@ -143,7 +134,8 @@ ServiceContextMongoDTest::ServiceContextMongoDTest(Options options)
         serviceContext->setTickSource(std::move(options._mockTickSource));
     }
 
-    serviceContext->getService()->setServiceEntryPoint(std::make_unique<ServiceEntryPointMongod>());
+    serviceContext->getService()->setServiceEntryPoint(
+        std::make_unique<ServiceEntryPointShardRole>());
 
     auto observerRegistry = std::make_unique<OpObserverRegistry>();
     serviceContext->setOpObserver(std::move(observerRegistry));
@@ -209,8 +201,6 @@ ServiceContextMongoDTest::~ServiceContextMongoDTest() {
     std::swap(storageGlobalParams.engine, _stashedStorageParams.engine);
     std::swap(storageGlobalParams.engineSetByUser, _stashedStorageParams.engineSetByUser);
     std::swap(storageGlobalParams.repair, _stashedStorageParams.repair);
-    std::swap(serverGlobalParams.enableMajorityReadConcern,
-              _stashedServerParams.enableMajorityReadConcern);
 
     storageGlobalParams.reset();
 }

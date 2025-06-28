@@ -221,7 +221,11 @@ std::unique_ptr<CanonicalQuery> parseQueryAndBeginOperation(
          .extensionsCallback = ExtensionsCallbackReal(opCtx, &nss),
          .allowedFeatures = MatchExpressionParser::kAllowAllSpecialFeatures}));
 
+    // Initialize system variables before constructing CanonicalQuery as the constructor
+    // performs constant-folding optimizations which depend on these agg variables being
+    // properly initialized.
     expCtx->initializeReferencedSystemVariables();
+
     // Register query stats collection. Exclude queries against collections with encrypted fields.
     // It is important to do this before canonicalizing and optimizing the query, each of which
     // would alter the query shape.
@@ -230,7 +234,10 @@ std::unique_ptr<CanonicalQuery> parseQueryAndBeginOperation(
             return std::make_unique<query_stats::FindKey>(
                 expCtx, *parsedRequest, collOrViewAcquisition.getCollectionType());
         });
-        if (parsedRequest->findCommandRequest->getIncludeQueryStatsMetrics()) {
+
+        if (parsedRequest->findCommandRequest->getIncludeQueryStatsMetrics() &&
+            feature_flags::gFeatureFlagQueryStatsDataBearingNodes.isEnabled(
+                serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
             CurOp::get(opCtx)->debug().queryStatsInfo.metricsRequested = true;
         }
     }
@@ -477,12 +484,15 @@ public:
                  .extensionsCallback = ExtensionsCallbackReal(opCtx, &_ns),
                  .allowedFeatures = MatchExpressionParser::kAllowAllSpecialFeatures}));
 
+            // Initialize system variables before constructing CanonicalQuery as the constructor
+            // performs constant-folding optimizations which depend on these agg variables being
+            // properly initialized.
+            expCtx->initializeReferencedSystemVariables();
+
             expCtx->setQuerySettingsIfNotPresent(
                 query_settings::lookupQuerySettingsForFind(expCtx, *parsedRequest, _ns));
             auto cq = std::make_unique<CanonicalQuery>(CanonicalQueryParams{
                 .expCtx = std::move(expCtx), .parsedFind = std::move(parsedRequest)});
-
-            cq->getExpCtx()->initializeReferencedSystemVariables();
 
             // If we are running a query against a view redirect this query through the aggregation
             // system.
@@ -563,12 +573,6 @@ public:
                 SerializationContext::stateCommandReply(_cmdRequest->getSerializationContext());
 
             CurOp::get(opCtx)->beginQueryPlanningTimer();
-
-            // Only allow speculative majority for internal commands that specify the correct flag.
-            uassert(ErrorCodes::ReadConcernMajorityNotEnabled,
-                    "Majority read concern is not enabled.",
-                    !(repl::ReadConcernArgs::get(opCtx).isSpeculativeMajority() &&
-                      !_cmdRequest->getAllowSpeculativeMajorityRead()));
 
             const bool isFindByUUID = _cmdRequest->getNamespaceOrUUID().isUUID();
             uassert(ErrorCodes::InvalidOptions,
@@ -843,7 +847,7 @@ public:
             // size of 0 means we actually want an empty first batch, unlike in get_more. We
             // also don't pre-allocate space for results here.
             const auto batchSize =
-                originalFC.getBatchSize().get_value_or(query_request_helper::kDefaultBatchSize);
+                originalFC.getBatchSize().get_value_or(query_request_helper::getDefaultBatchSize());
 
             try {
                 numResults = batchedExecute(batchSize, exec.get(), firstBatch, docUnitsReturned);

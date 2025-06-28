@@ -88,7 +88,7 @@
 #include "mongo/db/s/collection_sharding_state_factory_shard.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/service_context.h"
-#include "mongo/db/service_entry_point_mongod.h"
+#include "mongo/db/service_entry_point_shard_role.h"
 #include "mongo/db/session/session_catalog.h"
 #include "mongo/db/session/session_catalog_mongod.h"
 #include "mongo/db/session_manager_mongod.h"
@@ -121,6 +121,7 @@ namespace mongo {
 namespace {
 
 constexpr std::size_t kOplogBufferSize = 256 * 1024 * 1024;
+constexpr std::size_t kOplogBufferCount = std::numeric_limits<std::size_t>::max();
 
 class TestServiceContext {
 public:
@@ -139,7 +140,7 @@ public:
         setGlobalServiceContext(ServiceContext::make());
         _svcCtx = getGlobalServiceContext();
 
-        _svcCtx->getService()->setServiceEntryPoint(std::make_unique<ServiceEntryPointMongod>());
+        _svcCtx->getService()->setServiceEntryPoint(std::make_unique<ServiceEntryPointShardRole>());
 
         auto fastClock = std::make_unique<ClockSourceMock>();
         // Timestamps are split into two 32-bit integers, seconds and "increments". Currently (but
@@ -214,7 +215,8 @@ public:
             std::make_unique<MongoDSessionCatalog>(
                 std::make_unique<MongoDSessionCatalogTransactionInterfaceImpl>()));
 
-        _oplogBuffer = std::make_unique<repl::OplogBufferBlockingQueue>(kOplogBufferSize);
+        _oplogBuffer =
+            std::make_unique<repl::OplogBufferBlockingQueue>(kOplogBufferSize, kOplogBufferCount);
         _oplogApplierThreadPool = repl::makeReplWorkerPool();
 
         // Act as a secondary to get optimizations due to parallizing 'prepare' oplog entries. But

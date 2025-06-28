@@ -65,7 +65,6 @@
 #include "mongo/db/repl/replication_coordinator_external_state.h"
 #include "mongo/db/repl/replication_process.h"
 #include "mongo/db/repl/rollback_source_impl.h"
-#include "mongo/db/repl/rs_rollback.h"
 #include "mongo/db/repl/storage_interface.h"
 #include "mongo/db/repl/sync_source_selector.h"
 #include "mongo/db/service_context.h"
@@ -647,9 +646,11 @@ Status BackgroundSync::_enqueueDocuments(OplogFetcher::Documents::const_iterator
     // Wait for enough space.
     // This should be called outside of the mutex to avoid deadlocks.
     if (_oplogWriter) {
-        _oplogWriter->waitForSpace(opCtx.get(), info.toApplyDocumentBytes);
+        _oplogWriter->waitForSpace(
+            opCtx.get(), info.toApplyDocumentBytes, info.toApplyDocumentCount);
     } else {
-        _oplogApplier->waitForSpace(opCtx.get(), info.toApplyDocumentBytes);
+        _oplogApplier->waitForSpace(
+            opCtx.get(), info.toApplyDocumentBytes, info.toApplyDocumentCount);
     }
 
     {
@@ -775,13 +776,10 @@ void BackgroundSync::_runRollback(OperationContext* opCtx,
     storageInterface->waitForAllEarlierOplogWritesToBeVisible(opCtx);
 
     auto storageEngine = opCtx->getServiceContext()->getStorageEngine();
-    if (!forceRollbackViaRefetch.load() && storageEngine->supportsRecoverToStableTimestamp()) {
+    if (storageEngine->supportsRecoverToStableTimestamp()) {
         LOGV2(21102, "Rollback using 'recoverToStableTimestamp' method");
         _runRollbackViaRecoverToCheckpoint(
             opCtx, source, &localOplog, storageInterface, getConnection);
-    } else {
-        LOGV2(21103, "Rollback using the 'rollbackViaRefetch' method");
-        _fallBackOnRollbackViaRefetch(opCtx, source, requiredRBID, &localOplog, getConnection);
     }
 
     {
@@ -827,19 +825,6 @@ void BackgroundSync::_runRollbackViaRecoverToCheckpoint(
     } else {
         LOGV2_WARNING(21124, "Rollback failed with retryable error", "error"_attr = status);
     }
-}
-
-void BackgroundSync::_fallBackOnRollbackViaRefetch(
-    OperationContext* opCtx,
-    const HostAndPort& source,
-    int requiredRBID,
-    OplogInterface* localOplog,
-    OplogInterfaceRemote::GetConnectionFn getConnection) {
-
-    RollbackSourceImpl rollbackSource(
-        getConnection, source, rollbackRemoteOplogQueryBatchSize.load());
-
-    rollback(opCtx, *localOplog, rollbackSource, requiredRBID, _replCoord, _replicationProcess);
 }
 
 void BackgroundSync::notifySyncSourceSelectionDataChanged() {

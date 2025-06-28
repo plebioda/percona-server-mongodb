@@ -2007,19 +2007,9 @@ void WiredTigerRecordStore::doCappedTruncateAfter(
         // transactions from appearing.
         Timestamp truncTs(lastKeptId.getLong());
 
-        if (!serverGlobalParams.enableMajorityReadConcern &&
-            _kvEngine->getOldestTimestamp() > truncTs) {
-            // If majority read concern is disabled, the oldest timestamp can be ahead of 'truncTs'.
-            // In that case, we must set the oldest timestamp along with the commit timestamp.
-            // Otherwise, the commit timestamp will be set behind the oldest timestamp, which is
-            // illegal.
-            const bool force = true;
-            _kvEngine->setOldestTimestamp(truncTs, force);
-        } else {
-            auto conn = WiredTigerRecoveryUnit::get(opCtx)->getSessionCache()->conn();
-            auto durableTSConfigString = "durable_timestamp={:x}"_format(truncTs.asULL());
-            invariantWTOK(conn->set_timestamp(conn, durableTSConfigString.c_str()), session);
-        }
+        auto conn = WiredTigerRecoveryUnit::get(opCtx)->getSessionCache()->conn();
+        auto durableTSConfigString = "durable_timestamp={:x}"_format(truncTs.asULL());
+        invariantWTOK(conn->set_timestamp(conn, durableTSConfigString.c_str()), session);
 
         _kvEngine->getOplogManager()->setOplogReadTimestamp(truncTs);
         LOGV2_DEBUG(22405, 1, "truncation new read timestamp: {truncTs}", "truncTs"_attr = truncTs);
@@ -2228,8 +2218,9 @@ boost::optional<Record> WiredTigerRecordStoreCursor::seek(const RecordId& start,
 }
 
 RecordId WiredTigerRecordStoreCursor::seekIdCommon(const RecordId& start,
-                                                   BoundInclusion boundInclusion) {
-    invariant(_hasRestored);
+                                                   BoundInclusion boundInclusion,
+                                                   bool restoring) {
+    invariant(_hasRestored || restoring);
     dassert(shard_role_details::getLocker(_opCtx)->isReadLocked());
 
     // Ensure an active transaction is open.
@@ -2322,18 +2313,15 @@ bool WiredTigerRecordStoreCursor::restore(bool tolerateCappedRepositioning) {
 
     // This will ensure an active session exists, so any restored cursors will bind to it
     invariant(WiredTigerRecoveryUnit::get(_opCtx)->getSession() == _cursor->getSession());
-    _hasRestored = true;
 
     // If we've hit EOF, then this iterator is done and need not be restored.
-    if (_eof) {
+    if (_eof || _lastReturnedId.isNull()) {
+        _hasRestored = true;
         return true;
     }
 
-    if (_lastReturnedId.isNull()) {
-        return true;
-    }
-
-    auto foundId = seekIdCommon(_lastReturnedId, BoundInclusion::kInclude);
+    auto foundId = seekIdCommon(_lastReturnedId, BoundInclusion::kInclude, true /* restoring */);
+    _hasRestored = true;
     if (foundId.isNull()) {
         _eof = true;
         return true;
@@ -2431,18 +2419,15 @@ bool WiredTigerCappedCursorBase::restore(bool tolerateCappedRepositioning) {
 
     // This will ensure an active session exists, so any restored cursors will bind to it
     invariant(WiredTigerRecoveryUnit::get(_opCtx)->getSession() == _cursor->getSession());
-    _hasRestored = true;
 
     // If we've hit EOF, then this iterator is done and need not be restored.
-    if (_eof) {
+    if (_eof || _lastReturnedId.isNull()) {
+        _hasRestored = true;
         return true;
     }
 
-    if (_lastReturnedId.isNull()) {
-        return true;
-    }
-
-    auto foundId = seekIdCommon(_lastReturnedId, BoundInclusion::kInclude);
+    auto foundId = seekIdCommon(_lastReturnedId, BoundInclusion::kInclude, true /* restoring */);
+    _hasRestored = true;
     if (foundId.isNull()) {
         _eof = true;
         // Capped read collscans do not tolerate cursor repositioning. By contrast, write collscans

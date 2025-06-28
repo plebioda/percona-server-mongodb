@@ -204,6 +204,17 @@ boost::filesystem::path getOngoingBackupPath() {
 
 }  // namespace
 
+std::string extractIdentFromPath(const boost::filesystem::path& dbpath,
+                                 const boost::filesystem::path& identAbsolutePath) {
+    // Remove the dbpath prefix to the identAbsolutePath.
+    boost::filesystem::path identWithExtension = boost::filesystem::relative(
+        identAbsolutePath, boost::filesystem::path(storageGlobalParams.dbpath));
+
+    // Remove the file extension and convert to generic form (i.e. replace "\" with "/"
+    // on windows, no-op on unix).
+    return boost::filesystem::change_extension(identWithExtension, "").generic_string();
+}
+
 bool WiredTigerFileVersion::shouldDowngrade(bool hasRecoveryTimestamp) {
     const auto replCoord = repl::ReplicationCoordinator::get(getGlobalServiceContext());
     if (replCoord && replCoord->getMemberState().arbiter()) {
@@ -306,7 +317,8 @@ public:
     void run() override {
         ThreadClient tc(name(), getGlobalServiceContext()->getService(ClusterRole::ShardServer));
 
-        // TODO(SERVER-74657): Please revisit if this thread could be made killable.
+        // This job is primary/secondary agnostic and doesn't write to WT, stepdown won't and
+        // shouldn't interrupt it, so keep it as unkillable.
         {
             stdx::lock_guard<Client> lk(*tc.get());
             tc.get()->setSystemOperationUnkillableByStepdown(lk);
@@ -1079,9 +1091,10 @@ WiredTigerKVEngine::WiredTigerKVEngine(
     }
 
     _sizeStorer = std::make_unique<WiredTigerSizeStorer>(_conn, _sizeStorerUri);
-    _runTimeConfigParam.reset(makeServerParameter<WiredTigerEngineRuntimeConfigParameter>(
-        "wiredTigerEngineRuntimeConfig", ServerParameterType::kRuntimeOnly));
-    _runTimeConfigParam->_data.second = this;
+    auto param = std::make_unique<WiredTigerEngineRuntimeConfigParameter>(
+        "wiredTigerEngineRuntimeConfig", ServerParameterType::kRuntimeOnly);
+    param->_data.second = this;
+    registerServerParameter(std::move(param));
 }
 
 WiredTigerKVEngine::~WiredTigerKVEngine() {
@@ -1097,7 +1110,6 @@ WiredTigerKVEngine::~WiredTigerKVEngine() {
 
 void WiredTigerKVEngine::notifyStorageStartupRecoveryComplete() {
     unpinOldestTimestamp(kPinOldestTimestampAtStartupName);
-    WiredTigerUtil::notifyStorageStartupRecoveryComplete();
 }
 
 void WiredTigerKVEngine::notifyReplStartupRecoveryComplete(OperationContext* opCtx) {
@@ -1283,23 +1295,9 @@ void WiredTigerKVEngine::cleanShutdown() {
         closeConfig = "leak_memory=true,";
     }
 
-    const Timestamp stableTimestamp = getStableTimestamp();
     const Timestamp initialDataTimestamp = getInitialDataTimestamp();
     if (gTakeUnstableCheckpointOnShutdown || initialDataTimestamp.asULL() <= 1) {
         closeConfig += "use_timestamp=false,";
-    } else if (!serverGlobalParams.enableMajorityReadConcern &&
-               stableTimestamp < initialDataTimestamp) {
-        // After a rollback via refetch, WT update chains for _id index keys can be logically
-        // corrupt for read timestamps earlier than the `_initialDataTimestamp`. Because the stable
-        // timestamp is really a read timestamp, we must avoid taking a stable checkpoint.
-        //
-        // If a stable timestamp is not set, there's no risk of reading corrupt history.
-        LOGV2(22326,
-              "Skipping checkpoint during clean shutdown because stableTimestamp is less than the "
-              "initialDataTimestamp and enableMajorityReadConcern is false",
-              "stableTimestamp"_attr = stableTimestamp,
-              "initialDataTimestamp"_attr = initialDataTimestamp);
-        quickExit(ExitCode::clean);
     }
 
     bool downgrade = false;
@@ -1660,7 +1658,7 @@ public:
                 // to an entire file. Full backups cannot open an incremental cursor, even if they
                 // are the initial incremental backup.
                 const std::uint64_t length = options.incrementalBackup ? fileSize : 0;
-                auto nsAndUUID = _getNsAndUUID(filePath.stem().string());
+                auto nsAndUUID = _getNsAndUUID(filePath);
                 backupBlocks.push_back(BackupBlock(opCtx,
                                                    nsAndUUID.first,
                                                    nsAndUUID.second,
@@ -1680,7 +1678,9 @@ public:
 
 private:
     std::pair<boost::optional<NamespaceString>, boost::optional<UUID>> _getNsAndUUID(
-        const std::string& ident) const {
+        boost::filesystem::path identAbsolutePath) const {
+        std::string ident = extractIdentFromPath(
+            boost::filesystem::path(storageGlobalParams.dbpath), identAbsolutePath);
         auto it = _identsToNsAndUUID.find(ident);
         if (it == _identsToNsAndUUID.end()) {
             return std::make_pair(boost::none, boost::none);
@@ -1741,7 +1741,7 @@ private:
                         "offset"_attr = offset,
                         "size"_attr = size,
                         "type"_attr = type);
-            auto nsAndUUID = _getNsAndUUID(filePath.stem().string());
+            auto nsAndUUID = _getNsAndUUID(filePath);
             backupBlocks->push_back(BackupBlock(opCtx,
                                                 nsAndUUID.first,
                                                 nsAndUUID.second,
@@ -1754,7 +1754,7 @@ private:
         // If the file is unchanged, push a BackupBlock with offset=0 and length=0. This allows us
         // to distinguish between an unchanged file and a deleted file in an incremental backup.
         if (fileUnchangedFlag) {
-            auto nsAndUUID = _getNsAndUUID(filePath.stem().string());
+            auto nsAndUUID = _getNsAndUUID(filePath);
             backupBlocks->push_back(BackupBlock(opCtx,
                                                 nsAndUUID.first,
                                                 nsAndUUID.second,
@@ -4168,10 +4168,6 @@ bool WiredTigerKVEngine::supportsReadConcernSnapshot() const {
     return true;
 }
 
-bool WiredTigerKVEngine::supportsReadConcernMajority() const {
-    return true;
-}
-
 bool WiredTigerKVEngine::supportsOplogTruncateMarkers() const {
     return true;
 }
@@ -4318,7 +4314,8 @@ Status WiredTigerKVEngine::autoCompact(OperationContext* opCtx, const AutoCompac
 
     WT_SESSION* s = WiredTigerRecoveryUnit::get(opCtx)->getSessionNoTxn()->getSession();
     int ret = s->compact(s, nullptr, config.str().c_str());
-    status = wtRCToStatus(ret, s, "WiredTigerKVEngine::autoCompact()");
+    status = wtRCToStatus(
+        ret, s, "Failed to configure auto compact, please double check it is not already enabled.");
     if (!status.isOK())
         LOGV2_ERROR(8704101,
                     "WiredTigerKVEngine::autoCompact() failed",

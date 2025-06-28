@@ -81,7 +81,7 @@ bool FindCommon::enoughForFirstBatch(const FindCommandRequest& findCommand, long
     auto batchSize = findCommand.getBatchSize();
     if (!batchSize) {
         // We enforce a default batch size for the initial find if no batch size is specified.
-        return numDocs >= query_request_helper::kDefaultBatchSize;
+        return numDocs >= query_request_helper::getDefaultBatchSize();
     }
 
     return numDocs >= batchSize.value();
@@ -98,9 +98,9 @@ bool FindCommon::haveSpaceForNext(const BSONObj& nextDoc, long long numDocs, siz
     return fitsInBatch(bytesBuffered, nextDoc.objsize());
 }
 
-void FindCommon::_waitInFindBeforeMakingBatchImpl(OperationContext* opCtx,
-                                                  const CanonicalQuery& cq,
-                                                  FailPoint* fp) {
+void FindCommon::waitInFindBeforeMakingBatch(OperationContext* opCtx,
+                                             const CanonicalQuery& cq,
+                                             FailPoint* fp) {
     auto whileWaitingFunc = [&, hasLogged = false]() mutable {
         if (!std::exchange(hasLogged, true)) {
             LOGV2(20908,

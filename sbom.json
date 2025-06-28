@@ -252,7 +252,7 @@
             "properties": [
                 {
                     "name": "internal:team_responsible",
-                    "value": "Server Security"
+                    "value": "Build"
                 }
             ],
             "type": "library",
@@ -295,7 +295,7 @@
                 "name": ""
             },
             "name": "derickr/timelib",
-            "version": "Unknown",
+            "version": "2022.10",
             "licenses": [
                 {
                     "license": {
@@ -319,7 +319,7 @@
                 ]
             },
             "scope": "required",
-            "purl": "pkg:github/derickr/timelib"
+            "purl": "pkg:github/derickr/timelib@2022.10"
         },
         {
             "supplier": {
@@ -857,7 +857,7 @@
             "properties": [
                 {
                     "name": "internal:team_responsible",
-                    "value": "Server Tooling & Methods"
+                    "value": "Build"
                 }
             ],
             "type": "library",
@@ -874,37 +874,6 @@
             },
             "scope": "required",
             "purl": "pkg:github/antirez/linenoise@6cdc775807e57b2c3fd64bd207814f8ee1fe35f3"
-        },
-        {
-            "supplier": {
-                "name": "Organization: github"
-            },
-            "name": "mongo-cxx-driver",
-            "version": "r3.7.1",
-            "licenses": [
-                {
-                    "license": {
-                        "id": "Apache-2.0"
-                    }
-                }
-            ],
-            "purl": "pkg:github/mongodb/mongo-cxx-driver@r3.7.1",
-            "properties": [
-                {
-                    "name": "internal:team_responsible",
-                    "value": "Atlas Streams"
-                }
-            ],
-            "type": "library",
-            "bom-ref": "656c828e-940d-481b-bf47-6bb67fdb161d",
-            "evidence": {
-                "occurrences": [
-                    {
-                        "location": "enterprise/src/streams/third_party/mongocxx"
-                    }
-                ]
-            },
-            "scope": "required"
         },
         {
             "supplier": {

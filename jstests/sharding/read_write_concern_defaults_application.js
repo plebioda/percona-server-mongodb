@@ -666,7 +666,6 @@ let testCases = {
     refineCollectionShardKey: {skip: "does not accept read or write concern"},
     refreshLogicalSessionCacheNow: {skip: "does not accept read or write concern"},
     refreshSessions: {skip: "does not accept read or write concern"},
-    refreshSessionsInternal: {skip: "internal command"},
     removeShard: {skip: "does not accept read or write concern"},
     removeShardFromZone: {skip: "does not accept read or write concern"},
     renameCollection: {
@@ -754,6 +753,7 @@ let testCases = {
     },
     rolesInfo: {skip: "does not accept read or write concern"},
     rotateCertificates: {skip: "does not accept read or write concern"},
+    rotateFTDC: {skip: "does not accept read or write concern"},
     saslContinue: {skip: "does not accept read or write concern"},
     saslStart: {skip: "does not accept read or write concern"},
     sbe: {skip: "internal command"},

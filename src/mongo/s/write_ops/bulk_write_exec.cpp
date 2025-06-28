@@ -925,6 +925,7 @@ StatusWith<WriteType> BulkWriteOp::target(const std::vector<std::unique_ptr<NSTa
         _writeOps,
         ordered,
         recordTargetErrors,
+        _pauseMigrationsDuringMultiUpdatesParameter,
         // getTargeterFn:
         [&](const WriteOp& writeOp) -> const NSTargeter& {
             const auto opIdx = writeOp.getWriteItem().getItemIndex();
@@ -1094,6 +1095,8 @@ BulkWriteCommandRequest BulkWriteOp::buildBulkCommandRequest(
     if (_isRetryableWrite) {
         request.setStmtIds(stmtIds);
     }
+
+    request.setBypassEmptyTsReplacement(_clientRequest.getBypassEmptyTsReplacement());
 
     request.setDbName(DatabaseName::kAdmin);
 
@@ -1921,6 +1924,8 @@ int BulkWriteOp::getBaseChildBatchCommandSizeEstimate() const {
         // above with ops, we just put an empty vector as a placeholder for now.
         request.setStmtIds({});
     }
+
+    request.setBypassEmptyTsReplacement(_clientRequest.getBypassEmptyTsReplacement());
 
     BSONObjBuilder builder;
     request.serialize(&builder);

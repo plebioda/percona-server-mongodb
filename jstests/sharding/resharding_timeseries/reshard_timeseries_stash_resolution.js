@@ -2,6 +2,7 @@
 // timeseries.
 // @tags: [
 //   featureFlagReshardingForTimeseries,
+//   requires_fcv_80,
 // ]
 //
 
@@ -17,7 +18,7 @@ const recipientShardNames = reshardingTest.recipientShardNames;
 const timeseriesInfo = {
     timeField: 'ts',
     metaField: 'meta'
-}
+};
 
 const timeseriesCollection = reshardingTest.createShardedCollection({
     ns: ns,

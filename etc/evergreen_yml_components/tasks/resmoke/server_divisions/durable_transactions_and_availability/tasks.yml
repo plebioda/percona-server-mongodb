@@ -248,21 +248,21 @@ tasks:
         vars:
           use_large_distro: "true"
 
-  # - <<: *gen_task_template
-  #   name: magic_restore_sharding_jscore_passthrough_gen
-  #   tags: ["assigned_to_jira_team_server_repl", "default", "large"]
-  #   commands:
-  #     - func: "generate resmoke tasks"
-  #       vars:
-  #         use_large_distro: "true"
+  - <<: *gen_task_template
+    name: magic_restore_sharding_jscore_passthrough_gen
+    tags: ["assigned_to_jira_team_server_repl", "default", "large"]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          use_large_distro: "true"
 
-  # - <<: *gen_task_template
-  #   name: magic_restore_sharded_collections_jscore_passthrough_gen
-  #   tags: ["assigned_to_jira_team_server_repl", "default", "large"]
-  #   commands:
-  #     - func: "generate resmoke tasks"
-  #       vars:
-  #         use_large_distro: "true"
+  - <<: *gen_task_template
+    name: magic_restore_sharded_collections_jscore_passthrough_gen
+    tags: ["assigned_to_jira_team_server_repl", "default", "large"]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          use_large_distro: "true"
 
   - <<: *task_template
     name: causally_consistent_jscore_txns_passthrough
@@ -423,6 +423,7 @@ tasks:
         "default",
         "incompatible_inmemory",
         "incompatible_debug_mode",
+        "incompatible_tsan",
         "concurrency",
         "stepdowns",
         "initsync",
@@ -1639,6 +1640,7 @@ tasks:
         "release_critical",
         "misc_js",
         "non_win_dbg",
+        "requires_large_host",
       ]
     commands:
       - func: "do setup"

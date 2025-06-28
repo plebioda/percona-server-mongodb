@@ -32,9 +32,10 @@
  *   # "Explain of a resolved view must be executed by mongos"
  *   directly_against_shardsvrs_incompatible,
  *   tenant_migration_incompatible,
- *   # TODO SERVER-89764 a concurrent moveCollection during insertion can cause the bucket
- *   # collection to insert more documents then expected by the test.
+ *   # Buckets being closed during resharding can cause the bucket ranges in this test to vary.
  *   assumes_balancer_off,
+ *   # Some optimization is done in 7.2, some tests may fail prior to 7.2.
+ *   requires_fcv_72,
  * ]
  *
  */
@@ -78,7 +79,7 @@ let lpx2 = undefined;  // lastpoint value of x for m = 2
     coll.insert({t: timestamps.t3, m: 1, x: 3});  // add to bucket #1
 
     // An event with a different meta goes into a separate bucket.
-    coll.insert({t: timestamps.t6, m: 2, x: 6})
+    coll.insert({t: timestamps.t6, m: 2, x: 6});
     lpx2 = 6;
 
     // If this assert fails it would mean that bucket creation logic have changed. The lastpoint
@@ -404,7 +405,7 @@ const casesLastpointWithDistinctScan = [
             // The lastpoint opt currently isn't lowered to SBE.
             assert(false,
                    `Lastpoint opt isn't implemented in SBE for pipeline ${
-                       tojson(pipeline)} but got ${tojson(explainFull)}`)
+                       tojson(pipeline)} but got ${tojson(explainFull)}`);
         }
 
         // Check that the result matches the expected by the test case.
@@ -444,7 +445,7 @@ const casesLastpointWithDistinctScan = [
             // The distinct scan opt currently isn't lowered to SBE.
             assert(false,
                    `Lastpoint opt isn't implemented in SBE for pipeline ${
-                       tojson(pipeline)} but got ${tojson(explainFull)}`)
+                       tojson(pipeline)} but got ${tojson(explainFull)}`);
         }
 
         // Check that the result matches the expected by the test case.

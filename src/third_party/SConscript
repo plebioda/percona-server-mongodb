@@ -41,7 +41,7 @@ thirdPartyEnvironmentModifications = {
         # SAFEINT_USE_INTRINSICS=0 for overflow-safe constexpr multiply. See comment in SafeInt.hpp.
         'CPPDEFINES': [('SAFEINT_USE_INTRINSICS', 0)],
     },
-    'timelib': {'CPPPATH': ['#/src/third_party/timelib'], },
+    'timelib': {'CPPPATH': ['#/src/third_party/timelib/dist'], },
     'unwind': {},
     'mozjs': {
         'CPPPATH': [
@@ -541,7 +541,6 @@ if use_system_version_of_library("tomcrypt"):
 else:
     md5Env = md5Env.Clone()
     md5Env.InjectThirdParty(libraries=['tomcrypt_md5'])
-    md5Env.SConscript('tomcrypt' + tomcryptSuffix + '/SConscript', exports={'env': md5Env})
     md5Env = md5Env.Clone(LIBDEPS_INTERFACE=[
         'tomcrypt' + tomcryptSuffix + '/tomcrypt_md5',
     ])
@@ -614,7 +613,6 @@ if use_system_version_of_library("stemmer"):
 else:
     stemmerEnv = stemmerEnv.Clone()
     stemmerEnv.InjectThirdParty(libraries=['stemmer'])
-    stemmerEnv.SConscript('libstemmer_c/SConscript', exports={'env': stemmerEnv})
     stemmerEnv = stemmerEnv.Clone(LIBDEPS_INTERFACE=[
         'libstemmer_c/stemmer',
     ])
@@ -629,7 +627,6 @@ if use_system_version_of_library("yaml"):
 else:
     yamlEnv = yamlEnv.Clone()
     yamlEnv.InjectThirdParty(libraries=['yaml', 'boost'])
-    yamlEnv.SConscript('yaml-cpp/SConscript', exports={'env': yamlEnv})
     yamlEnv = yamlEnv.Clone(LIBDEPS_INTERFACE=[
         'yaml-cpp/yaml',
     ], )
@@ -638,7 +635,6 @@ yamlEnv.ShimLibrary(name="yaml")
 
 timelibEnv = env.Clone()
 timelibEnv.InjectThirdParty(libraries=['timelib'])
-timelibEnv.SConscript('timelib' + '/SConscript', exports={'env': timelibEnv})
 timelibEnv = timelibEnv.Clone(LIBDEPS_INTERFACE=[
     'timelib' + '/timelib',
 ])
@@ -674,9 +670,6 @@ else:
     ])
 
 asioEnv.ShimLibrary(name="asio")
-
-croaringEnv = env.Clone()
-croaringEnv.SConscript('croaring/SConscript', exports={'env': croaringEnv})
 
 intelDecimal128Env = env.Clone()
 if use_system_version_of_library("intel_decimal128"):

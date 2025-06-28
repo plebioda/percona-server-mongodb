@@ -3,6 +3,7 @@
  *
  * @tags: [
  *  featureFlagReshardingForTimeseries,
+ *  requires_fcv_80,
  * ]
  */
 
@@ -29,7 +30,7 @@ assert.commandWorked(st.s.adminCommand({
     timeseries: timeseriesOptions,
 }));
 
-const kBucketCollName = "system.buckets.foo"
+const kBucketCollName = "system.buckets.foo";
 
 const doc1 = {
     data: 1,

@@ -542,6 +542,11 @@ public:
     executor::TaskExecutor::CallbackHandle getCatchupTakeoverCbh_forTest() const;
 
     /**
+     * Returns the cached horizon topology version from most recent SplitHorizonChange.
+     */
+    int64_t getLastHorizonChange_forTest() const;
+
+    /**
      * Simple wrappers around _setLastOptimeForMember to make it easier to test.
      */
     Status setLastAppliedOptime_forTest(long long cfgVer,
@@ -674,6 +679,10 @@ public:
     bool isRetryableWrite(OperationContext* opCtx) const override;
 
     boost::optional<UUID> getInitialSyncId(OperationContext* opCtx) override;
+
+    void setConsistentDataAvailable(OperationContext* opCtx, bool isDataMajorityCommitted) override;
+    bool isDataConsistent() const override;
+    void setConsistentDataAvailable_forTest();
 
     class SharedReplSetConfig {
     public:
@@ -1541,9 +1550,8 @@ private:
      * Fills a HelloResponse with the appropriate replication related fields. horizonString
      * should be passed in if hasValidConfig is true.
      */
-    std::shared_ptr<HelloResponse> _makeHelloResponse(boost::optional<StringData> horizonString,
-                                                      WithLock,
-                                                      bool hasValidConfig) const;
+    std::shared_ptr<HelloResponse> _makeHelloResponse(
+        const boost::optional<std::string>& horizonString, WithLock, bool hasValidConfig) const;
 
     /**
      * Creates a semi-future for HelloResponse. horizonString should be passed in if and only if
@@ -1552,14 +1560,14 @@ private:
     virtual SharedSemiFuture<SharedHelloResponse> _getHelloResponseFuture(
         WithLock,
         const SplitHorizon::Parameters& horizonParams,
-        boost::optional<StringData> horizonString,
+        const boost::optional<std::string>& horizonString,
         boost::optional<TopologyVersion> clientTopologyVersion);
 
     /**
      * Returns the horizon string by parsing horizonParams if the node is a valid member of the
      * replica set. Otherwise, return boost::none.
      */
-    boost::optional<StringData> _getHorizonString(
+    boost::optional<std::string> _getHorizonString(
         WithLock, const SplitHorizon::Parameters& horizonParams) const;
 
     /**
@@ -2009,6 +2017,9 @@ private:
     // The cached value of the 'counter' field in the server's TopologyVersion.
     AtomicWord<int64_t> _cachedTopologyVersionCounter;  // (S)
 
+    // The cached value of the topology from the most recent SplitHorizonChange.
+    int64_t _lastHorizonTopologyChange{-1};  // (M)
+
     // This should be set during sharding initialization except on config shard.
     boost::optional<bool> _wasCWWCSetOnConfigServerOnStartup;
 
@@ -2023,6 +2034,12 @@ private:
 
     // Pointer to the SplitPrepareSessionManager owned by this ReplicationCoordinator.
     SplitPrepareSessionManager _splitSessionManager;  // (S)
+
+    // Whether data writes are being done on a consistent copy of the data. The value is false until
+    // setConsistentDataAvailable is called - that's after replSetInitiate, after initial sync
+    // completes, after storage recovers from a stable checkpoint, or after replication recovery
+    // from an unstable checkpoint.
+    AtomicWord<bool> _isDataConsistent{false};
 };
 
 extern Atomic64Metric& replicationWaiterListMetric;

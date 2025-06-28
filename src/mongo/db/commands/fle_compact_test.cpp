@@ -613,6 +613,8 @@ void FleCompactTest::testCompactValueV2_NoNullAnchors(const Value& value,
     if (isRange) {
         compactOneRangeFieldPad(_queryImpl.get(),
                                 _namespaces.escNss,
+                                "rangeField"_sd,
+                                BSONType::NumberLong,
                                 queryTypeConfig,
                                 0.42,
                                 1,
@@ -642,6 +644,8 @@ void FleCompactTest::testCompactValueV2_NoNullAnchors(const Value& value,
     if (isRange) {
         compactOneRangeFieldPad(_queryImpl.get(),
                                 _namespaces.escNss,
+                                "rangeField"_sd,
+                                BSONType::NumberLong,
                                 queryTypeConfig,
                                 0.42,
                                 1,
@@ -1051,6 +1055,8 @@ TEST_F(FleCompactTest, InjectSomeAnchorPadding) {
     // numPads := 0.42 * (8 * 1 - 5) => 0.42 * 3 => 1.26 => 2 pads {1, 2}
     compactOneRangeFieldPad(_queryImpl.get(),
                             _namespaces.escNss,
+                            "a.b.c"_sd,
+                            BSONType::NumberInt,
                             queryTypeConfig,
                             0.42,
                             1,
@@ -1071,6 +1077,8 @@ TEST_F(FleCompactTest, InjectManyAnchorPadding) {
     // numPads := 1.0 * (8 * 5 - 25) => 40 - 25 => 15.0 => 15 pads {1..15}
     compactOneRangeFieldPad(_queryImpl.get(),
                             _namespaces.escNss,
+                            "a.b.c"_sd,
+                            BSONType::NumberLong,
                             queryTypeConfig,
                             1,
                             5,
@@ -1079,6 +1087,49 @@ TEST_F(FleCompactTest, InjectManyAnchorPadding) {
                             &escStats);
     ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), 15);
     ASSERT_EQ(escStats.getInserted(), 15);
+}
+
+TEST_F(FleCompactTest, InjectAnchorPaddingOverBatchWriteLimit) {
+    const BSONObj dataDoc = BSON("a.b.c" << 42);
+    const auto tokens = getTestESCTokens(dataDoc);
+    auto queryTypeConfig = generateQueryTypeConfigForTest(0LL, 100LL);
+    ECStats escStats;
+
+    // Test with max batch size of 10
+    // numPads := 1.0 * (8 * 10 - 5) => 75 pads
+    const auto edges = 8;
+    const auto uniqueLeaves = 10;
+    const auto uniqueTokens = 5;
+    auto numPads = edges * uniqueLeaves - uniqueTokens;
+    compactOneRangeFieldPad(_queryImpl.get(),
+                            _namespaces.escNss,
+                            "a.b.c",
+                            BSONType::NumberLong,
+                            queryTypeConfig,
+                            1,
+                            uniqueLeaves,
+                            uniqueTokens,
+                            tokens.anchorPaddingRoot,
+                            &escStats,
+                            10);
+    ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), numPads);
+    ASSERT_EQ(escStats.getInserted(), numPads);
+
+    // Test with max batch size of 0
+    numPads *= 2;
+    compactOneRangeFieldPad(_queryImpl.get(),
+                            _namespaces.escNss,
+                            "a.b.c",
+                            BSONType::NumberLong,
+                            queryTypeConfig,
+                            1,
+                            uniqueLeaves,
+                            uniqueTokens,
+                            tokens.anchorPaddingRoot,
+                            &escStats,
+                            0);
+    ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), numPads);
+    ASSERT_EQ(escStats.getInserted(), numPads);
 }
 
 }  // namespace

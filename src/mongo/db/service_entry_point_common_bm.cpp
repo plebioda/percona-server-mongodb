@@ -46,7 +46,7 @@
 #include "mongo/db/read_write_concern_defaults_cache_lookup_mock.h"
 #include "mongo/db/repl/replication_coordinator_mock.h"
 #include "mongo/db/service_context.h"
-#include "mongo/db/service_entry_point_mongod.h"
+#include "mongo/db/service_entry_point_shard_role.h"
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_component.h"
 #include "mongo/platform/atomic_word.h"
@@ -153,6 +153,7 @@ private:
     const uint64_t _start;
 };
 
+
 class ServiceEntryPointCommonBenchmarkFixture : public benchmark::Fixture {
 public:
     ServiceEntryPointCommonBenchmarkFixture() {
@@ -184,7 +185,7 @@ public:
         // Transition to primary so that the server can accept writes.
         invariant(replCoordMock->setFollowerMode(repl::MemberState::RS_PRIMARY));
         repl::ReplicationCoordinator::set(service, std::move(replCoordMock));
-        service->getService()->setServiceEntryPoint(std::make_unique<ServiceEntryPointMongod>());
+        service->getService()->setServiceEntryPoint(std::make_unique<ServiceEntryPointShardRole>());
 
         _instructions.store(0);
         _cycles.store(0);
@@ -272,7 +273,6 @@ BENCHMARK_REGISTER_F(ServiceEntryPointCommonBenchmarkFixture, BM_SEP_PING)
 MONGO_INITIALIZER_GENERAL(ForkServer, ("EndStartupOptionHandling"), ("default"))
 (InitializerContext* context) {}
 MONGO_INITIALIZER(ServerLogRedirection)(mongo::InitializerContext*) {}
-
 
 }  // namespace
 }  // namespace mongo

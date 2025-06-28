@@ -5,6 +5,7 @@
  * @tags: [
  *   uses_atclustertime,
  *   featureFlagReshardingForTimeseries,
+ *   requires_fcv_80,
  * ]
  */
 import {ReshardingTest} from "jstests/sharding/libs/resharding_test_fixture.js";
@@ -20,7 +21,7 @@ const ns = dbName + "." + collName;
 const timeseriesInfo = {
     timeField: 'ts',
     metaField: 'meta'
-}
+};
 
 const donorShardNames = reshardingTest.donorShardNames;
 const inputCollection = reshardingTest.createShardedCollection({

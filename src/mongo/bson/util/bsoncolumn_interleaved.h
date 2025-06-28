@@ -365,6 +365,9 @@ const char* BlockBasedInterleavedDecompressor::decompressGeneral(
     absl::flat_hash_map<Buffer*, int32_t> bufferToPositions;
 
     {
+        // Keep track of how many elements we find so we can check that we found each one requested
+        // by the caller.
+        size_t foundElems = 0;
         BSONObjTraversal trInit{
             _traverseArrays,
             _rootType,
@@ -376,6 +379,7 @@ const char* BlockBasedInterleavedDecompressor::decompressGeneral(
                         }
                     }
                     posToBuffers.push_back(std::move(it->second));
+                    ++foundElems;
                 } else {
                     // An empty list to indicate that this element isn't being materialized.
                     posToBuffers.push_back({});
@@ -393,6 +397,7 @@ const char* BlockBasedInterleavedDecompressor::decompressGeneral(
                         b->template setLast<BSONElement>(elem);
                     }
                     posToBuffers.push_back(std::move(it->second));
+                    ++foundElems;
                 } else {
                     // An empty list to indicate that this element isn't being materialized.
                     posToBuffers.push_back({});
@@ -400,6 +405,10 @@ const char* BlockBasedInterleavedDecompressor::decompressGeneral(
                 return true;
             }};
         trInit.traverse(refObj);
+
+        // Sanity check: make sure that the number of elements we found during traversal matches the
+        // number of elements requested for materialization by the caller.
+        uassert(9071200, "Request for unknown element", elemToBuffer.size() == foundElems);
     }
 
     // Advance past the reference object to the compressed data of the first field.
@@ -952,7 +961,7 @@ void BlockBasedInterleavedDecompressor::dispatchDecompressionForType(
                 }
             } else {
                 for (auto&& buffer : state._buffers) {
-                    ptr = BSONColumnBlockDecompressHelpers::decompressAllLiteral(
+                    ptr = BSONColumnBlockDecompressHelpers::decompressAllLiteral<int128_t>(
                         control, end, *buffer, state._lastNonRLEBlock, finishLiteral);
                 }
             }
@@ -986,7 +995,7 @@ void BlockBasedInterleavedDecompressor::dispatchDecompressionForType(
         case MinKey:
         case MaxKey:
             for (auto&& buffer : state._buffers) {
-                ptr = BSONColumnBlockDecompressHelpers::decompressAllLiteral(
+                ptr = BSONColumnBlockDecompressHelpers::decompressAllLiteral<int64_t>(
                     control, end, *buffer, state._lastNonRLEBlock, finishLiteral);
             }
             break;

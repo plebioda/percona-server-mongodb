@@ -529,7 +529,10 @@ var ShardingTest = function ShardingTest(params) {
     ShardingTest.prototype.stop = function(opts = {}) {
         this.checkMetadataConsistency();
         this.checkUUIDsConsistentAcrossCluster();
-        this.checkIndexesConsistentAcrossCluster();
+        // TODO (SERVER-91380): run this.checkIndexesConsistentAcrossCluster() unconditionally.
+        if (!opts.skipIndexesConsistencyCheck) {
+            this.checkIndexesConsistentAcrossCluster();
+        }
         this.checkOrphansAreDeleted();
         this.checkRoutingTableConsistency();
         this.checkShardFilteringMetadata();
@@ -587,11 +590,27 @@ var ShardingTest = function ShardingTest(params) {
 
     ShardingTest.prototype.restartAllConfigServers = function(opts) {
         this.configRS.startSet(opts, true);
+        this.configRS.nodes.forEach((node) => {
+            // node.routerPort is undefined if this node doesn't expose an embedded router, so this
+            // loop only applies for embedded routers.
+            const routerN = this._findRouterByPort(node.routerPort);
+            if (routerN !== undefined) {
+                this.reconnectToEmbeddedRouter(routerN);
+            }
+        });
     };
 
     ShardingTest.prototype.restartAllShards = function(opts) {
         this._rs.forEach((rs) => {
             rs.test.startSet(opts, true);
+            rs.test.nodes.forEach((node) => {
+                // node.routerPort is undefined if this node doesn't expose an embedded router, so
+                // this loop only applies for embedded routers.
+                const routerN = this._findRouterByPort(node.routerPort);
+                if (routerN !== undefined) {
+                    this.reconnectToEmbeddedRouter(routerN);
+                }
+            });
         });
     };
 
@@ -1071,6 +1090,22 @@ var ShardingTest = function ShardingTest(params) {
             nodeInfo.rs.restart(nodeInfo.index, opts);
         }
 
+        this.reconnectToEmbeddedRouter(n);
+
+        // Wait for any election to succeed.
+        nodeInfo.rs.awaitNodesAgreeOnPrimary();
+    };
+
+    ShardingTest.prototype.reconnectToEmbeddedRouter = function(n) {
+        const routerConn = (() => {
+            if (this._useBridge) {
+                return this._unbridgedMongos[n];
+            } else {
+                return this["s" + n];
+            }
+        })();
+        const nodeInfo = routerConn.nodeInfo;
+
         const mongodConn = nodeInfo.rs.nodes[nodeInfo.index];
         const newConn =
             MongoRunner.awaitConnection({pid: mongodConn.pid, port: mongodConn.routerPort});
@@ -1090,9 +1125,64 @@ var ShardingTest = function ShardingTest(params) {
             this.admin = this._mongos[n].getDB('admin');
             this.config = this._mongos[n].getDB('config');
         }
+    };
 
-        // Wait for any election to succeed.
-        nodeInfo.rs.awaitNodesAgreeOnPrimary();
+    ShardingTest.prototype._findRouterByPort = function(port) {
+        if (port === undefined) {
+            return undefined;
+        }
+        for (let n = 0; n < this._mongos.length; n++) {
+            if (this._mongos[n].port == port) {
+                return n;
+            }
+        }
+        return undefined;
+    };
+
+    /**
+     * Shuts down and restarts replica set for a given shard and
+     * updates shard connection information.
+     *
+     * @param {string} prevShardName
+     * @param {object} replSet The replica set object. Defined in replsettest.js
+     */
+    ShardingTest.prototype.shutdownAndRestartPrimaryOnShard = function(shardName, replSet) {
+        const n = this._shardReplSetToIndex[replSet.name];
+        const originalPrimaryConn = replSet.getPrimary();
+
+        const SIGTERM = 15;
+        replSet.restart(originalPrimaryConn, {}, SIGTERM);
+        replSet.awaitNodesAgreeOnPrimary();
+        replSet.awaitSecondaryNodes();
+
+        this._connections[n] = new Mongo(replSet.getURL());
+        this._connections[n].shardName = shardName;
+        this._connections[n].rs = replSet;
+
+        this["shard" + n] = this._connections[n];
+    };
+
+    /**
+     * Kills and restarts replica set for a given shard and
+     * updates shard connection information.
+     *
+     * @param {string} prevShardName
+     * @param {object} replSet The replica set object. Defined in replsettest.js
+     */
+    ShardingTest.prototype.killAndRestartPrimaryOnShard = function(shardName, replSet) {
+        const n = this._shardReplSetToIndex[replSet.name];
+        const originalPrimaryConn = replSet.getPrimary();
+
+        const SIGKILL = 9;
+        const opts = {allowedExitCode: MongoRunner.EXIT_SIGKILL};
+        replSet.restart(originalPrimaryConn, opts, SIGKILL);
+        replSet.awaitNodesAgreeOnPrimary();
+
+        this._connections[n] = new Mongo(replSet.getURL());
+        this._connections[n].shardName = shardName;
+        this._connections[n].rs = replSet;
+
+        this["shard" + n] = this._connections[n];
     };
 
     /**
@@ -1115,6 +1205,7 @@ var ShardingTest = function ShardingTest(params) {
         this["rs" + n].awaitSecondaryNodes();
         this._connections[n] = new Mongo(this["rs" + n].getURL());
         this._connections[n].shardName = prevShardName;
+        this._connections[n].rs = this["rs" + n];
         this["shard" + n] = this._connections[n];
     };
 
@@ -1273,6 +1364,15 @@ var ShardingTest = function ShardingTest(params) {
         return numNodesPerReplSet.reduce((a, b) => a + b, 0);
     }
 
+    /**
+     * Returns all nodes in the cluster including shards, config servers and mongoses.
+     */
+    ShardingTest.prototype.getAllNodes = function() {
+        let nodes = [];
+        nodes.concat([this._configDB, this._connections, this._mongos]);
+        return [...new Set(nodes)];
+    };
+
     // ShardingTest initialization
 
     assert(isObject(params), 'ShardingTest configuration must be a JSON object');
@@ -1396,12 +1496,13 @@ var ShardingTest = function ShardingTest(params) {
     this._connections = [];
     this._rs = [];
     this._rsObjects = [];
+    this._shardReplSetToIndex = {};
 
     this._useBridge = otherParams.useBridge;
     if (this._useBridge) {
         assert(
             !jsTestOptions().tlsMode,
-            'useBridge cannot be true when using TLS. Add the requires_mongobridge tag to the test to ensure it will be skipped on variants that use TLS.')
+            'useBridge cannot be true when using TLS. Add the requires_mongobridge tag to the test to ensure it will be skipped on variants that use TLS.');
     }
 
     this._unbridgedMongos = [];
@@ -1804,6 +1905,7 @@ var ShardingTest = function ShardingTest(params) {
         for (let i = 0; i < numShards; i++) {
             let rs = this._rs[i].test;
 
+            this._shardReplSetToIndex[rs.name] = i;
             this["rs" + i] = rs;
             this._rsObjects[i] = rs;
 
@@ -2118,7 +2220,7 @@ var ShardingTest = function ShardingTest(params) {
             // replica set.
             assert.soonNoExcept(() => {
                 function getConfigShardDoc() {
-                    return csrsPrimary.getDB("config").shards.findOne({_id: "config"})
+                    return csrsPrimary.getDB("config").shards.findOne({_id: "config"});
                 }
                 const configShardDoc = this.keyFile
                     ? authutil.asCluster(csrsPrimary, this.keyFile, getConfigShardDoc)

@@ -9,16 +9,17 @@ const MAX_MS = 1000;
 
 /* Pick a random millisecond value between 400 and 1000 for the lag value */
 function randomMSFromInterval(minMS, maxMS) {  // min and max included
-    return Math.floor(Math.random() * (maxMS - minMS + 1) + minMS)
+    return Math.floor(Math.random() * (maxMS - minMS + 1) + minMS);
 }
 
 /* Returns true if the error code indicates the node is currently shutting down. */
 function isShutdownError(error) {
-    // TODO (SERVER-54026): Remove check for error message once the shell correctly
+    // TODO (SERVER-54026): Remove check for error messages once the shell correctly
     // propagates the error code.
     return error.code === ErrorCodes.ShutdownInProgress ||
         error.code === ErrorCodes.InterruptedAtShutdown ||
-        error.message.includes("The server is in quiesce mode and will shut down");
+        error.message.includes("The server is in quiesce mode and will shut down") ||
+        error.message.includes("interrupted at shutdown");
 }
 
 function turnOffFailPointWithRetry(conn) {

@@ -17,6 +17,7 @@ rules:
   no-redeclare: 0
   no-constant-condition: 0
   no-loss-of-precision: 0
+  semi: 2
   no-restricted-syntax:
     [
       "error",
@@ -204,6 +205,7 @@ globals:
   bsonUnorderedFieldsCompare: true
   bsonBinaryEqual: true
   friendlyEqual: true
+  unorderedFriendlyEqual: true
   timestampCmp: true
   decompressBSONColumn: true
 

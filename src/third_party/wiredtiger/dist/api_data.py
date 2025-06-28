@@ -875,6 +875,7 @@ connection_runtime_config = [
             'mutex',
             'out_of_order',
             'overflow',
+            'prefetch',
             'read',
             'reconcile',
             'recovery',
@@ -1681,6 +1682,7 @@ methods = {
 ]),
 
 'WT_SESSION.reset_snapshot' : Method([]),
+'WT_SESSION.rename' : Method([]),
 'WT_SESSION.reset' : Method([]),
 'WT_SESSION.salvage' : Method([
     Config('force', 'false', r'''
@@ -1691,11 +1693,11 @@ methods = {
 'WT_SESSION.strerror' : Method([]),
 
 'WT_SESSION.truncate' : Method([]),
-'WT_SESSION.upgrade' : Method([]),
 'WT_SESSION.verify' : Method([
     Config('do_not_clear_txn_id', 'false', r'''
         Turn off transaction id clearing, intended for debugging and better diagnosis of crashes
-        or failures.''',
+        or failures. Note: History store validation is disabled when the configuration is set as 
+        visibility rules may not work correctly because the transaction ids are not cleared.''',
         type='boolean'),
     Config('dump_address', 'false', r'''
         Display page addresses, time windows, and page types as pages are verified, using the
@@ -1887,7 +1889,7 @@ methods = {
         prior to the start of the backup cannot be dropped''',
         type='list'),
     Config('flush_tier', '', r'''
-        configure flushing objects to tiered storage after checkpoint''',
+        configure flushing objects to tiered storage after checkpoint. See @ref tiered_storage''',
         type='category', subconfig= [
             Config('enabled', 'false', r'''
                 if true and tiered storage is in use, perform one iteration of object switching

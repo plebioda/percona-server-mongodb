@@ -34,9 +34,10 @@
 #include "mongo/db/index/sort_key_generator.h"
 #include "mongo/db/pipeline/document_source.h"
 #include "mongo/db/pipeline/document_source_set_variable_from_subpipeline.h"
+#include "mongo/db/pipeline/search/document_source_internal_search_id_lookup.h"
 #include "mongo/db/pipeline/search/search_helper.h"
 #include "mongo/db/pipeline/stage_constraints.h"
-#include "mongo/db/pipeline/visitors/docs_needed_bounds.h"
+#include "mongo/db/pipeline/visitors/docs_needed_bounds_gen.h"
 #include "mongo/db/query/search/internal_search_mongot_remote_spec_gen.h"
 #include "mongo/db/query/search/mongot_cursor.h"
 #include "mongo/executor/task_executor_cursor.h"
@@ -105,6 +106,10 @@ public:
             std::move(spec), expCtx, _taskExecutor);
     }
 
+    const InternalSearchMongotRemoteSpec& getMongotRemoteSpec() const {
+        return _spec;
+    }
+
     BSONObj getSearchQuery() const {
         return _spec.getMongotQuery().getOwned();
     }
@@ -118,15 +123,6 @@ public:
         _dispatchedQuery = true;
     }
 
-    boost::optional<long long> getMongotDocsRequested() const {
-        return _spec.getMongotDocsRequested().has_value()
-            ? boost::make_optional<long long>(*_spec.getMongotDocsRequested())
-            : boost::none;
-    }
-
-    bool getPaginationFlag() const {
-        return _spec.getRequiresSearchSequenceToken().get_value_or(false);
-    }
     /**
      * Calculate the number of documents needed to satisfy a user-defined limit. This information
      * can be used in a getMore sent to mongot.
@@ -176,9 +172,18 @@ public:
         return !storedSourceElem.eoo() && storedSourceElem.Bool();
     }
 
-    void setDocsNeededBounds(DocsNeededBounds minBounds, DocsNeededBounds maxBounds) {
-        _minDocsNeededBounds = minBounds;
-        _maxDocsNeededBounds = maxBounds;
+    void setDocsNeededBounds(DocsNeededBounds bounds) {
+        // The bounds may have already been set when mongos walked the entire user pipeline. In that
+        // case, we shouldn't override the existing bounds.
+        if (!_spec.getDocsNeededBounds().has_value()) {
+            _spec.setDocsNeededBounds(bounds);
+        }
+    }
+
+    void setSearchIdLookupMetrics(
+        std::shared_ptr<DocumentSourceInternalSearchIdLookUp::SearchIdLookupMetrics>
+            searchIdLookupMetrics) {
+        _searchIdLookupMetrics = std::move(searchIdLookupMetrics);
     }
 
 protected:
@@ -255,8 +260,15 @@ private:
      */
     boost::optional<SortKeyGenerator> _sortKeyGen;
 
-    boost::optional<DocsNeededBounds> _minDocsNeededBounds;
-    boost::optional<DocsNeededBounds> _maxDocsNeededBounds;
+    /**
+     * SearchIdLookupMetrics between MongotRemote & SearchIdLookup DocumentSources.
+     * The state is shared between these two document sources because SearchIdLookup
+     * computes the document id lookup success rate, and MongotRemote uses it to make decisions
+     * about the batch size it requests for search responses.
+     * Note, this pointer could be null, and must be set before use.
+     */
+    std::shared_ptr<DocumentSourceInternalSearchIdLookUp::SearchIdLookupMetrics>
+        _searchIdLookupMetrics = nullptr;
 };
 
 namespace search_meta {

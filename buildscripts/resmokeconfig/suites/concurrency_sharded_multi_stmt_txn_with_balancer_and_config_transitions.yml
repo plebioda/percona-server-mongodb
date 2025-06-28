@@ -32,6 +32,9 @@ selector:
     - jstests/concurrency/fsm_workloads/compact.js
     - jstests/concurrency/fsm_workloads/compact_while_creating_indexes.js
 
+    # test creates too many collections for ContinuousAddRemoveShard
+    - jstests/concurrency/fsm_workloads/create_collection.js
+
     # can cause OOM kills on test hosts
     - jstests/concurrency/fsm_workloads/findAndModify_update_grow.js
 
@@ -59,9 +62,6 @@ selector:
     # Uses the same transaction id across different routers, which is not allowed because when either
     # router tries to commit, it may not know the full participant list.
     - jstests/concurrency/fsm_workloads/multi_statement_transaction_all_commands_same_session.js
-
-    # Time-series collections are not supported on mongos.
-    - jstests/concurrency/fsm_workloads/create_timeseries_collection.js
 
     # The test may spuriously fail when run against sharded clusters, due to limitations of the
     # infrastructure. See SERVER-77039 for full details.
@@ -92,16 +92,12 @@ selector:
     # Denylists from this suite.
     ##
 
-    # Time series collections can be tracked by the config server, but cannot be moved by
-    # moveCollection yet, and this test creates an unsplittable time series collection that if
-    # placed on the config shard, can't be moved off it, timing out the transition hook.
-    #
-    # TODO SERVER-80690: Remove when tracked time series collections can be moved.
-    - jstests/concurrency/fsm_workloads/timeseries_deletes_and_inserts.js
-
     # TODO SERVER-90609: Enable these tests.
     - jstests/concurrency/fsm_workloads/create_index_background_unique.js
     - jstests/concurrency/fsm_workloads/create_index_background_unique_capped.js
+
+    # TODO SERVER-91413: Enable test.
+    - jstests/concurrency/fsm_workloads/view_catalog_cycle_lookup.js
 
   exclude_with_any_tags:
     - assumes_against_mongod_not_mongos
@@ -185,12 +181,6 @@ executor:
         defaultConfigCommandTimeoutMS: 90000
         skipDroppingHashedShardKeyIndex: true
         reshardingMinimumOperationDurationMillis: 0
-        # Manually set the random migration fail point so we can set a threshold for skipping
-        # moveCollection to prevent "starving" random chunk migrations.
-        failpoint.balancerShouldReturnRandomMigrations:
-          data:
-            skipMoveCollectionThreshold: 0.5
-          mode: alwaysOn
         balancerMigrationsThrottlingMs: 100
         featureFlagReshardingForTimeseries: true
         failpoint.movePrimaryFailIfNeedToCloneMovableCollections:
@@ -202,3 +192,4 @@ executor:
     num_shards: 3
     num_mongos: 2
     enable_balancer: true
+    random_migrations: true

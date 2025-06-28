@@ -14,8 +14,7 @@
  *   tenant_migration_incompatible,
  *   # The top/bottom common sort key optimization is available since FCV 8.0.
  *   requires_fcv_80,
- *   # TODO SERVER-89764 a concurrent moveCollection during insertion can cause the bucket
- *   # collection to insert more documents then expected by the test.
+ *   # Buckets being closed during moveCollection can cause the bucket ranges to differ.
  *   assumes_balancer_off,
  * ]
  */
@@ -67,7 +66,7 @@ let lpa2 = undefined;  // lastpoint value of a for m = 1
     coll.insert({t: timestamps.t3, m: 1, x: 3, a: 13});  // add to bucket #1
 
     // An event with a different meta goes into a separate bucket.
-    coll.insert({t: timestamps.t6, m: 2, x: 6, a: 16})
+    coll.insert({t: timestamps.t6, m: 2, x: 6, a: 16});
     lpx2 = 6;
     lpa2 = 16;
 
@@ -131,7 +130,7 @@ const casesLastpointOptimization = [
             // The lastpoint opt currently isn't lowered to SBE.
             assert(false,
                    `Lastpoint opt isn't implemented in SBE for pipeline ${
-                       tojson(pipeline)} but got ${tojson(explainFull)}`)
+                       tojson(pipeline)} but got ${tojson(explainFull)}`);
         }
 
         // Check that the result matches the expected by the test case.

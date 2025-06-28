@@ -93,6 +93,12 @@ const Backoff kExponentialBackoff(Seconds(1), Milliseconds::max());
 
 }  // namespace
 
+namespace shard_registry_stats {
+
+Counter64& blockedOpsGauge = *MetricBuilder<Counter64>{"mongos.shardRegistry.blockedOpsGauge"};
+
+}  // namespace shard_registry_stats
+
 using CallbackArgs = executor::TaskExecutor::CallbackArgs;
 
 ShardRegistry::ShardRegistry(ServiceContext* service,
@@ -520,8 +526,7 @@ void ShardRegistry::scheduleReplicaSetUpdateOnConfigServerIfNeeded(
 
         auto swRegistryData = grid->shardRegistry()->_getDataAsync().getNoThrow(opCtx);
         if (!swRegistryData.isOK()) {
-            LOGV2_DEBUG(6791401,
-                        1,
+            LOGV2_ERROR(6791401,
                         "Error updating replica set on config server. Failed to fetch shard."
                         "registry data",
                         "replicaSetConnectionStr"_attr = connStr,
@@ -531,8 +536,7 @@ void ShardRegistry::scheduleReplicaSetUpdateOnConfigServerIfNeeded(
 
         auto shard = swRegistryData.getValue()->findByRSName(connStr.getSetName());
         if (!shard) {
-            LOGV2_DEBUG(6791402,
-                        1,
+            LOGV2_ERROR(6791402,
                         "Error updating replica set on config server. Couldn't find shard.",
                         "replicaSetConnectionStr"_attr = connStr);
             return Status::OK();
@@ -575,6 +579,7 @@ void ShardRegistry::scheduleReplicaSetUpdateOnConfigServerIfNeeded(
 }
 
 SharedSemiFuture<ShardRegistry::Cache::ValueHandle> ShardRegistry::_getDataAsync() {
+    shard_registry_stats::blockedOpsGauge.increment();
     // Update the time the cache should be aiming for.
     auto now = VectorClock::get(_service)->getTime();
     // The topologyTime should be advanced to the gossiped topologyTime.
@@ -582,7 +587,11 @@ SharedSemiFuture<ShardRegistry::Cache::ValueHandle> ShardRegistry::_getDataAsync
     _cache->advanceTimeInStore(
         _kSingleton, Time(topologyTime, _rsmIncrement.load(), _forceReloadIncrement.load()));
 
-    return _cache->acquireAsync(_kSingleton, CacheCausalConsistency::kLatestKnown);
+    return _cache->acquireAsync(_kSingleton, CacheCausalConsistency::kLatestKnown)
+        .thenRunOn(Grid::get(_service)->getExecutorPool()->getFixedExecutor())
+        .unsafeToInlineFuture()
+        .tapAll([this](auto status) { shard_registry_stats::blockedOpsGauge.decrement(); })
+        .share();
 }
 
 ShardRegistry::Cache::ValueHandle ShardRegistry::_getData(OperationContext* opCtx) {
@@ -601,10 +610,10 @@ ShardRegistry::Cache::ValueHandle ShardRegistry::_getCachedData() const {
     return _cache->peekLatestCached(_kSingleton);
 }
 
-bool ShardRegistry::cachedClusterHasConfigShard() const {
+boost::optional<bool> ShardRegistry::cachedClusterHasConfigShard() const {
     auto data = _getCachedData();
     if (!data) {
-        return false;
+        return boost::none;
     }
 
     return data->findShard(ShardId::kConfigServerId) != nullptr;

@@ -170,7 +170,7 @@ ShardingDDLCoordinatorService::constructInstance(BSONObj initialState) {
     pauseShardingDDLCoordinatorServiceOnRecovery.pauseWhileSet();
 
     coord->getConstructionCompletionFuture()
-        .thenRunOn(getInstanceCleanupExecutor())
+        .thenRunOn(**getInstanceExecutor())
         .getAsync([this](auto status) {
             AllowOpCtxWhenServiceRebuildingBlock allowOpCtxBlock(Client::getCurrent());
             auto opCtx = cc().makeOperationContext();
@@ -185,9 +185,12 @@ ShardingDDLCoordinatorService::constructInstance(BSONObj initialState) {
         });
 
     coord->getCompletionFuture()
-        .thenRunOn(getInstanceCleanupExecutor())
+        .thenRunOn(**getInstanceExecutor())
         .getAsync([this, coordinatorType = coord->operationType()](auto status) {
             stdx::lock_guard lg(_mutex);
+            if (_state == State::kPaused) {
+                return;
+            }
             const auto it = _numActiveCoordinatorsPerType.find(coordinatorType);
             invariant(it != _numActiveCoordinatorsPerType.end());
             it->second--;
@@ -233,6 +236,7 @@ void ShardingDDLCoordinatorService::_onServiceInitialization() {
     stdx::lock_guard lg(_mutex);
     invariant(_state == State::kPaused);
     invariant(_numCoordinatorsToWait == 0);
+    invariant(_numActiveCoordinatorsPerType.empty());
     _state = State::kRecovering;
 }
 
@@ -240,6 +244,8 @@ void ShardingDDLCoordinatorService::_onServiceTermination() {
     stdx::lock_guard lg(_mutex);
     _state = State::kPaused;
     _numCoordinatorsToWait = 0;
+    _numActiveCoordinatorsPerType.clear();
+    _recoveredOrCoordinatorCompletedCV.notify_all();
     DDLLockManager::get(cc().getServiceContext())->setState(DDLLockManager::State::kPaused);
 }
 

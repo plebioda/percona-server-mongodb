@@ -12,15 +12,27 @@
  * @param {Int} protocolVersion - Optional: the version of mongot's merging logic.
  * @param {Object} cursorOptions - Optional: contains options for mongot to create the cursor such
  *     as number of requested docs.
+ * @param {Object} explainVerbosity - Optional: contains explain verbosity object, i.e. {verbosity:
+ *     "queryPlanner"}
  */
-export function mongotCommandForQuery(
-    query, collName, db, collectionUUID, protocolVersion = null, cursorOptions = null) {
+export function mongotCommandForQuery({
+    query,
+    collName,
+    db,
+    collectionUUID,
+    protocolVersion = null,
+    cursorOptions = null,
+    explainVerbosity = null
+}) {
     let cmd = {search: collName, $db: db, collectionUUID, query};
     if (protocolVersion != null) {
         cmd.intermediate = protocolVersion;
     }
     if (cursorOptions != null) {
         cmd.cursorOptions = cursorOptions;
+    }
+    if (explainVerbosity != null) {
+        cmd.explain = explainVerbosity;
     }
     return cmd;
 }
@@ -69,6 +81,16 @@ export function mongotKillCursorResponse(collName, cursorId) {
     };
 }
 
+const protocolVersion = NumberInt(1);
+
+/**
+ * Returns the protocolVersion used in mockPlanShardedSearchResponseOnConn() as it's necessary for
+ * creating expected commands.
+ */
+export function getDefaultProtocolVersionForPlanShardedSearch() {
+    return protocolVersion;
+}
+
 /**
  * Helper to mock the response of 'planShardedSearch' which don't care about the results of the
  * merging pipeline on any connection (shard or mongos).
@@ -78,29 +100,34 @@ export function mongotKillCursorResponse(collName, cursorId) {
  * @param {Object} sortSpec
  * @param {ShardingTestWithMongotMock} stWithMock
  * @param {Mongo} conn
+ * @param {bool} maybeUnused
+ * @param {Object} explainVerbosity should be of the form {explain: explainVerbosity}
  */
-export function mockPlanShardedSearchResponseOnConn(
-    collName, query, dbName, sortSpec, stWithMock, conn, maybeUnused = false) {
+export function mockPlanShardedSearchResponseOnConn(collName,
+                                                    query,
+                                                    dbName,
+                                                    sortSpec,
+                                                    stWithMock,
+                                                    conn,
+                                                    maybeUnused = false,
+                                                    explainVerbosity = null) {
     mockPlanShardedSearchResponse.cursorId++;
     let resp = {
         ok: 1,
-        protocolVersion: NumberInt(1),
+        protocolVersion: protocolVersion,
         // Tests calling this don't use metadata. Give a trivial pipeline.
         metaPipeline: [{$limit: 1}]
     };
     if (sortSpec != undefined) {
         resp["sortSpec"] = sortSpec;
     }
-    const mergingPipelineHistory = [{
-        expectedCommand: {
-            planShardedSearch: collName,
-            query: query,
-            $db: dbName,
-            searchFeatures: {shardedSort: 1}
-        },
-        response: resp,
-        maybeUnused
-    }];
+
+    let expectedCommand =
+        {planShardedSearch: collName, query: query, $db: dbName, searchFeatures: {shardedSort: 1}};
+    if (explainVerbosity != null) {
+        expectedCommand.explain = explainVerbosity;
+    }
+    const mergingPipelineHistory = [{expectedCommand, response: resp, maybeUnused}];
     const mongot = stWithMock.getMockConnectedToHost(conn);
     let host = mongot.getConnection().host;
     mongot.setMockResponses(mergingPipelineHistory, mockPlanShardedSearchResponse.cursorId);
@@ -110,9 +137,16 @@ export function mockPlanShardedSearchResponseOnConn(
  * Convenience helper function to simulate mockPlanShardedSearchResponseOnConn specifically on
  * mongos, which is the most common usage.
  */
-export function mockPlanShardedSearchResponse(collName, query, dbName, sortSpec, stWithMock) {
-    mockPlanShardedSearchResponseOnConn(
-        collName, query, dbName, sortSpec, stWithMock, stWithMock.st.s);
+export function mockPlanShardedSearchResponse(
+    collName, query, dbName, sortSpec, stWithMock, maybeUnused = false, explainVerbosity = null) {
+    mockPlanShardedSearchResponseOnConn(collName,
+                                        query,
+                                        dbName,
+                                        sortSpec,
+                                        stWithMock,
+                                        stWithMock.st.s,
+                                        maybeUnused,
+                                        explainVerbosity);
 }
 
 mockPlanShardedSearchResponse.cursorId = 1423;
@@ -156,6 +190,56 @@ export function mongotCommandForVectorSearchQuery({
     }
 
     return cmd;
+}
+
+export function mockAllRequestsWithBatchSizes({
+    query,
+    collName,
+    dbName,
+    collectionUUID,
+    documents,
+    expectedBatchSizes,
+    cursorId,
+    mongotMockConn
+}) {
+    const responseOk = 1;
+
+    // Tracks which doc to return as the start of the next batch.
+    let docIndex = 0;
+    const history = [];
+
+    // Fill the expected mongot history based on the array of expectedBatchSizes.
+    for (let i = 0; i < expectedBatchSizes.length; i++) {
+        const batchSize = expectedBatchSizes[i];
+        let expectedCommand;
+        let response;
+
+        // The first batch will be requested via a normal mongot request; the rest of the batches
+        // will be requested via getMores.
+        if (i === 0) {
+            expectedCommand = mongotCommandForQuery(
+                {query, collName, db: dbName, collectionUUID, cursorOptions: {batchSize}});
+        } else {
+            expectedCommand = {getMore: cursorId, collection: collName, cursorOptions: {batchSize}};
+        }
+
+        // If this batch exhausts the remaining mongot results, return a response with cursorId = 0
+        // to indicate the results have been fully exhausted. Otherwise, return the cursorId.
+        if (docIndex + batchSize > documents.length) {
+            response = mongotResponseForBatch(
+                documents.slice(docIndex), NumberLong(0), dbName + "." + collName, responseOk);
+        } else {
+            response = mongotResponseForBatch(documents.slice(docIndex, docIndex + batchSize),
+                                              cursorId,
+                                              dbName + "." + collName,
+                                              responseOk);
+            docIndex += batchSize;
+        }
+
+        history.push({expectedCommand, response});
+    }
+
+    mongotMockConn.setMockResponses(history, cursorId);
 }
 
 export class MongotMock {

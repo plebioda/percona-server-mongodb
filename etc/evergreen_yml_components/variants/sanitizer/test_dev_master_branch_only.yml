@@ -137,6 +137,8 @@ buildvariants:
     expansions:
       <<: *enterprise-rhel-80-64-bit-dynamic-expansions
       compile_variant: *enterprise-rhel-80-64-bit-dynamic-debug-mode
+      test_flags: >-
+        --mongodSetParameters="{internalQueryEnableAggressiveSpillsInGroup: true}"
       compile_flags: >-
         --ssl
         MONGO_DISTMOD=rhel80
@@ -201,11 +203,11 @@ buildvariants:
   ###########################################
 
   - name: &windows-debug-suggested windows-debug-suggested
-    display_name: "* Windows DEBUG"
+    display_name: "* Windows Server 2022 DEBUG"
     tags: ["suggested"]
     cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
     run_on:
-      - windows-vsCurrent-small
+      - windows-2022-small
     expansions:
       exe: ".exe"
       content_type: application/zip
@@ -223,36 +225,37 @@ buildvariants:
       scons_cache_scope: shared
       multiversion_platform: windows
       multiversion_edition: enterprise
-      large_distro_name: windows-vsCurrent-large
+      large_distro_name: windows-2022-large
       test_flags: >-
         --excludeWithAnyTags=incompatible_with_windows_tls
         --enableEnterpriseTests=off
+        --mongodSetParameters="{internalQueryEnableAggressiveSpillsInGroup: true}"
       compile_variant: *windows-debug-suggested
     tasks:
       - name: compile_test_serial_TG
         distros:
-          - windows-vsCurrent-xxlarge
+          - windows-2022-xxlarge
       - name: compile_test_parallel_unittest_stream_TG
         distros:
-          - windows-vsCurrent-xxlarge
+          - windows-2022-xxlarge
       - name: compile_integration_and_test_no_audit_parallel_stream_TG
         distros:
-          - windows-vsCurrent-xlarge
+          - windows-2022-xlarge
       - name: .development_critical !.requires_large_host !.incompatible_development_variant !.incompatible_community !.incompatible_windows !.requires_all_feature_flags
       - name: .development_critical .requires_large_host !.incompatible_development_variant !.incompatible_community !.incompatible_windows !.requires_all_feature_flags
         distros:
-          - windows-vsCurrent-large
+          - windows-2022-large
       - name: .release_critical !.requires_large_host !.incompatible_development_variant !.incompatible_community !.incompatible_windows !.requires_all_feature_flags
       - name: .release_critical .requires_large_host !.incompatible_development_variant !.incompatible_community !.incompatible_windows !.requires_all_feature_flags
         distros:
-          - windows-vsCurrent-large
+          - windows-2022-large
 
   - name: &enterprise-windows-debug-unoptimized enterprise-windows-debug-unoptimized
-    display_name: "Enterprise Windows DEBUG (Unoptimized)"
+    display_name: "Enterprise Windows Server 2022 DEBUG (Unoptimized)"
     tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
-      - windows-vsCurrent-small
+      - windows-2022-small
     expansions:
       compile_variant: *enterprise-windows-debug-unoptimized
       additional_package_targets: >-
@@ -277,16 +280,17 @@ buildvariants:
       scons_cache_scope: shared
       test_flags: >-
         --excludeWithAnyTags=incompatible_with_windows_tls
+        --mongodSetParameters="{internalQueryEnableAggressiveSpillsInGroup: true}"
     tasks:
       # This variant tests that unoptimized, DEBUG mongos and mongod binaries can run on Windows.
       # It has a minimal amount of tasks because unoptimized builds are slow, which causes
       # timing-sensitive tests to fail.
       - name: compile_and_archive_dist_test_TG
         distros:
-          - windows-vsCurrent-xxlarge
+          - windows-2022-xxlarge
       - name: compile_build_tools_next_TG
         distros:
-          - windows-vsCurrent-xxlarge
+          - windows-2022-xxlarge
       - name: audit
     # Do not add more tasks to this list.
 
@@ -306,6 +310,7 @@ buildvariants:
       test_flags: >-
         --excludeWithAnyTags=incompatible_with_macos
         --enableEnterpriseTests=off
+        --mongodSetParameters="{internalQueryEnableAggressiveSpillsInGroup: true}"
       resmoke_jobs_max: 6
       compile_env: DEVELOPER_DIR=/Applications/Xcode13.app
       compile_flags: >-
@@ -338,7 +343,9 @@ buildvariants:
       - macos-1100
     expansions:
       compile_variant: *enterprise-macos
-      test_flags: --excludeWithAnyTags=incompatible_with_macos,requires_gcm
+      test_flags: >-
+        --mongodSetParameters="{internalQueryEnableAggressiveSpillsInGroup: true}"
+        --excludeWithAnyTags=incompatible_with_macos,requires_gcm
       compile_env: DEVELOPER_DIR=/Applications/Xcode13.app
       compile_flags: >-
         --ssl
@@ -396,6 +403,7 @@ buildvariants:
       test_flags: >-
         --excludeWithAnyTags=requires_increased_memlock_limits,all_feature_flags_incompatible
         --runAllFeatureFlagTests
+        --mongodSetParameters="{internalQueryEnableAggressiveSpillsInGroup: true}"
       multiversion_platform: rhel80
       multiversion_edition: enterprise
       resmoke_jobs_factor: 0.3 # Avoid starting too many mongod's under UBSAN build.
@@ -422,6 +430,7 @@ buildvariants:
       test_flags: >-
         --runAllFeatureFlagTests
         --excludeWithAnyTags=incompatible_aubsan
+        --mongodSetParameters="{internalQueryEnableAggressiveSpillsInGroup: true}"
     tasks:
       - name: .development_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_aubsan !.incompatible_system_allocator !.incompatible_all_feature_flags
       - name: .development_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_aubsan !.incompatible_system_allocator !.incompatible_all_feature_flags
@@ -454,6 +463,7 @@ buildvariants:
       test_flags: >-
         --runAllFeatureFlagTests
         --excludeWithAnyTags=incompatible_aubsan
+        --mongodSetParameters="{internalQueryEnableAggressiveSpillsInGroup: true}"
     tasks:
       - name: .multiversion_fuzzer
       - name: .multiversion_passthrough
@@ -483,6 +493,7 @@ buildvariants:
       test_flags: >-
         --benchmarkRepetitions=1
         --excludeWithAnyTags=incompatible_aubsan
+        --mongodSetParameters="{internalQueryEnableAggressiveSpillsInGroup: true}"
       compile_variant: *rhel80-debug-aubsan-benchmarks
     tasks:
       - name: compile_upload_benchmarks_TG

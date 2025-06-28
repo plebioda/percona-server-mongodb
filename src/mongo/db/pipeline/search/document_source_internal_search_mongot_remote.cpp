@@ -162,8 +162,13 @@ boost::optional<long long> DocumentSourceInternalSearchMongotRemote::calcDocsNee
         // for each document that gets returned by the $idLookup stage. If a document gets
         // filtered out, docsReturnedByIdLookup will not change and so docsNeeded will stay the
         // same.
+        tassert(91262,
+                str::stream() << "The query is not from stored source "
+                              << "(reaches out to mongot remotely), but the searchIdLookupMetrics "
+                              << "pointer is null, which is unexpected.",
+                _searchIdLookupMetrics != nullptr);
         return _spec.getMongotDocsRequested().get() -
-            pExpCtx->sharedSearchState.getDocsReturnedByIdLookup();
+            _searchIdLookupMetrics->getDocsReturnedByIdLookup();
     }
 }
 
@@ -287,17 +292,8 @@ DocumentSource::GetNextResult DocumentSourceInternalSearchMongotRemote::getNextA
 
 std::unique_ptr<executor::TaskExecutorCursor>
 DocumentSourceInternalSearchMongotRemote::establishCursor() {
-    auto cursors =
-        mongot_cursor::establishCursorsForSearchStage(pExpCtx,
-                                                      _spec.getMongotQuery(),
-                                                      _taskExecutor,
-                                                      getMongotDocsRequested(),
-                                                      _minDocsNeededBounds,
-                                                      _maxDocsNeededBounds,
-                                                      boost::none,
-                                                      nullptr,
-                                                      _spec.getMetadataMergeProtocolVersion(),
-                                                      getPaginationFlag());
+    auto cursors = mongot_cursor::establishCursorsForSearchStage(
+        pExpCtx, _spec, _taskExecutor, boost::none, nullptr);
     // Should be called only in unsharded scenario, therefore only expect a results cursor and no
     // metadata cursor.
     tassert(5253301, "Expected exactly one cursor from mongot", cursors.size() == 1);

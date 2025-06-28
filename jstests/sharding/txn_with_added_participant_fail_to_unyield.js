@@ -3,7 +3,8 @@
  * participant to the transaction fails to unyield its resources.
  * @tags: [
  *   requires_fcv_80,
- *   temp_disabled_embedded_router_metrics,
+ *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 
@@ -49,10 +50,10 @@ let fp = configureFailPoint(st.shard0, "restoreLocksFail");
 // Run a $lookup where shard0 will add shard1 as an additional participant. The failpoint above
 // should cause shard0 to fail to unyield after getting a response from shard1, causing the request
 // to fail with a LockTimeout error.
-let err = assert.throwsWithCode(
-    () => {sessionDB.getCollection(localColl).aggregate(
-        [{$lookup: {from: foreignColl, localField: "x", foreignField: "_id", as: "result"}}])},
-    ErrorCodes.LockTimeout);
+let err = assert.throwsWithCode(() => {
+    sessionDB.getCollection(localColl).aggregate(
+        [{$lookup: {from: foreignColl, localField: "x", foreignField: "_id", as: "result"}}]);
+}, ErrorCodes.LockTimeout);
 assert.contains("TransientTransactionError", err.errorLabels, tojson(err));
 
 fp.off();

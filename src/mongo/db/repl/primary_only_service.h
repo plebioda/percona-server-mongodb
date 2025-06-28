@@ -376,6 +376,15 @@ protected:
                                                                    bool checkOptions = true);
 
     /**
+     * Return the executor where Instances of this PrimaryOnlyService are executed
+     *
+     * Tasks running on this executor will not survive a step down - step up cycle.
+     * This executor is shut down when this node steps down and joined on step up before rebuilding
+     * new instances.
+     */
+    std::shared_ptr<executor::ScopedTaskExecutor> getInstanceExecutor() const;
+
+    /**
      * Since, scoped task executor shuts down on stepdown, we might need to run some instance work,
      * like cleanup, even while the node is not primary. So, use the parent executor in that case.
      */
@@ -619,13 +628,15 @@ public:
 
     void onStartup(OperationContext*) final;
     void onSetCurrentConfig(OperationContext* opCtx) final {}
-    void onInitialDataAvailable(OperationContext* opCtx, bool isMajorityDataAvailable) final {}
+    void onConsistentDataAvailable(OperationContext* opCtx,
+                                   bool isMajority,
+                                   bool isRollback) final {}
     void onShutdown() final;
     void onStepUpBegin(OperationContext*, long long term) final {}
     void onBecomeArbiter() final {}
     void onStepUpComplete(OperationContext*, long long term) final;
     void onStepDown() final;
-    void onRollback() final {}
+    void onRollbackBegin() final {}
     inline std::string getServiceName() const final {
         return "PrimaryOnlyServiceRegistry";
     }

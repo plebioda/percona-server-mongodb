@@ -59,10 +59,12 @@
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/pipeline/aggregation_request_helper.h"
 #include "mongo/db/pipeline/document_path_support.h"
+#include "mongo/db/pipeline/document_source.h"
 #include "mongo/db/pipeline/document_source_documents.h"
 #include "mongo/db/pipeline/document_source_merge_gen.h"
 #include "mongo/db/pipeline/document_source_queue.h"
 #include "mongo/db/pipeline/document_source_sequential_document_cache.h"
+#include "mongo/db/pipeline/document_source_unwind.h"
 #include "mongo/db/pipeline/expression.h"
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/pipeline/expression_dependencies.h"
@@ -233,11 +235,9 @@ static BSONObj createMatchStageJoinObj(const Document& input,
 
 }  // namespace
 
-DocumentSourceLookUp::DocumentSourceLookUp(
-    NamespaceString fromNs,
-    std::string as,
-    boost::optional<std::unique_ptr<CollatorInterface>> fromCollator,
-    const boost::intrusive_ptr<ExpressionContext>& expCtx)
+DocumentSourceLookUp::DocumentSourceLookUp(NamespaceString fromNs,
+                                           std::string as,
+                                           const boost::intrusive_ptr<ExpressionContext>& expCtx)
     : DocumentSource(kStageName, expCtx),
       _fromNs(std::move(fromNs)),
       _as(std::move(as)),
@@ -253,21 +253,14 @@ DocumentSourceLookUp::DocumentSourceLookUp(
 
     _fromExpCtx = expCtx->copyForSubPipeline(resolvedNamespace.ns, resolvedNamespace.uuid);
     _fromExpCtx->inLookup = true;
-
-    if (fromCollator) {
-        _fromExpCtx->setCollator(std::move(fromCollator.value()));
-        _hasExplicitCollation = true;
-    }
 }
 
-DocumentSourceLookUp::DocumentSourceLookUp(
-    NamespaceString fromNs,
-    std::string as,
-    std::string localField,
-    std::string foreignField,
-    boost::optional<std::unique_ptr<CollatorInterface>> fromCollator,
-    const boost::intrusive_ptr<ExpressionContext>& expCtx)
-    : DocumentSourceLookUp(fromNs, as, std::move(fromCollator), expCtx) {
+DocumentSourceLookUp::DocumentSourceLookUp(NamespaceString fromNs,
+                                           std::string as,
+                                           std::string localField,
+                                           std::string foreignField,
+                                           const boost::intrusive_ptr<ExpressionContext>& expCtx)
+    : DocumentSourceLookUp(fromNs, as, expCtx) {
     _localField = std::move(localField);
     _foreignField = std::move(foreignField);
 
@@ -299,10 +292,9 @@ DocumentSourceLookUp::DocumentSourceLookUp(
     std::string as,
     std::vector<BSONObj> pipeline,
     BSONObj letVariables,
-    boost::optional<std::unique_ptr<CollatorInterface>> fromCollator,
     boost::optional<std::pair<std::string, std::string>> localForeignFields,
     const boost::intrusive_ptr<ExpressionContext>& expCtx)
-    : DocumentSourceLookUp(fromNs, as, std::move(fromCollator), expCtx) {
+    : DocumentSourceLookUp(fromNs, as, expCtx) {
     // '_resolvedPipeline' will first be initialized by the constructor delegated to within this
     // constructor's initializer list. It will be populated with view pipeline prefix if 'fromNs'
     // represents a view. We will then append stages to ensure any view prefix is not overwritten.
@@ -370,7 +362,6 @@ DocumentSourceLookUp::DocumentSourceLookUp(const DocumentSourceLookUp& original,
       _variables(original._variables),
       _variablesParseState(original._variablesParseState.copyWith(_variables.useIdGenerator())),
       _fromExpCtx(original._fromExpCtx->copyWith(_resolvedNs, original._fromExpCtx->uuid)),
-      _hasExplicitCollation(original._hasExplicitCollation),
       _resolvedPipeline(original._resolvedPipeline),
       _userPipeline(original._userPipeline),
       _resolvedIntrospectionPipeline(original._resolvedIntrospectionPipeline->clone(_fromExpCtx)),
@@ -435,10 +426,8 @@ std::unique_ptr<DocumentSourceLookUp::LiteParsed> DocumentSourceLookUp::LitePars
         liteParsedPipeline = LiteParsedPipeline(fromNss, pipeline);
     }
 
-    bool hasInternalCollation = static_cast<bool>(specObj["_internalCollation"]);
-
     return std::make_unique<DocumentSourceLookUp::LiteParsed>(
-        spec.fieldName(), std::move(fromNss), std::move(liteParsedPipeline), hasInternalCollation);
+        spec.fieldName(), std::move(fromNss), std::move(liteParsedPipeline));
 }
 
 PrivilegeVector DocumentSourceLookUp::LiteParsed::requiredPrivileges(
@@ -493,8 +482,6 @@ void DocumentSourceLookUp::determineSbeCompatibility() {
         // than indexes into arrays, which is compatible with SBE.)
         && !FieldRef(_localField->fullPath()).hasNumericPathComponents() &&
         !FieldRef(_foreignField->fullPath()).hasNumericPathComponents()
-        // Setting a collator on an individual $lookup stage with _internalCollation isn't supported
-        && !_hasExplicitCollation
         // We currently don't lower $lookup against views ('_fromNs' does not correspond to a
         // view).
         && pExpCtx->getResolvedNamespace(_fromNs).pipeline.empty();
@@ -1220,10 +1207,6 @@ void DocumentSourceLookUp::serializeToArray(std::vector<Value>& array,
         output[getSourceName()]["pipeline"] = Value(serializedPipeline);
     }
 
-    if (_hasExplicitCollation) {
-        output[getSourceName()]["_internalCollation"] = Value(_fromExpCtx->getCollatorBSON());
-    }
-
     if (opts.verbosity) {
         if (_unwindSrc) {
             const boost::optional<FieldPath> indexPath = _unwindSrc->indexPath();
@@ -1237,6 +1220,9 @@ void DocumentSourceLookUp::serializeToArray(std::vector<Value>& array,
             appendSpecificExecStats(output);
         }
 
+        array.push_back(output.freezeToValue());
+    } else if (opts.serializeForCloning && _unwindSrc) {
+        output[getSourceName()]["$_internalUnwind"] = _unwindSrc->serialize(opts);
         array.push_back(output.freezeToValue());
     } else {
         array.push_back(output.freezeToValue());
@@ -1396,10 +1382,10 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceLookUp::createFromBson(
     std::string foreignField;
 
     BSONObj letVariables;
+    BSONObj unwindSpec;
     std::vector<BSONObj> pipeline;
     bool hasPipeline = false;
     bool hasLet = false;
-    boost::optional<std::unique_ptr<CollatorInterface>> fromCollator;
 
     for (auto&& argument : elem.Obj()) {
         const auto argName = argument.fieldNameStringData();
@@ -1425,13 +1411,11 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceLookUp::createFromBson(
             continue;
         }
 
-        if (argName == "_internalCollation"_sd) {
-            const auto& collationSpec = argument.Obj();
-            if (!collationSpec.isEmpty()) {
-                fromCollator.emplace(uassertStatusOK(
-                    CollatorFactoryInterface::get(pExpCtx->opCtx->getServiceContext())
-                        ->makeFromBSON(collationSpec)));
-            }
+        if (argName == "$_internalUnwind"_sd) {
+            tassert(8725002,
+                    "Invalid BSON type for $_internalUnwind.",
+                    argument.type() == BSONType::Object);
+            unwindSpec = argument.Obj();
             continue;
         }
 
@@ -1466,7 +1450,6 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceLookUp::createFromBson(
                                                    std::move(as),
                                                    std::move(pipeline),
                                                    std::move(letVariables),
-                                                   std::move(fromCollator),
                                                    boost::none,
                                                    pExpCtx);
         } else {
@@ -1481,7 +1464,6 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceLookUp::createFromBson(
                                          std::move(as),
                                          std::move(pipeline),
                                          std::move(letVariables),
-                                         std::move(fromCollator),
                                          std::pair(std::move(localField), std::move(foreignField)),
                                          pExpCtx);
         }
@@ -1499,8 +1481,12 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceLookUp::createFromBson(
                                                std::move(as),
                                                std::move(localField),
                                                std::move(foreignField),
-                                               std::move(fromCollator),
                                                pExpCtx);
+    }
+
+    if (!unwindSpec.isEmpty()) {
+        lookupStage->_unwindSrc = boost::dynamic_pointer_cast<DocumentSourceUnwind>(
+            DocumentSourceUnwind::createFromBson(unwindSpec.firstElement(), pExpCtx));
     }
     lookupStage->determineSbeCompatibility();
     return lookupStage;

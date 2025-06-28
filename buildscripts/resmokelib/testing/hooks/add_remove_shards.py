@@ -19,6 +19,9 @@ from buildscripts.resmokelib.testing.retry import (
     retryable_code_names as retryable_network_err_names,
 )
 
+# The possible number of seconds to wait before initiating a transition.
+TRANSITION_INTERVALS = [10]
+
 
 class ContinuousAddRemoveShard(interface.Hook):
     DESCRIPTION = (
@@ -39,6 +42,7 @@ class ContinuousAddRemoveShard(interface.Hook):
         transition_configsvr=False,
         add_remove_random_shards=False,
         move_primary_comment=None,
+        transition_intervals=TRANSITION_INTERVALS,
     ):
         interface.Hook.__init__(self, hook_logger, fixture, ContinuousAddRemoveShard.DESCRIPTION)
         self._fixture = fixture
@@ -48,6 +52,7 @@ class ContinuousAddRemoveShard(interface.Hook):
         self._transition_configsvr = transition_configsvr
         self._add_remove_random_shards = add_remove_random_shards
         self._move_primary_comment = move_primary_comment
+        self._transition_intervals = transition_intervals
 
     def before_suite(self, test_report):
         """Before suite."""
@@ -73,6 +78,7 @@ class ContinuousAddRemoveShard(interface.Hook):
             self._transition_configsvr,
             self._add_remove_random_shards,
             self._move_primary_comment,
+            self._transition_intervals,
         )
         self.logger.info("Starting the add/remove shard thread.")
         self._add_remove_thread.start()
@@ -99,8 +105,6 @@ class ContinuousAddRemoveShard(interface.Hook):
 class _AddRemoveShardThread(threading.Thread):
     CONFIG_SHARD = "config shard mode"
     DEDICATED = "dedicated config server mode"
-    # The possible number of seconds to wait before initiating a transition.
-    TRANSITION_INTERVALS = [0, 1, 1, 1, 1, 3, 5, 10]
     TRANSITION_TIMEOUT_SECS = float(900)  # 15 minutes
     # Error codes, taken from mongo/base/error_codes.yml.
     _NAMESPACE_NOT_FOUND = 26
@@ -113,6 +117,7 @@ class _AddRemoveShardThread(threading.Thread):
     _RESHARD_COLLECTION_ABORTED = 341
     _RESHARD_COLLECTION_IN_PROGRESS = 338
     _LOCK_BUSY = 46
+    _FAILED_TO_SATISFY_READ_PREFERENCE = 133
 
     _UNMOVABLE_NAMESPACE_REGEXES = [
         r"\.system\.",
@@ -131,6 +136,7 @@ class _AddRemoveShardThread(threading.Thread):
         transition_configsvr,
         add_remove_random_shards,
         move_primary_comment,
+        transition_intervals,
     ):
         threading.Thread.__init__(self, name="AddRemoveShardThread")
         self.logger = logger
@@ -141,6 +147,7 @@ class _AddRemoveShardThread(threading.Thread):
         self._transition_configsvr = transition_configsvr
         self._add_remove_random_shards = add_remove_random_shards
         self._move_primary_comment = move_primary_comment
+        self._transition_intervals = transition_intervals
         self._client = fixture_interface.build_client(self._fixture, self._auth_options)
         self._current_config_mode = self._current_fixture_mode()
         self._should_wait_for_balancer_round = False
@@ -188,7 +195,7 @@ class _AddRemoveShardThread(threading.Thread):
                 # Pick the shard to add/remove this round
                 shard_id, shard_host = self._pick_shard_to_add_remove()
 
-                wait_secs = random.choice(self.TRANSITION_INTERVALS)
+                wait_secs = random.choice(self._transition_intervals)
                 msg = (
                     "transition to dedicated."
                     if shard_id == "config"
@@ -217,7 +224,7 @@ class _AddRemoveShardThread(threading.Thread):
 
                 # Wait a random interval before transitioning back, unless the test already ended.
                 if not self.__lifecycle.poll_for_idle_request():
-                    wait_secs = random.choice(self.TRANSITION_INTERVALS)
+                    wait_secs = random.choice(self._transition_intervals)
                     msg = (
                         "transition to config shard."
                         if shard_id == "config"
@@ -297,10 +304,6 @@ class _AddRemoveShardThread(threading.Thread):
 
         if err.code == self._ILLEGAL_OPERATION:
             if "Can't move an internal resharding collection" in str(err):
-                return True
-            if "Cannot remove from a capped collection in a multi-document transaction" in str(err):
-                # TODO (SERVER-89826): Investigate errors related to moving capped collection that
-                # are part of multi-document transactions.
                 return True
             for regex in self._UNMOVABLE_NAMESPACE_REGEXES:
                 if re.search(regex, namespace):
@@ -678,6 +681,15 @@ class _AddRemoveShardThread(threading.Thread):
                     prev_round_interrupted = False
                     continue
 
+                # Some suites kill the primary causing the request to fail with
+                # FailedToSatisfyReadPreference
+                if err.code in [self._FAILED_TO_SATISFY_READ_PREFERENCE]:
+                    self.logger.info(
+                        "Primary not found when " + msg + ", will retry. err: " + str(err)
+                    )
+                    time.sleep(1)
+                    continue
+
                 # If there was a failover when finishing the transition to a dedicated CSRS/shard removal or if
                 # the transitionToDedicated/removeShard request was interrupted when finishing the transition,
                 # it's possible that this thread didn't learn that the removal finished. When the
@@ -757,6 +769,15 @@ class _AddRemoveShardThread(threading.Thread):
                 ):
                     self.logger.info(
                         "Connection refused when " + msg + ", will retry. err: " + str(err)
+                    )
+                    time.sleep(1)
+                    continue
+
+                # Some suites kill the primary causing the request to fail with
+                # FailedToSatisfyReadPreference
+                if err.code in [self._FAILED_TO_SATISFY_READ_PREFERENCE]:
+                    self.logger.info(
+                        "Primary not found when " + msg + ", will retry. err: " + str(err)
                     )
                     time.sleep(1)
                     continue
@@ -871,7 +892,7 @@ class _AddRemoveShardThread(threading.Thread):
                         ), f"Expected remove shard's filtering information to reflect that the shard does not own any chunk for collection {nss}, but found {metadata} on node {removed_shard_node.get_driver_connection_url()}"
 
                 return
-            except (pymongo.errors.AutoReconnect, pymongo.errors.NotPrimaryError):
+            except (pymongo.errors.AutoReconnect, pymongo.errors.NotPrimaryError) as err:
                 # The above operations run directly on a shard, so they may fail getting a
                 # connection if the shard node is killed.
                 self.logger.info(

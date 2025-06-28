@@ -152,7 +152,6 @@
 #include "mongo/util/functional.h"
 #include "mongo/util/net/cidr.h"
 #include "mongo/util/scopeguard.h"
-#include "mongo/util/stacktrace.h"
 #include "mongo/util/str.h"
 #include "mongo/util/synchronized_value.h"
 #include "mongo/util/testing_proctor.h"
@@ -525,6 +524,10 @@ boost::optional<Date_t> ReplicationCoordinatorImpl::getCatchupTakeover_forTest()
 executor::TaskExecutor::CallbackHandle ReplicationCoordinatorImpl::getCatchupTakeoverCbh_forTest()
     const {
     return _catchupTakeoverCbh;
+}
+
+int64_t ReplicationCoordinatorImpl::getLastHorizonChange_forTest() const {
+    return _lastHorizonTopologyChange;
 }
 
 OpTime ReplicationCoordinatorImpl::getCurrentCommittedSnapshotOpTime() const {
@@ -910,8 +913,8 @@ void ReplicationCoordinatorImpl::_initialSyncerCompletionFunction(
         _topCoord->resetMaintenanceCount();
     }
 
-    ReplicaSetAwareServiceRegistry::get(_service).onInitialDataAvailable(
-        cc().makeOperationContext().get(), false /* isMajorityDataAvailable */);
+    setConsistentDataAvailable(cc().makeOperationContext().get(),
+                               /*isDataMajorityCommitted=*/false);
 
     // Transition from STARTUP2 to RECOVERING and start the producer and the applier.
     // If the member state is REMOVED, this will do nothing until we receive a config with
@@ -964,6 +967,17 @@ void ReplicationCoordinatorImpl::_startDataReplication(OperationContext* opCtx) 
           "Initial sync required. Attempting to start initial sync...",
           "lastOpTime"_attr = lastOpTime,
           "isInitialSyncFlagSet"_attr = isInitialSyncFlagSet);
+
+    // We do not want to allow initial syncing if a node has previous data stored on it. This can
+    // cause us to hit a WT invariant where we attempt to set the oldest timestamp to a point past
+    // the stable timestamp. See SERVER-91841 for more details. Checking if the stable timestamp is
+    // null is an easy way to see if we have previous data stored on this node or not.
+    if (!opCtx->getServiceContext()->getStorageEngine()->getStableTimestamp().isNull()) {
+        LOGV2_FATAL_NOTRACE(9184100,
+                            "Previous data detected when attempting to start initial sync. Remove "
+                            "existing data in order to complete initial sync.");
+    }
+
     // Do initial sync.
     if (!_externalState->getTaskExecutor()) {
         LOGV2(21323, "Not running initial sync during test");
@@ -2363,9 +2377,6 @@ ReplicationCoordinator::StatusAndDuration ReplicationCoordinatorImpl::awaitRepli
 
     auto wTimeoutDate = [&]() -> Date_t {
         auto clockSource = opCtx->getServiceContext()->getFastClockSource();
-        if (writeConcern.wDeadline != Date_t::max()) {
-            return writeConcern.wDeadline;
-        }
         if (writeConcern.wTimeout == WriteConcernOptions::kNoTimeout) {
             return Date_t::max();
         }
@@ -2423,9 +2434,8 @@ SharedSemiFuture<void> ReplicationCoordinatorImpl::awaitReplicationAsyncNoWTimeo
     WriteConcernOptions fixedWriteConcern =
         _populateUnsetWriteConcernOptionsSyncMode(lg, writeConcern);
 
-    // The returned future won't account for wTimeout or wDeadline, so reject any write concerns
-    // with either option to avoid misuse.
-    invariant(fixedWriteConcern.wDeadline == Date_t::max());
+    // The returned future won't account for wTimeout, so reject any write concerns
+    // with this option to avoid misuse.
     invariant(fixedWriteConcern.wTimeout == WriteConcernOptions::kNoTimeout);
 
     return _startWaitingForReplication(lg, opTime, fixedWriteConcern).first;
@@ -2584,7 +2594,9 @@ long long ReplicationCoordinatorImpl::_calculateRemainingQuiesceTimeMillis() con
 }
 
 std::shared_ptr<HelloResponse> ReplicationCoordinatorImpl::_makeHelloResponse(
-    boost::optional<StringData> horizonString, WithLock lock, const bool hasValidConfig) const {
+    const boost::optional<std::string>& horizonString,
+    WithLock lock,
+    const bool hasValidConfig) const {
 
     uassert(ShutdownInProgressQuiesceInfo(_calculateRemainingQuiesceTimeMillis()),
             kQuiesceModeShutdownMessage,
@@ -2632,7 +2644,7 @@ SharedSemiFuture<ReplicationCoordinatorImpl::SharedHelloResponse>
 ReplicationCoordinatorImpl::_getHelloResponseFuture(
     WithLock lk,
     const SplitHorizon::Parameters& horizonParams,
-    boost::optional<StringData> horizonString,
+    const boost::optional<std::string>& horizonString,
     boost::optional<TopologyVersion> clientTopologyVersion) {
 
     uassert(ShutdownInProgressQuiesceInfo(_calculateRemainingQuiesceTimeMillis()),
@@ -2664,6 +2676,10 @@ ReplicationCoordinatorImpl::_getHelloResponseFuture(
             prevCounter <= topologyVersionCounter);
 
     if (prevCounter < topologyVersionCounter) {
+        uassert(ErrorCodes::SplitHorizonChange,
+                "Stale horizon detected, we have since received a reconfig that changed the "
+                "horizon mappings.",
+                prevCounter >= _lastHorizonTopologyChange);
         // The received hello command contains a stale topology version so we respond
         // immediately with a more current topology version.
         return SharedSemiFuture<SharedHelloResponse>(
@@ -2696,11 +2712,11 @@ ReplicationCoordinatorImpl::getHelloResponseFuture(
     return _getHelloResponseFuture(lk, horizonParams, horizonString, clientTopologyVersion);
 }
 
-boost::optional<StringData> ReplicationCoordinatorImpl::_getHorizonString(
+boost::optional<std::string> ReplicationCoordinatorImpl::_getHorizonString(
     WithLock lk, const SplitHorizon::Parameters& horizonParams) const {
     const auto myState = _topCoord->getMemberState();
     const bool hasValidConfig = _rsConfig.getConfig(lk).isInitialized() && !myState.removed();
-    boost::optional<StringData> horizonString;
+    boost::optional<std::string> horizonString;
     if (hasValidConfig) {
         const auto& self = _rsConfig.getConfig(lk).getMemberAt(_selfIndex);
         horizonString = self.determineHorizon(horizonParams);
@@ -2953,19 +2969,10 @@ ReplicationCoordinatorImpl::AutoGetRstlForStepUpStepDown::AutoGetRstlForStepUpSt
             CurOp::get(opCtx)->getLockStatsBase());
         BSONObjBuilder lockRep;
         lockerInfo.stats.report(&lockRep);
-
-        LOGV2_FATAL_CONTINUE(
-            5675600,
-            "Time out exceeded waiting for RSTL, stepUp/stepDown is not possible thus "
-            "calling abort() to allow cluster to progress",
-            "lockRep"_attr = lockRep.obj());
-
-#if defined(MONGO_STACKTRACE_CAN_DUMP_ALL_THREADS)
-        // Dump the stack of each thread.
-        printAllThreadStacksBlocking();
-#endif
-
-        fassertFailed(7152000);
+        LOGV2_FATAL(5675600,
+                    "Time out exceeded waiting for RSTL, stepUp/stepDown is not possible thus "
+                    "calling abort() to allow cluster to progress",
+                    "lockRep"_attr = lockRep.obj());
     });
     callReplCoordExit.dismiss();
 };
@@ -3142,13 +3149,16 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
     _updateWriteAbilityFromTopologyCoordinator(lk, opCtx);
     invariant(!_readWriteAbility->canAcceptNonLocalWrites(lk));
 
-    auto updateMemberState = [&] {
+    bool interruptedBeforeReacquireRSTL = false;
+
+    auto updateMemberState = [this, &lk](OperationContext* opCtx) {
         invariant(lk.owns_lock());
         invariant(shard_role_details::getLocker(opCtx)->isRSTLExclusive());
 
         // Make sure that we leave _canAcceptNonLocalWrites in the proper state.
         _updateWriteAbilityFromTopologyCoordinator(lk, opCtx);
         auto action = _updateMemberStateFromTopologyCoordinator(lk);
+
         lk.unlock();
 
         if (MONGO_unlikely(stepdownHangBeforePerformingPostMemberStateUpdateActions.shouldFail())) {
@@ -3171,8 +3181,40 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
         _performPostMemberStateUpdateAction(action);
     };
     ScopeGuard onExitGuard([&] {
-        abortFn();
-        updateMemberState();
+        if (interruptedBeforeReacquireRSTL) {
+            // We should only enter this branch when we get interrupted during reacquiring RSTL, so
+            // we should not holding the RSTL and _mutex. We need to create a new client and opCtx
+            // for the cleanup since the cleanup is a must do.
+            invariant(!lk.owns_lock());
+            invariant(!shard_role_details::getLocker(opCtx)->isRSTLExclusive());
+            while (true) {
+                try {
+                    auto newClient = opCtx->getServiceContext()
+                                         ->getService(ClusterRole::ShardServer)
+                                         ->makeClient("StepdownCleaner");
+                    AlternativeClientRegion acr(newClient);
+                    auto newOpCtx = cc().makeOperationContext();
+                    // We wait RSTL at no timeout because we have to get it to update WriteAbility
+                    // and MemberState anyway. If it gets interrupted again, keep retrying.
+                    AutoGetRstlForStepUpStepDown arsdForCleanup(
+                        this,
+                        newOpCtx.get(),
+                        ReplicationCoordinator::OpsKillingStateTransitionEnum::kStepDown,
+                        Date_t::max());
+                    lk.lock();
+                    abortFn();
+                    updateMemberState(newOpCtx.get());
+                    break;
+                } catch (const DBException& ex) {
+                    LOGV2(9080201,
+                          "Reacquiring RSTL on cleanup gets interrupted",
+                          "error"_attr = ex.toStatus());
+                }
+            }
+        } else {
+            abortFn();
+            updateMemberState(opCtx);
+        }
     });
 
     auto waitTimeout = std::min(waitTime, stepdownTime);
@@ -3187,37 +3229,10 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
     // yieldLocksForPreparedTransactions().
     while (!_topCoord->tryToStartStepDown(
         termAtStart, _replExecutor->now(), waitUntil, stepDownUntil, force)) {
-
         // The stepdown attempt failed. We now release the RSTL to allow secondaries to read the
         // oplog, then wait until enough secondaries are caught up for us to finish stepdown.
         arsd.rstlRelease();
         invariant(!shard_role_details::getLocker(opCtx)->isLocked());
-
-        // Make sure we re-acquire the RSTL before returning so that we're always holding the
-        // RSTL when the onExitGuard set up earlier runs.
-        ON_BLOCK_EXIT([&] {
-            // Need to release _mutex before re-acquiring the RSTL to preserve lock acquisition
-            // order rules.
-            lk.unlock();
-
-            // Need to re-acquire the RSTL before re-attempting stepdown. We use no timeout here
-            // even though that means the lock acquisition could take longer than the stepdown
-            // window. Since we'll need the RSTL no matter what to clean up a failed stepdown
-            // attempt, we might as well spend whatever time we need to acquire it now.  For
-            // the same reason, we also disable lock acquisition interruption, to guarantee that
-            // we get the lock eventually.
-            UninterruptibleLockGuard noInterrupt(opCtx);  // NOLINT.
-
-            // Since we have released the RSTL lock at this point, there can be some read
-            // operations sneaked in here, that might hold global lock in S mode or blocked on
-            // prepare conflict. We need to kill those operations to avoid 3-way deadlock
-            // between read, prepared transaction and step down thread. And, any write
-            // operations that gets sneaked in here will fail as we have updated
-            // _canAcceptNonLocalWrites to false after our first successful RSTL lock
-            // acquisition. So, we won't get into problems like SERVER-27534.
-            arsd.rstlReacquire();
-            lk.lock();
-        });
 
         auto lastAppliedOpTime = _getMyLastAppliedOpTime(lk);
         auto currentTerm = _topCoord->getTerm();
@@ -3232,23 +3247,42 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
             _replicationWaiterList.add(lk, lastAppliedOpTime, waiterWriteConcern);
         lk.unlock();
 
-        auto status = futureGetNoThrowWithDeadline(
-            opCtx, future, std::min(stepDownUntil, waitUntil), ErrorCodes::ExceededTimeLimit);
+        // Operations that can be interrupted through opCtx should be executed inside this try/catch
+        // block in case that the operation get interrupted, the stepdown thread doesn't hold RSTL
+        // and _mutex so we can safely reacquire those locks in the onExitGuard to do the cleanup.
+        try {
+            auto status = futureGetNoThrowWithDeadline(
+                opCtx, future, std::min(stepDownUntil, waitUntil), ErrorCodes::ExceededTimeLimit);
 
-        // Mark the waiter given up if this waiter times out before the future is ready. This is so
-        // that unsatisfied but abandoned waiters can be cleaned up lazily in the next
-        // _wakeReadyWaiters pass.
-        if (!status.isOK() && !future.isReady()) {
-            invariant(!waiter->givenUp.swap(true));
-        }
+            // Mark the waiter given up if this waiter times out before the future is ready. This is
+            // so that unsatisfied but abandoned waiters can be cleaned up lazily in the next
+            // _wakeReadyWaiters pass.
+            if (!status.isOK() && !future.isReady()) {
+                invariant(!waiter->givenUp.swap(true));
+            }
+            // We ignore the case where runWithDeadline returns timeoutError because in that case
+            // coming back around the loop and calling tryToStartStepDown again will cause
+            // tryToStartStepDown to return ExceededTimeLimit with the proper error message.
+            if (!status.isOK() && status.code() != ErrorCodes::ExceededTimeLimit) {
+                opCtx->checkForInterrupt();
+            }
 
-        lk.lock();
-
-        // We ignore the case where runWithDeadline returns timeoutError because in that case
-        // coming back around the loop and calling tryToStartStepDown again will cause
-        // tryToStartStepDown to return ExceededTimeLimit with the proper error message.
-        if (!status.isOK() && status.code() != ErrorCodes::ExceededTimeLimit) {
-            opCtx->checkForInterrupt();
+            // Since we have released the RSTL lock at this point, there can be some read
+            // operations sneaked in here, that might hold global lock in S mode or blocked on
+            // prepare conflict. We need to kill those operations to avoid 3-way deadlock
+            // between read, prepared transaction and step down thread. And, any write
+            // operations that gets sneaked in here will fail as we have updated
+            // _canAcceptNonLocalWrites to false after our first successful RSTL lock
+            // acquisition. So, we won't get into problems like SERVER-27534.
+            arsd.rstlReacquire();
+            lk.lock();
+        } catch (const DBException& ex) {
+            // We can get interrupted when reacquiring the RSTL. If that happens, the
+            // onExitGuard will create a new client and opCtx to perform the WriteAbility and
+            // MemberState cleanup after failed stepdown.
+            LOGV2(9080200, "Reacquiring RSTL gets interrupted", "error"_attr = ex.toStatus());
+            interruptedBeforeReacquireRSTL = true;
+            throw;
         }
     }
 
@@ -3268,7 +3302,7 @@ void ReplicationCoordinatorImpl::stepDown(OperationContext* opCtx,
     _topCoord->finishUnconditionalStepDown();
 
     onExitGuard.dismiss();
-    updateMemberState();
+    updateMemberState(opCtx);
 
     // Schedule work to (potentially) step back up once the stepdown period has ended.
     _scheduleWorkAt(stepDownUntil, [=, this](const executor::TaskExecutor::CallbackArgs& cbData) {
@@ -4757,6 +4791,9 @@ Status ReplicationCoordinatorImpl::_runReplSetInitiate(const BSONObj& configObj,
             /*stableCheckpoint*/ true);
     }
 
+    // Initial consistent (though empty) data is available after replSetInitiate.
+    setConsistentDataAvailable(opCtx, /*isDataMajorityCommitted=*/true);
+
     _finishReplSetInitiate(opCtx, newConfig, myIndex.getValue());
     // A configuration passed to replSetInitiate() with the current node as an arbiter
     // will fail validation with a "replSet initiate got ... while validating" reason.
@@ -4842,6 +4879,8 @@ void ReplicationCoordinatorImpl::_errorOnPromisesIfHorizonChanged(WithLock lk,
             promise->setError({ErrorCodes::SplitHorizonChange,
                                "Received a reconfig that changed the horizon mappings."});
         }
+        _topCoord->incrementTopologyVersion();
+        _lastHorizonTopologyChange = _topCoord->getTopologyVersion().getCounter();
         _sniToValidConfigPromiseMap.clear();
         HelloMetrics::get(opCtx)->resetNumAwaitingTopologyChangesForAllSessionManagers(
             opCtx->getServiceContext());
@@ -4857,6 +4896,10 @@ void ReplicationCoordinatorImpl::_errorOnPromisesIfHorizonChanged(WithLock lk,
                 promise->setError({ErrorCodes::SplitHorizonChange,
                                    "Received a reconfig that changed the horizon mappings."});
             }
+            // Increment topology version to mark a horizon change, since a reconfig doesn't
+            // increment the topology version until the end.
+            _topCoord->incrementTopologyVersion();
+            _lastHorizonTopologyChange = _topCoord->getTopologyVersion().getCounter();
             _createHorizonTopologyChangePromiseMapping(lk);
             HelloMetrics::get(opCtx)->resetNumAwaitingTopologyChangesForAllSessionManagers(
                 opCtx->getServiceContext());
@@ -4879,7 +4922,7 @@ void ReplicationCoordinatorImpl::_fulfillTopologyChangePromise(WithLock lock) {
                 Status(ShutdownInProgressQuiesceInfo(_calculateRemainingQuiesceTimeMillis()),
                        kQuiesceModeShutdownMessage));
         } else {
-            StringData horizonString = iter->first;
+            boost::optional<std::string> horizonString = iter->first;
             auto response = _makeHelloResponse(horizonString, lock, hasValidConfig);
             // Fulfill the promise and replace with a new one for future waiters.
             iter->second->emplaceValue(response);
@@ -4899,7 +4942,8 @@ void ReplicationCoordinatorImpl::_fulfillTopologyChangePromise(WithLock lock) {
                                    "The original request horizon parameter does not exist in the "
                                    "current replica set config"});
             } else {
-                const auto horizon = sni.empty() ? SplitHorizon::kDefaultHorizon : iter->second;
+                const boost::optional<std::string> horizon =
+                    sni.empty() ? SplitHorizon::kDefaultHorizon.toString() : iter->second;
                 const auto response = _makeHelloResponse(horizon, lock, hasValidConfig);
                 promise->emplaceValue(response);
             }
@@ -5951,6 +5995,9 @@ void ReplicationCoordinatorImpl::finishRecoveryIfEligible(OperationContext* opCt
         return;
     }
 
+    // Data must be consistent before we transition to SECONDARY.
+    invariant(_isDataConsistent.load());
+
     // Execute the transition to SECONDARY.
     auto status = setFollowerMode(MemberState::RS_SECONDARY);
     if (!status.isOK()) {
@@ -6120,7 +6167,8 @@ void ReplicationCoordinatorImpl::prepareReplMetadata(const GenericArguments& gen
 }
 
 bool ReplicationCoordinatorImpl::getWriteConcernMajorityShouldJournal() {
-    return _rsConfig.getConfig().getWriteConcernMajorityShouldJournal();
+    stdx::unique_lock lock(_mutex);
+    return getWriteConcernMajorityShouldJournal(lock);
 }
 
 bool ReplicationCoordinatorImpl::getWriteConcernMajorityShouldJournal(WithLock lk) const {
@@ -6679,6 +6727,38 @@ boost::optional<UUID> ReplicationCoordinatorImpl::getInitialSyncId(OperationCont
         return initialSyncIdDoc.get_id();
     }
     return boost::none;
+}
+
+void ReplicationCoordinatorImpl::setConsistentDataAvailable(OperationContext* opCtx,
+                                                            bool isDataMajorityCommitted) {
+    // No lock should be held when this is called.
+    invariant(!shard_role_details::getLocker(opCtx)->isLocked());
+
+    _isDataConsistent.store(true);
+
+    if (getSettings().isReplSet()) {
+        // This must be called before, not after, this node transitions to SECONDARY/PRIMARY.
+        invariant(!isInPrimaryOrSecondaryState_UNSAFE());
+        auto isRollback = getMemberState().rollback();
+        LOGV2(9036000,
+              "Initial consistent data is now available",
+              "isDataMajorityCommitted"_attr = isDataMajorityCommitted,
+              "isRollback"_attr = isRollback);
+        if (ReplicationCoordinator::get(opCtx)) {
+            // ReplicationCoordinatorImpl unit tests may not have replication coordinator set up for
+            // the service context. Skip onConsistentDataAvailable call in those unit tests.
+            ReplicaSetAwareServiceRegistry::get(_service).onConsistentDataAvailable(
+                opCtx, isDataMajorityCommitted, isRollback);
+        }
+    }
+}
+
+bool ReplicationCoordinatorImpl::isDataConsistent() const {
+    return _isDataConsistent.load();
+}
+
+void ReplicationCoordinatorImpl::setConsistentDataAvailable_forTest() {
+    _isDataConsistent.store(true);
 }
 
 }  // namespace repl

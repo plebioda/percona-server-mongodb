@@ -32,6 +32,9 @@ selector:
     - jstests/concurrency/fsm_workloads/compact.js
     - jstests/concurrency/fsm_workloads/compact_while_creating_indexes.js
 
+    # test creates too many collections for ContinuousAddRemoveShard
+    - jstests/concurrency/fsm_workloads/create_collection.js
+
     # can cause OOM kills on test hosts
     - jstests/concurrency/fsm_workloads/findAndModify_update_grow.js
 
@@ -59,9 +62,6 @@ selector:
     # Uses the same transaction id across different routers, which is not allowed because when either
     # router tries to commit, it may not know the full participant list.
     - jstests/concurrency/fsm_workloads/multi_statement_transaction_all_commands_same_session.js
-
-    # Time-series collections are not supported on mongos.
-    - jstests/concurrency/fsm_workloads/create_timeseries_collection.js
 
     ##
     # Denylists from concurrency_sharded_kill_primary_with_balancer

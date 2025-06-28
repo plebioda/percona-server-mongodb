@@ -31,6 +31,9 @@ selector:
     - jstests/concurrency/fsm_workloads/compact.js
     - jstests/concurrency/fsm_workloads/compact_while_creating_indexes.js
 
+    # test creates too many collections for ContinuousAddRemoveShard
+    - jstests/concurrency/fsm_workloads/create_collection.js
+
     # can cause OOM kills on test hosts
     - jstests/concurrency/fsm_workloads/findAndModify_update_grow.js
 
@@ -58,9 +61,6 @@ selector:
     # Uses the same transaction id across different routers, which is not allowed because when either
     # router tries to commit, it may not know the full participant list.
     - jstests/concurrency/fsm_workloads/multi_statement_transaction_all_commands_same_session.js
-
-    # Time-series collections are not supported on mongos.
-    - jstests/concurrency/fsm_workloads/create_timeseries_collection.js
 
     # The test may spuriously fail when run against sharded clusters, due to limitations of the
     # infrastructure. See SERVER-77039 for full details.
@@ -180,12 +180,6 @@ executor:
         defaultConfigCommandTimeoutMS: 90000
         skipDroppingHashedShardKeyIndex: true
         reshardingMinimumOperationDurationMillis: 0
-        # Manually set the random migration fail point so we can set a threshold for skipping
-        # moveCollection to prevent "starving" random chunk migrations.
-        failpoint.balancerShouldReturnRandomMigrations:
-          data:
-            skipMoveCollectionThreshold: 0.5
-          mode: alwaysOn
         balancerMigrationsThrottlingMs: 100
         featureFlagReshardingForTimeseries: true
         failpoint.movePrimaryFailIfNeedToCloneMovableCollections:
@@ -197,3 +191,4 @@ executor:
     num_shards: 3
     num_mongos: 2
     enable_balancer: true
+    random_migrations: true

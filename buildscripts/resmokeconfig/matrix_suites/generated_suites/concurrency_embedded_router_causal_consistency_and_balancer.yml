@@ -71,7 +71,6 @@ selector:
   - jstests/concurrency/fsm_workloads/reindex_writeconflict.js
   - jstests/concurrency/fsm_workloads/collmod_writeconflict.js
   - jstests/concurrency/fsm_workloads/update_where.js
-  - jstests/concurrency/fsm_workloads/create_timeseries_collection.js
   exclude_with_any_tags:
   - does_not_support_causal_consistency
   - uses_transactions
@@ -81,6 +80,7 @@ selector:
   - requires_profiling
   - assumes_against_mongod_not_mongos
   - assumes_unsharded_collection
+  - temp_disabled_embedded_router_uncategorized
   roots:
   - jstests/concurrency/fsm_workloads/**/*.js
   - src/mongo/db/modules/*/jstests/concurrency/fsm_workloads/*.js

@@ -6,7 +6,6 @@
  *   requires_timeseries,
  *   featureFlagTimeseriesUpdatesSupport,
  *   # Needed to run createUnsplittableCollection
- *   # TODO (SERVER-87625) Remove feature flag dependency.
  *   featureFlagAuthoritativeShardCollection,
  *   requires_fcv_80
  * ]
@@ -14,7 +13,7 @@
 
 import {
     runTimeseriesRetryDeleteAndUpdateTest
-} from "jstests/libs/timeseries_retry_delete_and_update.js"
+} from "jstests/libs/timeseries_retry_delete_and_update.js";
 
 const st = new ShardingTest({
     shards: 1,

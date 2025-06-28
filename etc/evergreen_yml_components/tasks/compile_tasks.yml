@@ -46,6 +46,7 @@ variables:
       - func: "attach local resmoke invocation"
       - func: "attach multiversion download links"
       - func: "kill processes"
+      - func: "save code coverage data"
       - func: "save mongo coredumps"
       - func: "generate hang analyzer tasks"
       - func: "save failed unittests"
@@ -145,7 +146,6 @@ variables:
       - enterprise-linux-64-amazon-ami
       - enterprise-macos
       - enterprise-macos-arm64
-      - enterprise-rhel-79-64-bit
       - enterprise-rhel-81-ppc64le
       - enterprise-rhel-80-64-bit
       - enterprise-rhel-80-64-bit-coverage
@@ -392,9 +392,9 @@ tasks:
     commands:
       - func: "do scons setup"
       - func: "fetch bazel"
-      - func: "bazel compile (gcc)"
+      - func: "bazel compile (clang)"
         vars:
-          compiler: gcc # gcc is required by bazel_compile.sh, but overridden by the --config=clang-tidy flag
+          compiler: clang
           # Note that we only run clang-tidy on the Mongo-authored targets, not on third-party code.
           targets: //src/mongo/...
           args: --config=clang-tidy
@@ -2421,34 +2421,6 @@ tasks:
                     "bucket": "${push_bucket}",
                   },
               }
-
-  - name: shared_scons_cache_pruning
-    tags: ["assigned_to_jira_team_devprod_build", "auxiliary"]
-    exec_timeout_secs: 7200 # 2 hour timeout for the task overall
-    depends_on: []
-    commands:
-      - command: manifest.load
-      - func: "git get project and add git tag"
-      - func: "f_expansions_write"
-      - func: "kill processes"
-      - func: "cleanup environment"
-      - func: "set up venv"
-      - func: "shared scons cache pruning"
-
-  - name: win_shared_scons_cache_pruning
-    tags: ["assigned_to_jira_team_devprod_build", "auxiliary"]
-    exec_timeout_secs: 21600 # 2 hour timeout for the task overall
-    depends_on: []
-    commands:
-      - command: manifest.load
-      - func: "git get project and add git tag"
-      - func: "f_expansions_write"
-      - func: "kill processes"
-      - func: "cleanup environment"
-      - func: "set up venv"
-      - func: "f_expansions_write"
-      - func: "set up win mount script"
-      - func: "shared scons cache pruning"
 
   # Test a compilation without extra args from evergreen to simulate local dev compilation.
   - name: scons_dev_compile_smoke_test

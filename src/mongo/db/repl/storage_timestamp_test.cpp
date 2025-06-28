@@ -523,13 +523,14 @@ public:
     }
 
     BSONObj findOne(const CollectionPtr& coll) {
-        auto optRecord = coll->getRecordStore()->getCursor(_opCtx)->next();
+        auto cursor = coll->getRecordStore()->getCursor(_opCtx);
+        auto optRecord = cursor->next();
         if (optRecord == boost::none) {
             // Print a stack trace to help disambiguate which `findOne` failed.
             printStackTrace();
             FAIL("Did not find any documents.");
         }
-        return optRecord.value().data.toBson();
+        return optRecord.value().data.getOwned().toBson();
     }
 
     std::shared_ptr<BSONCollectionCatalogEntry::MetaData> getMetaDataAtTime(
@@ -1926,14 +1927,9 @@ public:
         // ident for `kvDropDatabase` still exists.
         const Timestamp postRenameTime = _clock->tickClusterTime(1).asTimestamp();
 
-        // If the storage engine is managing drops internally, the ident should not be visible after
-        // a drop.
-        if (storageEngine->supportsPendingDrops()) {
-            assertIdentsMissingAtTimestamp(durableCatalog, collIdent, indexIdent, postRenameTime);
-        } else {
-            // The namespace has changed, but the ident still exists as-is after the rename.
-            assertIdentsExistAtTimestamp(durableCatalog, collIdent, indexIdent, postRenameTime);
-        }
+        // Because the storage engine is managing drops internally, the ident should not be visible
+        // after a drop.
+        assertIdentsMissingAtTimestamp(durableCatalog, collIdent, indexIdent, postRenameTime);
 
         const Timestamp dropTime = _clock->tickClusterTime(1).asTimestamp();
         if (simulatePrimary) {

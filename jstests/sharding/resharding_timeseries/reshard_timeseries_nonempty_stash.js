@@ -1,6 +1,7 @@
 // Test nonempty temporary output _id conflict stash collection abort for resharding timeseries.
 // @tags: [
 //   featureFlagReshardingForTimeseries,
+//   requires_fcv_80,
 // ]
 //
 
@@ -16,7 +17,7 @@ const recipientShardNames = reshardingTest.recipientShardNames;
 const timeseriesInfo = {
     timeField: 'ts',
     metaField: 'meta'
-}
+};
 
 const timeseriesCollection = reshardingTest.createShardedCollection({
     ns: ns,

@@ -214,6 +214,20 @@ bool QuerySolutionNode::isEligibleForPlanCache() const {
     return true;
 }
 
+void QuerySolutionNode::hash(absl::HashState state, HashValuesOrParams hashValuesOrParams) const {
+    state = absl::HashState::combine(std::move(state), getType());
+    if (filter) {
+        state = absl::HashState::combine(
+            std::move(state),
+            MatchExpressionHasher{MatchExpressionHashParams{20 /*maxNumberOfInElementsToHash*/,
+                                                            hashValuesOrParams}}(filter.get()));
+    }
+    for (const auto& child : children) {
+        state = absl::HashState::combine(std::move(state),
+                                         QuerySolutionHashParams{*child.get(), hashValuesOrParams});
+    }
+}
+
 std::pair<const QuerySolutionNode*, size_t> QuerySolutionNode::getFirstNodeByType(
     StageType type) const {
     const QuerySolutionNode* result = nullptr;
@@ -736,14 +750,6 @@ void IndexScanNode::appendToString(str::stream* ss, int indent) const {
     addCommon(ss, indent);
 }
 
-bool IndexScanNode::hasStringBounds(const string& field) const {
-    std::set<StringData> collatedFields = getFieldsWithStringBounds(bounds, index.keyPattern);
-    if (collatedFields.find(field) != collatedFields.end()) {
-        return true;
-    }
-    return false;
-}
-
 FieldAvailability IndexScanNode::getFieldAvailability(const string& field) const {
     // A $** index whose bounds overlap the object type bracket cannot provide covering, since the
     // index only contains the leaf nodes along each of the object's subpaths.
@@ -770,18 +776,11 @@ FieldAvailability IndexScanNode::getFieldAvailability(const string& field) const
             return FieldAvailability::kNotProvided;
     }
 
-    // If the index and the query collator are the same and the field is in the index we can use it
-    // for sorting and search.
-    if (index.collator && CollatorInterface::collatorsMatch(index.collator, this->queryCollator)) {
-        if (hasStringBounds(field)) {
-            return FieldAvailability::kCollatedProvided;
-        }
-    }
-
     // If the index has a non-simple collation and we have collation keys inside 'field', then this
     // index scan does not provide that field (and the query cannot be covered).
     if (index.collator) {
-        if (hasStringBounds(field)) {
+        std::set<StringData> collatedFields = getFieldsWithStringBounds(bounds, index.keyPattern);
+        if (collatedFields.find(field) != collatedFields.end()) {
             return FieldAvailability::kNotProvided;
         }
     }
@@ -1757,7 +1756,7 @@ void EofNode::appendToString(str::stream* ss, int indent) const {
 }
 
 std::unique_ptr<QuerySolutionNode> EofNode::clone() const {
-    auto copy = std::make_unique<EofNode>();
+    auto copy = std::make_unique<EofNode>(this->type);
     cloneBaseData(copy.get());
     return copy;
 }

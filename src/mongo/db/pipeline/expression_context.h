@@ -343,11 +343,14 @@ public:
      * and 'needsMerge' fields.
      */
     boost::intrusive_ptr<ExpressionContext> copyForSubPipeline(
-        NamespaceString nss, boost::optional<UUID> uuid = boost::none) const {
+        NamespaceString nss, boost::optional<UUID> uuid = boost::none) {
         uassert(ErrorCodes::MaxSubPipelineDepthExceeded,
                 str::stream() << "Maximum number of nested sub-pipelines exceeded. Limit is "
                               << internalMaxSubPipelineViewDepth.load(),
                 subPipelineDepth < internalMaxSubPipelineViewDepth.load());
+        // Initialize any referenced system variables now so that the subpipeline has the same
+        // values for these variables.
+        this->initializeReferencedSystemVariables();
         auto newCopy = copyWith(std::move(nss), uuid);
         newCopy->subPipelineDepth += 1;
         // The original expCtx might have been attached to an aggregation pipeline running on the
@@ -427,10 +430,8 @@ public:
      * created yet. Initializes the Scope with the 'jsScope' variables from the runtimeConstants.
      * Loads the Scope with the functions stored in system.js if the expression isn't executed on
      * mongos and is called from a MapReduce command or `forceLoadOfStoredProcedures` is true.
-     *
-     * Returns a JsExec and a boolean indicating whether the Scope was created as part of this call.
      */
-    auto getJsExecWithScope(bool forceLoadOfStoredProcedures = false) const {
+    JsExecution* getJsExecWithScope(bool forceLoadOfStoredProcedures = false) const {
         uassert(31264,
                 "Cannot run server-side javascript without the javascript engine enabled",
                 getGlobalScriptEngine());
@@ -452,9 +453,17 @@ public:
                       "$where.");
         }
 
-        auto scopeObj = BSONObj();
+        // If there is a cached JsExecution object, return it. This is a performance optimization
+        // that avoids potentially copying the scope object, which is not needed if a cached exec
+        // object already exists.
+        JsExecution* jsExec = JsExecution::getCached(opCtx, loadStoredProcedures);
+        if (jsExec) {
+            return jsExec;
+        }
+
+        BSONObj scopeObj = BSONObj();
         if (variables.hasValue(Variables::kJsScopeId)) {
-            auto scopeVar = variables.getValue(Variables::kJsScopeId);
+            Value scopeVar = variables.getValue(Variables::kJsScopeId);
             invariant(scopeVar.isObject());
             scopeObj = scopeVar.getDocument().toBson();
         }
@@ -544,6 +553,7 @@ public:
     bool allowDiskUse = false;
     bool bypassDocumentValidation = false;
     bool hasWhereClause = false;
+    bool isUpsert = false;
 
     NamespaceString ns;
 
@@ -702,39 +712,6 @@ public:
     const QueryKnobConfiguration& getQueryKnobConfiguration() const {
         return _queryKnobConfiguration.get(getQuerySettings());
     }
-
-    // This is state that is to be shared between the DocumentInternalSearchMongotRemote and
-    // DocumentInternalSearchIdLookup stages (these stages are the result of desugaring $search)
-    // during runtime.
-    class SharedSearchState {
-    public:
-        SharedSearchState() {}
-
-        long long getDocsReturnedByIdLookup() const {
-            return _docsReturnedByIdLookup;
-        }
-
-        /**
-         * Sets the value of _docsReturnedByIdLookup to 0.
-         */
-        void resetDocsReturnedByIdLookup() {
-            _docsReturnedByIdLookup = 0;
-        }
-
-        /**
-         * Increments the value of _docsReturnedByIdLookup by 1.
-         */
-        void incrementDocsReturnedByIdLookup() {
-            _docsReturnedByIdLookup++;
-        }
-
-    private:
-        // When there is an extractable limit in the query, DocumentInternalSearchMongotRemote sends
-        // a getMore to mongot that specifies how many more documents it needs to fulfill that
-        // limit, and it incorporates the amount of documents returned by the
-        // DocumentInternalSearchIdLookup stage into that value.
-        long long _docsReturnedByIdLookup = 0;
-    } sharedSearchState;
 
     void setIgnoreCollator() {
         _collator.setIgnore();

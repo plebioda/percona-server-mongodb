@@ -29,7 +29,7 @@
 
 #pragma once
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/hash/hash.h>
 #include <boost/move/utility_core.hpp>
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
@@ -53,6 +53,7 @@
 #include "mongo/bson/timestamp.h"
 #include "mongo/db/catalog/clustered_collection_options_gen.h"
 #include "mongo/db/exec/collection_scan_common.h"
+#include "mongo/db/exec/eof.h"
 #include "mongo/db/fts/fts_query.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/db/matcher/expression.h"
@@ -66,6 +67,7 @@
 #include "mongo/db/pipeline/window_function/window_function_statement.h"
 #include "mongo/db/query/classic_plan_cache.h"
 #include "mongo/db/query/collation/collator_interface.h"
+#include "mongo/db/query/eof_node_type.h"
 #include "mongo/db/query/index_bounds.h"
 #include "mongo/db/query/index_entry.h"
 #include "mongo/db/query/index_hint.h"
@@ -100,10 +102,6 @@ enum class FieldAvailability {
     // The field is provided as a hash of raw data instead of the raw data itself. For example, this
     // can happen when the field is a hashed field in an index.
     kHashedValueProvided,
-
-    // The field is available as ICU encoded string and can be used to do sorting but it does not
-    // provide the actual value.
-    kCollatedProvided,
 
     // The field is completely provided.
     kFullyProvided,
@@ -323,32 +321,14 @@ struct QuerySolutionNode {
         return _nodeId;
     }
 
-    template <typename H>
-    friend H AbslHashValue(H state, const QuerySolutionNode& c) {
-        c.hash(absl::HashState::Create(&state));
-        return state;
-    }
-
     /**
-     * Hashes a QuerySolutionNode using parameter IDs rather than concrete values wherever
-     * parameters are present. This allows us to determine whether different query solutions, when
-     * parameterized, correspond to the same solution. Used for populating "isCached" in explain.
+     * Hashes a QuerySolutionNode using parameter IDs or concrete values. Hashing parameter IDs
+     * allows us to determine whether different query solutions, when parameterized, correspond to
+     * the same solution (used for populating "isCached" in explain). Hashing concrete values allows
+     * us to detect duplicate query solutions, which helps us ensure we are only multiplanning
+     * unique plans.
      */
-    virtual void hash(absl::HashState state) const {
-        state = absl::HashState::combine(std::move(state), getType());
-        if (filter) {
-            // When hashing the filter, we need to use parameter IDs rather than the concrete values
-            // from the query.
-            state = absl::HashState::combine(
-                std::move(state),
-                MatchExpressionHasher{MatchExpressionHashParams{
-                    20 /*maxNumberOfInElementsToHash*/,
-                    HashValuesOrParams::kHashParamIds /* hashValuesOrParams*/}}(filter.get()));
-        }
-        for (const auto& child : children) {
-            state = absl::HashState::combine(std::move(state), *child.get());
-        }
-    }
+    virtual void hash(absl::HashState state, HashValuesOrParams hashValuesOrParams) const;
 
     std::vector<std::unique_ptr<QuerySolutionNode>> children;
 
@@ -401,6 +381,17 @@ private:
 
     PlanNodeId _nodeId{0u};
 };
+
+struct QuerySolutionHashParams {
+    const QuerySolutionNode& node;
+    const HashValuesOrParams hashValuesOrParams;
+};
+
+template <typename H>
+H AbslHashValue(H state, const QuerySolutionHashParams& params) {
+    params.node.hash(absl::HashState::Create(&state), params.hashValuesOrParams);
+    return state;
+}
 
 struct QuerySolutionNodeWithSortSet : public QuerySolutionNode {
     QuerySolutionNodeWithSortSet() = default;
@@ -491,8 +482,8 @@ public:
      */
     std::vector<NamespaceStringOrUUID> getAllSecondaryNamespaces(const NamespaceString& mainNss);
 
-    size_t hash() const {
-        return absl::Hash<QuerySolutionNode>()(*_root);
+    size_t hash(HashValuesOrParams hashValuesOrParams = HashValuesOrParams::kHashParamIds) const {
+        return absl::Hash<QuerySolutionHashParams>()({*_root.get(), hashValuesOrParams});
     }
 
     /**
@@ -920,11 +911,6 @@ struct IndexScanNode : public QuerySolutionNodeWithSortSet {
     bool fetched() const override {
         return false;
     }
-    /**
-     * This function checks if the given field has string bounds. This is needed to check if we need
-     * to do some special handling in the case of collations.
-     */
-    bool hasStringBounds(const std::string& field) const;
     FieldAvailability getFieldAvailability(const std::string& field) const override;
     bool sortedByDiskLoc() const override;
 
@@ -940,14 +926,16 @@ struct IndexScanNode : public QuerySolutionNodeWithSortSet {
     static std::set<StringData> getFieldsWithStringBounds(const IndexBounds& bounds,
                                                           const BSONObj& indexKeyPattern);
 
-    void hash(absl::HashState h) const override {
+    void hash(absl::HashState h, HashValuesOrParams hashValuesOrParams) const override {
         h = absl::HashState::combine(
             std::move(h), index.identifier.catalogName, index.identifier.disambiguator);
-        if (iets.empty()) {
+        if (hashValuesOrParams == HashValuesOrParams::kHashValues || iets.empty()) {
             h = absl::HashState::combine(std::move(h), bounds);
         }
-        h = absl::HashState::combine_contiguous(std::move(h), iets.data(), iets.size());
-        QuerySolutionNode::hash(std::move(h));
+        if (hashValuesOrParams == HashValuesOrParams::kHashParamIds) {
+            h = absl::HashState::combine_contiguous(std::move(h), iets.data(), iets.size());
+        }
+        QuerySolutionNode::hash(std::move(h), hashValuesOrParams);
     }
 
     IndexEntry index;
@@ -1633,7 +1621,7 @@ struct CountScanNode : public QuerySolutionNodeWithSortSet {
 };
 
 struct EofNode : public QuerySolutionNodeWithSortSet {
-    EofNode() {}
+    EofNode(eof_node::EOFType type) : type(type) {}
 
     StageType getType() const override {
         return STAGE_EOF;
@@ -1654,6 +1642,8 @@ struct EofNode : public QuerySolutionNodeWithSortSet {
     }
 
     std::unique_ptr<QuerySolutionNode> clone() const final;
+
+    eof_node::EOFType type;
 };
 
 struct TextOrNode : public OrNode {

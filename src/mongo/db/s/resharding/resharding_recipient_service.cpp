@@ -500,16 +500,16 @@ ExecutorFuture<void> ReshardingRecipientService::RecipientStateMachine::_finishR
                     if (!_isAlsoDonor) {
                         auto opCtx = factory.makeOperationContext(&cc());
 
-                        _externalState->clearFilteringMetadata(opCtx.get(),
-                                                               _metadata.getSourceNss(),
-                                                               _metadata.getTempReshardingNss());
+                        _externalState->clearFilteringMetadataOnTempReshardingCollection(
+                            opCtx.get(), _metadata.getTempReshardingNss());
 
                         ShardingRecoveryService::get(opCtx.get())
                             ->releaseRecoverableCriticalSection(
                                 opCtx.get(),
                                 _metadata.getSourceNss(),
                                 _critSecReason,
-                                ShardingCatalogClient::kLocalWriteConcern);
+                                ShardingCatalogClient::kLocalWriteConcern,
+                                ShardingRecoveryService::FilteringMetadataClearer());
                     }
                 })
                 .then([this, executor, &factory] {
@@ -773,10 +773,8 @@ void ReshardingRecipientService::RecipientStateMachine::
                         _metadata.getTempReshardingNss(),
                         ShardKeyPattern(_metadata.getReshardingKey()));
 
-                    // Do not need to pass in time-series options because we cannot reshard a
-                    // time-series collection.
-                    // TODO SERVER-84741 pass in time-series options and ensure the shard key is
-                    // partially rewritten.
+                    // Only the resharding improvements code path above supports resharding
+                    // timeseries collections, so we do not pass in timeseries options here.
                     shardkeyutil::validateShardKeyIndexExistsOrCreateIfPossible(
                         opCtx.get(),
                         _metadata.getTempReshardingNss(),

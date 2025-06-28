@@ -88,6 +88,10 @@ public:
         return _spec.getMongotQuery().getOwned();
     }
 
+    const InternalSearchMongotRemoteSpec& getMongotRemoteSpec() const {
+        return _spec;
+    }
+
     boost::optional<long long> getLimit() const {
         return _spec.getLimit().has_value() ? boost::make_optional<long long>(*_spec.getLimit())
                                             : boost::none;
@@ -139,6 +143,10 @@ public:
 
     std::unique_ptr<executor::TaskExecutorCursor> getMetadataCursor() {
         return std::move(_metadataCursor);
+    }
+
+    void setDocsNeededBounds(DocsNeededBounds bounds) {
+        _spec.setDocsNeededBounds(bounds);
     }
 
 private:

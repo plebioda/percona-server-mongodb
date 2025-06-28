@@ -81,6 +81,7 @@ selector:
     - jstests/core/query/plan_cache/plan_cache_clear.js
     - jstests/core/query/plan_cache/plan_cache_list_plans.js
     - jstests/core/query/query_settings/*
+    - jstests/core/query/plan_deduplication.js
     - jstests/core/query/regex/regex.js
     - jstests/core/query/regex/regex3.js
     - jstests/core/query/regex/regex4.js
@@ -92,7 +93,6 @@ selector:
     - jstests/core/write/delete/batched_multi_deletes_a.js
     - jstests/core/write/delete/batched_multi_deletes_id.js
     - jstests/core/write/bulk/bulk_write_profile.js
-    - jstests/core/query/regex/regex_collations.js
     - jstests/core/write/delete/delete_hint.js
     - jstests/core/write/find_and_modify/find_and_modify_hint.js
     - jstests/core/write/find_and_modify/find_and_modify_pipeline_update.js
@@ -122,6 +122,7 @@ selector:
     - jstests/core/write/update/update_setOnInsert.js
     - jstests/core/write/update/upsert_fields.js
     - jstests/core/write/update/upsert_fields_duplicate_or.js
+    - jstests/core/write/update/upsert_nor.js
     - jstests/core/write/write_error_message_truncation.js
     - jstests/core/write/write_result.js
     # Time-series collections may generate different profiling entries from regular ones.
@@ -263,7 +264,11 @@ selector:
     - jstests/core/write/update/update_blank1.js
     # For inserts on time-series collections, mongod does _not_ replace empty timestamp values
     # with the current time.
-    - jstests/core/query/empty_ts.js
+    - jstests/core/write/empty_ts.js
+    - jstests/core/write/empty_ts_bulk_write.js
+    - jstests/core/write/bypass_empty_ts_replacement.js
+    - jstests/core/write/bypass_empty_ts_replacement_bulk_write.js
+    - jstests/core/write/bypass_empty_ts_replacement_timeseries.js
     # Assumes collection options do not change
     - jstests/core/rename_system_buckets_collections.js
 

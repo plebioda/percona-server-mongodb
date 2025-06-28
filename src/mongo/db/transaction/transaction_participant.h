@@ -616,7 +616,8 @@ public:
          */
         void unstashTransactionResources(OperationContext* opCtx,
                                          const std::string& cmdName,
-                                         bool forRecoveryPreparedTxnApplication = false);
+                                         bool forRecoveryPreparedTxnApplication = false,
+                                         bool forUnyield = false);
 
         /**
          * Puts a transaction into a prepared state and returns the prepareTimestamp and the list of
@@ -821,6 +822,10 @@ public:
 
         std::vector<repl::ReplOperation> getTransactionOperationsForTest() const {
             return p().transactionOperations.getOperationsForTest();
+        }
+
+        size_t getTransactionOperationsCount() const {
+            return p().transactionOperations.getOperationsCount();
         }
 
         size_t getNumberOfPrePostImagesToWriteForTest() const {

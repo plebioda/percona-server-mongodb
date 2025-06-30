@@ -1211,7 +1211,9 @@ public:
                       const std::vector<Status>& errors,
                       const std::string& suffix) const override {}
 
-    void logConfigEvent(Client* client, const AuditConfigDocument& config) const override {}
+    void logConfigEvent(Client* client,
+                        const AuditConfigDocument& config,
+                        AuditConfigFormat formatIfPrevConfigNotSet) const override {}
 };
 
 ServiceContext::ConstructorActionRegisterer registerCreateAuditPercona{

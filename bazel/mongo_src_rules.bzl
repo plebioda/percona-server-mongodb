@@ -1,6 +1,3 @@
-# config selection
-load("@bazel_skylib//lib:selects.bzl", "selects")
-
 # Common mongo-specific bazel build rules intended to be used in individual BUILD files in the "src/" subtree.
 load("@poetry//:dependencies.bzl", "dependency")
 load("//bazel:separate_debug.bzl", "CC_SHARED_LIBRARY_SUFFIX", "SHARED_ARCHIVE_SUFFIX", "WITH_DEBUG_SUFFIX", "extract_debuginfo", "extract_debuginfo_binary")
@@ -305,6 +302,15 @@ LINUX_DEFINES = select({
     "//conditions:default": [],
 })
 
+MACOS_DEFINES = select({
+    "@platforms//os:macos": [
+        # TODO SERVER-54659 - ASIO depends on std::result_of which was removed in C++ 20
+        # xcode15 does not have backwards compatibility
+        "ASIO_HAS_STD_INVOKE_RESULT",
+    ],
+    "//conditions:default": [],
+})
+
 ABSEIL_DEFINES = [
     "ABSL_FORCE_ALIGNED_ACCESS",
 ]
@@ -477,6 +483,7 @@ MACOS_WARNINGS_COPTS = select({
         # by -Wall), in order to enforce that -mXXX-version-min=YYY
         # will enforce that you don't use APIs from ZZZ.
         "-Wunguarded-availability",
+        "-Wno-enum-constexpr-conversion",
     ],
     "//conditions:default": [],
 })
@@ -535,10 +542,10 @@ DWARF_VERSION_FEATURES = select({
 # SERVER-9761: Ensure early detection of missing symbols in dependent
 # libraries at program startup. For non-release dynamic builds we disable
 # this behavior in the interest of improved mongod startup times.
+# Xcode15 removed bind_at_load functionality so we cannot have a selection for macosx here
+# ld: warning: -bind_at_load is deprecated on macOS
+# TODO: SERVER-90596 reenable loading at startup
 BIND_AT_LOAD_LINKFLAGS = select({
-    "//bazel/config:linkstatic_enabled_macos": [
-        "-Wl,-bind_at_load",
-    ],
     "//bazel/config:linkstatic_enabled_linux": [
         "-Wl,-z,now",
     ],
@@ -597,7 +604,7 @@ LIBCXX_DEFINES = select({
 }, no_match_error = LIBCXX_ERROR_MESSAGE)
 
 DEBUG_DEFINES = select({
-    "//bazel/config:dbg_enabled": ["MONGO_CONFIG_DEBUG_BUILD"],
+    "//bazel/config:dbg_enabled": [],
     "//conditions:default": ["NDEBUG"],
 })
 
@@ -625,12 +632,6 @@ REQUIRED_SETTINGS_LIBUNWIND_ERROR_MESSAGE = (
 # (libunwind == on && os == linux) || libunwind == off || libunwind == auto
 LIBUNWIND_DEPS = select({
     "//bazel/config:libunwind_enabled": ["//src/third_party/unwind:unwind"],
-    "//bazel/config:_libunwind_off": [],
-    "//bazel/config:_libunwind_disabled_by_auto": [],
-}, no_match_error = REQUIRED_SETTINGS_LIBUNWIND_ERROR_MESSAGE)
-
-LIBUNWIND_DEFINES = select({
-    "//bazel/config:libunwind_enabled": ["MONGO_CONFIG_USE_LIBUNWIND"],
     "//bazel/config:_libunwind_off": [],
     "//bazel/config:_libunwind_disabled_by_auto": [],
 }, no_match_error = REQUIRED_SETTINGS_LIBUNWIND_ERROR_MESSAGE)
@@ -1021,8 +1022,6 @@ FSIZED_DEALLOCATION_COPT = select({
 
 DISABLE_SOURCE_WARNING_AS_ERRORS_LINKFLAGS = select({
     "//bazel/config:disable_warnings_as_errors_linux": ["-Wl,--fatal-warnings"],
-    # TODO(SERVER-90183): Enable once MacOS has a custom Bazel toolchain config.
-    # "//bazel/config:disable_warnings_as_errors_macos": ["-Wl,-fatal_warnings"],
     "//bazel/config:warnings_as_errors_disabled": [],
     "//conditions:default": [],
 })
@@ -1052,21 +1051,22 @@ MTUNE_MARCH_COPTS = select({
     "//conditions:default": [],
 })
 
-THIN_LTO_LINKFLAGS = select({
+THIN_LTO_FLAGS = select({
     "//bazel/config:thin_lto_enabled": ["-flto=thin"],
     "//conditions:default": [],
 })
 
 MONGO_GLOBAL_INCLUDE_DIRECTORIES = [
     "-Isrc",
+    "-I$(GENDIR)/src",
     "-Isrc/third_party/boost",
     "-Isrc/third_party/immer/dist",
 ]
 
 MONGO_GLOBAL_DEFINES = DEBUG_DEFINES + LIBCXX_DEFINES + ADDRESS_SANITIZER_DEFINES + \
                        THREAD_SANITIZER_DEFINES + UNDEFINED_SANITIZER_DEFINES + GLIBCXX_DEBUG_DEFINES + \
-                       WINDOWS_DEFINES + TCMALLOC_DEFINES + LINUX_DEFINES + GCC_OPT_DEFINES + BOOST_DEFINES + \
-                       ABSEIL_DEFINES + PCRE2_DEFINES + SAFEINT_DEFINES
+                       WINDOWS_DEFINES + MACOS_DEFINES + TCMALLOC_DEFINES + LINUX_DEFINES + GCC_OPT_DEFINES + \
+                       BOOST_DEFINES + ABSEIL_DEFINES + PCRE2_DEFINES + SAFEINT_DEFINES
 
 MONGO_GLOBAL_COPTS = MONGO_GLOBAL_INCLUDE_DIRECTORIES + WINDOWS_COPTS + LIBCXX_COPTS + ADDRESS_SANITIZER_COPTS + \
                      MEMORY_SANITIZER_COPTS + FUZZER_SANITIZER_COPTS + UNDEFINED_SANITIZER_COPTS + \
@@ -1075,7 +1075,7 @@ MONGO_GLOBAL_COPTS = MONGO_GLOBAL_INCLUDE_DIRECTORIES + WINDOWS_COPTS + LIBCXX_C
                      FLOATING_POINT_COPTS + MACOS_WARNINGS_COPTS + CLANG_WARNINGS_COPTS + \
                      CLANG_FNO_LIMIT_DEBUG_INFO + COMPRESS_DEBUG_COPTS + DEBUG_TYPES_SECTION_FLAGS + \
                      IMPLICIT_FALLTHROUGH_COPTS + MTUNE_MARCH_COPTS + DISABLE_SOURCE_WARNING_AS_ERRORS_COPTS + \
-                     FSIZED_DEALLOCATION_COPT
+                     FSIZED_DEALLOCATION_COPT + THIN_LTO_FLAGS
 
 MONGO_GLOBAL_LINKFLAGS = MEMORY_SANITIZER_LINKFLAGS + ADDRESS_SANITIZER_LINKFLAGS + FUZZER_SANITIZER_LINKFLAGS + \
                          UNDEFINED_SANITIZER_LINKFLAGS + THREAD_SANITIZER_LINKFLAGS + \
@@ -1083,7 +1083,7 @@ MONGO_GLOBAL_LINKFLAGS = MEMORY_SANITIZER_LINKFLAGS + ADDRESS_SANITIZER_LINKFLAG
                          BIND_AT_LOAD_LINKFLAGS + RDYNAMIC_LINKFLAG + LINUX_PTHREAD_LINKFLAG + \
                          EXTRA_GLOBAL_LIBS_LINKFLAGS + ANY_SANITIZER_AVAILABLE_LINKFLAGS + ANY_SANITIZER_GCC_LINKFLAGS + \
                          GCC_OR_CLANG_LINKFLAGS + COMPRESS_DEBUG_LINKFLAGS + DEDUPE_SYMBOL_LINKFLAGS + \
-                         DEBUG_TYPES_SECTION_FLAGS + DISABLE_SOURCE_WARNING_AS_ERRORS_LINKFLAGS + THIN_LTO_LINKFLAGS
+                         DEBUG_TYPES_SECTION_FLAGS + DISABLE_SOURCE_WARNING_AS_ERRORS_LINKFLAGS + THIN_LTO_FLAGS
 
 MONGO_GLOBAL_ACCESSIBLE_HEADERS = ["//src/third_party/boost:headers", "//src/third_party/immer:headers"]
 
@@ -1225,13 +1225,12 @@ def mongo_cc_library(
 
     if "libunwind" not in skip_global_deps:
         deps += LIBUNWIND_DEPS
-        local_defines += LIBUNWIND_DEFINES
 
     if "allocator" not in skip_global_deps:
         deps += TCMALLOC_DEPS
 
     if native.package_name().startswith("src/mongo"):
-        hdrs = hdrs + ["//:mongo_config_header"]
+        hdrs = hdrs + ["//src/mongo:mongo_config_header"]
 
     fincludes_copt = force_includes_copt(native.package_name(), name)
     fincludes_hdr = force_includes_hdr(native.package_name(), name)
@@ -1394,7 +1393,7 @@ def mongo_cc_binary(
         This can be configured via //config/bazel:linkstatic.""")
 
     if native.package_name().startswith("src/mongo"):
-        srcs = srcs + ["//:mongo_config_header"]
+        srcs = srcs + ["//src/mongo:mongo_config_header"]
 
     fincludes_copt = force_includes_copt(native.package_name(), name)
     fincludes_hdr = force_includes_hdr(native.package_name(), name)
@@ -1427,7 +1426,7 @@ def mongo_cc_binary(
         tags = tags,
         linkopts = MONGO_GLOBAL_LINKFLAGS + package_specific_linkflags + linkopts + rpath_flags,
         linkstatic = LINKSTATIC_ENABLED,
-        local_defines = MONGO_GLOBAL_DEFINES + LIBUNWIND_DEFINES + local_defines,
+        local_defines = MONGO_GLOBAL_DEFINES + local_defines,
         defines = defines,
         includes = includes,
         features = MONGO_GLOBAL_FEATURES + ["pie"] + features,

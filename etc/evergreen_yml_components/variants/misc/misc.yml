@@ -10,17 +10,17 @@ buildvariants:
     tags: ["required"]
     patch_only: true
     run_on:
-      - rhel80-medium
+      - rhel8.8-medium
     expansions:
-      large_distro_name: rhel80-large
-      core_analyzer_distro_name: rhel80-xlarge
+      large_distro_name: rhel8.8-large
+      core_analyzer_distro_name: rhel8.8-xlarge
       burn_in_tag_include_all_required_and_suggested: true
       burn_in_tag_exclude_build_variants: >-
         macos-debug-suggested
-        enterprise-rhel-80-64-bit-dynamic-embedded-router
+        enterprise-rhel-8-64-bit-dynamic-embedded-router
       burn_in_tag_include_build_variants: >-
-        enterprise-rhel-80-64-bit-inmem
-        enterprise-rhel-80-64-bit-multiversion
+        enterprise-rhel-8-64-bit-inmem
+        enterprise-rhel-8-64-bit-multiversion
         amazon-linux2-arm64-try-sbe-engine
       burn_in_tag_compile_task_dependency: archive_dist_test_debug
       compile_variant: &amazon_linux2_arm64_dynamic_compile_variant_name amazon-linux2-arm64-dynamic-compile
@@ -72,43 +72,14 @@ buildvariants:
         distros:
           - windows-2022-xlarge
 
-  - name: macos-enterprise-ninja
-    display_name: "Ninja Build: macOS Enterprise"
-    tags: []
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
-    run_on:
-      - macos-1100
-    expansions:
-      compile_env: DEVELOPER_DIR=/Applications/Xcode13.app
-      compile_flags: --ssl -j$(sysctl -n hw.logicalcpu) --libc++ --variables-files=etc/scons/xcode_macosx.vars
-      compile_variant: macos-enterprise-ninja
-    tasks:
-      - name: compile_ninja_next_TG
-      - name: compile_ninja_TG
-
-  - name: macos-ninja-build-profiles
-    display_name: "Ninja Build Profiles: macOS"
-    tags: []
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
-    run_on:
-      - macos-1100
-    expansions:
-      compile_env: DEVELOPER_DIR=/Applications/Xcode13.app
-      compile_flags: --ssl -j$(sysctl -n hw.logicalcpu) --libc++
-    tasks:
-      - name: compile_ninja_default_profile_TG
-      - name: compile_ninja_opt_profile_TG
-      - name: compile_ninja_fast_profile_TG
-      - name: compile_ninja_compiledb_profile_TG
-
   - name: macos-arm-ninja-build-profiles
     display_name: "Ninja Build Profiles: macOS ARM"
     tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
-      - macos-1100-arm64
+      - macos-14-arm64
     expansions:
-      compile_env: DEVELOPER_DIR=/Applications/Xcode13.app
+      compile_env: DEVELOPER_DIR=/Applications/Xcode15.app
       compile_flags: --ssl -j$(sysctl -n hw.logicalcpu) --libc++
     tasks:
       - name: compile_ninja_default_profile_TG
@@ -189,16 +160,16 @@ buildvariants:
     tasks:
       - name: compile_ninja_fast_icecc_TG
 
-  - name: enterprise-rhel-80-64-bit-dynamic-ninja
-    display_name: "Ninja Build: Enterprise RHEL 8.0"
+  - name: enterprise-rhel-8-64-bit-dynamic-ninja
+    display_name: "Ninja Build: Enterprise RHEL 8"
     tags: []
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
-      - rhel80-small
+      - rhel8.8-small
     expansions:
       compile_flags: >-
         --ssl
-        MONGO_DISTMOD=rhel80
+        MONGO_DISTMOD=rhel88
         -j$(grep -c ^processor /proc/cpuinfo)
         --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
         --link-model=dynamic
@@ -206,7 +177,7 @@ buildvariants:
     tasks:
       - name: compile_ninja_next_TG
         distros:
-          - rhel80-xlarge
+          - rhel8.8-xlarge
       - name: compile_ninja_TG
         distros:
-          - rhel80-xlarge
+          - rhel8.8-xlarge

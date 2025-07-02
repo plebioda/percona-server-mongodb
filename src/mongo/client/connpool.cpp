@@ -481,7 +481,11 @@ Milliseconds DBConnectionPool::getPoolHostConnTime_forTest(const std::string& ho
                                                            double timeout) const {
     if (TestingProctor::instance().isEnabled()) {
         stdx::lock_guard<Latch> L(_mutex);
-        return _pools.find(PoolKey(host, timeout))->second._connTime;
+        auto it = _pools.find(PoolKey(host, timeout));
+        iassert(9047201,
+                "Couldn't find a connection that matches the provided host and timeout pair!",
+                it != _pools.end());
+        return it->second._connTime;
     }
     return Milliseconds();
 }
@@ -624,7 +628,7 @@ void DBConnectionPool::appendConnectionStats(executor::ConnectionPoolStats* stat
             // as our label for connPoolStats. Note that these stats will collide
             // with any existing stats for the chosen host.
             auto uri = ConnectionString::parse(i->first.ident);
-            invariant(uri.isOK());
+            invariant(uri.getStatus());
             HostAndPort host = uri.getValue().getServers().front();
 
             executor::ConnectionStatsPer hostStats{static_cast<size_t>(i->second.numInUse()),

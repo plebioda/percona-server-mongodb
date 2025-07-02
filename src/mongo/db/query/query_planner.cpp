@@ -55,7 +55,6 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/bsontypes.h"
 #include "mongo/db/basic_types.h"
-#include "mongo/db/bson/dotted_path_support.h"
 #include "mongo/db/catalog/clustered_collection_options_gen.h"
 #include "mongo/db/exec/index_path_projection.h"
 #include "mongo/db/exec/projection_executor_utils.h"
@@ -77,6 +76,7 @@
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/pipeline/field_path.h"
 #include "mongo/db/pipeline/search/search_helper.h"
+#include "mongo/db/query/bson/dotted_path_support.h"
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/classic_plan_cache.h"
 #include "mongo/db/query/collation/collation_index_key.h"
@@ -1550,9 +1550,6 @@ StatusWith<std::vector<std::unique_ptr<QuerySolution>>> QueryPlanner::plan(
         plan_enumerator::PlanEnumerator planEnumerator(enumParams);
         uassertStatusOKWithContext(planEnumerator.init(), "failed to initialize plan enumerator");
 
-        const bool deduplicateSolutions = internalQueryDeduplicateQuerySolutions.load();
-        stdx::unordered_set<size_t> solutionHashes;
-
         unique_ptr<MatchExpression> nextTaggedTree;
         while ((nextTaggedTree = planEnumerator.getNext()) &&
                (out.size() < params.maxIndexedSolutions)) {
@@ -1590,18 +1587,6 @@ StatusWith<std::vector<std::unique_ptr<QuerySolution>>> QueryPlanner::plan(
 
             auto soln = QueryPlannerAnalysis::analyzeDataAccess(query, params, std::move(solnRoot));
             if (soln) {
-                if (deduplicateSolutions) {
-                    const auto [_, unique] =
-                        solutionHashes.insert(soln->hash(HashValuesOrParams::kHashValues));
-                    if (!unique) {
-                        LOGV2_DEBUG(8911000,
-                                    5,
-                                    "Planner: detected a duplicate solution",
-                                    "solution"_attr = redact(soln->toString()));
-                        continue;
-                    }
-                }
-
                 soln->_enumeratorExplainInfo.merge(planEnumerator._explainInfo);
                 LOGV2_DEBUG(20978,
                             5,

@@ -10,7 +10,6 @@ selector:
     - jstests/core/**/awaitdata_getmore_cmd.js # capped collections.
     - jstests/core/**/bypass_doc_validation.js # sharded $out output not permitted
     - jstests/core/**/check_shard_index.js # checkShardingIndex.
-    - jstests/core/**/collection_truncate.js # emptycapped.
     - jstests/core/**/compact_keeps_indexes.js # compact.
     - jstests/core/**/currentop.js # uses fsync.
     - jstests/core/**/dbhash.js # dbhash.
@@ -94,6 +93,8 @@ selector:
     - jstests/core/query/query_settings/query_settings_index_application_aggregate.js
     - jstests/core/query/query_settings/query_settings_index_application_distinct.js
     - jstests/core/query/query_settings/query_settings_index_application_find.js
+    # The following test assumes the plan cache to be empty, which may not be guaranteed by this suite.
+    - jstests/core/query/query_settings/query_settings_plan_cache.js
     # The following test doesn't support $lookup where one collection is sharded and the other is unsharded
     - jstests/core/query/explain/explain_find_trivially_false_predicates_in_agg_pipelines.js
 

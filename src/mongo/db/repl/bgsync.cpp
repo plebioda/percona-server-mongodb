@@ -98,7 +98,7 @@ namespace repl {
 namespace {
 const int kSleepToAllowBatchingMillis = 2;
 const int kSmallBatchLimitBytes = 40000;
-const Milliseconds kRollbackOplogSocketTimeout(10 * 60 * 1000);
+const Milliseconds kRollbackOplogSocketTimeout(5 * 60 * 1000);
 
 // The number of times a node attempted to choose a node to sync from among the available sync
 // source options. This occurs if we re-evaluate our sync source, receive an error from the source,
@@ -468,6 +468,10 @@ void BackgroundSync::_produce() {
             LOGV2(21089,
                   "Failed to find sync source",
                   "error"_attr = syncSourceResp.syncSourceStatus.getStatus());
+            // The code above makes the ReplicationCoordinator set its sync source, we clear it
+            // again here. Not doing this would give the impression that this node has a sync
+            // source, delaying other nodes switching away from it.
+            _replCoord->clearSyncSource();
         }
 
         long long sleepMS = _getRetrySleepMS();
@@ -642,15 +646,14 @@ Status BackgroundSync::_enqueueDocuments(OplogFetcher::Documents::const_iterator
     }
 
     auto opCtx = cc().makeOperationContext();
+    OplogBuffer::Cost cost{info.toApplyDocumentBytes, info.toApplyDocumentCount};
 
     // Wait for enough space.
     // This should be called outside of the mutex to avoid deadlocks.
     if (_oplogWriter) {
-        _oplogWriter->waitForSpace(
-            opCtx.get(), info.toApplyDocumentBytes, info.toApplyDocumentCount);
+        _oplogWriter->waitForSpace(opCtx.get(), cost);
     } else {
-        _oplogApplier->waitForSpace(
-            opCtx.get(), info.toApplyDocumentBytes, info.toApplyDocumentCount);
+        _oplogApplier->waitForSpace(opCtx.get(), cost);
     }
 
     {
@@ -664,9 +667,9 @@ Status BackgroundSync::_enqueueDocuments(OplogFetcher::Documents::const_iterator
         // Buffer docs for later application.
         // When _oplogWriter is not null, featureFlagReduceMajorityWriteLatency is enabled.
         if (_oplogWriter) {
-            _oplogWriter->enqueue(opCtx.get(), begin, end, info.toApplyDocumentBytes);
+            _oplogWriter->enqueue(opCtx.get(), begin, end, cost);
         } else {
-            _oplogApplier->enqueue(opCtx.get(), begin, end, info.toApplyDocumentBytes);
+            _oplogApplier->enqueue(opCtx.get(), begin, end, cost);
         }
 
         // Update last fetched info.

@@ -682,28 +682,44 @@ tasks:
           # historical data. We manually increase the timeout above the historical timeout to avoid this
           exec_timeout_secs: 900 # 15 mins
 
-  ## initial sync generational fuzzer ##
+  ## initial sync generational fuzzer to ensure stability in patch builds ##
   - <<: *jstestfuzz_template
-    name: initial_sync_fuzzer_gen
-    # TODO (SERVER-89735): capped:true + recordIdsReplicated:true crashes initial sync.
+    name: initial_sync_fuzzer_sanity_patch_gen
+    patch_only: true
     tags:
       [
         "assigned_to_jira_team_server_repl",
         "default",
         "require_npm",
         "random_name",
-        "exclude_when_record_ids_replicated",
       ]
     commands:
       - func: "generate resmoke tasks"
-        vars:
+        vars: &initial_sync_fuzzer_sanity_patch_config
           <<: *jstestfuzz_config_vars
-          num_files: 10
-          num_tasks: 5
+          num_files: 2
+          num_tasks: 1
           jstestfuzz_vars: --useEsModules
           npm_command: initsync-fuzzer
           suite: initial_sync_fuzzer
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
+
+  ## initial sync generational fuzzer ##
+  - <<: *jstestfuzz_template
+    name: initial_sync_fuzzer_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_repl",
+        "non_deterministic",
+        "require_npm",
+        "random_name",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          <<: *initial_sync_fuzzer_sanity_patch_config
+          num_files: 10
+          num_tasks: 5
 
   ## initial sync multiversion fuzzer ##
   - <<: *jstestfuzz_template
@@ -1252,6 +1268,22 @@ tasks:
           replica_sets_jscore_passthrough_last_lts_new_new_old: last_lts
           replica_sets_jscore_passthrough_last_lts_new_old_new: last_lts
           replica_sets_jscore_passthrough_last_lts_old_new_new: last_lts
+      - func: "generate resmoke tasks"
+        vars:
+          run_no_feature_flag_tests: "true"
+
+  - <<: *gen_task_template
+    name: replica_sets_kill_primary_jscore_multiversion_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_repl",
+        "experimental",
+        "multiversion",
+        "multiversion_passthrough",
+      ]
+    commands:
+      - func: "initialize multiversion tasks"
+        vars:
           replica_sets_kill_primary_jscore_passthrough_last_lts_new_new_old: last_lts
           replica_sets_kill_primary_jscore_passthrough_last_lts_new_old_old: last_lts
       - func: "generate resmoke tasks"
@@ -1517,7 +1549,7 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
+        "non_deterministic",
         "rollbackfuzzer",
         "require_npm",
         "random_name",
@@ -1535,9 +1567,10 @@ tasks:
           # index build commit quorum.
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}, enableIndexBuildCommitQuorum: false}'"
 
-  ## rollback generational fuzzer ##
+  ## rollback generational fuzzer to ensure stability in patch builds ##
   - <<: *jstestfuzz_template
-    name: rollback_fuzzer_gen
+    name: rollback_fuzzer_sanity_patch_gen
+    patch_only: true
     tags:
       [
         "assigned_to_jira_team_server_repl",
@@ -1548,10 +1581,10 @@ tasks:
       ]
     commands:
       - func: "generate resmoke tasks"
-        vars:
+        vars: &rollback_fuzzer_sanity_patch_config
           <<: *jstestfuzz_config_vars
-          num_files: 3
-          num_tasks: 5
+          num_files: 2
+          num_tasks: 1
           jstestfuzz_vars: --useEsModules
           npm_command: rollback-fuzzer
           suite: rollback_fuzzer
@@ -1559,13 +1592,31 @@ tasks:
           # index build commit quorum.
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}, enableIndexBuildCommitQuorum: false}'"
 
+  ## rollback generational fuzzer ##
+  - <<: *jstestfuzz_template
+    name: rollback_fuzzer_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_repl",
+        "non_deterministic",
+        "rollbackfuzzer",
+        "require_npm",
+        "random_name",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          <<: *rollback_fuzzer_sanity_patch_config
+          num_files: 3
+          num_tasks: 5
+
   ## rollback generational fuzzer with unclean shutdowns ##
   - <<: *jstestfuzz_template
     name: rollback_fuzzer_unclean_shutdowns_gen
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
+        "non_deterministic",
         "rollbackfuzzer",
         "require_npm",
         "random_name",
@@ -2256,6 +2307,7 @@ tasks:
         "incompatible_s390x",
         "incompatible_debug_mode",
         "misc_js",
+        "requires_execution_on_windows_patch_build",
       ]
     commands:
       - func: "generate resmoke tasks"

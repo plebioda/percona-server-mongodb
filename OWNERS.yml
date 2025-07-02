@@ -3,7 +3,13 @@ filters:
   - "OWNERS.yml":
     approvers:
       - IamXander
-      # TODO: add more owners here
+      - dhly-etc
+      - kaloianm
+      - visemet
+      - anna-wawrzyniak
+      - mbroadst
+      - markbenvenuto
+      - dstorch
   - ".bazelignore":
     approvers:
       - 10gen/devprod-build

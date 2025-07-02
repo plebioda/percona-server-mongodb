@@ -3,3 +3,9 @@ filters:
   - "storage_stats*":
     approvers:
       - 10gen/server-storage-execution
+  - "counters*":
+    approvers:
+      - 10gen/query-execution
+  - "top*":
+    approvers:
+      - 10gen/query-execution

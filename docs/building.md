@@ -40,7 +40,7 @@ which python3 # This should point to the python in python3-venv
 
 # It is also non standard to install poetry into its own virtual environment.
 # However, the idea is to make even fewer unpinned dependencies.
-# Install poetry 1.5.1 into the virtual env, then install all
+# Install poetry 1.8.3 into the virtual env, then install all
 # required python dependencies to build and test.
 buildscripts/poetry_sync.sh
 
@@ -62,8 +62,8 @@ Installing the requirements inside a python3 based virtualenv
 dedicated to building MongoDB is optional but recommended.
 
     $ python3 -m venv <venv_path> --prompt mongo # Optional (venv_path can be a path of your choice)
-    $ source <venv_path>/bin/activate # Optional (might be slightly different based on the your shell)
-    $ buildscripts/poetry_sync.sh -i
+    $ source <venv_path>/bin/activate # Optional (might be slightly different based on your shell)
+    $ buildscripts/poetry_sync.sh
 
 Note: In order to compile C-based Python modules, you'll also need the
 Python and OpenSSL C headers. Run:

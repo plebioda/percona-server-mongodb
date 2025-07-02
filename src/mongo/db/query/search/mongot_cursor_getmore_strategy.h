@@ -32,6 +32,7 @@
 #include "mongo/bson/bsonobj.h"
 #include "mongo/db/cursor_id.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/pipeline/search/document_source_internal_search_id_lookup.h"
 #include "mongo/db/pipeline/visitors/docs_needed_bounds_gen.h"
 #include "mongo/db/query/query_feature_flags_gen.h"
 #include "mongo/db/query/search/mongot_cursor.h"
@@ -49,11 +50,12 @@ public:
     static constexpr int kAlwaysPrefetchAfterNBatches = 3;
 
     MongotTaskExecutorCursorGetMoreStrategy(
-        std::function<boost::optional<long long>()> calcDocsNeededFn = nullptr,
         boost::optional<long long> startingBatchSize = mongot_cursor::kDefaultMongotBatchSize,
         DocsNeededBounds docsNeededBounds = DocsNeededBounds(docs_needed_bounds::Unknown(),
                                                              docs_needed_bounds::Unknown()),
-        boost::optional<TenantId> tenantId = boost::none);
+        boost::optional<TenantId> tenantId = boost::none,
+        std::shared_ptr<DocumentSourceInternalSearchIdLookUp::SearchIdLookupMetrics>
+            searchIdLookupMetrics = nullptr);
 
     MongotTaskExecutorCursorGetMoreStrategy(MongotTaskExecutorCursorGetMoreStrategy&& other) =
         default;
@@ -67,7 +69,8 @@ public:
      */
     BSONObj createGetMoreRequest(const CursorId& cursorId,
                                  const NamespaceString& nss,
-                                 long long prevBatchNumReceived) final;
+                                 long long prevBatchNumReceived,
+                                 long long totalNumReceived) final;
 
     /**
      * For the mongot cursor, we want to prefetch the next batch if we know we'll need another batch
@@ -100,10 +103,11 @@ private:
      */
     long long _getNextBatchSize(long long prevBatchNumReceived);
 
-    // TODO SERVER-86736 Remove _calcDocsNeededFn and replace with pointer to SearchIdLookupMetrics
-    // to compute docs needed within the cursor.
-    // Set to nullptr if docsRequested should not be set on getMore requests.
-    std::function<boost::optional<long long>()> _calcDocsNeededFn;
+    /**
+     * Computes the next docsRequested value when the docsRequested option is enabled for mongot
+     * requests.
+     */
+    boost::optional<long long> _getNextDocsRequested(long long totalNumReceived);
 
     // Set to boost::none if batchSize should not be set on getMore requests.
     boost::optional<long long> _currentBatchSize;
@@ -118,6 +122,11 @@ private:
 
     // The TenantId is necessary when retrieving the InternalSearchOptions cluster parameter value.
     boost::optional<TenantId> _tenantId;
+
+    // These metrics are updated in the DocumentSourceInternalSearchIdLookUp and shared with this
+    // class. We read the metrics in this class to to tune the batch size in some cases.
+    std::shared_ptr<DocumentSourceInternalSearchIdLookUp::SearchIdLookupMetrics>
+        _searchIdLookupMetrics = nullptr;
 };
 }  // namespace executor
 }  // namespace mongo

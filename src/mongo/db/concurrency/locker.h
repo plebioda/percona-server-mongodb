@@ -168,10 +168,6 @@ public:
         return _modeForTicket == MODE_IX || _modeForTicket == MODE_X;
     }
 
-    Microseconds getTimeQueuedForTicketMicros() const {
-        return _timeQueuedForTicketMicros;
-    }
-
     /**
      * This should be the first method invoked for a particular Locker object. It acquires the
      * Global lock in the specified mode and effectively indicates the mode of the operation.
@@ -266,11 +262,6 @@ public:
               ResourceId resId,
               LockMode mode,
               Date_t deadline = Date_t::max());
-
-    /**
-     * Downgrades the specified resource's lock mode without changing the reference count.
-     */
-    void downgrade(ResourceId resId, LockMode newMode);
 
     /**
      * Releases a lock previously acquired through a lock call. It is an error to try to
@@ -557,10 +548,6 @@ public:
         return getLockMode(resourceIdReplicationStateTransitionLock) == MODE_X;
     }
 
-    void addTicketQueueTime(Milliseconds queueTime) {
-        _timeQueuedForTicketMicros += duration_cast<Microseconds>(queueTime);
-    }
-
     void addFlowControlTicketQueueTime(Milliseconds queueTime) {
         _flowControlStats.timeAcquiringMicros +=
             durationCount<Microseconds>(duration_cast<Microseconds>(queueTime));
@@ -771,9 +758,6 @@ protected:
 
     // This will only be valid when holding a ticket.
     boost::optional<Ticket> _ticket;
-
-    // Tracks accumulated time spent waiting for a ticket.
-    Microseconds _timeQueuedForTicketMicros{0};
 
     // Tracks the global lock modes ever acquired in this Locker's life. This value should only ever
     // be accessed from the thread that owns the Locker.

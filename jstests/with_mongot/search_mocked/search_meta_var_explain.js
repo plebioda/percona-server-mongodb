@@ -2,6 +2,7 @@
  * Test the use of "explain" with usage of $$SEARCH_META after a $search aggregation stage. This
  * tests all verbosities and tests when mongot returns explain only as well as explain with cursor
  * response.
+ * @tags: [featureFlagSearchExplainExecutionStats]
  */
 import {getAggPlanStage} from "jstests/libs/analyze_plan.js";
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
@@ -155,11 +156,22 @@ function runExplainTest(verbosity) {
     const stageType = "$_internalSearchMongotRemote";
     {
         // TODO SERVER-91594: setUpMongotReturnExplain() should only be run for 'queryPlanner'
-        // verbosity when mongot always returns a cursor for execution stats.
+        // verbosity when mongot always returns a cursor for execution stats. Remove the extra
+        // setUpMongotReturnExplain() for non "queryPlanner" verbosities.
         setUpMongotReturnExplain({
             mongotMock: mongotmock,
             searchCmd,
         });
+        if (verbosity != "queryPlanner") {
+            // When querying an older version of mongot for explain, the query is sent twice.
+            // This uses a different cursorId than the default one for setUpMongotReturnExplain() so
+            // the mock will return the response correctly.
+            setUpMongotReturnExplain({
+                mongotMock: mongotmock,
+                searchCmd,
+                cursorId: NumberLong(124),
+            });
+        }
         const result = coll.explain(verbosity).aggregate(pipeline);
         getSearchStagesAndVerifyExplainOutput(
             {result, stageType, verbosity, nReturned: NumberLong(0), explainObject});

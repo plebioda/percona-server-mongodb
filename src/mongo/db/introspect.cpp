@@ -130,13 +130,6 @@ void profile(OperationContext* opCtx, NetworkOp op) {
                              ->makeClient("profiling");
         auto newCtx = newClient->makeOperationContext();
 
-        // This job is primary/secondary agnostic and doesn't write to WT, stepdown won't and
-        // shouldn't interrupt it, so keep it as unkillable.
-        {
-            stdx::lock_guard<Client> lk(*newClient.get());
-            newClient.get()->setSystemOperationUnkillableByStepdown(lk);
-        }
-
         // We swap the lockers as that way we preserve locks held in transactions and any other
         // options set for the locker like maxLockTimeout.
         auto oldLocker = shard_role_details::swapLocker(
@@ -201,6 +194,12 @@ Status createProfileCollection(OperationContext* opCtx, Database* db) {
     invariant(shard_role_details::getLocker(opCtx)->isDbLockedForMode(db->name(), MODE_IX));
 
     const auto dbProfilingNS = NamespaceString::makeSystemDotProfileNamespace(db->name());
+
+    if (!dbProfilingNS.isValid(DatabaseName::DollarInDbNameBehavior::Disallow)) {
+        return Status(ErrorCodes::InvalidNamespace,
+                      str::stream()
+                          << "Invalid database name: " << db->name().toStringForErrorMsg());
+    }
 
     // Checking the collection exists must also be done in the WCE retry loop. Only retrying
     // collection creation would endlessly throw errors because the collection exists: must check

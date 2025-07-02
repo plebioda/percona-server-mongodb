@@ -419,6 +419,7 @@ or explicitly pass --installDir to the run subcommand of buildscripts/resmoke.py
 
     _config.MONGOD_SET_PARAMETERS = _merge_set_params(mongod_set_parameters)
     _config.FUZZ_MONGOD_CONFIGS = config.pop("fuzz_mongod_configs")
+    _config.FUZZ_RUNTIME_PARAMS = config.pop("fuzz_runtime_params")
     _config.FUZZ_MONGOS_CONFIGS = config.pop("fuzz_mongos_configs")
     _config.CONFIG_FUZZ_SEED = config.pop("config_fuzz_seed")
 
@@ -436,7 +437,6 @@ or explicitly pass --installDir to the run subcommand of buildscripts/resmoke.py
             _config.FUZZ_MONGOD_CONFIGS, _config.CONFIG_FUZZ_SEED, _config.MONGOD_SET_PARAMETERS
         )
         _config.EXCLUDE_WITH_ANY_TAGS.extend(["uses_compact"])
-        _config.EXCLUDE_WITH_ANY_TAGS.extend(["requires_emptycapped"])
 
     _config.MONGOS_EXECUTABLE = _expand_user(config.pop("mongos_executable"))
     mongos_set_parameters = config.pop("mongos_set_parameters")

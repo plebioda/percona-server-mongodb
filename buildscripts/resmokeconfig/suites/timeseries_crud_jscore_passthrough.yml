@@ -38,6 +38,7 @@ selector:
     - jstests/core/hashed_partial_and_sparse_index.js
     - jstests/core/query/distinct/distinct_with_hashed_index.js
     - jstests/core/query/internal_hash_eq/**/*.js
+    - jstests/core/query/project/projection_with_hashed_index.js
     - jstests/core/single_field_hashed_index.js
     # Column store indexes.
     - jstests/core/query/project/projection_semantics.js
@@ -81,7 +82,6 @@ selector:
     - jstests/core/query/plan_cache/plan_cache_clear.js
     - jstests/core/query/plan_cache/plan_cache_list_plans.js
     - jstests/core/query/query_settings/*
-    - jstests/core/query/plan_deduplication.js
     - jstests/core/query/regex/regex.js
     - jstests/core/query/regex/regex3.js
     - jstests/core/query/regex/regex4.js
@@ -142,11 +142,11 @@ selector:
     - jstests/core/long_index_rename.js # rename
     - jstests/core/positional_projection_multiple_array_fields.js # $slice
     - jstests/core/query/elemmatch/**/*.js # $elemMatch
+    - jstests/core/query/plan_cache/elem_match_index_diff_types.js # $elemMatch
     - jstests/core/query/plan_cache/match_or_duplicate_predicate_plan_cache.js # locking
     - jstests/core/query/plan_cache/query_solution_hash.js # locking
     - jstests/core/sbe_plan_cache_autoparameterize_collscan.js # locking
     - jstests/core/slice1.js # $slice
-    - jstests/core/write/collection_truncate.js # emptycapped
     - jstests/core/write/find_and_modify/find_and_modify_server6865.js # $elemMatch
     # Time-series collections are views which don't support map-reduce
     - jstests/core/commands_namespace_parsing.js

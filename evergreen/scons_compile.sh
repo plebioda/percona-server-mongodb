@@ -52,7 +52,7 @@ else
   extra_args="$extra_args --release"
 fi
 
-extra_args="$extra_args SPLIT_DWARF=0 GDB_INDEX=0 ENABLE_OOM_RETRY=1 BAZEL_INTEGRATION_DEBUG=1"
+extra_args="$extra_args SPLIT_DWARF=0 GDB_INDEX=0 ENABLE_BUILD_RETRY=1 BAZEL_INTEGRATION_DEBUG=1"
 
 echo "Setting evergreen tmp dir to $TMPDIR"
 extra_args="$extra_args --evergreen-tmp-dir='${TMPDIR}'"
@@ -129,10 +129,33 @@ fi
 # --build-mongot is a compile flag used by the evergreen build variants that run end-to-end search
 # suites, as it downloads the necessary mongot binary.
 if [ "${build_mongot}" = "true" ]; then
-  if [ "${download_mongot_release}" = "true" ]; then
-    extra_args="$extra_args --build-mongot=release"
+  # Checking that this is not a downstream patch on mongod created by mongot's patch trigger.
+  # In the case that it's not, download latest (eg HEAD of 10gen/mongot) or the
+  # release (eg currently running in production on Atlas) mongot binary.
+  if [[ ! $(declare -p linux_x86_64_mongot_localdev_binary linux_aarch64_mongot_localdev_binary macos_x86_64_mongot_localdev_binary 2> /dev/null) ]]; then
+    if [ "${download_mongot_release}" = "true" ]; then
+      extra_args="$extra_args --build-mongot=release"
+    else
+      extra_args="$extra_args --build-mongot=latest"
+    fi
   else
-    extra_args="$extra_args --build-mongot=latest"
+    # This is a downstream patch, which means there is a patched mongot binary we need to install.
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+      arch=$(uname -i)
+      if [[ $arch == x86_64* ]]; then
+        extra_args="$extra_args --patch-build-mongot-url=${linux_x86_64_mongot_localdev_binary}"
+      elif [[ $arch == aarch64* ]]; then
+        extra_args="$extra_args --patch-build-mongot-url=${linux_aarch64_mongot_localdev_binary}"
+      else
+        echo "mongot-localdev does not support ${arch}"
+        exit 1
+      fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+      extra_args="$extra_args --patch-build-mongot-url=${macos_x86_64_mongot_localdev_binary}"
+    else
+      echo "mongot-localdev does not support ${OSTYPE}"
+      exit 1
+    fi
   fi
 fi
 
@@ -162,4 +185,13 @@ exit_status=$?
 if [[ $exit_status -ne 0 ]]; then
   touch ${skip_tests}
 fi
+
+scons_config_file=$(find build -wholename '*mongo/config.h' -print -quit)
+bazel_config_file=bazel-bin/src/mongo/config.h
+if [ -f "${scons_config_file}" ] && [ -f "${bazel_config_file}" ]; then
+  echo "This should never fail unless you're modifying mongo/config.h generation logic.
+  echo "If this fails, please report it to #ask-devprod-build"
+  diff -u ${scons_config_file} ${bazel_config_file}
+fi
+
 exit $exit_status

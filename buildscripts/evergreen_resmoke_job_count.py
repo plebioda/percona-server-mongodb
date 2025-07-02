@@ -30,23 +30,28 @@ SYS_PLATFORM = sys.platform
 
 # Apply factor for a task based on the build variant it is running on.
 VARIANT_TASK_FACTOR_OVERRIDES = {
-    "enterprise-rhel-80-64-bit": [{"task": r"logical_session_cache_replication.*", "factor": 0.75}],
-    "enterprise-rhel-80-64-bit-inmem": [
+    "enterprise-rhel-8-64-bit": [{"task": r"logical_session_cache_replication.*", "factor": 0.75}],
+    "enterprise-rhel-8-64-bit-inmem": [
         {"task": "secondary_reads_passthrough", "factor": 0.3},
         {"task": "multi_stmt_txn_jscore_passthrough_with_migration", "factor": 0.3},
     ],
-    "enterprise-rhel80-debug-tsan": [
-        {"task": r"shard.*uninitialized_fcv_jscore_passthrough.*", "factor": 0.125}
+    "enterprise-rhel8-debug-tsan": [
+        # Lower the default resmoke_jobs_factor for TSAN to reduce memory pressure for this suite,
+        # as otherwise TSAN variants occasionally run out of memory
+        # Non-TSAN variants don't need this adjustment as they have a reasonable free memory margin
+        {"task": r"fcv_upgrade_downgrade_sharded_collections_jscore_passthrough.*", "factor": 0.27},
+        {"task": r"shard.*uninitialized_fcv_jscore_passthrough.*", "factor": 0.125},
     ],
-    "rhel80-debug-aubsan-classic-engine": [
+    "rhel8-debug-aubsan-classic-engine": [
         {"task": r"shard.*uninitialized_fcv_jscore_passthrough.*", "factor": 0.25}
     ],
-    "rhel80-debug-aubsan-all-feature-flags": [
+    "rhel8-debug-aubsan-all-feature-flags": [
         {"task": r"shard.*uninitialized_fcv_jscore_passthrough.*", "factor": 0.25}
     ],
-    # TODO(SERVER-91466): figure out why noPassthrough tests are taking up more memory after switching
-    # from Windows Server 2019 to Windows Server 2022
     "enterprise-windows-all-feature-flags-required": [{"task": "noPassthrough", "factor": 0.5}],
+    "enterprise-windows-all-feature-flags-non-essential": [
+        {"task": "noPassthrough", "factor": 0.5}
+    ],
     "enterprise-windows": [{"task": "noPassthrough", "factor": 0.5}],
     "windows-debug-suggested": [{"task": "noPassthrough", "factor": 0.5}],
     "windows": [{"task": "noPassthrough", "factor": 0.5}],
@@ -54,7 +59,7 @@ VARIANT_TASK_FACTOR_OVERRIDES = {
 
 TASKS_FACTORS = [{"task": r"replica_sets.*", "factor": 0.5}, {"task": r"sharding.*", "factor": 0.5}]
 
-DISTRO_MULTIPLIERS = {"rhel80-large": 1.618}
+DISTRO_MULTIPLIERS = {"rhel8.8-large": 1.618}
 
 # Apply factor for a task based on the machine type it is running on.
 MACHINE_TASK_FACTOR_OVERRIDES = {

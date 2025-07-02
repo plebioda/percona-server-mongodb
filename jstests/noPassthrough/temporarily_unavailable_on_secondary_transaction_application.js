@@ -8,6 +8,8 @@
  *   requires_non_retryable_writes,
  *   requires_wiredtiger,
  *   uses_transactions,
+ *   # TODO(SERVER-90387): remove this JS test after unit test is available.
+ *   __TEMPORARILY_DISABLED__,
  * ]
  */
 

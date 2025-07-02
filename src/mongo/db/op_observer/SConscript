@@ -58,8 +58,8 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/bson/dotted_path_support",
         "$BUILD_DIR/mongo/db/catalog/collection_options",
+        "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
         "$BUILD_DIR/mongo/db/shard_role_api",
         "$BUILD_DIR/mongo/db/transaction/transaction_operations",
     ],
@@ -92,6 +92,7 @@ env.Library(
         "op_observer_impl.cpp",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/catalog/catalog_helpers",
         "$BUILD_DIR/mongo/db/catalog/collection_catalog",
         "$BUILD_DIR/mongo/db/catalog/collection_options",
         "$BUILD_DIR/mongo/db/catalog/commit_quorum_options",

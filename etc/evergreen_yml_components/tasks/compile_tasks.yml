@@ -136,8 +136,6 @@ variables:
   # List of all variants that make mongocryptd
   # If a variant is listed here and has a push task, mongocryptd is pushed
   - mongocryptd_variants: &mongocryptd_variants
-      - enterprise-amazon2-openssl111
-      - enterprise-amazon2-arm64-openssl111
       - enterprise-amazon2023
       # TODO(SERVER-85904) - enterprise-amazon2023-lto
       - enterprise-amazon2023-arm64
@@ -147,13 +145,15 @@ variables:
       - enterprise-macos
       - enterprise-macos-arm64
       - enterprise-rhel-81-ppc64le
-      - enterprise-rhel-80-64-bit
-      - enterprise-rhel-80-64-bit-coverage
-      - enterprise-rhel-80-64-bit-suggested
-      - enterprise-rhel-82-arm64
+      - enterprise-rhel-8-64-bit
+      - enterprise-rhel-8-64-bit-coverage
+      - enterprise-rhel-8-64-bit-suggested
+      - enterprise-rhel-8-arm64
       - enterprise-rhel-83-s390x
       - enterprise-rhel-90-64-bit
       - enterprise-rhel-90-arm64
+      - enterprise-rhel-93-64-bit
+      - enterprise-rhel-93-arm64
       - enterprise-suse15-64
       - enterprise-ubuntu2004-arm64
       - enterprise-ubuntu2204-arm64
@@ -203,12 +203,34 @@ tasks:
         vars:
           targets: >-
             install-all
+            archive-all
+          task_compile_flags: >-
+            ICECC=
+            CCACHE=
+            --build-profile=opt
+            --ninja=disabled
+            --keep-going
+      - command: s3.put
+        params:
+          optional: true
+          aws_key: ${aws_key}
+          aws_secret: ${aws_secret}
+          local_file: src/all-runtime.tgz
+          remote_file: ${all_mongo_binaries}
+          bucket: mciuploads
+          permissions: public-read
+          content_type: application/gzip
+          display_name: Binaries
+      - func: "scons compile"
+        vars:
+          targets: >-
             prove-unittests
           task_compile_flags: >-
             ICECC=
             CCACHE=
             --build-profile=opt
             --ninja=disabled
+            --keep-going
 
   # TODO(SERVER-82195): simplify this to avoid duplication of parameters in other tests.
   - name: compile_bazel_dist_test
@@ -845,11 +867,6 @@ tasks:
     commands:
       - func: "do scons setup"
       - func: "f_expansions_write"
-      - command: subprocess.exec
-        params:
-          binary: bash
-          args:
-            - "src/evergreen/libdeps_setup.sh"
 
       - func: "scons compile"
         vars:
@@ -858,6 +875,11 @@ tasks:
             --force-macos-dynamic-link
             --build-tools=next
           targets: generate-libdeps-graph
+      - command: subprocess.exec
+        params:
+          binary: bash
+          args:
+            - "src/evergreen/libdeps_setup.sh"
 
       - command: subprocess.exec
         params:
@@ -875,6 +897,28 @@ tasks:
           permissions: public-read
           content_type: text/plain
           display_name: Libdeps Linter Results
+
+      - command: s3.put
+        params:
+          aws_key: ${aws_key}
+          aws_secret: ${aws_secret}
+          local_file: src/bazel_order.txt
+          remote_file: ${project}/${build_variant}/${revision}/artifacts/bazel_order.txt.${build_id}-${task_name}.${execution}
+          bucket: mciuploads
+          permissions: public-read
+          content_type: text/plain
+          display_name: Bazel Target Conversions
+
+      - command: s3.put
+        params:
+          aws_key: ${aws_key}
+          aws_secret: ${aws_secret}
+          local_file: src/bazel_order_core.txt
+          remote_file: ${project}/${build_variant}/${revision}/artifacts/bazel_order_core.txt.${build_id}-${task_name}.${execution}
+          bucket: mciuploads
+          permissions: public-read
+          content_type: text/plain
+          display_name: Bazel Target Conversions Core Binaries
 
       - command: s3.put
         params:
@@ -1214,10 +1258,11 @@ tasks:
       - name: version_expansions_gen
         variant: generate-tasks-for-version
     commands:
-      - func: "do scons setup"
-      - func: "f_expansions_write"
-      - func: "scons compile"
+      - func: "activate task"
         vars:
+          task_to_activate: archive_jstestshell_debug
+      - func: "scons compile"
+        vars: &archive_jstestshell_vars
           targets: archive-jstestshell
           compiling_for_test: true
           separate_debug: on
@@ -1238,6 +1283,27 @@ tasks:
           permissions: public-read
           content_type: ${content_type|application/gzip}
           display_name: Jstestshell
+
+  - name: archive_jstestshell_debug
+    tags: ["assigned_to_jira_team_devprod_build", "auxiliary"]
+    depends_on:
+      - name: archive_jstestshell
+    commands:
+      - func: "f_expansions_write"
+      - func: "scons compile"
+        vars:
+          <<: *archive_jstestshell_vars
+          targets: archive-jstestshell-debug
+      - command: s3.put
+        params:
+          aws_key: ${aws_key}
+          aws_secret: ${aws_secret}
+          local_file: src/mongodb-jstestshell-debugsymbols.${ext|tgz}
+          remote_file: ${mongo_jstestshell_debugsymbols}
+          bucket: mciuploads
+          permissions: public-read
+          content_type: ${content_type|application/gzip}
+          display_name: Jstestshell Debugsymbols
 
   - name: stitch_support_create_lib
     tags:
@@ -2623,6 +2689,12 @@ task_groups:
       - compile_dbtest
       - run_dbtest
       - archive_dbtest
+
+  - <<: *compile_task_group_template
+    name: compile_jstestshell_TG
+    tasks:
+      - archive_jstestshell
+      - archive_jstestshell_debug
 
   - <<: *compile_task_group_template
     name: compile_test_serial_future_git_tag_multiversion_TG

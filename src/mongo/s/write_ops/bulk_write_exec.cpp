@@ -49,10 +49,10 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/client/read_preference.h"
-#include "mongo/db/commands/bulk_write_common.h"
-#include "mongo/db/commands/bulk_write_crud_op.h"
-#include "mongo/db/commands/bulk_write_gen.h"
-#include "mongo/db/commands/bulk_write_parser.h"
+#include "mongo/db/commands/query_cmd/bulk_write_common.h"
+#include "mongo/db/commands/query_cmd/bulk_write_crud_op.h"
+#include "mongo/db/commands/query_cmd/bulk_write_gen.h"
+#include "mongo/db/commands/query_cmd/bulk_write_parser.h"
 #include "mongo/db/cursor_server_params_gen.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/error_labels.h"
@@ -1259,7 +1259,7 @@ void BulkWriteOp::processChildBatchResponseFromRemote(
     const TargetedWriteBatch& writeBatch,
     const AsyncRequestsSender::Response& response,
     boost::optional<stdx::unordered_map<NamespaceString, TrackedErrors>&> errorsPerNamespace) {
-    invariant(response.swResponse.getStatus().isOK(), "Response status was unexpectedly not OK");
+    invariant(response.swResponse.getStatus(), "Response status was unexpectedly not OK");
 
     auto childBatchResponse = response.swResponse.getValue();
     LOGV2_DEBUG(7279200,

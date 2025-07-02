@@ -16,21 +16,19 @@ variables:
       - enterprise-linux-64-amazon-ami
       - amazon2023
       - amazon2023-arm64
-      - enterprise-amazon2-openssl111
-      - enterprise-amazon2-arm64-openssl111
       - enterprise-amazon2023
       - enterprise-amazon2023-arm64
       - debian12
       - enterprise-debian12-64
       - enterprise-rhel-81-ppc64le
       - ubi8
-      - rhel80
-      - rhel-82-arm64
+      - rhel8
+      - rhel-8-arm64
       - rhel93
       - rhel93-arm64
-      - enterprise-rhel-80-64-bit
-      - enterprise-rhel-80-64-bit-suggested # For testing selinux.
-      - enterprise-rhel-82-arm64
+      - enterprise-rhel-8-64-bit
+      - enterprise-rhel-8-64-bit-suggested # For testing selinux.
+      - enterprise-rhel-8-arm64
       - enterprise-rhel-83-s390x
       - enterprise-rhel-93-64-bit
       - enterprise-rhel-93-arm64
@@ -76,13 +74,24 @@ functions:
       args:
         - "src/evergreen/functions/evergreen_api_credentials_configure.sh"
 
-  "git get project": &git_get_project
+  "git get shallow project": &git_get_shallow_project
     command: git.get_project
-    display_name: "git get project"
+    display_name: "git get shallow project"
     params:
       directory: ${git_project_directory|src}
       revisions: # for each module include revision as <module_name> : ${<module_name>_rev}
         wtdevelop: ${wtdevelop_rev}
+      clone_depth: 1000
+
+  "restore git history and tags": &restore_git_history_and_tags
+    command: subprocess.exec
+    display_name: "restore git history and tags"
+    params:
+      binary: bash
+      args:
+        - "src/evergreen/restore_git_history_and_tags.sh"
+      env:
+        dir: src
 
   # Get get the mongo repo, no modules. Useful for inspecting the commit history with the
   # `git` Python tool.
@@ -91,6 +100,8 @@ functions:
     - command: git.get_project
       params:
         directory: ${git_project_directory|src}
+      clone_depth: 1000
+    - *restore_git_history_and_tags
 
   "add git tag": &add_git_tag
     command: subprocess.exec
@@ -105,7 +116,8 @@ functions:
 
   "git get project and add git tag":
     - *f_expansions_write
-    - *git_get_project
+    - *git_get_shallow_project
+    - *restore_git_history_and_tags
     - *add_git_tag
 
   "gen feature flags": &gen_feature_flags
@@ -552,6 +564,8 @@ functions:
       updates:
         - key: mongo_binaries
           value: ${project}/${compile_variant}/${version_id}/binaries/mongo-${revision_order_id}.${ext|tgz}
+        - key: all_mongo_binaries
+          value: ${project}/${compile_variant}/${version_id}/binaries/all_mongo-${revision_order_id}.${ext|tgz}
         - key: mongo_cryptd
           value: ${project}/${compile_variant}/${version_id}/binaries/mongo-cryptd-${revision_order_id}.${ext|tgz}
         - key: mongo_cryptd_debugsymbols
@@ -725,12 +739,22 @@ functions:
     - command: git.get_project
       params:
         directory: src/buildscripts/antithesis/base_images/workload/src
+        clone_depth: 1000
+    - command: subprocess.exec
+      display_name: "restore git history and tags"
+      params:
+        binary: bash
+        args:
+          - "src/evergreen/restore_git_history_and_tags.sh"
+        env:
+          dir: src/buildscripts/antithesis/base_images/workload/src
     - *configure_evergreen_api_credentials
 
   "do non-compile setup":
     - command: manifest.load
-    - *git_get_project
+    - *git_get_shallow_project
     - *f_expansions_write
+    - *restore_git_history_and_tags
     - *add_git_tag
     - *kill_processes
     - *cleanup_environment
@@ -742,8 +766,9 @@ functions:
 
   "do benchmark setup":
     - command: manifest.load
-    - *git_get_project
+    - *git_get_shallow_project
     - *f_expansions_write
+    - *restore_git_history_and_tags
     - *add_git_tag
     - *kill_processes
     - *cleanup_environment
@@ -779,8 +804,9 @@ functions:
 
   "generate powercycle tasks":
     - command: manifest.load
-    - *git_get_project
+    - *git_get_shallow_project
     - *f_expansions_write
+    - *restore_git_history_and_tags
     - *add_git_tag
     - *kill_processes
     - *cleanup_environment
@@ -822,8 +848,9 @@ functions:
 
   "run powercycle sentinel":
     - command: manifest.load
-    - *git_get_project
+    - *git_get_shallow_project
     - *f_expansions_write
+    - *restore_git_history_and_tags
     - *add_git_tag
     - *kill_processes
     - *cleanup_environment
@@ -2628,29 +2655,18 @@ functions:
         - "./src/evergreen/functions/code_coverage_data_process.sh"
       env:
         GCOV_TOOL: ${gcov_tool}
-
-  "archive coveralls json": &archive_coveralls_json
-    command: s3.put
-    params:
-      aws_key: ${aws_key}
-      aws_secret: ${aws_secret}
-      local_file: "src/coveralls.json"
-      remote_file: ${project}/${build_variant}/${revision}/gcov/coveralls-${task_id}-${execution}.json
-      bucket: mciuploads
-      permissions: public-read
-      content_type: application/json
-      display_name: coveralls.json - Execution ${execution}
-      optional: true
+        COVERALLS_REPO_TOKEN: ${coveralls_token}
+        TRAVIS_JOB_ID: ${revision_order_id}
 
   "save code coverage data":
     - *f_expansions_write
     - *process_code_coverage_data
-    - *archive_coveralls_json
 
   "do scons setup":
     - command: manifest.load
+    - *git_get_shallow_project
     - *f_expansions_write
-    - *git_get_project
+    - *restore_git_history_and_tags
     - *add_git_tag
     - *set_task_expansion_macros
     - *f_expansions_write
@@ -2677,3 +2693,13 @@ functions:
     - *get_engflow_key
     - *get_engflow_cert
     - *generate_evergreen_bazelrc
+
+  "activate task":
+    - *f_expansions_write
+    - command: subprocess.exec
+      params:
+        binary: bash
+        args:
+          - "src/evergreen/run_python_script.sh"
+          - "evergreen/activate_task.py"
+          - "${task_to_activate}"

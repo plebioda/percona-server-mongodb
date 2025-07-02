@@ -14,6 +14,10 @@ selector:
     - jstests/core/**/*.js
   exclude_files:
     - jstests/core/txns/**/*.js
+
+    # Serverless don't support mapReduce command.
+    - jstests/core/query/mr/**/*.js
+
     # Skip any tests that run with auth explicitly.
     - jstests/core/administrative/*[aA]uth*.js
 
@@ -22,6 +26,9 @@ selector:
     # validation will fail due to the uncompressed bucket.
     - jstests/core/timeseries/timeseries_insert_mixed_schema_bucket.js
     - jstests/core/timeseries/timeseries_update_mixed_schema_bucket.js
+
+    # Tenant migration retry may cause bulk delete to return the wrong count
+    - jstests/core/timeseries/*delete*.js
 
   exclude_with_any_tags:
     - incompatible_with_shard_merge
@@ -39,8 +46,6 @@ selector:
     - requires_profiling
     # capped collections are banned in Serverless
     - requires_capped
-    # emptycapped command is blocked during tenant migration.
-    - requires_emptycapped
     # Multi-updates that conflict with tenant migration are not retried by simulate_atlas_proxy.js.
     - requires_multi_updates
     # Full validation can cause ongoing queries to fail. This can affect the tenant migration

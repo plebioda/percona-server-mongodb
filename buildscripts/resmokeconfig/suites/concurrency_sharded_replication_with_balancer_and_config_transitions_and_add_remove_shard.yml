@@ -146,6 +146,10 @@ selector:
     - jstests/concurrency/fsm_workloads/create_index_background_unique_capped.js
     - jstests/concurrency/fsm_workloads/collmod_separate_collections.js
 
+    # This test runs a large number of inserts, which can cause moveCollection to take a long time
+    # to finish. This can cause the CheckMetadataConsistency hook to hit LockBusy errors.
+    - jstests/concurrency/fsm_workloads/timeseries_insert_idle_bucket_expiration.js
+
   exclude_with_any_tags:
     - assumes_against_mongod_not_mongos
     - assumes_balancer_off
@@ -214,10 +218,11 @@ executor:
         enableTestCommands: 1
         roleGraphInvalidationIsFatal: 1
         queryAnalysisWriterIntervalSecs: 1
+        queryAnalysisSamplerConfigurationRefreshSecs: 1
         defaultConfigCommandTimeoutMS: 90000
         skipDroppingHashedShardKeyIndex: true
         reshardingMinimumOperationDurationMillis: 0
-        balancerMigrationsThrottlingMs: 100
+        balancerMigrationsThrottlingMs: 250
         featureFlagReshardingForTimeseries: true
     num_rs_nodes_per_shard: 3
     # Use 3 shards so there's always at least two for workloads with manual migrations, etc.

@@ -639,6 +639,13 @@ bool KeyStringIndexConsistency::limitMemoryUsageForSecondPhase(ValidateResults* 
     result->errors.push_back(ss.str());
     result->valid = false;
 
+    LOGV2(8943500,
+          "Not all index entry inconsistencies are reported due to memory limitations; the memory "
+          "limit for validation can be configured via the 'maxValidateMemoryUsageMB' server "
+          "parameter",
+          "maxValidateMemoryUsageMB"_attr = maxValidateMemoryUsageMB.load(),
+          "totalMemoryNeededBytes"_attr = totalMemoryNeededBytes);
+
     return true;
 }
 
@@ -944,17 +951,31 @@ void KeyStringIndexConsistency::traverseRecord(OperationContext* opCtx,
     const auto multikeyMetadataKeys = executionCtx.multikeyMetadataKeys();
     const auto documentMultikeyPaths = executionCtx.multikeyPaths();
 
-    iam->getKeys(opCtx,
-                 coll,
-                 index,
-                 pool,
-                 recordBson,
-                 InsertDeleteOptions::ConstraintEnforcementMode::kEnforceConstraints,
-                 SortedDataIndexAccessMethod::GetKeysContext::kAddingKeys,
-                 documentKeySet.get(),
-                 multikeyMetadataKeys.get(),
-                 documentMultikeyPaths.get(),
-                 recordId);
+    try {
+        iam->getKeys(opCtx,
+                     coll,
+                     index,
+                     pool,
+                     recordBson,
+                     InsertDeleteOptions::ConstraintEnforcementMode::kEnforceConstraints,
+                     SortedDataIndexAccessMethod::GetKeysContext::kAddingKeys,
+                     documentKeySet.get(),
+                     multikeyMetadataKeys.get(),
+                     documentMultikeyPaths.get(),
+                     recordId);
+    } catch (const AssertionException& ex) {
+        if (ex.toStatus() == ErrorCodes::CannotBuildIndexKeys) {
+            LOGV2(8411400,
+                  "Could not build index key ",
+                  "indexName"_attr = descriptor->indexName(),
+                  "recordId"_attr = recordId,
+                  "record"_attr = redact(recordBson));
+            results->errors.push_back(
+                str::stream() << "Could not build key for index '" << descriptor->indexName()
+                              << "' from document with recordId '" << recordId << "'");
+            return;
+        }
+    }
 
     const bool shouldBeMultikey =
         iam->shouldMarkIndexAsMultikey(documentKeySet->size(),

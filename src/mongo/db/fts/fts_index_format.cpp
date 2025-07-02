@@ -44,10 +44,10 @@
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonelement_comparator_interface.h"
-#include "mongo/db/bson/dotted_path_support.h"
 #include "mongo/db/fts/fts_index_format.h"
 #include "mongo/db/fts/fts_spec.h"
 #include "mongo/db/index/multikey_paths.h"
+#include "mongo/db/query/bson/dotted_path_support.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/hex.h"
 #include "mongo/util/md5.h"
@@ -55,6 +55,8 @@
 #include "mongo/util/str.h"
 
 namespace mongo {
+
+MONGO_FAIL_POINT_DEFINE(enableCompoundTextIndexes);
 
 namespace fts {
 
@@ -99,6 +101,10 @@ BSONElement extractNonFTSKeyElement(const BSONObj& obj, StringData path) {
     MultikeyComponents arrayComponents;
     dps::extractAllElementsAlongPath(
         obj, path, indexedElements, expandArrayOnTrailingField, &arrayComponents);
+
+    if (MONGO_unlikely(enableCompoundTextIndexes.shouldFail())) {
+        return nullElt;
+    }
     uassert(ErrorCodes::CannotBuildIndexKeys,
             str::stream() << "Field '" << path
                           << "' of text index contains an array in document: " << obj,

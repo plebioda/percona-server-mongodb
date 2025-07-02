@@ -96,8 +96,12 @@ selector:
     - jstests/concurrency/fsm_workloads/create_index_background_unique.js
     - jstests/concurrency/fsm_workloads/create_index_background_unique_capped.js
 
-    # TODO SERVER-91413: Enable test.
-    - jstests/concurrency/fsm_workloads/view_catalog_cycle_lookup.js
+    # TODO SERVER-92349: Re-enable this test once completed.
+    - jstests/concurrency/fsm_workloads/indexed_insert_ttl.js
+
+    # This test runs a large number of inserts, which can cause moveCollection to take a long time
+    # to finish. This can cause the CheckMetadataConsistency hook to hit LockBusy errors.
+    - jstests/concurrency/fsm_workloads/timeseries_insert_idle_bucket_expiration.js
 
   exclude_with_any_tags:
     - assumes_against_mongod_not_mongos
@@ -178,10 +182,11 @@ executor:
         enableTestCommands: 1
         roleGraphInvalidationIsFatal: 1
         queryAnalysisWriterIntervalSecs: 1
+        queryAnalysisSamplerConfigurationRefreshSecs: 1
         defaultConfigCommandTimeoutMS: 90000
         skipDroppingHashedShardKeyIndex: true
         reshardingMinimumOperationDurationMillis: 0
-        balancerMigrationsThrottlingMs: 100
+        balancerMigrationsThrottlingMs: 250
         featureFlagReshardingForTimeseries: true
         failpoint.movePrimaryFailIfNeedToCloneMovableCollections:
           data:

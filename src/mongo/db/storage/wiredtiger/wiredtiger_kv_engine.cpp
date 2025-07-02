@@ -108,7 +108,6 @@
 
 #include "mongo/base/error_codes.h"
 #include "mongo/bson/bsonobjbuilder.h"
-#include "mongo/db/bson/dotted_path_support.h"
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/exception_util.h"
 #include "mongo/db/encryption/encryption_options.h"
@@ -120,6 +119,7 @@
 #include "mongo/db/encryption/master_key_provider.h"
 #include "mongo/db/global_settings.h"
 #include "mongo/db/index/index_descriptor.h"
+#include "mongo/db/query/bson/dotted_path_support.h"
 #include "mongo/db/repl/repl_settings.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/server_options.h"
@@ -316,13 +316,6 @@ public:
 
     void run() override {
         ThreadClient tc(name(), getGlobalServiceContext()->getService(ClusterRole::ShardServer));
-
-        // This job is primary/secondary agnostic and doesn't write to WT, stepdown won't and
-        // shouldn't interrupt it, so keep it as unkillable.
-        {
-            stdx::lock_guard<Client> lk(*tc.get());
-            tc.get()->setSystemOperationUnkillableByStepdown(lk);
-        }
 
         LOGV2_DEBUG(22303, 1, "starting {name} thread", "name"_attr = name());
 
@@ -931,7 +924,7 @@ WiredTigerKVEngine::WiredTigerKVEngine(
     if constexpr (kThreadSanitizerEnabled) {
         // TSAN builds may take longer for certain operations, increase or disable the relevant
         // timeouts.
-        ss << "cache_stuck_timeout_ms=600000,";
+        ss << "cache_stuck_timeout_ms=900000,";
         ss << "generation_drain_timeout_ms=0,";
     }
     if (TestingProctor::instance().isEnabled()) {
@@ -1017,19 +1010,6 @@ WiredTigerKVEngine::WiredTigerKVEngine(
             _oldestTimestamp.store(tmp);
             setInitialDataTimestamp(Timestamp(tmp));
         }
-    }
-
-    // If there's no recovery timestamp, MDB has not produced a consistent snapshot of
-    // data. `_oldestTimestamp` and `_initialDataTimestamp` are only meaningful when there's a
-    // consistent snapshot of data.
-    //
-    // Note, this code is defensive (i.e: protects against a theorized, unobserved case) and is
-    // primarily concerned with restarts of a process that was performing an eMRC=off rollback via
-    // refetch.
-    if (_recoveryTimestamp.isNull() && _oldestTimestamp.load() > 0) {
-        LOGV2_FOR_RECOVERY(5380108, 0, "There is an oldestTimestamp without a recoveryTimestamp");
-        _oldestTimestamp.store(0);
-        _initialDataTimestamp.store(0);
     }
 
     _sessionCache.reset(new WiredTigerSessionCache(this));
@@ -3372,19 +3352,6 @@ Status WiredTigerKVEngine::alterMetadata(StringData uri, StringData config) {
 Status WiredTigerKVEngine::dropIdent(RecoveryUnit* ru,
                                      StringData ident,
                                      const StorageEngine::DropIdentCallback& onDrop) {
-    return _dropIdent(ru, ident, "checkpoint_wait=false", onDrop);
-}
-
-Status WiredTigerKVEngine::dropIdentSynchronous(RecoveryUnit* ru,
-                                                StringData ident,
-                                                const StorageEngine::DropIdentCallback& onDrop) {
-    return _dropIdent(ru, ident, "checkpoint_wait=true,lock_wait=true", onDrop);
-}
-
-Status WiredTigerKVEngine::_dropIdent(RecoveryUnit* ru,
-                                      StringData ident,
-                                      const char* config,
-                                      const StorageEngine::DropIdentCallback& onDrop) {
     string uri = _uri(ident);
 
     WiredTigerRecoveryUnit* wtRu = checked_cast<WiredTigerRecoveryUnit*>(ru);
@@ -3393,7 +3360,8 @@ Status WiredTigerKVEngine::_dropIdent(RecoveryUnit* ru,
 
     WiredTigerSession session(_conn);
 
-    int ret = session.getSession()->drop(session.getSession(), uri.c_str(), config);
+    int ret =
+        session.getSession()->drop(session.getSession(), uri.c_str(), "checkpoint_wait=false");
     LOGV2_DEBUG(22338, 1, "WT drop", "uri"_attr = uri, "ret"_attr = ret);
 
     if (ret == EBUSY || MONGO_unlikely(WTDropEBUSY.shouldFail())) {
@@ -3783,11 +3751,9 @@ void WiredTigerKVEngine::setOldestTimestamp(Timestamp newOldestTimestamp, bool f
     }
 
     if (force) {
-        // The oldest timestamp should only be forced backwards during replication recovery in order
-        // to do rollback via refetch. This refetching process invalidates any timestamped snapshots
-        // until after it completes. Components that register a pinned timestamp must synchronize
-        // with events that invalidate their snapshots, unpin themselves and either fail themselves,
-        // or reacquire a new snapshot after the rollback event.
+        // Components that register a pinned timestamp must synchronize with events that invalidate
+        // their snapshots, unpin themselves and either fail themselves, or reacquire a new snapshot
+        // after the rollback event.
         //
         // Forcing the oldest timestamp forward -- potentially past a pin request raises the
         // question of whether the pin should be honored. For now we will invariant there is no pin,
@@ -4109,7 +4075,8 @@ StatusWith<Timestamp> WiredTigerKVEngine::pinOldestTimestamp(
                     stdx::lock_guard<Latch> lock(_oldestTimestampPinRequestsMutex);
                     // When a write is updating the value from an earlier pin to a later one, use
                     // rounding to make a best effort to repin the earlier value.
-                    invariant(_pinOldestTimestamp(lock, svcName, previousTimestamp, true).isOK());
+                    invariant(
+                        _pinOldestTimestamp(lock, svcName, previousTimestamp, true).getStatus());
                 }
             });
     }

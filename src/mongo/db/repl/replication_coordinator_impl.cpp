@@ -899,6 +899,15 @@ void ReplicationCoordinatorImpl::_startInitialSync(
 
     // Initial sync may take locks during startup; make sure there is no possibility of conflict.
     dassert(!shard_role_details::getLocker(opCtx)->isLocked());
+    // Re-assigning a non-null _initialSyncer member variable will call the existing initial syncer
+    // object's destructor. For FCBIS, this acquires the FCBIS mutex. To preserve lock acquisition
+    // ordering between the replication coordinator mutex and the FCBIS mutex, we need to move the
+    // _initialSyncer member variable in a lambda expression while holding the replication
+    // coordinator mutex. The FCBIS mutex will only be acquired after we release it.
+    [&] {
+        stdx::lock_guard<Latch> lock(_mutex);
+        return std::move(_initialSyncer);
+    }();
     try {
         {
             // Must take the lock to set _initialSyncer, but not call it.
@@ -3058,7 +3067,12 @@ ReplicationCoordinatorImpl::AutoGetRstlForStepUpStepDown::AutoGetRstlForStepUpSt
         }
 
         // Dump all locks to identify which thread(s) are holding RSTL.
-        dumpLockManager();
+        try {
+            dumpLockManager();
+        } catch (const DBException& e) {
+            // If there are too many locks, dumpLockManager may fail.
+            LOGV2_FATAL_CONTINUE(9222300, "Dumping locks failed", "error"_attr = e);
+        }
 
         auto lockerInfo = shard_role_details::getLocker(opCtx)->getLockerInfo(
             CurOp::get(opCtx)->getLockStatsBase());
@@ -4417,8 +4431,10 @@ Status ReplicationCoordinatorImpl::_doReplSetReconfig(OperationContext* opCtx,
 
     if (!force && !skipSafetyChecks && !MONGO_unlikely(omitConfigQuorumCheck.shouldFail())) {
         LOGV2(4509600, "Executing quorum check for reconfig");
-        status =
-            checkQuorumForReconfig(_replExecutor.get(), newConfig, myIndex, _topCoord->getTerm());
+        lk.lock();
+        auto term = _topCoord->getTerm();
+        lk.unlock();
+        status = checkQuorumForReconfig(_replExecutor.get(), newConfig, myIndex, term);
         if (!status.isOK()) {
             LOGV2_ERROR(21421, "replSetReconfig failed", "error"_attr = status);
             return status;
@@ -6805,6 +6821,11 @@ ReplicationCoordinatorImpl::getWriteConcernTagChanges() {
 
 SplitPrepareSessionManager* ReplicationCoordinatorImpl::getSplitPrepareSessionManager() {
     return &_splitSessionManager;
+}
+
+void ReplicationCoordinatorImpl::clearSyncSource() {
+    stdx::lock_guard<Latch> lk(_mutex);
+    _topCoord->clearSyncSource();
 }
 
 bool ReplicationCoordinatorImpl::isRetryableWrite(OperationContext* opCtx) const {

@@ -18,3 +18,22 @@ filters:
   - "validate_tests.cpp":
     approvers:
       - 10gen/server-storage-execution
+      - 10gen/server-rss-sydney
+  - "*plan_executor*":
+    approvers:
+      - 10gen/query-execution
+  - "query_stage*":
+    approvers:
+      - 10gen/query-execution
+  - "querytests.cpp":
+    approvers:
+      - 10gen/query-execution
+  - "updatetests.cpp":
+    approvers:
+      - 10gen/query-execution
+  - "plan_ranking.cpp":
+    approvers:
+      - 10gen/query-optimization
+  - "query_stage_multiplan.cpp":
+    approvers:
+      - 10gen/query-optimization

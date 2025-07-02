@@ -53,11 +53,13 @@
 #include "mongo/crypto/encryption_fields_gen.h"
 #include "mongo/db/api_parameters.h"
 #include "mongo/db/basic_types_gen.h"
+#include "mongo/db/catalog/backwards_compatible_collection_options_util.h"
 #include "mongo/db/catalog/catalog_stats.h"
 #include "mongo/db/catalog/collection_catalog.h"
 #include "mongo/db/catalog/document_validation.h"
 #include "mongo/db/catalog/index_catalog_impl.h"
 #include "mongo/db/catalog/index_key_validate.h"
+#include "mongo/db/catalog/storage_engine_collection_options_flags_parser.h"
 #include "mongo/db/catalog/uncommitted_multikey.h"
 #include "mongo/db/client.h"
 #include "mongo/db/cluster_role.h"
@@ -116,7 +118,7 @@ namespace {
 // This fail point allows collections to be given malformed validator. A malformed validator
 // will not (and cannot) be enforced but it will be persisted.
 MONGO_FAIL_POINT_DEFINE(allowSettingMalformedCollectionValidators);
-
+MONGO_FAIL_POINT_DEFINE(timeseriesBucketingParametersChangedInputValue);
 MONGO_FAIL_POINT_DEFINE(skipCappedDeletes);
 
 Status checkValidatorCanBeUsedOnNs(const BSONObj& validator,
@@ -827,6 +829,19 @@ bool CollectionImpl::isTemporary() const {
 }
 
 boost::optional<bool> CollectionImpl::getTimeseriesBucketsMayHaveMixedSchemaData() const {
+    if (!getTimeseriesOptions()) {
+        return boost::none;
+    }
+
+    // If present, reuse storageEngine options to work around the issue described in SERVER-91194
+    boost::optional<bool> optBackwardsCompatibleFlag = getFlagFromStorageEngineBson(
+        _metadata->options.storageEngine,
+        backwards_compatible_collection_options::kTimeseriesBucketsMayHaveMixedSchemaData);
+    if (optBackwardsCompatibleFlag) {
+        return *optBackwardsCompatibleFlag;
+    }
+
+    // Else, fallback to legacy parameter
     return _metadata->timeseriesBucketsMayHaveMixedSchemaData;
 }
 
@@ -835,16 +850,29 @@ boost::optional<bool> CollectionImpl::timeseriesBucketingParametersHaveChanged()
         return boost::none;
     }
 
+    if (auto sfp = timeseriesBucketingParametersChangedInputValue.scoped();
+        MONGO_unlikely(sfp.isActive())) {
+        const auto& data = sfp.getData();
+        return data["value"].Bool();
+    }
+
     if (!feature_flags::gTSBucketingParametersUnchanged.isEnabled(
             serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
         // Pessimistically return true because v7.1+ versions may have missed cloning this catalog
         // option upon chunk migrations, movePrimary, resharding, initial sync or backup/restore
         // (SERVER-91193).
-        // TODO SERVER-91195: rely on timeseriesBucketingParametersHaveChanged once we are sure the
-        // value set in the durable catalog is correct.
         return true;
     }
 
+    // If present, reuse storageEngine options to work around the issue described in SERVER-91193
+    boost::optional<bool> optBackwardsCompatibleFlag = getFlagFromStorageEngineBson(
+        _metadata->options.storageEngine,
+        backwards_compatible_collection_options::kTimeseriesBucketingParametersHaveChanged);
+    if (optBackwardsCompatibleFlag) {
+        return *optBackwardsCompatibleFlag;
+    }
+
+    // Else, fallback to legacy parameter.
     return _metadata->timeseriesBucketingParametersHaveChanged;
 }
 
@@ -852,7 +880,18 @@ void CollectionImpl::setTimeseriesBucketingParametersChanged(OperationContext* o
                                                              boost::optional<bool> value) {
     tassert(7625800, "This is not a time-series collection", _metadata->options.timeseries);
 
+    // TODO SERVER-92265 properly set this catalog option
     _writeMetadata(opCtx, [&](BSONCollectionCatalogEntry::MetaData& md) {
+        // Reuse storageEngine options to work around the issue described in SERVER-91193
+        if (value.has_value()) {
+            md.options.storageEngine = setFlagToStorageEngineBson(
+                md.options.storageEngine,
+                backwards_compatible_collection_options::kTimeseriesBucketingParametersHaveChanged,
+                *value);
+        }
+
+        // Also update legacy parameter for compatibility when downgrading to older sub-versions
+        // only relying on this option (best-effort because it may be lost due to SERVER-91193)
         md.timeseriesBucketingParametersHaveChanged = value;
     });
 }
@@ -868,7 +907,18 @@ void CollectionImpl::setTimeseriesBucketsMayHaveMixedSchemaData(OperationContext
                 logAttrs(uuid()),
                 "setting"_attr = setting);
 
+    // TODO SERVER-92265 properly set this catalog option
     _writeMetadata(opCtx, [&](BSONCollectionCatalogEntry::MetaData& md) {
+        // Reuse storageEngine options to work around the issue described in SERVER-91194
+        if (setting.has_value()) {
+            md.options.storageEngine = setFlagToStorageEngineBson(
+                md.options.storageEngine,
+                backwards_compatible_collection_options::kTimeseriesBucketsMayHaveMixedSchemaData,
+                *setting);
+        }
+
+        // Also update legacy parameter for compatibility when downgrading to older sub-versions
+        // only relying on this option (best-effort because it may be lost due to SERVER-91194)
         md.timeseriesBucketsMayHaveMixedSchemaData = setting;
     });
 }

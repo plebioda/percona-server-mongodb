@@ -20,6 +20,9 @@ selector:
     # Skip any tests that run with auth explicitly.
     - jstests/core/administrative/*[aA]uth*.js
 
+    # Serverless don't support mapReduce command.
+    - jstests/core/query/mr/**/*.js
+
   exclude_with_any_tags:
     - assumes_standalone_mongod
     # Cursor ids will not survive rerouting between replica sets during a shard split.
@@ -34,8 +37,6 @@ selector:
     - requires_profiling
     # capped collections are banned in Serverless
     - requires_capped
-    # emptycapped command is blocked during shard split.
-    - requires_emptycapped
     # Multi-updates that conflict with shard split are not retried by simulate_atlas_proxy.js.
     - requires_multi_updates
     # Full validation can cause ongoing queries to fail. This can affect the shard split process.

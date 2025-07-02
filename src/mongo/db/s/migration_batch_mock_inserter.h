@@ -46,7 +46,7 @@ public:
         // That happens if we schedule this task on a ThreadPool that is
         // already shutdown.  We should never do that.  Therefore,
         // we assert that here.
-        invariant(status.isOK());
+        invariant(status);
     }
     MigrationBatchMockInserter(OperationContext*,
                                OperationContext*,

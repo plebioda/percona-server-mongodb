@@ -7605,6 +7605,33 @@ TEST_F(BSONColumnTest, InterleavedFullSkipAfterObjectSkip) {
     verifyDecompressPathFast(binData, elems, testPaths);
 }
 
+TEST_F(BSONColumnTest, InterleavedEmptySequence) {
+    auto elem = createElementObj(BSON("x" << 1 << "y" << 2));
+
+    BufBuilder interleavedBinary;
+    appendInterleavedStart(interleavedBinary, elem.Obj());
+    appendEOO(interleavedBinary);
+    appendEOO(interleavedBinary);
+
+    BSONColumnBlockBased colBlockBased{interleavedBinary.buf(),
+                                       static_cast<size_t>(interleavedBinary.len())};
+    boost::intrusive_ptr<ElementStorage> allocator = new ElementStorage();
+    std::vector<BSONElement> collection;
+    std::vector<std::pair<TestPath, std::vector<BSONElement>&>> testPaths{
+        {TestPath{{"x"}}, collection}};
+    ASSERT_THROWS_CODE(colBlockBased.decompress<BSONElementMaterializer>(collection, allocator),
+                       DBException,
+                       8625732);
+    ASSERT_THROWS_CODE(
+        colBlockBased.decompress<BSONElementMaterializer>(allocator, std::span(testPaths)),
+        DBException,
+        8625730);
+
+    BSONColumn col(createBSONColumn(interleavedBinary.buf(), interleavedBinary.len()));
+    ASSERT_THROWS_CODE(std::distance(col.begin(), col.end()), DBException, 9232700);
+}
+
+
 TEST_F(BSONColumnTest, NonZeroRLEInFirstBlockAfterSimple8bBlocks) {
     int64_t value = 1;
 
@@ -8932,6 +8959,12 @@ TEST_F(BSONColumnTest, BlockFuzzerDiscoveredEdgeCases) {
         // Blockbased API didn't update last to EOO when Iterative API did for interleaved data
         // (SERVER-89612).
         "8hQAAAAF+P//////FCgAAAAAAAAABgAIAACBKg7/+///////MP8V/3EAAACBeHFYDAAA/3RhZ3P//wEAAAA="_sd,
+        // Blockbased API doesn't fail an interleaved mode that has leftover data in some decoders
+        // while the iterative version does (SERVER-92150)
+        "8jIAAAAHVvkCAAEAAAAAAgABAAAAAAxTdGNydHVfaWQAAQAAAAABMg5faWQAAQAAAAAA/wD/AP8Aj4+Pj4+Pj4+Pj4+Pj4+Pj4//AP8A/wD/AP8A/wD/AP8A/wCPj4+Pj4+Pj4+PAAD/AP8A/wD/AP8A/wCPj4+Pj4+Pj49vj4+Pj4+Pj/8A/041j4+Pj4+Pj4+Pj48BAFXeV6t2AI+Pj4+Pj4+Pj4+Pj8SPj4+Pj4+Pj4//AP8A/wD/AP8A/wAA"_sd,
+        // Empty interleaved mode produces an assert in block-based API but not iterative
+        // (SERVER-92327)
+        "EAAAYTsB8gcAAAD/AAAAgsj//////////wEH//hB/7KyAP+AAP//AAA="_sd,
     };
 
     for (auto&& binaryBase64 : binariesBase64) {

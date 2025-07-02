@@ -49,7 +49,7 @@ env.Library(
         "write_ops/write_without_shard_key_util.cpp",
     ],
     LIBDEPS=[
-        "$BUILD_DIR/mongo/db/commands/bulk_write_common",
+        "$BUILD_DIR/mongo/db/commands/query_cmd/bulk_write_common",
         "$BUILD_DIR/mongo/db/fle_crud",
         "$BUILD_DIR/mongo/db/not_primary_error_tracker",
         "$BUILD_DIR/mongo/db/ops/parsed_update",
@@ -777,5 +777,19 @@ env.CppUnitTest(
         "sharding_initialization",
         "sharding_mongos_test_fixture",
         "sharding_task_executor",
+    ],
+)
+
+env.Benchmark(
+    target="service_entry_point_router_role_bm",
+    source=[
+        "service_entry_point_router_role_bm.cpp",
+    ],
+    LIBDEPS=[
+        "$BUILD_DIR/mongo/db/auth/authserver",
+        "$BUILD_DIR/mongo/db/read_write_concern_defaults_mock",
+        "$BUILD_DIR/mongo/db/service_context_non_d",
+        "$BUILD_DIR/mongo/rpc/message",
+        "startup_initialization",
     ],
 )

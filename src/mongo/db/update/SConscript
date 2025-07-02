@@ -21,7 +21,7 @@ env.Library(
         "$BUILD_DIR/mongo/db/exec/document_value/document_value",
     ],
     LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/bson/dotted_path_support",
+        "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
     ],
 )
 
@@ -30,6 +30,7 @@ env.Library(
     source=[
         "field_checker.cpp",
         "path_support.cpp",
+        "runtime_update_path.cpp",
         "storage_validation.cpp",
         "v2_log_builder.cpp",
         "update_oplog_entry_serialization.cpp",

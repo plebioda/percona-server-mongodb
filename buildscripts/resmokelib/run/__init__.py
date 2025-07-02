@@ -1691,6 +1691,13 @@ class RunPlugin(PluginInterface):
         )
 
         mongodb_server_options.add_argument(
+            "--fuzzRuntimeParams",
+            action="store_true",
+            dest="fuzz_runtime_params",
+            help="Starts a hook that periodically updates shard and router server parameters while tests run",
+        )
+
+        mongodb_server_options.add_argument(
             "--fuzzMongosConfigs",
             dest="fuzz_mongos_configs",
             help="Randomly chooses mongos parameters that were not specified",

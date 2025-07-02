@@ -84,6 +84,7 @@ def injectMozJS(thisEnv):
         thisEnv.Prepend(CPPDEFINES=[
             'DEBUG',
             'JS_DEBUG',
+            'JS_GC_ZEAL'
         ])
 
 

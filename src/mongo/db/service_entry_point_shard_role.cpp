@@ -112,7 +112,6 @@
 #include "mongo/db/s/operation_sharding_state.h"
 #include "mongo/db/s/sharding_cluster_parameters_gen.h"
 #include "mongo/db/s/sharding_statistics.h"
-#include "mongo/db/s/transaction_coordinator_factory.h"
 #include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/server_parameter.h"
@@ -1029,7 +1028,7 @@ void CheckoutSessionAndInvokeCommand::_checkOutSession() {
             // If this shard has been selected as the coordinator, set up the coordinator state
             // to be ready to receive votes.
             if (sessionOptions.getCoordinator() == boost::optional<bool>(true)) {
-                createTransactionCoordinator(
+                service_entry_point_shard_role_helpers::createTransactionCoordinator(
                     opCtx, *sessionOptions.getTxnNumber(), sessionOptions.getTxnRetryCounter());
             }
         }
@@ -1803,6 +1802,10 @@ void ExecCommandDatabase::_initiateCommand() {
     }
 
     if (gIngressAdmissionControlEnabled.load()) {
+        // The way ingress admission works, one ticket should cover all the work for the operation.
+        // Therefore, if the operation has already been admitted by IngressAdmissionController, all
+        // of the subsequent admissions of the same operation (e.g. via DBDirectClient) should be
+        // exempt from ingress admission control.
         boost::optional<ScopedAdmissionPriority<IngressAdmissionContext>> admissionPriority;
         if (!_invocation->isSubjectToIngressAdmissionControl() ||
             IngressAdmissionContext::get(opCtx).isHoldingTicket()) {

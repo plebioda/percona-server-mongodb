@@ -52,6 +52,7 @@
 #include "mongo/bson/util/bson_extract.h"
 #include "mongo/client/read_preference.h"
 #include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/catalog/backwards_compatible_collection_options_util.h"
 #include "mongo/db/catalog/capped_collection_maintenance.h"
 #include "mongo/db/catalog/capped_utils.h"
 #include "mongo/db/catalog/coll_mod.h"
@@ -186,7 +187,6 @@ void abortIndexBuilds(OperationContext* opCtx,
                commandType == OplogEntry::CommandType::kDropIndexes ||
                commandType == OplogEntry::CommandType::kDeleteIndexes ||
                commandType == OplogEntry::CommandType::kCollMod ||
-               commandType == OplogEntry::CommandType::kEmptyCapped ||
                commandType == OplogEntry::CommandType::kRenameCollection) {
         const boost::optional<UUID> collUUID =
             CollectionCatalog::get(opCtx)->lookupUUIDByNSS(opCtx, nss);
@@ -982,8 +982,13 @@ const StringMap<ApplyOpMetadata> kOpsMap = {
               opCtx, applicationMode, swOplogEntry.getValue());
           return Status::OK();
       },
+      // These index related error codes needs to be ignored during initial sync because these
+      // indexes can already be cloned during initial sync database cloning and the oplogs become
+      // no-op. During steady state, since DDL oplogs are applied in serial, we should never see
+      // these errors.
       {ErrorCodes::IndexAlreadyExists,
        ErrorCodes::IndexBuildAlreadyInProgress,
+       ErrorCodes::IndexKeySpecsConflict,
        ErrorCodes::NamespaceNotFound}}},
     {"commitIndexBuild",
      {[](OperationContext* opCtx, const ApplierOperation& op, OplogApplication::Mode mode)
@@ -1028,7 +1033,8 @@ const StringMap<ApplyOpMetadata> kOpsMap = {
      {[](OperationContext* opCtx, const ApplierOperation& op, OplogApplication::Mode mode)
           -> Status {
           const auto& entry = *op;
-          const auto& cmd = entry.getObject();
+          const auto cmd =
+              backwards_compatible_collection_options::parseCollModCmdFromOplogEntry(entry);
 
           const auto tenantId = entry.getNss().tenantId();
           const auto vts = tenantId
@@ -1151,15 +1157,6 @@ const StringMap<ApplyOpMetadata> kOpsMap = {
                           extractNsFromUUIDorNs(opCtx, entry.getNss(), entry.getUuid(), cmd),
                           cmd["size"].safeNumberLong());
           return Status::OK();
-      },
-      {ErrorCodes::NamespaceNotFound}}},
-    {"emptycapped",
-     {[](OperationContext* opCtx, const ApplierOperation& op, OplogApplication::Mode mode)
-          -> Status {
-          const auto& entry = *op;
-          return emptyCapped(
-              opCtx,
-              extractNsFromUUIDorNs(opCtx, entry.getNss(), entry.getUuid(), entry.getObject()));
       },
       {ErrorCodes::NamespaceNotFound}}},
     {"commitTransaction",
@@ -1454,9 +1451,7 @@ Status applyOperation_inlock(OperationContext* opCtx,
         }
 
         // Invalidate the image collection if collectionUUID does not resolve and this op returns
-        // a preimage or postimage. We only expect this to happen when in kInitialSync mode but
-        // this can sometimes occur in recovering mode during rollback-via-refetch. In either case
-        // we want to do image invalidation.
+        // a preimage or postimage. We only expect this to happen when in kInitialSync mode.
         if (!collection && op.getNeedsRetryImage()) {
             tassert(735200,
                     "mode should be in initialSync or recovering",

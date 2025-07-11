@@ -48,7 +48,6 @@
 #include "mongo/base/status_with.h"
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonobj.h"
-#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/ordering.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/db/catalog/collection_options.h"
@@ -59,7 +58,6 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/storage/backup_block.h"
 #include "mongo/db/storage/column_store.h"
-#include "mongo/db/storage/durable_catalog.h"
 #include "mongo/db/storage/journal_listener.h"
 #include "mongo/db/storage/key_format.h"
 #include "mongo/db/storage/kv/kv_engine.h"
@@ -467,6 +465,14 @@ public:
     WiredTigerOplogManager* getOplogManager() const {
         return _oplogManager.get();
     }
+
+    Status oplogDiskLocRegister(OperationContext* opCtx,
+                                RecordStore* oplogRecordStore,
+                                const Timestamp& opTime,
+                                bool orderedCommit) override;
+
+    void waitForAllEarlierOplogWritesToBeVisible(OperationContext* opCtx,
+                                                 RecordStore* oplogRecordStore) const override;
 
     Timestamp getStableTimestamp() const override;
     Timestamp getOldestTimestamp() const override;

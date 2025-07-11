@@ -119,7 +119,7 @@ config_fuzzer_params = {
         "wiredTigerSizeStorerPeriodicSyncHits": {"min": 1, "max": 100000},
         "wiredTigerSizeStorerPeriodicSyncPeriodMillis": {"min": 1, "max": 60000},
         "queryAnalysisWriterMaxMemoryUsageBytes": {"min": 1024 * 1024, "max": 1024 * 1024 * 100},
-        "mirrorReads": {"samplingRate": {"min": 0.0, "max": 1.0}},
+        "mirrorReads": {"choices": [0, 0.25, 0.50, 0.75, 1.0]},
         # Flow control related parameters
         "enableFlowControl": {"choices": [True, False]},
         "flowControlMaxSamples": {"min": 1, "max": 1000 * 1000},
@@ -148,6 +148,11 @@ config_fuzzer_params = {
             "max": 180,
             "isRandomizedChoice": True,
         },
+        "connPoolMaxInUseConnsPerHost": {"min": 50, "max": 100},
+        "globalConnPoolIdleTimeoutMinutes": {"min": 1, "max": 10},
+        "ShardingTaskExecutorPoolMaxConnecting": {"min": 1, "max": 2},
+        "warmMinConnectionsInShardingTaskExecutorPoolOnStartup": {"choices": [True, False]},
+        "oplogBatchDelayMillis": {"min": 0, "max": 50},
     },
     "mongos": {
         # We need a higher timeout to account for test slowness
@@ -160,20 +165,15 @@ config_fuzzer_params = {
 
 runtime_parameter_fuzzer_params = {
     "mongod": {
-        "ShardingTaskExecutorPoolMinSize": {"min": 1, "max": 50, "period": 5},
         "ingressAdmissionControllerTicketPoolSize": {
-            "choices": [500_000, 1_000_000, 2_000_000],
-            "lower_bound": 1000,
-            "upper_bound": 5_000_000,
+            "choices": [1_000, 10_000, 100_000, 1_000_000],
+            "lower_bound": 1_000,
+            "upper_bound": 1_000_000,
             "isRandomizedChoice": True,
-            "period": 1,
-        },
-        "ingressAdmissionControlEnabled": {
-            "choices": [True, False],
-            "period": 10,
+            "period": 5,
         },
     },
     "mongos": {
-        "ShardingTaskExecutorPoolMinSize": {"min": 1, "max": 50, "period": 5},
+        "userCacheInvalidationIntervalSecs": {"min": 1, "max": 86400, "period": 5},
     },
 }

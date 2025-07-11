@@ -49,7 +49,7 @@
 #include "mongo/db/pipeline/variables.h"
 #include "mongo/db/query/search/mongot_cursor.h"
 #include "mongo/db/query/search/search_task_executors.h"
-#include "mongo/s/query/document_source_merge_cursors.h"
+#include "mongo/s/query/exec/document_source_merge_cursors.h"
 #include "mongo/util/assert_util.h"
 
 namespace mongo {
@@ -324,12 +324,15 @@ std::unique_ptr<Pipeline, PipelineDeleter> prepareSearchForTopLevelPipelineLegac
     // First, desuguar $search, and inject shard filterer.
     prepareSearchPipelineLegacyExecutor(origPipeline, true);
 
-    if (expCtx->explain || !isSearchPipeline(origPipeline)) {
-        // TODO SERVER-91828: Enable creation of cursors for sharded search.
-        // For sharded search, we don't return documents or metadata from explain regardless of
-        // the verbosity. Standalone search will establish its cursors later in
-        // internalSearchMongotRemote. $searchMeta or $vectorSearch pipelines won't need an
-        // additional pipeline since they only need one cursor.
+    if ((expCtx->explain &&
+         !feature_flags::gFeatureFlagSearchExplainExecutionStats.isEnabled(
+             serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) ||
+        expCtx->explain == ExplainOptions::Verbosity::kQueryPlanner ||
+        !isSearchPipeline(origPipeline)) {
+        // This path is for scenarios where we know we only need one cursor. For $search in
+        // queryPlanner verbosity, we don't need both the results and metadata cursors. $searchMeta
+        // or $vectorSearch pipelines also won't need an additional pipeline since they only need
+        // one cursor.
         return nullptr;
     }
 

@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 
 import buildscripts.monitor_build_status.bfs_report as under_test
 
@@ -24,20 +25,16 @@ class TestBFsReport(unittest.TestCase):
             assigned_team="team-1",
             evergreen_projects=["mongodb-mongo-master", "mongodb-mongo-master-nightly"],
             temperature=under_test.BfTemperature.HOT,
+            created_time=datetime.now(),
         )
         bfs_report = under_test.BFsReport.empty()
 
         bfs_report.add_bf_data(bf_1, evg_projects_info)
 
-        self.assertEqual(bfs_report.correctness.hot["team-1"], {"BF-1"})
-        self.assertEqual(len(bfs_report.correctness.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.correctness.none.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.none.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.none.keys()), 0)
+        self.assertEqual(bfs_report.team_reports["team-1"].hot_bfs, {bf_1})
+        self.assertEqual(len(bfs_report.team_reports["team-1"].cold_bfs), 0)
+        self.assertEqual(len(bfs_report.team_reports["team-1"].perf_bfs), 0)
+        self.assertEqual(len(bfs_report.team_reports.keys()), 1)
 
     def test_add_hot_correctness_bf(self):
         bf_1 = under_test.BfIssue(
@@ -45,20 +42,16 @@ class TestBFsReport(unittest.TestCase):
             assigned_team="team-1",
             evergreen_projects=["mongodb-mongo-master"],
             temperature=under_test.BfTemperature.HOT,
+            created_time=datetime.now(),
         )
         bfs_report = under_test.BFsReport.empty()
 
         bfs_report.add_bf_data(bf_1, evg_projects_info)
 
-        self.assertEqual(bfs_report.correctness.hot["team-1"], {"BF-1"})
-        self.assertEqual(len(bfs_report.correctness.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.correctness.none.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.none.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.none.keys()), 0)
+        self.assertEqual(bfs_report.team_reports["team-1"].hot_bfs, {bf_1})
+        self.assertEqual(len(bfs_report.team_reports["team-1"].cold_bfs), 0)
+        self.assertEqual(len(bfs_report.team_reports["team-1"].perf_bfs), 0)
+        self.assertEqual(len(bfs_report.team_reports.keys()), 1)
 
     def test_add_cold_correctness_bf(self):
         bf_1 = under_test.BfIssue(
@@ -66,20 +59,16 @@ class TestBFsReport(unittest.TestCase):
             assigned_team="team-1",
             evergreen_projects=["mongodb-mongo-master"],
             temperature=under_test.BfTemperature.COLD,
+            created_time=datetime.now(),
         )
         bfs_report = under_test.BFsReport.empty()
 
         bfs_report.add_bf_data(bf_1, evg_projects_info)
 
-        self.assertEqual(len(bfs_report.correctness.hot.keys()), 0)
-        self.assertEqual(bfs_report.correctness.cold["team-1"], {"BF-1"})
-        self.assertEqual(len(bfs_report.correctness.none.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.none.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.none.keys()), 0)
+        self.assertEqual(len(bfs_report.team_reports["team-1"].hot_bfs), 0)
+        self.assertEqual(bfs_report.team_reports["team-1"].cold_bfs, {bf_1})
+        self.assertEqual(len(bfs_report.team_reports["team-1"].perf_bfs), 0)
+        self.assertEqual(len(bfs_report.team_reports.keys()), 1)
 
     def test_add_hot_perf_bf(self):
         bf_1 = under_test.BfIssue(
@@ -87,20 +76,16 @@ class TestBFsReport(unittest.TestCase):
             assigned_team="team-1",
             evergreen_projects=["sys-perf"],
             temperature=under_test.BfTemperature.HOT,
+            created_time=datetime.now(),
         )
         bfs_report = under_test.BFsReport.empty()
 
         bfs_report.add_bf_data(bf_1, evg_projects_info)
 
-        self.assertEqual(len(bfs_report.correctness.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.correctness.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.correctness.none.keys()), 0)
-        self.assertEqual(bfs_report.performance.hot["team-1"], {"BF-1"})
-        self.assertEqual(len(bfs_report.performance.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.none.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.none.keys()), 0)
+        self.assertEqual(len(bfs_report.team_reports["team-1"].hot_bfs), 0)
+        self.assertEqual(len(bfs_report.team_reports["team-1"].cold_bfs), 0)
+        self.assertEqual(bfs_report.team_reports["team-1"].perf_bfs, {bf_1})
+        self.assertEqual(len(bfs_report.team_reports.keys()), 1)
 
     def test_add_cold_perf_bf(self):
         bf_1 = under_test.BfIssue(
@@ -108,17 +93,13 @@ class TestBFsReport(unittest.TestCase):
             assigned_team="team-1",
             evergreen_projects=["sys-perf"],
             temperature=under_test.BfTemperature.COLD,
+            created_time=datetime.now(),
         )
         bfs_report = under_test.BFsReport.empty()
 
         bfs_report.add_bf_data(bf_1, evg_projects_info)
 
-        self.assertEqual(len(bfs_report.correctness.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.correctness.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.correctness.none.keys()), 0)
-        self.assertEqual(len(bfs_report.performance.hot.keys()), 0)
-        self.assertEqual(bfs_report.performance.cold["team-1"], {"BF-1"})
-        self.assertEqual(len(bfs_report.performance.none.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.hot.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.cold.keys()), 0)
-        self.assertEqual(len(bfs_report.unknown.none.keys()), 0)
+        self.assertEqual(len(bfs_report.team_reports["team-1"].hot_bfs), 0)
+        self.assertEqual(len(bfs_report.team_reports["team-1"].cold_bfs), 0)
+        self.assertEqual(bfs_report.team_reports["team-1"].perf_bfs, {bf_1})
+        self.assertEqual(len(bfs_report.team_reports.keys()), 1)

@@ -60,7 +60,6 @@
 #include "mongo/db/query/query_solution.h"
 #include "mongo/db/query/restore_context.h"
 #include "mongo/db/query/sbe_plan_ranker.h"
-#include "mongo/db/query/sbe_runtime_planner.h"
 #include "mongo/db/query/stage_builder/sbe/builder_data.h"
 #include "mongo/db/record_id.h"
 #include "mongo/util/assert_util.h"
@@ -88,7 +87,7 @@ public:
                     std::unique_ptr<CanonicalQuery> cq,
                     std::unique_ptr<Pipeline, PipelineDeleter> pipeline,
                     std::unique_ptr<optimizer::AbstractABTPrinter> optimizerData,
-                    sbe::CandidatePlans candidates,
+                    sbe::plan_ranker::CandidatePlans candidates,
                     bool returnOwnedBson,
                     NamespaceString nss,
                     bool isOpen,
@@ -138,25 +137,14 @@ public:
         MONGO_UNREACHABLE;
     }
 
-    UpdateResult executeUpdate() override {
-        // Using SBE to execute an update command is not yet supported.
-        MONGO_UNREACHABLE;
-    }
     UpdateResult getUpdateResult() const override {
         // Using SBE to execute an update command is not yet supported.
         MONGO_UNREACHABLE;
     }
-
-    long long executeDelete() override {
-        // Using SBE to execute a delete command is not yet supported.
-        MONGO_UNREACHABLE;
-    }
-
     long long getDeleteResult() const override {
         // Using SBE to execute a delete command is not yet supported.
         MONGO_UNREACHABLE;
     }
-
     BatchedDeleteStats getBatchedDeleteStats() override {
         // Using SBE to execute a batched delete command is not yet supported.
         MONGO_UNREACHABLE;

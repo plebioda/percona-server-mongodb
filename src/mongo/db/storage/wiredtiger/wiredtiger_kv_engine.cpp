@@ -34,32 +34,6 @@
     LOGV2_DEBUG_OPTIONS(                             \
         ID, DLEVEL, {logv2::LogComponent::kReplicationRollback}, MESSAGE, ##__VA_ARGS__)
 
-#include "mongo/base/checked_cast.h"
-#include "mongo/base/parse_number.h"
-#include "mongo/bson/bsonelement.h"
-#include "mongo/bson/bsonmisc.h"
-#include "mongo/db/catalog/collection_options_gen.h"
-#include "mongo/db/index_names.h"
-#include "mongo/db/repl/member_state.h"
-#include "mongo/db/server_feature_flags_gen.h"
-#include "mongo/db/server_parameter.h"
-#include "mongo/db/storage/backup_block.h"
-#include "mongo/db/storage/wiredtiger/wiredtiger_oplog_manager.h"
-#include "mongo/db/transaction_resources.h"
-#include "mongo/logv2/log_attr.h"
-#include "mongo/logv2/log_component.h"
-#include "mongo/logv2/log_severity.h"
-#include "mongo/platform/atomic_proxy.h"
-#include "mongo/platform/compiler.h"
-#include "mongo/stdx/unordered_map.h"
-#include "mongo/util/assert_util.h"
-#include "mongo/util/duration.h"
-#include "mongo/util/exit_code.h"
-#include "mongo/util/fail_point.h"
-#include "mongo/util/str.h"
-#include "mongo/util/uuid.h"
-#include "mongo/util/version/releases.h"
-
 #ifdef _WIN32
 #define NVALGRIND
 #endif
@@ -106,8 +80,13 @@
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/transfer/TransferManager.h>
 
+#include "mongo/base/checked_cast.h"
 #include "mongo/base/error_codes.h"
+#include "mongo/base/parse_number.h"
+#include "mongo/bson/bsonelement.h"
+#include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/bsonobjbuilder.h"
+#include "mongo/db/catalog/collection_options_gen.h"
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/exception_util.h"
 #include "mongo/db/encryption/encryption_options.h"
@@ -119,13 +98,19 @@
 #include "mongo/db/encryption/master_key_provider.h"
 #include "mongo/db/global_settings.h"
 #include "mongo/db/index/index_descriptor.h"
+#include "mongo/db/index_names.h"
 #include "mongo/db/query/bson/dotted_path_support.h"
+#include "mongo/db/repl/member_state.h"
 #include "mongo/db/repl/repl_settings.h"
 #include "mongo/db/repl/replication_coordinator.h"
+#include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/server_options.h"
+#include "mongo/db/server_parameter.h"
 #include "mongo/db/server_recovery.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/snapshot_window_options_gen.h"
+#include "mongo/db/storage/backup_block.h"
+#include "mongo/db/storage/durable_catalog.h"
 #include "mongo/db/storage/journal_listener.h"
 #include "mongo/db/storage/key_format.h"
 #include "mongo/db/storage/master_key_rotation_completed.h"
@@ -143,6 +128,7 @@
 #include "mongo/db/storage/wiredtiger/wiredtiger_global_options.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_index.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_kv_engine.h"
+#include "mongo/db/storage/wiredtiger/wiredtiger_oplog_manager.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_parameters_gen.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_record_store.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_recovery_unit.h"
@@ -151,18 +137,30 @@
 #include "mongo/db/storage/wiredtiger/wiredtiger_util.h"
 #include "mongo/db/transaction_resources.h"
 #include "mongo/logv2/log.h"
+#include "mongo/logv2/log_attr.h"
+#include "mongo/logv2/log_component.h"
+#include "mongo/logv2/log_severity.h"
+#include "mongo/platform/atomic_proxy.h"
 #include "mongo/platform/atomic_word.h"
+#include "mongo/platform/compiler.h"
 #include "mongo/stdx/mutex.h"
+#include "mongo/stdx/unordered_map.h"
+#include "mongo/util/assert_util.h"
 #include "mongo/util/background.h"
 #include "mongo/util/concurrency/idle_thread_block.h"
 #include "mongo/util/debug_util.h"
+#include "mongo/util/duration.h"
 #include "mongo/util/exit.h"
 #include "mongo/util/exit_code.h"
+#include "mongo/util/fail_point.h"
 #include "mongo/util/log_and_backoff.h"
 #include "mongo/util/quick_exit.h"
 #include "mongo/util/scopeguard.h"
+#include "mongo/util/str.h"
 #include "mongo/util/testing_proctor.h"
 #include "mongo/util/time_support.h"
+#include "mongo/util/uuid.h"
+#include "mongo/util/version/releases.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kStorage
 
@@ -4161,6 +4159,66 @@ void WiredTigerKVEngine::haltOplogManager(WiredTigerRecordStore* oplogRecordStor
         _oplogRecordStore = nullptr;
     }
 }
+
+Status WiredTigerKVEngine::oplogDiskLocRegister(OperationContext* opCtx,
+                                                RecordStore* oplogRecordStore,
+                                                const Timestamp& opTime,
+                                                bool orderedCommit) {
+    // Callers should be updating visibility as part of a write operation. We want to ensure that
+    // we never get here while holding an uninterruptible, read-ticketed lock. That would indicate
+    // that we are operating with the wrong global lock semantics, and either hold too weak a lock
+    // (e.g. IS) or that we upgraded in a way we shouldn't (e.g. IS -> IX).
+    invariant(!shard_role_details::getLocker(opCtx)->hasReadTicket() ||
+              !opCtx->uninterruptibleLocksRequested_DO_NOT_USE());  // NOLINT
+
+    shard_role_details::getRecoveryUnit(opCtx)->setOrderedCommit(orderedCommit);
+
+    if (!orderedCommit) {
+        // This labels the current transaction with a timestamp.
+        // This is required for oplog visibility to work correctly, as WiredTiger uses the
+        // transaction list to determine where there are holes in the oplog.
+        return shard_role_details::getRecoveryUnit(opCtx)->setTimestamp(opTime);
+    }
+
+    // This handles non-primary (secondary) state behavior; we simply set the oplog visiblity read
+    // timestamp here, as there cannot be visible holes prior to the opTime passed in.
+    getOplogManager()->setOplogReadTimestamp(opTime);
+
+    // Inserts and updates usually notify waiters on commit, but the oplog collection has special
+    // visibility rules and waiters must be notified whenever the oplog read timestamp is forwarded.
+    oplogRecordStore->notifyCappedWaitersIfNeeded();
+    return Status::OK();
+}
+
+void WiredTigerKVEngine::waitForAllEarlierOplogWritesToBeVisible(
+    OperationContext* opCtx, RecordStore* oplogRecordStore) const {
+    // Callers are waiting for other operations to finish updating visibility. We want to ensure
+    // that we never get here while holding an uninterruptible, write-ticketed lock. That could
+    // indicate we are holding a stronger lock than we need to, and that we could actually
+    // contribute to ticket-exhaustion. That could prevent the write we are waiting on from
+    // acquiring the lock it needs to update the oplog visibility.
+    invariant(!shard_role_details::getLocker(opCtx)->hasWriteTicket() ||
+              !opCtx->uninterruptibleLocksRequested_DO_NOT_USE());  // NOLINT
+
+    // Make sure that callers do not hold an active snapshot so it will be able to see the oplog
+    // entries it waited for afterwards.
+    if (shard_role_details::getRecoveryUnit(opCtx)->isActive()) {
+        shard_role_details::getLocker(opCtx)->dump();
+        invariant(!shard_role_details::getRecoveryUnit(opCtx)->isActive(),
+                  str::stream() << "Unexpected open storage txn. RecoveryUnit state: "
+                                << RecoveryUnit::toString(
+                                       shard_role_details::getRecoveryUnit(opCtx)->getState())
+                                << ", inMultiDocumentTransaction:"
+                                << (opCtx->inMultiDocumentTransaction() ? "true" : "false"));
+    }
+
+    auto oplogManager = getOplogManager();
+    if (oplogManager->isRunning()) {
+        oplogManager->waitForAllEarlierOplogWritesToBeVisible(
+            checked_cast<WiredTigerRecordStore*>(oplogRecordStore), opCtx);
+    }
+}
+
 
 Timestamp WiredTigerKVEngine::getStableTimestamp() const {
     return Timestamp(_stableTimestamp.load());

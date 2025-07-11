@@ -34,7 +34,7 @@ ftdcEnv.Library(
         "$BUILD_DIR/mongo/bson/util/bson_extract",
         "$BUILD_DIR/mongo/db/service_context",
         "$BUILD_DIR/third_party/s2/s2",  # For VarInt
-        "$BUILD_DIR/third_party/shim_zlib",
+        "$BUILD_DIR/third_party/zlib/zlib",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/admission/execution_admission_context",
@@ -54,7 +54,7 @@ env.Library(
     target="ftdc_server",
     source=[
         "ftdc_server.cpp",
-        "ftdc_server.idl",
+        "ftdc_server_gen.cpp",
         "ftdc_system_stats.cpp",
         "ftdc_system_stats_${TARGET_OS}.cpp",
     ],
@@ -82,7 +82,7 @@ env.Library(
     target="ftdc_commands",
     source=[
         "ftdc_commands.cpp",
-        "ftdc_commands.idl",
+        "ftdc_commands_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/auth/auth",
@@ -97,7 +97,7 @@ env.Library(
     target="ftdc_mongod",
     source=[
         "ftdc_mongod.cpp",
-        "ftdc_mongod.idl",
+        "ftdc_mongod_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/auth/auth",

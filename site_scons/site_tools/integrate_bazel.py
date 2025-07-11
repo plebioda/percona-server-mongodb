@@ -149,9 +149,49 @@ def bazel_builder_action(
     # now copy all the targets out to the scons tree, note that target is a
     # list of nodes so we need to stringify it for copyfile
     for t in target:
-        s = Globals.bazel_output(t)
-        shutil.copy(s, str(t))
-        os.chmod(str(t), os.stat(str(t)).st_mode | stat.S_IWUSR)
+        dSYM_found = False
+        if ".dSYM/" in str(t):
+            # ignore dSYM plist file, as we skipped it prior
+            if str(t).endswith(".plist"):
+                continue
+
+            dSYM_found = True
+
+        if dSYM_found:
+            # Here we handle the difference between scons and bazel for dSYM dirs. SCons uses list
+            # actions to perform operations on the same target during some action. Bazel does not
+            # have an exact corresponding feature. Each action in bazel should have unique inputs and
+            # outputs. The file and targets wont line up exactly between scons and our mongo_cc_library,
+            # custom rule, specifically the way dsymutil generates the dwarf file inside the dSYM dir. So
+            # we remap the special filename suffixes we use for our bazel intermediate cc_library rules.
+            #
+            # So we will do the renaming of dwarf file to what scons expects here, before we copy to scons tree
+            substring_end = str(t).find(".dSYM/") + 5
+            t = str(t)[:substring_end]
+            s = Globals.bazel_output(t)
+            dwarf_info_base = os.path.splitext(os.path.splitext(os.path.basename(t))[0])[0]
+            dwarf_sym_with_debug = os.path.join(
+                s, f"Contents/Resources/DWARF/{dwarf_info_base}_shared_with_debug.dylib"
+            )
+
+            # this handles shared libs or program binaries
+            if os.path.exists(dwarf_sym_with_debug):
+                dwarf_sym = os.path.join(s, f"Contents/Resources/DWARF/{dwarf_info_base}.dylib")
+            else:
+                dwarf_sym_with_debug = os.path.join(
+                    s, f"Contents/Resources/DWARF/{dwarf_info_base}_with_debug"
+                )
+                dwarf_sym = os.path.join(s, f"Contents/Resources/DWARF/{dwarf_info_base}")
+            # rename the file for scons
+            shutil.copy(dwarf_sym_with_debug, dwarf_sym)
+
+            # copy the whole dSYM in one operation. Clean any existing files that might be in the way.
+            shutil.rmtree(str(t), ignore_errors=True)
+            shutil.copytree(s, str(t))
+        else:
+            s = Globals.bazel_output(t)
+            shutil.copy(s, str(t))
+            os.chmod(str(t), os.stat(str(t)).st_mode | stat.S_IWUSR)
 
 
 BazelCopyOutputsAction = SCons.Action.FunctionAction(
@@ -601,7 +641,7 @@ def auto_install_bazel(env, libdep, shlib_suffix):
         bazel_query = (
             ["cquery"]
             + env["BAZEL_FLAGS_STR"]
-            + [f"kind('extract_debuginfo', deps(@{bazel_target}))", "--output=files"]
+            + [f'kind("extract_debuginfo", deps("@{bazel_target}"))', "--output=files"]
         )
         try:
             query_results = retry_call(
@@ -673,8 +713,15 @@ def exists(env: SCons.Environment.Environment) -> bool:
 
 def handle_bazel_program_exception(env, target, outputs):
     prog_suf = env.subst("$PROGSUFFIX")
-    dbg_suffix = env.subst("$SEPDBG_SUFFIX")
+    dbg_suffix = ".pdb" if sys.platform == "win32" else env.subst("$SEPDBG_SUFFIX")
     bazel_program = False
+
+    # on windows the pdb for dlls contains no double extensions
+    # so we need to check all the outputs up front to know
+    for bazel_output_file in outputs:
+        if bazel_output_file.endswith(".dll"):
+            return False
+
     if os.path.splitext(outputs[0])[1] in [prog_suf, dbg_suffix]:
         for bazel_output_file in outputs:
             first_ext = os.path.splitext(bazel_output_file)[1]
@@ -683,8 +730,11 @@ def handle_bazel_program_exception(env, target, outputs):
             else:
                 second_ext = None
 
-            if (second_ext is not None and second_ext + first_ext == prog_suf + dbg_suffix) or (
-                second_ext is None and first_ext == prog_suf
+            if (
+                (second_ext is not None and second_ext + first_ext == prog_suf + dbg_suffix)
+                or (second_ext is None and first_ext == prog_suf)
+                or first_ext == ".exe"
+                or first_ext == ".pdb"
             ):
                 bazel_program = True
                 scons_node_str = bazel_output_file.replace(
@@ -768,9 +818,13 @@ def generate(env: SCons.Environment.Environment) -> None:
         f'--//bazel/config:build_enterprise={env.GetOption("modules") == "enterprise"}',
         f'--//bazel/config:visibility_support={env.GetOption("visibility-support")}',
         f'--//bazel/config:disable_warnings_as_errors={env.GetOption("disable-warnings-as-errors") == "source"}',
+        f'--//bazel/config:gcov={env.GetOption("gcov") is not None}',
+        f'--//bazel/config:pgo_profile={env.GetOption("pgo-profile") is not None}',
         f"--platforms=//bazel/platforms:{distro_or_os}_{normalized_arch}_{env.ToolchainName()}",
         f"--host_platform=//bazel/platforms:{distro_or_os}_{normalized_arch}_{env.ToolchainName()}",
         f'--//bazel/config:ssl={"True" if env.GetOption("ssl") == "on" else "False"}',
+        "--define",
+        f"MONGO_VERSION={env['MONGO_VERSION']}",
         "--compilation_mode=dbg",  # always build this compilation mode as we always build with -g
     ]
 
@@ -955,7 +1009,7 @@ def generate(env: SCons.Environment.Environment) -> None:
                 "bazel_output": bazel_output_file.replace("\\", "/"),
             }
 
-    for scons_node in Globals.scons2bazel_targets:
+    for scons_node in sorted(Globals.scons2bazel_targets):
         bazel_debug(f"Created ThinTarget {scons_node} from {Globals.bazel_output(scons_node)}")
 
     globals = Globals()

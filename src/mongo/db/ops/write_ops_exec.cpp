@@ -752,37 +752,6 @@ bool insertBatchAndHandleErrors(OperationContext* opCtx,
     return true;
 }
 
-boost::optional<BSONObj> advanceExecutor(OperationContext* opCtx,
-                                         PlanExecutor* exec,
-                                         bool isRemove,
-                                         StringData operationName) {
-    BSONObj value;
-    PlanExecutor::ExecState state;
-    try {
-        state = exec->getNext(&value, nullptr);
-    } catch (const StorageUnavailableException&) {
-        throw;
-    } catch (DBException& exception) {
-        auto&& explainer = exec->getPlanExplainer();
-        auto&& [stats, _] = explainer.getWinningPlanStats(ExplainOptions::Verbosity::kExecStats);
-        LOGV2_WARNING(7267501,
-                      "Plan executor error",
-                      "operation"_attr = operationName,
-                      "error"_attr = exception.toStatus(),
-                      "stats"_attr = redact(stats));
-
-        exception.addContext("Plan executor error during " + operationName);
-        throw;
-    }
-
-    if (PlanExecutor::ADVANCED == state) {
-        return {std::move(value)};
-    }
-
-    invariant(state == PlanExecutor::IS_EOF);
-    return boost::none;
-}
-
 UpdateResult performUpdate(OperationContext* opCtx,
                            const NamespaceString& nss,
                            CurOp* curOp,
@@ -895,33 +864,15 @@ UpdateResult performUpdate(OperationContext* opCtx,
         CurOp::get(opCtx)->setPlanSummary_inlock(exec->getPlanExplainer().getPlanSummary());
     }
 
-    try {
-        docFound =
-            advanceExecutor(opCtx,
-                            exec.get(),
-                            remove,
-                            updateRequest->shouldReturnAnyDocs() ? "findAndModify" : "update");
-    } catch (ExceptionFor<ErrorCodes::StaleConfig>& ex) {
-        // An update plan can fail with StaleConfig error after having performed some writes but not
-        // completed. This can happen when the collection is moved. Routers consider StaleConfig as
-        // retryable. However, it is unsafe to retry, because if the update is not idempotent it
-        // would cause some documents to be updated twice. To prevent that, we rewrite the error
-        // code to QueryPlanKilled, which routers won't retry on.
-        const auto updateResult = exec->getUpdateResult();
-        tassert(9146501,
-                "An update plan should never yield after having performed an upsert",
-                updateResult.upsertedId.isEmpty());
-        if (updateResult.numDocsModified > 0 && !opCtx->isRetryableWrite()) {
-            ex.addContext("Update plan failed after having partially executed");
-            uasserted(ErrorCodes::QueryPlanKilled, ex.reason());
-        } else {
-            throw;
-        }
+    if (updateRequest->shouldReturnAnyDocs()) {
+        docFound = exec->executeFindAndModify();
+    } else {
+        // The 'UpdateResult' object will be obtained later, so discard the return value.
+        (void)exec->executeUpdate();
     }
 
-    // Nothing after advancing the plan executor should throw a WriteConflictException,
-    // so the following bookkeeping with execution stats won't end up being done
-    // multiple times.
+    // Nothing after executing the plan executor should throw a WriteConflictException, so the
+    // following bookkeeping with execution stats won't end up being done multiple times.
 
     PlanSummaryStats summaryStats;
     auto&& explainer = exec->getPlanExplainer();
@@ -1029,11 +980,16 @@ long long performDelete(OperationContext* opCtx,
         CurOp::get(opCtx)->setPlanSummary_inlock(exec->getPlanExplainer().getPlanSummary());
     }
 
-    docFound = advanceExecutor(
-        opCtx, exec.get(), true, deleteRequest->getReturnDeleted() ? "findAndModify" : "delete");
-    // Nothing after advancing the plan executor should throw a WriteConflictException,
-    // so the following bookkeeping with execution stats won't end up being done
-    // multiple times.
+    if (deleteRequest->getReturnDeleted()) {
+        docFound = exec->executeFindAndModify();
+    } else {
+        // The number of deleted documents will be obtained from the plan executor later, so discard
+        // the return value.
+        (void)exec->executeDelete();
+    }
+
+    // Nothing after executing the PlanExecutor should throw a WriteConflictException, so the
+    // following bookkeeping with execution stats won't end up being done multiple times.
 
     PlanSummaryStats summaryStats;
     exec->getPlanExplainer().getSummaryStats(&summaryStats);
@@ -1715,6 +1671,9 @@ WriteResult performUpdates(OperationContext* opCtx,
             }
         });
 
+        // Begin query planning timing once we have the nested CurOp.
+        CurOp::get(opCtx)->beginQueryPlanningTimer();
+
         auto sampleId = analyze_shard_key::getOrGenerateSampleId(
             opCtx, ns, analyze_shard_key::SampledCommandNameEnum::kUpdate, singleOp);
         if (sampleId) {
@@ -1998,6 +1957,9 @@ WriteResult performDeletes(OperationContext* opCtx,
                     &hangBeforeChildRemoveOpIsPopped, opCtx, "hangBeforeChildRemoveOpIsPopped");
             }
         });
+
+        // Begin query planning timing once we have the nested CurOp.
+        CurOp::get(opCtx)->beginQueryPlanningTimer();
 
         if (auto sampleId = analyze_shard_key::getOrGenerateSampleId(
                 opCtx, ns, analyze_shard_key::SampledCommandNameEnum::kDelete, singleOp)) {
@@ -2939,11 +2901,10 @@ insertIntoBucketCatalog(OperationContext* opCtx,
     boost::optional<Status> rebuildOptionsError;
     try {
         rebuildOptionsWithGranularityFromConfigServer(opCtx, bucketsNs, timeSeriesOptions);
-    } catch (const ExceptionForCat<ErrorCategory::StaleShardVersionError>& ex) {
-        // This could occur when the shard version attached to the request is for the time
-        // series namespace (unsharded), which is compared to the shard version of the
-        // bucket namespace. Consequently, every single entry fails but the whole operation
-        // succeeds.
+    } catch (const DBException& ex) {
+        if (ex.code() != ErrorCodes::StaleDbVersion && !ErrorCodes::isStaleShardVersionError(ex)) {
+            throw;
+        }
 
         rebuildOptionsError = ex.toStatus();
 
@@ -3374,8 +3335,6 @@ void explainUpdate(OperationContext* opCtx,
                               isTimeseriesViewRequest);
     uassertStatusOK(parsedUpdate.parseRequest());
 
-    CurOp::get(opCtx)->beginQueryPlanningTimer();
-
     auto exec = uassertStatusOK(
         getExecutorUpdate(&CurOp::get(opCtx)->debug(), collection, &parsedUpdate, verbosity));
     auto bodyBuilder = result->getBodyBuilder();
@@ -3414,8 +3373,6 @@ void explainDelete(OperationContext* opCtx,
     ParsedDelete parsedDelete(
         opCtx, &deleteRequest, collection.getCollectionPtr(), isTimeseriesViewRequest);
     uassertStatusOK(parsedDelete.parseRequest());
-
-    CurOp::get(opCtx)->beginQueryPlanningTimer();
 
     // Explain the plan tree.
     auto exec = uassertStatusOK(

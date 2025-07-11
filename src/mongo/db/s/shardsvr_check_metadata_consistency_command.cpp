@@ -90,9 +90,9 @@
 #include "mongo/s/client/shard_registry.h"
 #include "mongo/s/database_version.h"
 #include "mongo/s/grid.h"
-#include "mongo/s/query/async_results_merger_params_gen.h"
-#include "mongo/s/query/document_source_merge_cursors.h"
-#include "mongo/s/query/establish_cursors.h"
+#include "mongo/s/query/exec/async_results_merger_params_gen.h"
+#include "mongo/s/query/exec/document_source_merge_cursors.h"
+#include "mongo/s/query/exec/establish_cursors.h"
 #include "mongo/s/request_types/sharded_ddl_commands_gen.h"
 #include "mongo/s/shard_version.h"
 #include "mongo/s/sharding_state.h"
@@ -249,7 +249,7 @@ public:
                 auto status = checkMetadataForDb();
                 if (!status.isOK()) {
                     auto extraInfo = status.extraInfo<StaleDbRoutingVersion>();
-                    if (extraInfo->getVersionWanted()) {
+                    if (!extraInfo || extraInfo->getVersionWanted()) {
                         // In case there is a wanted shard version means that the metadata is stale
                         // and we are going to skip the checks.
                         skippedMetadataChecks = true;

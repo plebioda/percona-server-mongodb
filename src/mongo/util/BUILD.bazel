@@ -1,12 +1,53 @@
-load("//bazel:mongo_src_rules.bzl", "mongo_cc_library")
+load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(
+    glob(["*.h"]) + glob(["*.cpp"]),
+)
+
+# Headers designed to be used without source code. Split these out
+# into targets if they're meant to be used with source code.
 filegroup(
-    name = "exit_code",
+    name = "headers",
     srcs = [
-        "exit_code.h",
+        "cancellation.h",
+        "database_name_util.h",
+        "fail_point.h",
+        "inline_memory.h",
+        "make_array_type.h",
+        "namespace_string_util.h",
+        "overloaded_visitor.h",
+        "periodic_runner.h",
+        "safe_num.h",
+        "scoped_unlock.h",
+        "serialization_context.h",
     ],
+)
+
+idl_generator(
+    name = "fail_point_server_parameter_gen",
+    src = "fail_point_server_parameter.idl",
+)
+
+idl_generator(
+    name = "testing_options_gen",
+    src = "testing_options.idl",
+)
+
+idl_generator(
+    name = "tcmalloc_parameters_gen",
+    src = "tcmalloc_parameters.idl",
+)
+
+idl_generator(
+    name = "password_params_gen",
+    src = "password_params.idl",
+)
+
+idl_generator(
+    name = "pin_code_segments_params_gen",
+    src = "pin_code_segments_params.idl",
 )
 
 mongo_cc_library(
@@ -16,5 +57,51 @@ mongo_cc_library(
     ],
     hdrs = [
         "boost_assert_shim.h",
+        "//src/third_party/boost:headers",
+    ],
+    copts = [
+        "-Isrc/third_party/boost",
+    ],
+)
+
+mongo_cc_library(
+    name = "debugger",
+    srcs = [
+        "debugger.cpp",
+    ],
+    hdrs = [
+        "debugger.h",
+    ],
+    local_defines = select({
+        "//bazel/config:use_gdbserver_enabled": ["USE_GDBSERVER"],
+        "//bazel/config:use_lldbserver_enabled": ["USE_LLDB_SERVER"],
+        "//bazel/config:use_wait_for_debugger_enabled": ["WAIT_FOR_DEBUGGER"],
+        "//conditions:default": [],
+    }),
+)
+
+mongo_cc_library(
+    name = "winutil",
+    srcs = [
+        "winutil.cpp",
+    ],
+    hdrs = [
+        "winutil.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "secure_compare_memory",
+    srcs = [
+        "secure_compare_memory.cpp",
+    ],
+    hdrs = [
+        "secure_compare_memory.h",
+    ],
+    deps = [
+        "//src/mongo:base",
     ],
 )

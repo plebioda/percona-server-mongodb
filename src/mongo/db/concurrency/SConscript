@@ -24,7 +24,7 @@ env.Library(
     target="exception_util",
     source=[
         "exception_util.cpp",
-        "exception_util.idl",
+        "exception_util_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/commands/server_status_core",
@@ -60,16 +60,6 @@ env.Library(
         "$BUILD_DIR/mongo/util/concurrency/spin_lock",
         "$BUILD_DIR/mongo/util/concurrency/ticketholder",
         "$BUILD_DIR/mongo/util/fail_point",
-    ],
-)
-
-env.Library(
-    target="flow_control_ticketholder",
-    source=[
-        "flow_control_ticketholder.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 

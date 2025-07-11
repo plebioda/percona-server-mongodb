@@ -65,13 +65,12 @@ DEFAULTS = {
     "dbtest_executable": None,
     "dry_run": None,
     "exclude_with_any_tags": None,
-    "flow_control": None,
-    "flow_control_tickets": None,
     "force_excluded_tests": False,
     "fuzz_mongod_configs": None,
     "fuzz_runtime_params": None,
     "fuzz_mongos_configs": None,
     "config_fuzz_seed": None,
+    "disable_encryption_fuzzing": False,
     "genny_executable": None,
     "include_with_any_tags": None,
     "include_with_all_tags": None,
@@ -418,6 +417,9 @@ FUZZ_MONGOS_CONFIGS = None
 # This seeds the random number generator used to fuzz mongod and mongos parameters
 CONFIG_FUZZ_SEED = None
 
+# Disables the fuzzing that sometimes enables the encrypted storage engine.
+DISABLE_ENCRYPTION_FUZZING = None
+
 # Executable file for genny, passed in as a command line arg.
 GENNY_EXECUTABLE = None
 
@@ -577,13 +579,6 @@ EXPORT_MONGOD_CONFIG = None
 # If true, run ReplicaSetFixture with linear chaining.
 LINEAR_CHAIN = None
 
-# If set to "on", it enables flow control. If set to "off", it disables flow control. If left as
-# None, the server's default will determine whether flow control is enabled.
-FLOW_CONTROL = None
-
-# If set, it ensures Flow Control only ever assigns this number of tickets in one second.
-FLOW_CONTROL_TICKETS = None
-
 # If set, then all mongod's started by resmoke.py and by the mongo shell will use the specified
 # storage engine.
 STORAGE_ENGINE = None
@@ -724,3 +719,6 @@ NOOP_MONGO_D_S_PROCESSES = False
 # If resmoke is running from within a `workload` container,
 # we may need to do additional setup to run the suite successfully.
 REQUIRES_WORKLOAD_CONTAINER_SETUP = False
+
+# Config fuzzer encryption options, this is only set when the fuzzer is run
+CONFIG_FUZZER_ENCRYPTION_OPTS = None

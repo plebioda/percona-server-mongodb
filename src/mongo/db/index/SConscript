@@ -54,7 +54,7 @@ iamEnv.Library(
         "hash_access_method.cpp",
         "index_access_method.cpp",
         "index_build_interceptor.cpp",
-        "index_build_interceptor.idl",
+        "index_build_interceptor_gen.cpp",
         "index_descriptor.cpp",
         "multikey_paths.cpp",
         "s2_access_method.cpp",
@@ -100,7 +100,7 @@ iamEnv.Library(
         "$BUILD_DIR/mongo/util/concurrency/spin_lock",
         "$BUILD_DIR/mongo/util/progress_meter",
         "$BUILD_DIR/third_party/s2/s2",
-        "$BUILD_DIR/third_party/shim_snappy",
+        "$BUILD_DIR/third_party/snappy/snappy",
         "column_store_index",
         "expression_params",
     ],
@@ -119,7 +119,7 @@ iamEnv.Library(
         "$BUILD_DIR/mongo/db/sorter/sorter_stats",
         "$BUILD_DIR/mongo/db/storage/encryption_hooks",
         "$BUILD_DIR/mongo/db/storage/storage_options",
-        "$BUILD_DIR/third_party/shim_snappy",
+        "$BUILD_DIR/third_party/snappy/snappy",
     ],
 )
 

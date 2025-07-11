@@ -14,6 +14,7 @@
     {
       "type": "library",
       "name": "kafka",
+      "version": "2.0.2",
       "scope": "required",
       "cpe": "test_cpe",
       "properties": [
@@ -33,6 +34,7 @@
     {
       "type": "library",
       "name": "protobuf",
+      "version": "v4.25.0",
       "scope": "required",
       "purl": "test_purl",
       "properties": [
@@ -54,6 +56,7 @@
     {
       "type": "library",
       "name": "unicode",
+      "version": "8.0",
       "scope": "optional",
       "purl": "test_purl",
       "properties": [

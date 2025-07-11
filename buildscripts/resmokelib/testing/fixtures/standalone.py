@@ -461,18 +461,6 @@ class MongodLauncher(object):
         ) and "shutdownTimeoutMillisForSignaledShutdown" not in suite_set_parameters:
             suite_set_parameters["shutdownTimeoutMillisForSignaledShutdown"] = 100
 
-        if "enableFlowControl" not in suite_set_parameters and self.config.FLOW_CONTROL is not None:
-            suite_set_parameters["enableFlowControl"] = self.config.FLOW_CONTROL == "on"
-
-        if (
-            "failpoint.flowControlTicketOverride" not in suite_set_parameters
-            and self.config.FLOW_CONTROL_TICKETS is not None
-        ):
-            suite_set_parameters["failpoint.flowControlTicketOverride"] = {
-                "mode": "alwaysOn",
-                "data": {"numTickets": self.config.FLOW_CONTROL_TICKETS},
-            }
-
         _add_testing_set_parameters(suite_set_parameters)
 
         shortcut_opts = {
@@ -515,6 +503,13 @@ class MongodLauncher(object):
         # config server replica set.
         if "configsvr" in mongod_options:
             mongod_options["storageEngine"] = "wiredTiger"
+
+        if self.config.CONFIG_FUZZER_ENCRYPTION_OPTS:
+            for opt_name in self.config.CONFIG_FUZZER_ENCRYPTION_OPTS:
+                if opt_name in mongod_options:
+                    continue
+
+                mongod_options[opt_name] = self.config.CONFIG_FUZZER_ENCRYPTION_OPTS[opt_name]
 
         return self.fixturelib.mongod_program(
             logger, job_num, executable, process_kwargs, mongod_options

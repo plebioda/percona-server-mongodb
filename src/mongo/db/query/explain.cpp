@@ -53,9 +53,9 @@
 #include "mongo/db/query/explain.h"
 #include "mongo/db/query/explain_common.h"
 #include "mongo/db/query/multiple_collection_accessor.h"
-#include "mongo/db/query/plan_cache.h"
-#include "mongo/db/query/plan_cache_debug_info.h"
-#include "mongo/db/query/plan_cache_key_factory.h"
+#include "mongo/db/query/plan_cache/plan_cache.h"
+#include "mongo/db/query/plan_cache/plan_cache_debug_info.h"
+#include "mongo/db/query/plan_cache/plan_cache_key_factory.h"
 #include "mongo/db/query/plan_enumerator/plan_enumerator_explain_info.h"
 #include "mongo/db/query/plan_executor.h"
 #include "mongo/db/query/plan_explainer_impl.h"
@@ -373,7 +373,10 @@ void generateExecutionInfo(PlanExecutor* exec,
  * If 'exec' is configured for yielding, then a call to this helper could result in a yield.
  */
 void executePlan(PlanExecutor* exec) {
-    exec->executeExhaustive();
+    // Using 'getNextBatch()' rather than 'getNext()' means we iterate the PlanExecutor in a tighter
+    // loop. We passing a null callback function because explain wishes to simply discard the query
+    // result set.
+    (void)exec->getNextBatch(std::numeric_limits<int64_t>::max(), nullptr);
 }
 
 /**

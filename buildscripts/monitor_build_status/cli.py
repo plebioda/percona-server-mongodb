@@ -9,6 +9,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import structlog
 import typer
+from tabulate import tabulate
 from typing_extensions import Annotated
 
 # Get relative imports to work when the package is not installed on the PYTHONPATH.
@@ -16,17 +17,19 @@ if __name__ == "__main__" and __package__ is None:
     sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from buildscripts.client.jiraclient import JiraAuth, JiraClient
-from buildscripts.monitor_build_status.bfs_report import BFsReport
+from buildscripts.monitor_build_status.bfs_report import BfCategory, BFsReport
+from buildscripts.monitor_build_status.code_lockdown_config import (
+    BfCountThresholds,
+    CodeLockdownConfig,
+)
 from buildscripts.monitor_build_status.evergreen_service import (
     EvergreenService,
     EvgProjectsInfo,
     TaskStatusCounts,
 )
 from buildscripts.monitor_build_status.jira_service import (
-    BfTemperature,
     JiraCustomFieldNames,
     JiraService,
-    TestType,
 )
 from buildscripts.resmokelib.utils.evergreen_conn import get_evergreen_api
 from buildscripts.util.cmdutils import enable_logging
@@ -34,23 +37,13 @@ from buildscripts.util.cmdutils import enable_logging
 LOGGER = structlog.get_logger(__name__)
 
 BLOCK_ON_RED_PLAYBOOK_URL = "http://go/blockonred"
+CODE_LOCKDOWN_CONFIG = "etc/code_lockdown.yml"
 
 JIRA_SERVER = "https://jira.mongodb.org"
 DEFAULT_REPO = "10gen/mongo"
 DEFAULT_BRANCH = "master"
 SLACK_CHANNEL = "#10gen-mongo-code-lockdown"
-FRIDAY_INDEX = 4  # datetime.weekday() returns Monday as 0 and Sunday as 6
 EVERGREEN_LOOKBACK_DAYS = 14
-
-OVERALL_HOT_BF_COUNT_THRESHOLD = 15
-OVERALL_COLD_BF_COUNT_THRESHOLD = 50
-OVERALL_PERF_BF_COUNT_THRESHOLD = 15
-PER_TEAM_HOT_BF_COUNT_THRESHOLD = 3
-PER_TEAM_COLD_BF_COUNT_THRESHOLD = 10
-PER_TEAM_PERF_BF_COUNT_THRESHOLD = 5
-
-GREEN_THRESHOLD_PERCENTS = 100
-RED_THRESHOLD_PERCENTS = 200
 
 
 def iterable_to_jql(entries: Iterable[str]) -> str:
@@ -69,57 +62,25 @@ ACTIVE_BFS_QUERY = (
 )
 
 
-class ExitCode(Enum):
-    SUCCESS = 0
-    PREVIOUS_BUILD_STATUS_UNKNOWN = 1
-
-
-class BuildStatus(Enum):
+class CodeMergeStatus(Enum):
     RED = "RED"
-    YELLOW = "YELLOW"
     GREEN = "GREEN"
-    UNKNOWN = "UNKNOWN"
 
     @classmethod
-    def from_str(cls, status: Optional[str]) -> BuildStatus:
-        try:
-            return cls[status]
-        except KeyError:
-            return cls.UNKNOWN
-
-    @classmethod
-    def from_threshold_percentages(cls, threshold_percentages: List[float]) -> BuildStatus:
-        if any(percentage > RED_THRESHOLD_PERCENTS for percentage in threshold_percentages):
+    def from_threshold_percentages(cls, threshold_percentages: List[float]) -> CodeMergeStatus:
+        if any(percentage > 100 for percentage in threshold_percentages):
             return cls.RED
-        if all(percentage < GREEN_THRESHOLD_PERCENTS for percentage in threshold_percentages):
-            return cls.GREEN
-        return cls.YELLOW
+        return cls.GREEN
 
 
 class SummaryMsg(Enum):
-    TITLE = "`[SUMMARY]`"
+    PREFIX = "`[SUMMARY]`"
 
-    BELOW_THRESHOLDS = f"All metrics are within {GREEN_THRESHOLD_PERCENTS}% of their thresholds."
+    BELOW_THRESHOLDS = "All metrics are within 100% of their thresholds.\nAll merges are allowed."
     THRESHOLD_EXCEEDED = (
-        f"At least one metric exceeds {GREEN_THRESHOLD_PERCENTS}% of its threshold."
+        "At least one metric exceeds 100% of its threshold.\n"
+        "Approve only changes that fix BFs, Bugs, and Performance Regressions in the following scopes:"
     )
-    THRESHOLD_EXCEEDED_X2 = (
-        f"At least one metric exceeds {RED_THRESHOLD_PERCENTS}% of its threshold."
-    )
-
-    STATUS_CHANGED = "<!here> Build status has changed to `{status}`."
-    STATUS_IS = "Build status is `{status}`."
-
-    ENTER_RED = "We are entering the code block state."
-    STILL_RED = "We are still in the code block state."
-    EXIT_RED = "We are exiting the code block state."
-
-    ACTION_ON_RED = "Approve only changes that fix BFs, Bugs, and Performance Regressions."
-    ACTION_ON_YELLOW = (
-        "Warning: all merges are still allowed, but now is a good time to get BFs, Bugs, and"
-        " Performance Regressions under control to avoid a blocking state."
-    )
-    ACTION_ON_GREEN = "All merges are allowed."
 
     PLAYBOOK_REFERENCE = f"Refer to our playbook at <{BLOCK_ON_RED_PLAYBOOK_URL}> for details."
 
@@ -129,17 +90,15 @@ class MonitorBuildStatusOrchestrator:
         self,
         jira_service: JiraService,
         evg_service: EvergreenService,
+        code_lockdown_config: CodeLockdownConfig,
     ) -> None:
         self.jira_service = jira_service
         self.evg_service = evg_service
+        self.code_lockdown_config = code_lockdown_config
 
-    def evaluate_build_redness(
-        self, repo: str, branch: str, notify: bool, input_status_file: str, output_status_file: str
-    ) -> ExitCode:
-        exit_code = ExitCode.SUCCESS
-
+    def evaluate_build_redness(self, repo: str, branch: str, notify: bool) -> None:
         status_message = f"\n`[STATUS]` '{repo}' repo '{branch}' branch"
-        threshold_percentages = []
+        scope_percentages: Dict[str, List[float]] = {}
 
         LOGGER.info("Getting Evergreen projects data")
         evg_projects_info = self.evg_service.get_evg_project_info(repo, branch)
@@ -147,9 +106,11 @@ class MonitorBuildStatusOrchestrator:
         LOGGER.info("Got Evergreen projects data")
 
         bfs_report = self._make_bfs_report(evg_projects_info)
-        bf_count_status_msg, bf_count_percentages = self._get_bf_counts_status(bfs_report)
+        bf_count_status_msg, bf_count_percentages = self._get_bf_counts_status(
+            bfs_report, self.code_lockdown_config
+        )
         status_message = f"{status_message}\n{bf_count_status_msg}\n"
-        threshold_percentages.extend(bf_count_percentages)
+        scope_percentages.update(bf_count_percentages)
 
         # We are looking for Evergreen versions that started before the beginning of yesterday
         # to give them time to complete
@@ -166,48 +127,7 @@ class MonitorBuildStatusOrchestrator:
         )
         status_message = f"{status_message}\n{waterfall_failure_rate_status_msg}\n"
 
-        previous_build_status = BuildStatus.UNKNOWN
-        if os.path.exists(input_status_file):
-            with open(input_status_file, "r") as input_file:
-                input_file_content = input_file.read().strip()
-                LOGGER.info(
-                    "Input status file content",
-                    file=input_status_file,
-                    content=input_file_content,
-                )
-                previous_build_status = BuildStatus.from_str(input_file_content)
-                if previous_build_status == BuildStatus.UNKNOWN:
-                    LOGGER.error(
-                        "Could not parse previous build status from the input build status file,"
-                        " the file was corrupted or contained unexpected string"
-                    )
-        else:
-            LOGGER.warning("Input status file is absent", file=input_status_file)
-            LOGGER.warning(
-                "The absence of input build status file is expected if the task is running for"
-                " the first time or for the first time after the file storage location is changed"
-            )
-
-        if previous_build_status == BuildStatus.UNKNOWN:
-            LOGGER.warning(
-                "We were not able to get the previous build status, which could lead to build status"
-                " being changed from RED to YELLOW, which should not happen, and/or summary messages"
-                " could be somewhat off"
-            )
-            LOGGER.warning(
-                "If we are in a YELLOW condition, there's different behavior to communicate if that"
-                " was previously GREEN (things are worse, but not RED yet), YELLOW (no change), or"
-                " RED (still RED but improving)"
-            )
-            LOGGER.warning(
-                "The state will still be reported, but may lose accuracy on specific actions to take"
-            )
-            exit_code = ExitCode.PREVIOUS_BUILD_STATUS_UNKNOWN
-
-        current_build_status = BuildStatus.from_threshold_percentages(threshold_percentages)
-        resulting_build_status, summary = self._summarize(
-            previous_build_status, current_build_status, self._today_is_friday()
-        )
+        summary = self._summarize(scope_percentages)
         status_message = f"{status_message}\n{summary}"
 
         for line in status_message.split("\n"):
@@ -219,11 +139,6 @@ class MonitorBuildStatusOrchestrator:
                 target=SLACK_CHANNEL,
                 msg=status_message.strip(),
             )
-
-        with open(output_status_file, "w") as output_file:
-            output_file.write(resulting_build_status.value)
-
-        return exit_code
 
     def _make_bfs_report(self, evg_projects_info: EvgProjectsInfo) -> BFsReport:
         query = (
@@ -242,77 +157,84 @@ class MonitorBuildStatusOrchestrator:
         return bfs_report
 
     @staticmethod
-    def _get_bf_counts_status(bfs_report: BFsReport) -> Tuple[str, List[float]]:
-        percentages = []
+    def _get_bf_counts_status(
+        bfs_report: BFsReport, code_lockdown_config: CodeLockdownConfig
+    ) -> Tuple[str, Dict[str, List[float]]]:
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        scope_percentages: Dict[str, List[float]] = {}
+
         status_message = "`[STATUS]` The current BF count"
-        status_message = f"{status_message}\n" f"```\n" f"{bfs_report.as_str_table()}\n" f"```"
+        headers = ["Scope", "Hot BFs", "Cold BFs", "Perf BFs"]
+        table_data = []
 
-        def _make_status_msg(scope_: str, bf_type: str, bf_count: int, threshold: int) -> str:
-            percentage = bf_count / threshold * 100
-            percentages.append(percentage)
-            return (
-                f"{scope_} {bf_type} BFs: {bf_count} ({percentage:.2f}% of threshold {threshold})"
+        def _process_thresholds(
+            scope: str,
+            hot_bf_count: int,
+            cold_bf_count: int,
+            perf_bf_count: int,
+            thresholds: BfCountThresholds,
+        ) -> None:
+            if all(count == 0 for count in [hot_bf_count, cold_bf_count, perf_bf_count]):
+                return
+
+            hot_bf_percentage = hot_bf_count / thresholds.hot_bf_count * 100
+            cold_bf_percentage = cold_bf_count / thresholds.cold_bf_count * 100
+            perf_bf_percentage = perf_bf_count / thresholds.perf_bf_count * 100
+
+            scope_percentages[scope] = [hot_bf_percentage, cold_bf_percentage, perf_bf_percentage]
+
+            table_data.append(
+                [
+                    scope,
+                    f"{hot_bf_percentage:.0f}% ({hot_bf_count} / {thresholds.hot_bf_count})",
+                    f"{cold_bf_percentage:.0f}% ({cold_bf_count} / {thresholds.cold_bf_count})",
+                    f"{perf_bf_percentage:.0f}% ({perf_bf_count} / {thresholds.perf_bf_count})",
+                ]
             )
 
-        overall_hot_bf_count = bfs_report.get_bf_count(
-            test_types=[TestType.CORRECTNESS],
-            bf_temperatures=[BfTemperature.HOT],
+        overall_older_than_time = now - timedelta(
+            hours=code_lockdown_config.overall_thresholds.include_bfs_older_than_hours
         )
-        overall_cold_bf_count = bfs_report.get_bf_count(
-            test_types=[TestType.CORRECTNESS],
-            bf_temperatures=[BfTemperature.COLD, BfTemperature.NONE],
-        )
-        overall_perf_bf_count = bfs_report.get_bf_count(
-            test_types=[TestType.PERFORMANCE],
-            bf_temperatures=[BfTemperature.HOT, BfTemperature.COLD, BfTemperature.NONE],
+        _process_thresholds(
+            "[Org] Overall",
+            bfs_report.get_bf_count(BfCategory.HOT, overall_older_than_time),
+            bfs_report.get_bf_count(BfCategory.COLD, overall_older_than_time),
+            bfs_report.get_bf_count(BfCategory.PERF, overall_older_than_time),
+            code_lockdown_config.overall_thresholds,
         )
 
-        scope = "Overall"
-        status_message = (
-            f"{status_message}"
-            f"\n{_make_status_msg(scope, 'Hot', overall_hot_bf_count, OVERALL_HOT_BF_COUNT_THRESHOLD)}"
-            f"\n{_make_status_msg(scope, 'Cold', overall_cold_bf_count, OVERALL_COLD_BF_COUNT_THRESHOLD)}"
-            f"\n{_make_status_msg(scope, 'Perf', overall_perf_bf_count, OVERALL_PERF_BF_COUNT_THRESHOLD)}"
-        )
-
-        max_per_team_hot_bf_count = 0
-        max_per_team_cold_bf_count = 0
-        max_per_team_perf_bf_count = 0
-
-        for team in bfs_report.all_assigned_teams:
-            per_team_hot_bf_count = bfs_report.get_bf_count(
-                test_types=[TestType.CORRECTNESS],
-                bf_temperatures=[BfTemperature.HOT],
-                assigned_team=team,
+        for group in code_lockdown_config.team_groups or []:
+            group_thresholds = code_lockdown_config.get_thresholds(group.name)
+            group_older_than_time = now - timedelta(
+                hours=group_thresholds.include_bfs_older_than_hours
             )
-            if per_team_hot_bf_count > max_per_team_hot_bf_count:
-                max_per_team_hot_bf_count = per_team_hot_bf_count
-
-            per_team_cold_bf_count = bfs_report.get_bf_count(
-                test_types=[TestType.CORRECTNESS],
-                bf_temperatures=[BfTemperature.COLD, BfTemperature.NONE],
-                assigned_team=team,
+            _process_thresholds(
+                f"[Group] {group.name}",
+                bfs_report.get_bf_count(BfCategory.HOT, group_older_than_time, group.teams),
+                bfs_report.get_bf_count(BfCategory.COLD, group_older_than_time, group.teams),
+                bfs_report.get_bf_count(BfCategory.PERF, group_older_than_time, group.teams),
+                group_thresholds,
             )
-            if per_team_cold_bf_count > max_per_team_cold_bf_count:
-                max_per_team_cold_bf_count = per_team_cold_bf_count
 
-            per_team_perf_bf_count = bfs_report.get_bf_count(
-                test_types=[TestType.PERFORMANCE],
-                bf_temperatures=[BfTemperature.HOT, BfTemperature.COLD, BfTemperature.NONE],
-                assigned_team=team,
+        for assigned_team in sorted(list(bfs_report.team_reports.keys())):
+            team_thresholds = code_lockdown_config.get_thresholds(assigned_team)
+            team_older_than_time = now - timedelta(
+                hours=team_thresholds.include_bfs_older_than_hours
             )
-            if per_team_perf_bf_count > max_per_team_perf_bf_count:
-                max_per_team_perf_bf_count = per_team_perf_bf_count
+            _process_thresholds(
+                f"[Team] {assigned_team}",
+                bfs_report.get_bf_count(BfCategory.HOT, team_older_than_time, [assigned_team]),
+                bfs_report.get_bf_count(BfCategory.COLD, team_older_than_time, [assigned_team]),
+                bfs_report.get_bf_count(BfCategory.PERF, team_older_than_time, [assigned_team]),
+                team_thresholds,
+            )
 
-        scope = "Max per Assigned Team"
-        status_message = (
-            f"{status_message}"
-            f"\n{_make_status_msg(scope, 'Hot', max_per_team_hot_bf_count, PER_TEAM_HOT_BF_COUNT_THRESHOLD)}"
-            f"\n{_make_status_msg(scope, 'Cold', max_per_team_cold_bf_count, PER_TEAM_COLD_BF_COUNT_THRESHOLD)}"
-            f"\n{_make_status_msg(scope, 'Perf', max_per_team_perf_bf_count, PER_TEAM_PERF_BF_COUNT_THRESHOLD)}"
+        table_str = tabulate(
+            table_data, headers, tablefmt="outline", colalign=("left", "right", "right", "right")
         )
+        status_message = f"{status_message}\n```\n{table_str}\n```"
 
-        return status_message, percentages
+        return status_message, scope_percentages
 
     def _make_waterfall_report(
         self, evg_project_names: List[str], window_end: datetime
@@ -387,64 +309,25 @@ class MonitorBuildStatusOrchestrator:
         return status_message
 
     @staticmethod
-    def _summarize(
-        previous_status: BuildStatus, current_status: BuildStatus, today_is_friday: bool
-    ) -> Tuple[BuildStatus, str]:
-        resulting_status = previous_status
-        if current_status == BuildStatus.RED and previous_status != BuildStatus.RED:
-            if today_is_friday:
-                resulting_status = BuildStatus.RED
-            else:
-                resulting_status = BuildStatus.YELLOW
-        if current_status == BuildStatus.YELLOW and previous_status != BuildStatus.RED:
-            resulting_status = BuildStatus.YELLOW
-        if current_status == BuildStatus.GREEN:
-            resulting_status = BuildStatus.GREEN
+    def _summarize(scope_percentages: Dict[str, List[float]]) -> str:
+        summary = SummaryMsg.PREFIX.value
 
-        summary = SummaryMsg.TITLE.value
+        red_scopes = []
+        for scope, percentages in scope_percentages.items():
+            status = CodeMergeStatus.from_threshold_percentages(percentages)
+            if status == CodeMergeStatus.RED:
+                red_scopes.append(scope)
 
-        if resulting_status != previous_status:
-            status_msg = SummaryMsg.STATUS_CHANGED.value.format(status=resulting_status.value)
+        if len(red_scopes) == 0:
+            summary = f"{summary} {SummaryMsg.BELOW_THRESHOLDS.value}"
         else:
-            status_msg = SummaryMsg.STATUS_IS.value.format(status=resulting_status.value)
-        summary = f"{summary}\n{status_msg}"
-
-        if current_status == BuildStatus.RED:
-            summary = f"{summary}\n{SummaryMsg.THRESHOLD_EXCEEDED_X2.value}"
-        if current_status == BuildStatus.YELLOW:
-            summary = f"{summary}\n{SummaryMsg.THRESHOLD_EXCEEDED.value}"
-        if current_status == BuildStatus.GREEN:
-            summary = f"{summary}\n{SummaryMsg.BELOW_THRESHOLDS.value}"
-
-        if previous_status != BuildStatus.RED and resulting_status == BuildStatus.RED:
-            summary = f"{summary}\n{SummaryMsg.ENTER_RED.value}"
-        if previous_status == BuildStatus.RED and resulting_status == BuildStatus.RED:
-            summary = f"{summary}\n{SummaryMsg.STILL_RED.value}"
-        if previous_status == BuildStatus.RED and resulting_status != BuildStatus.RED:
-            summary = f"{summary}\n{SummaryMsg.EXIT_RED.value}"
-
-        if resulting_status == BuildStatus.RED:
-            summary = f"{summary}\n{SummaryMsg.ACTION_ON_RED.value}"
-        if resulting_status == BuildStatus.YELLOW:
-            summary = f"{summary}\n{SummaryMsg.ACTION_ON_YELLOW.value}"
-        if resulting_status == BuildStatus.GREEN:
-            summary = f"{summary}\n{SummaryMsg.ACTION_ON_GREEN.value}"
+            summary = f"{summary} {SummaryMsg.THRESHOLD_EXCEEDED.value}"
+            for scope in red_scopes:
+                summary = f"{summary}\n\t- {scope}"
 
         summary = f"{summary}\n\n{SummaryMsg.PLAYBOOK_REFERENCE.value}\n"
 
-        LOGGER.info(
-            "Got build statuses",
-            previous_build_status=previous_status.value,
-            current_build_status=current_status.value,
-            resulting_build_status=resulting_status.value,
-            today_is_friday=today_is_friday,
-        )
-
-        return resulting_status, summary
-
-    @staticmethod
-    def _today_is_friday() -> bool:
-        return datetime.utcnow().weekday() == FRIDAY_INDEX
+        return summary
 
 
 def main(
@@ -457,12 +340,6 @@ def main(
     notify: Annotated[
         bool, typer.Option(help="Whether to send slack notification with the results")
     ] = False,  # default to the more "quiet" setting
-    input_status_file: Annotated[
-        str, typer.Option(help="The file that contains a previous build status")
-    ] = "input_build_status_file.txt",
-    output_status_file: Annotated[
-        str, typer.Option(help="The file that contains the current build status")
-    ] = "output_build_status_file.txt",
 ) -> None:
     """
     Analyze Jira BFs count and Evergreen redness data.
@@ -488,14 +365,14 @@ def main(
 
     jira_service = JiraService(jira_client=jira_client)
     evg_service = EvergreenService(evg_api=evg_api)
+    code_lockdown_config = CodeLockdownConfig.from_yaml_config(CODE_LOCKDOWN_CONFIG)
     orchestrator = MonitorBuildStatusOrchestrator(
-        jira_service=jira_service, evg_service=evg_service
+        jira_service=jira_service,
+        evg_service=evg_service,
+        code_lockdown_config=code_lockdown_config,
     )
 
-    exit_code = orchestrator.evaluate_build_redness(
-        github_repo, branch, notify, input_status_file, output_status_file
-    )
-    sys.exit(exit_code.value)
+    orchestrator.evaluate_build_redness(github_repo, branch, notify)
 
 
 if __name__ == "__main__":

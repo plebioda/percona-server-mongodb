@@ -16,7 +16,7 @@ env.Library(
         "insert.cpp",
         "update.cpp",
         "write_ops_retryability.cpp",
-        "single_write_result.idl",
+        "single_write_result_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
@@ -96,7 +96,7 @@ env.Library(
     target="write_ops_parsers",
     source=[
         "write_ops.cpp",
-        "write_ops.idl",
+        "write_ops_gen.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/base",
@@ -149,7 +149,7 @@ env.Library(
 
 env.Library(
     target="delete_request_idl",
-    source="delete_request.idl",
+    source="delete_request_gen.cpp",
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/pipeline/runtime_constants_idl",
     ],

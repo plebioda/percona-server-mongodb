@@ -3,16 +3,6 @@
 Import("env")
 
 env.Library(
-    target="query_sbe_plan_stats",
-    source=[
-        "stages/plan_stats.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="query_sbe_makeobj_spec",
     source=[
         "makeobj_spec.cpp",
@@ -60,7 +50,7 @@ sbeEnv.Library(
         "$BUILD_DIR/mongo/db/sbe_values",
         "$BUILD_DIR/mongo/db/storage/record_store_base",
         "$BUILD_DIR/mongo/util/field_set",
-        "$BUILD_DIR/third_party/shim_snappy",
+        "$BUILD_DIR/third_party/snappy/snappy",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
@@ -116,7 +106,7 @@ sbeEnv.Library(
         "$BUILD_DIR/mongo/db/storage/index_entry_comparison",
         "$BUILD_DIR/mongo/executor/task_executor_cursor",
         "$BUILD_DIR/mongo/util/concurrency/thread_pool",
-        "$BUILD_DIR/third_party/shim_snappy",
+        "$BUILD_DIR/third_party/snappy/snappy",
         "query_sbe_plan_stats",
     ],
     LIBDEPS_PRIVATE=[
@@ -301,34 +291,18 @@ env.CppUnitTest(
     ],
 )
 
-env.Library(
-    target="sbe_abt_test_util",
-    source=[
-        "abt/sbe_abt_test_util.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/pipeline/abt_translation",
-        "$BUILD_DIR/mongo/db/query/optimizer/unit_test_utils",
-        "$BUILD_DIR/mongo/db/query/query_test_service_context",
-        "$BUILD_DIR/mongo/db/query_exec",
-        "$BUILD_DIR/mongo/db/service_context_test_fixture",
-        "query_sbe_abt",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/auth/authmocks",
-        "$BUILD_DIR/mongo/db/service_context_non_d",
-    ],
-)
-
 env.CppUnitTest(
     target="sbe_abt_test",
     source=[
-        "abt/sbe_abt_diff_test.cpp",
         "abt/sbe_abt_test.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/query/ce/query_ce_sampling",
-        "sbe_abt_test_util",
+        "$BUILD_DIR/mongo/db/query/collation/collator_interface_mock",
+        "$BUILD_DIR/mongo/db/query/optimizer/optimizer_rewrites",
+        "$BUILD_DIR/mongo/db/query/optimizer/unit_test_utils",
+        "$BUILD_DIR/mongo/db/service_context_d_test_fixture",
+        "query_sbe_abt",
     ],
 )
 
@@ -338,8 +312,8 @@ env.CppUnitTest(
         "makeobj_spec_hash_test.cpp",
     ],
     LIBDEPS=[
+        "query_sbe_abt",
         "query_sbe_makeobj_spec",
-        "sbe_abt_test_util",
     ],
 )
 

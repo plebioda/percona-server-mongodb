@@ -15,17 +15,10 @@ env.Library(
 )
 
 env.Library(
-    target="watchdog_register",
-    source=[
-        "watchdog_register.cpp",
-    ],
-)
-
-env.Library(
     target="watchdog_mongod",
     source=[
         "watchdog_mongod.cpp",
-        "watchdog_mongod.idl",
+        "watchdog_mongod_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/commands/server_status_core",

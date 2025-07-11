@@ -92,7 +92,6 @@ env.SConscript(
         "net",
         "options_parser",
         "tracing_profiler",
-        "version",
     ],
     exports=[
         "env",
@@ -148,7 +147,7 @@ env.Library(
         "password_digest.cpp",
     ],
     LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/third_party/shim_tomcrypt_md5",
+        "$BUILD_DIR/third_party/tomcrypt-1.18.2/tomcrypt_md5",
     ],
 )
 
@@ -193,7 +192,7 @@ env.Library(
     target="fail_point",
     source=[
         "fail_point.cpp",
-        "fail_point_server_parameter.idl",
+        "fail_point_server_parameter_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/bson/util/bson_extract",
@@ -215,7 +214,7 @@ env.Library(
     target="testing_options",
     source=[
         "testing_options.cpp",
-        "testing_options.idl",
+        "testing_options_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/server_base",
@@ -390,7 +389,7 @@ if tcmallocAttrs:
         target="tcmalloc_set_parameter",
         source=[
             "tcmalloc_set_parameter.cpp",
-            "tcmalloc_parameters.idl",
+            "tcmalloc_parameters_gen.cpp",
         ],
         LIBDEPS_PRIVATE=[
             "$BUILD_DIR/mongo/db/server_base",
@@ -445,13 +444,6 @@ else:
             "$BUILD_DIR/mongo/db/server_base",
         ],
     )
-
-env.Library(
-    target="winutil",
-    source=[
-        "winutil.cpp",
-    ],
-)
 
 env.Library(
     target="ntservice",
@@ -526,16 +518,6 @@ env.Library(
 )
 
 env.Library(
-    target="secure_compare_memory",
-    source=[
-        "secure_compare_memory.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="dns_query",
     source=[
         "dns_query.cpp",
@@ -595,7 +577,7 @@ env.Library(
     target="password",
     source=[
         "password.cpp",
-        "password_params.idl",
+        "password_params_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/server_base",
@@ -670,7 +652,7 @@ if env.TargetOSIs("linux"):
         target="pin_code_segments",
         source=[
             "pin_code_segments.cpp",
-            "pin_code_segments_params.idl",
+            "pin_code_segments_params_gen.cpp",
         ],
         LIBDEPS_PRIVATE=[
             "$BUILD_DIR/mongo/db/server_base",
@@ -690,7 +672,7 @@ pcre_env.Library(
         "$BUILD_DIR/mongo/base",
     ],
     LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/third_party/shim_pcre2",
+        "$BUILD_DIR/third_party/pcre2/pcre2",
     ],
 )
 
@@ -815,7 +797,7 @@ icuEnv.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/third_party/shim_icu",
+        "$BUILD_DIR/third_party/icu4c-57.1/source/icu_i18n",
     ],
 )
 
@@ -824,7 +806,7 @@ icuEnv.Library(
     source=["icu.cpp", "../../third_party/node/icu_get_string_width.cpp"],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/third_party/shim_icu",
+        "$BUILD_DIR/third_party/icu4c-57.1/source/icu_i18n",
         "icu_init",
     ],
 )
@@ -917,7 +899,7 @@ icuEnv.CppUnitTest(
         "$BUILD_DIR/mongo/db/service_context_test_fixture",
         "$BUILD_DIR/mongo/executor/thread_pool_task_executor_test_fixture",
         "$BUILD_DIR/third_party/croaring/croaring",
-        "$BUILD_DIR/third_party/shim_tomcrypt_md5",
+        "$BUILD_DIR/third_party/tomcrypt-1.18.2/tomcrypt_md5",
         "alarm",
         "background_job",
         "caching",

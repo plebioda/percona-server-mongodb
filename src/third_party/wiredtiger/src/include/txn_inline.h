@@ -777,11 +777,12 @@ __wt_txn_visible_all(WT_SESSION_IMPL *session, uint64_t id, wt_timestamp_t times
 }
 
 /*
- * __wt_txn_newest_visible_all --
- *     Check whether a given newest time window is globally visible.
+ * __wt_txn_has_newest_and_visible_all --
+ *     Check whether a given time window is either globally visible or obsolete. Note that both the
+ *     id and the timestamp have to be greater than 0 to be considered.
  */
 static WT_INLINE bool
-__wt_txn_newest_visible_all(WT_SESSION_IMPL *session, uint64_t id, wt_timestamp_t timestamp)
+__wt_txn_has_newest_and_visible_all(WT_SESSION_IMPL *session, uint64_t id, wt_timestamp_t timestamp)
 {
     /* If there is no transaction or timestamp information available, there is nothing to do. */
     if (id == WT_TXN_NONE && timestamp == WT_TS_NONE)
@@ -1266,7 +1267,8 @@ __wt_txn_read_upd_list_internal(WT_SESSION_IMPL *session, WT_CURSOR_BTREE *cbt, 
     if (upd->type != WT_UPDATE_MODIFY || cbt->upd_value->skip_buf)
         __wt_upd_value_assign(cbt->upd_value, upd);
     else
-        WT_RET(__wt_modify_reconstruct_from_upd_list(session, cbt, upd, cbt->upd_value));
+        WT_RET(__wt_modify_reconstruct_from_upd_list(
+          session, cbt, upd, cbt->upd_value, WT_OPCTX_TRANSACTION));
     return (0);
 }
 

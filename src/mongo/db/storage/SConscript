@@ -213,7 +213,7 @@ env.Library(
     target="storage_options",
     source=[
         "storage_options.cpp",
-        "storage_parameters.idl",
+        "storage_parameters_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/server_base",
@@ -298,7 +298,7 @@ bmEnv.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/shard_role_api",
-        "$BUILD_DIR/third_party/shim_benchmark",
+        "$BUILD_DIR/third_party/benchmark/benchmark",
         "sorted_data_interface_test_harness",
     ],
 )
@@ -309,7 +309,7 @@ bmEnv.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/shard_role_api",
-        "$BUILD_DIR/third_party/shim_benchmark",
+        "$BUILD_DIR/third_party/benchmark/benchmark",
         "record_store_test_harness",
     ],
 )
@@ -504,7 +504,7 @@ env.Library(
 env.Library(
     target="flow_control_parameters",
     source=[
-        "flow_control_parameters.idl",
+        "flow_control_parameters_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/server_base",
@@ -643,7 +643,7 @@ env.Library(
 env.Library(
     target="two_phase_index_build_knobs_idl",
     source=[
-        "two_phase_index_build_knobs.idl",
+        "two_phase_index_build_knobs_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/server_base",

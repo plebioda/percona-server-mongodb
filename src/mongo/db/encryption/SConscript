@@ -84,7 +84,6 @@ kmipClientEnv.Library(
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/base/secure_allocator",
-        "$BUILD_DIR/third_party/shim_boost",
         "$BUILD_DIR/third_party/shim_kmippp",
         "$BUILD_DIR/third_party/shim_libkmip",
     ],

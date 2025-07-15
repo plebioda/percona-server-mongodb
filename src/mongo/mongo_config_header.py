@@ -404,6 +404,25 @@ def usdt_provider_flags() -> list[HeaderDefinition]:
     return []
 
 
+def basic_stringbuf_str_rvalue_flag() -> list[HeaderDefinition]:
+    log_check(
+        "[MONGO_CONFIG_HAVE_BASIC_STRINGBUF_STR_RVALUE] Checking if basic_stringbuf::str()&& overload exists..."
+    )
+    if compile_check("""
+        #include <sstream>
+        #include <string>
+
+        int main() {
+            std::stringstream ss("a very long string that exceeds the small string optimization buffer length");
+            std::string s = std::move(ss).str();
+            return ss.str().empty() ? 0 : -1;
+        }
+        """):
+        return [HeaderDefinition("MONGO_CONFIG_HAVE_BASIC_STRINGBUF_STR_RVALUE")]
+    else:
+        return []
+
+
 def get_config_header_substs():
     config_header_substs = (
         (
@@ -485,6 +504,7 @@ def generate_config_header(
     definitions += extended_alignment_flag()
     definitions += altivec_vbpermq_output_flag()
     definitions += usdt_provider_flags()
+    definitions += basic_stringbuf_str_rvalue_flag()
     # New checks can be added here
 
     for key, value in extra_definitions_dict.items():

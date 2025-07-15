@@ -143,7 +143,7 @@ DocumentSourceBackupCursorExtend::DocumentSourceBackupCursorExtend(
       _extendTo(extendTo),
       _backupCursorExtendState(
           pExpCtx->mongoProcessInterface->extendBackupCursor(pExpCtx->opCtx, backupId, extendTo)),
-      _filenames(_backupCursorExtendState.filenames),
+      _filenames(_backupCursorExtendState.filePaths),
       _fileIt(_filenames.begin()) {}
 
 DocumentSourceBackupCursorExtend::~DocumentSourceBackupCursorExtend() = default;

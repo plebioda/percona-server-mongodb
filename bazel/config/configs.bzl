@@ -500,6 +500,34 @@ ssl = rule(
     build_setting = config.bool(flag = True),
 )
 
+# --------------------------------------
+# full-featured
+# --------------------------------------
+
+full_featured_provider = provider(
+    doc = """Enable all optional features""",
+    fields = ["enabled"],
+)
+
+full_featured = rule(
+    implementation = lambda ctx: full_featured_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# --------------------------------------
+# fipsmode
+# --------------------------------------
+
+fipsmode_provider = provider(
+    doc = """Enable tls.FIPSMode configuration option""",
+    fields = ["enabled"],
+)
+
+fipsmode = rule(
+    implementation = lambda ctx: fipsmode_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
 # =========
 # thin_lto
 # =========

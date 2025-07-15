@@ -2836,7 +2836,6 @@ if has_option("audit"):
     env.Append(CPPDEFINES=["PERCONA_AUDIT_ENABLED"])
 
 if has_option("enable-fipsmode") or has_option("full-featured"):
-    env.SetConfigHeaderDefine("PERCONA_FIPSMODE_ENABLED")
     env["PSMDB_PRO_FEATURES"].append("FIPSMode")
 
 env.Tool("forceincludes")

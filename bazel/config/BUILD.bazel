@@ -10,7 +10,9 @@ load(
     "detect_odr_violations",
     "disable_warnings_as_errors",
     "dwarf_version",
+    "fipsmode",
     "fsan",
+    "full_featured",
     "gcov",
     "http_client",
     "libunwind",
@@ -1761,6 +1763,52 @@ selects.config_setting_group(
         "@platforms//os:linux",
         ":ssl_enabled",
     ],
+)
+
+# --------------------------------------
+# full-featured
+# --------------------------------------
+
+full_featured(
+    name = "full-featured",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "full_featured_enabled",
+    flag_values = {
+        "//bazel/config:full-featured": "True",
+    },
+)
+
+config_setting(
+    name = "full_featured_disabled",
+    flag_values = {
+        "//bazel/config:full-featured": "False",
+    },
+)
+
+# --------------------------------------
+# fipsmode
+# --------------------------------------
+
+fipsmode(
+    name = "enable-fipsmode",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "fipsmode_enabled",
+    flag_values = {
+        "//bazel/config:enable-fipsmode": "True",
+    },
+)
+
+config_setting(
+    name = "fipsmode_disabled",
+    flag_values = {
+        "//bazel/config:enable-fipsmode": "False",
+    },
 )
 
 # --------------------------------------

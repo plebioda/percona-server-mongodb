@@ -55,6 +55,16 @@ generate_config_header(
         },
         "//conditions:default": {},
     }) | select({
+        "//bazel/config:full_featured_enabled": {
+            "PERCONA_FIPSMODE_ENABLED": "1",
+        },
+        "//conditions:default": {},
+    }) | select({
+        "//bazel/config:fipsmode_enabled": {
+            "PERCONA_FIPSMODE_ENABLED": "1",
+        },
+        "//conditions:default": {},
+    }) | select({
         "//bazel/config:ssl_enabled": {
             "MONGO_CONFIG_SSL": "1",
         },

@@ -1,0 +1,14 @@
+load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+idl_generator(
+    name = "audit_parameters_gen",
+    src = "audit_parameters.idl",
+)
+
+idl_generator(
+    name = "audit_options_gen",
+    src = "audit_options.idl",
+)
+

@@ -207,7 +207,7 @@ env.Library(
     target="server_options",
     source=[
         "redaction_parameter.cpp",
-        "redaction_parameter.idl",
+        "redaction_parameter_gen.cpp",
         "server_options_helpers.cpp",
         "server_options_helpers_gen.cpp",
     ],
@@ -235,7 +235,7 @@ env.Library(
     target="ldap_options",
     source=[
         "ldap_options.cpp",
-        "ldap_options.idl",
+        "ldap_options_gen.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/base",
@@ -711,8 +711,8 @@ if has_option("audit"):
         target="audit_options",
         source=[
             "audit/audit_options.cpp",
-            "audit/audit_parameters.idl",
-            "audit/audit_options.idl",
+            "audit/audit_parameters_gen.cpp",
+            "audit/audit_options_gen.cpp",
         ],
         LIBDEPS=[
             "$BUILD_DIR/mongo/util/options_parser/options_parser",

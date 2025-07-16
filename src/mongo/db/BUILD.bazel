@@ -106,6 +106,11 @@ idl_generator(
 )
 
 idl_generator(
+    name = "redaction_parameter_gen",
+    src = "redaction_parameter.idl",
+)
+
+idl_generator(
     name = "server_options_helpers_gen",
     src = "server_options_helpers.idl",
 )
@@ -113,6 +118,11 @@ idl_generator(
 idl_generator(
     name = "windows_options_gen",
     src = "windows_options.idl",
+)
+
+idl_generator(
+    name = "ldap_options_gen",
+    src = "ldap_options.idl",
 )
 
 idl_generator(
@@ -169,13 +179,28 @@ idl_generator(
 )
 
 idl_generator(
+    name = "mongod_options_encryption_gen",
+    src = "mongod_options_encryption.idl",
+)
+
+idl_generator(
     name = "mongod_options_general_gen",
     src = "mongod_options_general.idl",
 )
 
 idl_generator(
+    name = "mongod_options_ldapauthz_gen",
+    src = "mongod_options_ldapauthz.idl",
+)
+
+idl_generator(
     name = "mongod_options_legacy_gen",
     src = "mongod_options_legacy.idl",
+)
+
+idl_generator(
+    name = "mongod_options_removed_gen",
+    src = "mongod_options_removed.idl",
 )
 
 idl_generator(
@@ -191,6 +216,11 @@ idl_generator(
 idl_generator(
     name = "mongod_options_storage_gen",
     src = "mongod_options_storage.idl",
+)
+
+idl_generator(
+    name = "ratelimit_parameter_gen",
+    src = "ratelimit_parameter.idl",
 )
 
 idl_generator(

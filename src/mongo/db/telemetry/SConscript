@@ -8,7 +8,7 @@ env.Library(
     target="telemetry_base",
     source=[
         "telemetry_parameter.cpp",
-        "telemetry_parameter.idl",
+        "telemetry_parameter_gen.cpp",
         "telemetry_path.cpp",
         "telemetry_thread_base.cpp",
     ],

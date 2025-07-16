@@ -132,3 +132,72 @@ idl_generator(
         "//src/mongo/idl:generic_argument_gen",
     ],
 )
+
+mongo_cc_library(
+    name = "hint_parser",
+    srcs = [
+        "hint_parser.cpp",
+        ":hint_gen",
+    ],
+    hdrs = [
+        "hint_parser.h",
+        ":hint_gen",
+    ],
+    header_deps = [
+        "//src/mongo/db/concurrency:flow_control_ticketholder",
+    ],
+    deps = [
+        "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "str_trim_utils",
+    srcs = [
+        "str_trim_utils.cpp",
+    ],
+    hdrs = [
+        "//src/mongo/db/query:str_trim_utils.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "cursor_response_idl",
+    srcs = [
+        "cursor_idl_validator.cpp",
+        "cursor_response_gen",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+    ],
+)
+
+mongo_cc_library(
+    name = "index_hint",
+    srcs = [
+        "index_hint.cpp",
+        ":index_hint_gen",
+    ],
+    header_deps = [
+        "//src/mongo/db/repl:oplog_buffer_batched_queue",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+    ],
+)
+
+mongo_cc_library(
+    name = "map_reduce_output_format",
+    srcs = [
+        "map_reduce_output_format.cpp",
+    ],
+    hdrs = [
+        "map_reduce_output_format.h",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+    ],
+)

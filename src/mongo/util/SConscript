@@ -84,6 +84,7 @@ if env.TargetOSIs("windows"):
     env.Alias("generated-sources", generatedResourceConstantFile)
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "cmdline_utils",
         "concurrency",
@@ -111,36 +112,6 @@ env.Library(
 )
 
 env.Library(
-    target="log_and_backoff",
-    source=[
-        "log_and_backoff.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="summation",
-    source=[
-        "summation.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="progress_meter",
-    source=[
-        "progress_meter.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="md5",
     source=[
         "md5.cpp",
@@ -158,18 +129,6 @@ env.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="alarm",
-    source=[
-        "alarm.cpp",
-        "alarm_runner_background_thread.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "clock_sources",
     ],
 )
 
@@ -232,16 +191,6 @@ env.CppUnitTest(
 )
 
 env.Library(
-    target="periodic_runner",
-    source=[
-        "periodic_runner.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="periodic_runner_impl",
     source=[
         "periodic_runner_impl.cpp",
@@ -278,17 +227,6 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="background_job",
-    source=[
-        "background.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "concurrency/spin_lock",
     ],
 )
 
@@ -456,18 +394,6 @@ env.Library(
     ],
 )
 
-env.Library(
-    target="clock_sources",
-    source=[
-        "background_thread_clock_source.cpp",
-        "clock_source.cpp",
-        "fast_clock_source_factory.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
 if get_option("use-diagnostic-latches") == "on":
     env.Library(
         target="diagnostic_info",
@@ -528,16 +454,6 @@ env.Library(
 )
 
 env.Library(
-    target="secure_zero_memory",
-    source=[
-        "secure_zero_memory.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="system_perf",
     source=[
         "sysprofile.cpp",
@@ -564,16 +480,6 @@ env.Library(
 )
 
 env.Library(
-    target="safe_num",
-    source=[
-        "safe_num.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="password",
     source=[
         "password.cpp",
@@ -584,15 +490,6 @@ env.Library(
     ],
 )
 
-env.Library(
-    target="executor_stats",
-    source=[
-        "executor_stats.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
 
 env.CppUnitTest(
     target="executor_stats_test",
@@ -687,25 +584,6 @@ env.Library(
     ],
 )
 
-env.Library(
-    target="string_listset",
-    source=[
-        "string_listset.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="field_set",
-    source=[
-        "field_set.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
 
 env.Benchmark(
     target="tracking_allocator_bm",
@@ -757,20 +635,6 @@ if env.TargetOSIs("windows"):
 icuEnv = env.Clone()
 
 if not use_system_version_of_library("icu"):
-    generateICUInit = icuEnv.Command(
-        target="icu_init.cpp",
-        source=[
-            "generate_icu_init_cpp.py",
-            (
-                "$BUILD_DIR/third_party/icu4c-57.1/source/mongo_sources/icudt57l.dat"
-                if endian == "little"
-                else "$BUILD_DIR/third_party/icu4c-57.1/source/mongo_sources/icudt57b.dat"
-            ),
-        ],
-        action="$PYTHON ${SOURCES[0]} -o $TARGET -i ${SOURCES[1]}",
-    )
-    icuEnv.Alias("generated-sources", generateICUInit)
-
     icuEnv.InjectThirdParty("icu")
     # Since we are injecting the third-party ICU headers, we must also copy the same defines that we
     # use to configure ICU when building ICU sources. See comment in
@@ -787,29 +651,6 @@ if not use_system_version_of_library("icu"):
         ],
     )
 
-# When using ICU from third_party, icu_init.cpp will load a subset of
-# ICU's data files using udata_setCommonData() in an initializer.
-# When using the system ICU, we rely on those files being in the install path.
-icuEnv.Library(
-    target="icu_init",
-    source=[
-        "icu_init.cpp" if not use_system_version_of_library("icu") else "icu_init_stub.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/third_party/icu4c-57.1/source/icu_i18n",
-    ],
-)
-
-icuEnv.Library(
-    target="icu",
-    source=["icu.cpp", "../../third_party/node/icu_get_string_width.cpp"],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/third_party/icu4c-57.1/source/icu_i18n",
-        "icu_init",
-    ],
-)
 
 icuEnv.CppUnitTest(
     target="util_test",

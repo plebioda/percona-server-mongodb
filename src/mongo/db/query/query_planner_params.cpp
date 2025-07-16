@@ -33,6 +33,7 @@
 #include "mongo/db/index/columns_access_method.h"
 #include "mongo/db/index/multikey_metadata_access_stats.h"
 #include "mongo/db/index/wildcard_access_method.h"
+#include "mongo/db/query/distinct_access.h"
 #include "mongo/db/query/multiple_collection_accessor.h"
 #include "mongo/db/query/planner_ixselect.h"
 #include "mongo/db/query/query_settings/query_settings_gen.h"
@@ -566,9 +567,9 @@ std::vector<IndexEntry> getIndexEntriesForDistinct(
     std::vector<IndexEntry> indices;
 
     auto* opCtx = distinctArgs.opCtx;
-    const auto& canonicalQuery = *distinctArgs.canonicalDistinct.getQuery();
+    const auto& canonicalQuery = distinctArgs.canonicalQuery;
     const auto& query = canonicalQuery.getFindCommandRequest().getFilter();
-    const auto& key = distinctArgs.canonicalDistinct.getKey();
+    const auto& key = canonicalQuery.getDistinct()->getKey();
     const auto& collectionPtr = distinctArgs.collections.getMainCollection();
 
     // If the caller did not request a "strict" distinct scan then we may choose a plan which
@@ -642,13 +643,14 @@ std::vector<IndexEntry> getIndexEntriesForDistinct(
 
 QueryPlannerParams::QueryPlannerParams(QueryPlannerParams::ArgsForDistinct&& distinctArgs) {
     mainCollectionInfo.options = QueryPlannerParams::NO_TABLE_SCAN | distinctArgs.plannerOptions;
+    flipDistinctScanDirection = distinctArgs.flipDistinctScanDirection;
 
     if (!distinctArgs.collections.hasMainCollection()) {
         return;
     }
 
     mainCollectionInfo.indexes = getIndexEntriesForDistinct(distinctArgs);
-    const auto& canonicalQuery = *distinctArgs.canonicalDistinct.getQuery();
+    const auto& canonicalQuery = distinctArgs.canonicalQuery;
     applyQuerySettingsOrIndexFiltersForMainCollection(canonicalQuery, distinctArgs.collections);
 
     // If there exists an index filter, we ignore all hints. Else, we only keep the index specified
@@ -659,35 +661,6 @@ QueryPlannerParams::QueryPlannerParams(QueryPlannerParams::ArgsForDistinct&& dis
         mainCollectionInfo.indexes =
             QueryPlannerIXSelect::findIndexesByHint(hint, mainCollectionInfo.indexes);
     }
-}
-
-bool isAnyComponentOfPathMultikey(const BSONObj& indexKeyPattern,
-                                  bool isMultikey,
-                                  const MultikeyPaths& indexMultikeyInfo,
-                                  StringData path) {
-    if (!isMultikey) {
-        return false;
-    }
-
-    size_t keyPatternFieldIndex = 0;
-    bool found = false;
-    if (indexMultikeyInfo.empty()) {
-        // There is no path-level multikey information available, so we must assume 'path' is
-        // multikey.
-        return true;
-    }
-
-    for (auto&& elt : indexKeyPattern) {
-        if (elt.fieldNameStringData() == path) {
-            found = true;
-            break;
-        }
-        keyPatternFieldIndex++;
-    }
-    invariant(found);
-
-    invariant(indexMultikeyInfo.size() > keyPatternFieldIndex);
-    return !indexMultikeyInfo[keyPatternFieldIndex].empty();
 }
 
 bool shouldWaitForOplogVisibility(OperationContext* opCtx,

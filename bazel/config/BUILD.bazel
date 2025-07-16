@@ -1,4 +1,5 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load(
     "//bazel/config:configs.bzl",
     "allocator",
@@ -1765,6 +1766,14 @@ selects.config_setting_group(
     ],
 )
 
+selects.config_setting_group(
+    name = "ssl_disabled_linux",
+    match_all = [
+        "@platforms//os:linux",
+        ":ssl_disabled",
+    ],
+)
+
 # --------------------------------------
 # full-featured
 # --------------------------------------
@@ -1856,5 +1865,17 @@ config_setting(
     name = "pgo_profile_enabled",
     flag_values = {
         "//bazel/config:pgo_profile": "True",
+    },
+)
+
+bool_flag(
+    name = "scons_query",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "scons_query_enabled",
+    flag_values = {
+        "//bazel/config:scons_query": "True",
     },
 )

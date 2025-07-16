@@ -194,7 +194,7 @@ struct QueryPlannerParams {
      */
     struct ArgsForDistinct {
         OperationContext* opCtx;
-        const CanonicalDistinct& canonicalDistinct;
+        const CanonicalQuery& canonicalQuery;
         const MultipleCollectionAccessor& collections;
         size_t plannerOptions;
         bool flipDistinctScanDirection;
@@ -347,6 +347,10 @@ struct QueryPlannerParams {
     // Were query settings applied?
     bool querySettingsApplied{false};
 
+    // In certain situations we will need to flip the direction of any generated DISTINCT_SCAN to
+    // preserve the semantics of the query.
+    bool flipDistinctScanDirection{false};
+
 private:
     MONGO_COMPILER_ALWAYS_INLINE
     void fillOutPlannerParamsForExpressQuery(OperationContext* opCtx,
@@ -417,17 +421,6 @@ private:
         const std::vector<mongo::IndexHint>& indexHints,
         CollectionInfo& collectionInfo);
 };
-
-/**
- * Return whether or not any component of the path 'path' is multikey given an index key pattern
- * and multikeypaths. If no multikey metdata is available for the index, and the index is marked
- * multikey, conservatively assumes that a component of 'path' _is_ multikey. The 'isMultikey'
- * property of an index is false for indexes that definitely have no multikey paths.
- */
-bool isAnyComponentOfPathMultikey(const BSONObj& indexKeyPattern,
-                                  bool isMultikey,
-                                  const MultikeyPaths& indexMultikeyInfo,
-                                  StringData path);
 
 /**
  * Determines whether or not to wait for oplog visibility for a query. This is only used for

@@ -354,6 +354,8 @@ void statsToBSON(const PlanStageStats& stats,
         bob->appendBool("isUnique", spec->isUnique);
         bob->appendBool("isSparse", spec->isSparse);
         bob->appendBool("isPartial", spec->isPartial);
+        bob->appendBool("isShardFiltering", spec->isShardFiltering);
+        bob->appendBool("isFetching", spec->isFetching);
         bob->append("indexVersion", spec->indexVersion);
         bob->append("direction", spec->direction > 0 ? "forward" : "backward");
 
@@ -864,10 +866,6 @@ PlanExplainer::PlanStatsDetails PlanExplainerImpl::getWinningPlanStats(
     BSONObjBuilder bob;
     statsToBSON(*stats, verbosity, winningPlanIdx, &bob, &bob, isCached);
     return {bob.obj(), std::move(summary)};
-}
-
-BSONObj PlanExplainerImpl::getOptimizerDebugInfo() const {
-    return {};
 }
 
 PlanExplainer::PlanStatsDetails PlanExplainerImpl::getWinningPlanTrialStats() const {

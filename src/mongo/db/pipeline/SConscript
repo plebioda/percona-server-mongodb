@@ -11,32 +11,12 @@ Import(
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "process_interface",
     ],
     exports=[
         "env",
-    ],
-)
-
-env.Library(
-    target="change_stream_pre_and_post_images_options",
-    source=[
-        "change_stream_pre_and_post_images_options_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
-    ],
-)
-
-env.Library(
-    target="change_stream_preimage",
-    source=[
-        "change_stream_preimage_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
     ],
 )
 
@@ -91,16 +71,6 @@ env.Library(
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/storage/storage_options",
-    ],
-)
-
-env.Library(
-    target="variable_validation",
-    source=[
-        "variable_validation.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -199,6 +169,7 @@ env.Library(
 env.Library(
     target="sharded_agg_helpers",
     source=[
+        "split_pipeline.cpp",
         "sharded_agg_helpers.cpp",
     ],
     LIBDEPS=[
@@ -234,18 +205,6 @@ env.Library(
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/common",
         "$BUILD_DIR/mongo/db/exec/document_value/document_value",
-    ],
-)
-
-env.Library(
-    target="change_stream_error_extra_info",
-    source=[
-        "change_stream_topology_change_info.cpp",
-        "change_stream_invalidation_info.cpp",
-        "change_stream_start_after_invalidate_info.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -304,16 +263,6 @@ env.Library(
         "pipeline",
         "pipeline_visitor",
     ],
-)
-
-env.Library(
-    target="docs_needed_bounds",
-    source=[
-        "visitors/docs_needed_bounds.cpp",
-        "visitors/docs_needed_bounds_util.cpp",
-        "visitors/docs_needed_bounds_gen.cpp",
-    ],
-    LIBDEPS=["$BUILD_DIR/mongo/base", "$BUILD_DIR/mongo/idl/idl_parser"],
 )
 
 env.Library(
@@ -576,16 +525,6 @@ env.Library(
 )
 
 env.Library(
-    target="runtime_constants_idl",
-    source=[
-        "legacy_runtime_constants_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/idl/idl_parser",
-    ],
-)
-
-env.Library(
     target="document_sources_idl",
     source=[
         "document_source_change_stream_gen.cpp",
@@ -685,8 +624,6 @@ env.Library(
 env.Benchmark(
     target="abt_translation_bm",
     source=[
-        "abt/abt_fallback_mechanism_cq_bm.cpp",
-        "abt/abt_fallback_mechanism_pipeline_bm.cpp",
         "abt/abt_translate_cq_bm.cpp",
         "abt/abt_translate_pipeline_bm.cpp",
     ],
@@ -859,7 +796,6 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/db/pipeline/change_stream_expired_pre_image_remover",
         "$BUILD_DIR/mongo/db/query/collation/collator_interface_mock",
         "$BUILD_DIR/mongo/db/query/optimizer/optimizer",
-        "$BUILD_DIR/mongo/db/query/optimizer/unit_test_pipeline_utils",
         "$BUILD_DIR/mongo/db/query/query_test_service_context",
         "$BUILD_DIR/mongo/db/query/search/mongot_options",
         "$BUILD_DIR/mongo/db/query_expressions",

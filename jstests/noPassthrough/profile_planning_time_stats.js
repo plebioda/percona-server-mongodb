@@ -3,6 +3,8 @@
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     runWithFailpoint,
     setupCollectionAndGetExplainTestCases
@@ -33,6 +35,8 @@ function testProfileEntryContainsPlanningTime(
     assert.commandWorked(primaryDb.setProfilingLevel(2));
     assert.commandWorked(
         primaryDb.adminCommand({setParameter: 1, internalQueryDisablePlanCache: true}));
+    assert.commandWorked(primaryDb.adminCommand(
+        {setParameter: 1, logComponentVerbosity: {command: 5, replication: 5, query: 5}}));
 
     runWithFailpoint(db, testCase.failpointName, testCase.failpointOpts, () => {
         if (testCase.command.bulkWrite) {

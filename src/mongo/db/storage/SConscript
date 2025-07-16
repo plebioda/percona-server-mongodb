@@ -10,6 +10,7 @@ Import(
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "devnull",
         "inmemory",
@@ -44,16 +45,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/repl/repl_coordinator_interface",
         "$BUILD_DIR/mongo/db/server_base",
         "recovery_unit_base",
-    ],
-)
-
-env.Library(
-    target="duplicate_key_error_info",
-    source=[
-        "duplicate_key_error_info.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -426,16 +417,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/encryption/key",
         "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
         "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="storage_file_util",
-    source=[
-        "storage_file_util.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 

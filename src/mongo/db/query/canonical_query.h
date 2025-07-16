@@ -51,6 +51,7 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/document_source_match.h"
 #include "mongo/db/pipeline/expression_context.h"
+#include "mongo/db/query/canonical_distinct.h"
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/find_command.h"
 #include "mongo/db/query/parsed_find_command.h"
@@ -162,6 +163,14 @@ public:
         _sortPattern = boost::none;
     }
 
+    void resetDistinct() {
+        _distinct = boost::none;
+    }
+
+    const boost::optional<CanonicalDistinct>& getDistinct() const {
+        return _distinct;
+    }
+
     const CollatorInterface* getCollator() const {
         return _expCtx->getCollator();
     }
@@ -215,13 +224,6 @@ public:
     }
 
     /**
-     * Compute the "shape" of this query by encoding the match, projection and sort, and stripping
-     * out the appropriate values. Note that different types of PlanCache use different encoding
-     * approaches.
-     */
-    QueryShapeString encodeKey() const;
-
-    /**
      * Similar to 'encodeKey()' above, but intended for use with plan cache commands rather than
      * the plan cache itself.
      */
@@ -235,6 +237,10 @@ public:
      * during CanonicalQuery construction.
      */
     void setCollator(std::unique_ptr<CollatorInterface> collator);
+
+    void setDistinct(CanonicalDistinct&& distinct) {
+        _distinct.emplace(distinct);
+    }
 
     /**
      * Serializes this CanonicalQuery to a BSON object of the following form:
@@ -425,6 +431,8 @@ private:
     boost::optional<projection_ast::Projection> _proj;
 
     boost::optional<SortPattern> _sortPattern;
+
+    boost::optional<CanonicalDistinct> _distinct;
 
     // A query can include a post-processing pipeline here. Logically it is applied after all the
     // other operations (filter, sort, project, skip, limit).

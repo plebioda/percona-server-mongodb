@@ -5,6 +5,7 @@ Import("env")
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "algebra",
     ],
@@ -41,35 +42,6 @@ env.Library(
     ],
 )
 
-# Memo, and related utilities.
-env.Library(
-    target="optimizer_memo",
-    source=[
-        "cascades/memo.cpp",
-        "cascades/memo_defs.cpp",
-        "cascades/rewrite_queues.cpp",
-        "utils/memo_utils.cpp",
-    ],
-    LIBDEPS=[
-        "optimizer_base",
-    ],
-)
-
-# Cascades rewrites.
-env.Library(
-    target="optimizer_cascades",
-    source=[
-        "cascades/enforcers.cpp",
-        "cascades/logical_props_derivation.cpp",
-        "cascades/implementers.cpp",
-        "cascades/logical_rewriter.cpp",
-        "cascades/physical_rewriter.cpp",
-    ],
-    LIBDEPS=[
-        "optimizer_memo",
-    ],
-)
-
 # Rewrites which manipulate the ABT directly.
 env.Library(
     target="optimizer_rewrites",
@@ -80,7 +52,6 @@ env.Library(
         "rewrites/path_lower.cpp",
         "rewrites/proj_spec_lower.cpp",
         "rewrites/proj_spec_builder.cpp",
-        "rewrites/sampling_const_eval.cpp",
     ],
     LIBDEPS=[
         "optimizer_base",
@@ -104,10 +75,8 @@ env.Library(
     target="optimizer",
     source=[
         "metadata_factory.cpp",
-        "opt_phase_manager.cpp",
     ],
     LIBDEPS=[
-        "optimizer_cascades",
         "optimizer_rewrites",
     ],
 )
@@ -122,27 +91,8 @@ env.Library(
         # We do not depend on the entire pipeline target.
         "$BUILD_DIR/mongo/db/pipeline/abt_utils",
         "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
-        "$BUILD_DIR/mongo/db/query/ce/query_ce_heuristic",
-        "$BUILD_DIR/mongo/db/query/ce/query_ce_hinted",
-        "$BUILD_DIR/mongo/db/query/cost_model/query_cost_model",
         "$BUILD_DIR/mongo/db/query/optimizer/optimizer",
         "$BUILD_DIR/mongo/unittest/unittest",
-    ],
-)
-
-# Heavyweight test utils (depend on pipeline).
-env.Library(
-    target="unit_test_pipeline_utils",
-    source=[
-        "utils/unit_test_pipeline_utils.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/pipeline/abt_translation",
-        "$BUILD_DIR/mongo/db/pipeline/pipeline",
-        "$BUILD_DIR/mongo/db/query/canonical_query",
-        "$BUILD_DIR/mongo/db/query/query_test_service_context",
-        "$BUILD_DIR/mongo/db/service_context_test_fixture",
-        "unit_test_utils",
     ],
 )
 

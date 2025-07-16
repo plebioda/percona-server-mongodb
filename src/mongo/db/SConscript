@@ -28,6 +28,7 @@ def shouldBuildGRPC(myEnv):
 
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "admission",
         "auth",
@@ -66,80 +67,6 @@ env.SConscript(
     ],
 )
 
-# The 'server_base' library must only contain basic, stateless, value types which are used throughout
-# all the server binaries. It must not depend on anything other than utilities that are outside of
-# the server codebase.
-env.Library(
-    target="server_base",
-    source=[
-        "$BUILD_DIR/mongo/client/hedging_mode_gen.cpp",
-        "$BUILD_DIR/mongo/client/read_preference.cpp",
-        "$BUILD_DIR/mongo/client/read_preference_gen.cpp",
-        "$BUILD_DIR/mongo/client/read_preference_setting_gen.cpp",
-        "$BUILD_DIR/mongo/client/read_preference_validators.cpp",
-        "$BUILD_DIR/mongo/idl/command_generic_argument.cpp",
-        "$BUILD_DIR/mongo/idl/generic_argument.cpp",
-        "$BUILD_DIR/mongo/idl/generic_argument_gen.cpp",
-        "$BUILD_DIR/mongo/rpc/metadata/impersonated_user_metadata_gen.cpp",
-        "$BUILD_DIR/mongo/s/chunk_version.cpp",
-        "$BUILD_DIR/mongo/s/chunk_version_gen.cpp",
-        "$BUILD_DIR/mongo/s/database_version.cpp",
-        "$BUILD_DIR/mongo/s/database_version_gen.cpp",
-        "$BUILD_DIR/mongo/s/database_version_base_gen.cpp",
-        "$BUILD_DIR/mongo/s/gossiped_routing_cache_gen.cpp",
-        "$BUILD_DIR/mongo/s/index_version.cpp",
-        "$BUILD_DIR/mongo/s/index_version_gen.cpp",
-        "$BUILD_DIR/mongo/s/shard_version.cpp",
-        "$BUILD_DIR/mongo/s/shard_version_gen.cpp",
-        "$BUILD_DIR/mongo/s/sharding_types_gen.cpp",
-        "$BUILD_DIR/mongo/util/database_name_util.cpp",
-        "$BUILD_DIR/mongo/util/namespace_string_util.cpp",
-        "auth/auth_name.cpp",
-        "auth/auth_types_gen.cpp",
-        "auth/validated_tenancy_scope.cpp",
-        "basic_types_gen.cpp",
-        "catalog_shard_feature_flag_gen.cpp",
-        "cluster_role.cpp",
-        "dump_lock_manager.cpp",
-        "feature_compatibility_version_document_gen.cpp",
-        "feature_compatibility_version_parser.cpp",
-        "feature_flag.cpp",
-        "generic_argument_util.cpp",
-        "index_names.cpp",
-        "keypattern.cpp",
-        "logical_time.cpp",
-        "multitenancy_gen.cpp",
-        "namespace_string.cpp",
-        "read_write_concern_provenance.cpp",
-        "read_write_concern_provenance_base_gen.cpp",
-        "repl/read_concern_gen.cpp",
-        "repl/read_concern_args.cpp",
-        "repl/read_concern_args_gen.cpp",
-        "repl/read_concern_idl.cpp",
-        "server_options.cpp",
-        "server_parameter.cpp",
-        "server_parameter_gen.cpp",
-        "server_parameter_with_storage.cpp",
-        "shard_id.cpp",
-        "shutdown_in_progress_quiesce_info.cpp",
-        "tenant_id.cpp",
-        "vector_clock_gen.cpp",
-        "write_concern_idl.cpp",
-        "write_concern_gen.cpp",
-        "write_concern_options.cpp",
-        "write_concern_options_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
-        "repl/optime",
-        "session/logical_session_id",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/bson/util/bson_extract",
-    ],
-)
-
 env.CppUnitTest(
     target="server_base_test",
     source=[
@@ -148,31 +75,6 @@ env.CppUnitTest(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-#
-# The db/'common' lib has the abstractions that are shared by components of the
-# server. Ideally, many of the object in 'coredb' should be moved here when their dependencies
-# get resolved.
-#
-
-env.Library(
-    target="common",
-    source=[
-        "database_name.cpp",
-        "field_ref.cpp",
-        "field_ref_set.cpp",
-        "field_parser.cpp",
-        "txn_retry_counter_too_old_info.cpp",
-    ],
-    LIBDEPS=[
-        "catalog/cannot_convert_index_to_unique_info",
-        "repl/tenant_migration_errors",
-    ],
-    LIBDEPS_PRIVATE=[
-        "catalog/collection_uuid_mismatch_info",
-        "server_base",
     ],
 )
 
@@ -290,48 +192,9 @@ env.Library(
 )
 
 env.Library(
-    target="update_index_data",
-    source=[
-        "update_index_data.cpp",
-    ],
-    LIBDEPS=[
-        "common",
-    ],
-)
-
-env.Library(
-    target="collection_index_usage_tracker",
-    source=[
-        "aggregated_index_usage_tracker.cpp",
-        "collection_index_usage_tracker.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "commands/server_status_core",
-        "server_base",
-    ],
-)
-
-env.Command(
-    target=[
-        "feature_flag_test.idl",
-    ],
-    source=[
-        "#buildscripts/cheetah_source_generator.py",
-        "feature_flag_test.idl.tpl",
-        "$BUILD_DIR/mongo/util/version/releases.yml",
-    ],
-    action=[
-        "$PYTHON ${SOURCES[0]} -o ${TARGETS[0]} ${SOURCES[1]} ${SOURCES[2]} ${MONGO_VERSION}",
-    ],
-    # Ensure that that SCons is used to produce this file rather than Ninja, to avoid spurious
-    # dependency cycles due to how we manage generated sources with Ninja.
-    NINJA_TEMPLATE=True,
-)
-
-env.Library(
     target="server_feature_flags",
     source=[
-        "feature_flag_test.idl",
+        "feature_flag_test_gen.cpp",
         "server_feature_flags_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
@@ -473,16 +336,6 @@ env.Library(
 )
 
 env.Library(
-    target="namespace_spec",
-    source=[
-        "namespace_spec_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "server_base",
-    ],
-)
-
-env.Library(
     target="mongod_options",
     source=[
         "mongod_options.cpp",
@@ -586,16 +439,6 @@ env.Library(
         "change_stream_serverless_helpers",
         "repl/repl_coordinator_interface",
         "repl/repl_settings",
-        "server_base",
-    ],
-)
-
-env.Library(
-    target="change_stream_state",
-    source=[
-        "change_stream_state_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
         "server_base",
     ],
 )
@@ -1020,16 +863,6 @@ env.Library(
 )
 
 env.Library(
-    target="metadata_consistency_types_idl",
-    source=[
-        "metadata_consistency_types_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "server_base",
-    ],
-)
-
-env.Library(
     target="commands",
     source=[
         "coll_mod_reply_validation.cpp",
@@ -1203,16 +1036,6 @@ env.CppUnitTest(
         "s/sharding_catalog_manager",
         "service_context_d_test_fixture",
         "shard_role_api",
-    ],
-)
-
-env.Library(
-    target="internal_transactions_feature_flag",
-    source=[
-        "internal_transactions_feature_flag_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "server_base",
     ],
 )
 
@@ -1799,8 +1622,6 @@ execEnv.Library(
         "query/classic_runtime_planner_for_sbe/single_solution_passthrough_planner.cpp",
         "query/classic_runtime_planner_for_sbe/sub_planner.cpp",
         "query/stage_builder/classic_stage_builder.cpp",
-        "query/cost_model/on_coefficients_change_updater_impl.cpp",
-        "query/cqf_command_utils.cpp",
         "query/explain.cpp",
         "query/find.cpp",
         "query/get_executor.cpp",
@@ -1872,7 +1693,6 @@ execEnv.Library(
         "ops/parsed_update",
         "pipeline/pipeline",
         "query/bson/dotted_path_support",
-        "query/cost_model/query_cost_model",
         "query/plan_cache/query_plan_cache",
         "query/plan_executor",
         "query/plan_yield_policy",
@@ -2111,19 +1931,6 @@ env.Library(
 )
 
 env.Library(
-    target="index_commands_idl",
-    source=[
-        "create_indexes_gen.cpp",
-        "drop_indexes_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/auth/authprivilege",
-        "$BUILD_DIR/mongo/db/catalog/commit_quorum_options",
-        "server_base",
-    ],
-)
-
-env.Library(
     target="error_labels",
     source=[
         "error_labels.cpp",
@@ -2152,17 +1959,6 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/util/concurrency/spin_lock",
-    ],
-)
-
-env.Library(
-    target="api_parameters",
-    source=[
-        "api_parameters.cpp",
-        "api_parameters_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "server_base",
     ],
 )
 
@@ -2217,27 +2013,6 @@ env.Library(
 )
 
 env.Library(
-    target="snapshot_window_options",
-    source=[
-        "snapshot_window_options_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "server_base",
-    ],
-)
-
-env.Library(
-    target="signed_logical_time",
-    source=[
-        "signed_logical_time.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/crypto/sha1_block",
-        "server_base",
-    ],
-)
-
-env.Library(
     target="rs_local_client",
     source=[
         "rs_local_client.cpp",
@@ -2247,16 +2022,6 @@ env.Library(
         "dbdirectclient",
         "repl/repl_coordinator_interface",
         "rw_concern_d",
-    ],
-)
-
-env.Library(
-    target="keys_collection_document",
-    source=[
-        "keys_collection_document_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "server_base",
     ],
 )
 
@@ -2382,17 +2147,6 @@ env.Library(
     ],
 )
 
-env.Library(
-    target="feature_compatibility_version_metrics",
-    source=[
-        "feature_compatibility_version_metrics.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/commands/server_status_core",
-        "server_base",
-    ],
-)
-
 # This library is the base class for tests which require the presence of ServiceContext. However it
 # does not perform any default initialisation of the relevant services, such as lockers and
 # transaction resources, so any test which directly references it must perform its own
@@ -2458,17 +2212,6 @@ env.Library(
         "repl/repl_coordinator_interface",
         "repl/repl_settings",
         "repl/replica_set_messages",
-    ],
-)
-
-env.Library(
-    target="cursor_server_params",
-    source=[
-        "cursor_server_params.cpp",
-        "cursor_server_params_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "server_base",
     ],
 )
 

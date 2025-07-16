@@ -32,7 +32,6 @@ imports:
 global:
   cpp_namespace: "mongo"
   cpp_includes:
-    - "mongo/db/query/cost_model/cost_model_on_update.h"
     - "mongo/db/query/ce_mode_parameter.h"
     - "mongo/db/query/explain_version_validator.h"
     - "mongo/db/query/plan_cache/sbe_plan_cache_on_parameter_change.h"
@@ -1279,14 +1278,6 @@ server_parameters:
         expr: false
     redact: false
 
-  internalCostModelCoefficients:
-    description: "Cost Model Coefficients Override"
-    set_at: [ startup, runtime ]
-    cpp_varname: "internalCostModelCoefficients"
-    cpp_vartype: synchronized_value<std::string>
-    on_update: cost_model::updateCostCoefficientsOnUpdate
-    redact: false
-
   # TODO SERVER-68341 Remove this query knob after tenancy is supported in the sharded cluster.
   internalChangeStreamUseTenantIdForTesting:
     description: "If true, then change streams will operate upon an internal tenant id for testing
@@ -1714,6 +1705,16 @@ server_parameters:
     cpp_vartype: bool
     default: false
     redact: false
+
+  planRankerMode:
+    description: "Enable cost-based ranking of query plans."
+    set_at: [ startup, runtime ]
+    cpp_varname: planRankerMode
+    # TODO SERVER-92587: change to an enum
+    cpp_vartype: AtomicWord<bool>
+    default: false
+    redact: false
+    on_update: plan_cache_util::clearSbeCacheOnParameterChange
 
 # Note for adding additional query knobs:
 #

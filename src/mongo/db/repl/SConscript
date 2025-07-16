@@ -22,16 +22,6 @@ env.Library(
 )
 
 env.Library(
-    target="tenant_migration_decoration",
-    source=[
-        "tenant_migration_decoration.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="apply_ops_command_info",
     source=[
         "apply_ops_command_info.cpp",
@@ -55,16 +45,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/pipeline/change_stream_helpers",
         "oplog",
         "oplog_entry",
-    ],
-)
-
-env.Library(
-    target="oplog_constraint_violation_logger",
-    source=[
-        "oplog_constraint_violation_logger.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -248,18 +228,6 @@ env.Library(
 )
 
 env.Library(
-    target="rollback_idl",
-    source=[
-        "rollback_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
-        "optime",
-    ],
-)
-
-env.Library(
     target="storage_interface",
     source=[
         "storage_interface.cpp",
@@ -300,18 +268,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/storage/storage_control",
         "$BUILD_DIR/mongo/db/vector_clock",
         "repl_server_parameters",
-    ],
-)
-
-env.Library(
-    target="replication_consistency_markers_idl",
-    source=[
-        "replication_consistency_markers_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
-        "optime",
     ],
 )
 
@@ -395,26 +351,6 @@ env.Library(
 )
 
 env.Library(
-    target="oplog_buffer_batched_queue",
-    source=[
-        "oplog_buffer_batched_queue.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="oplog_buffer_blocking_queue",
-    source=[
-        "oplog_buffer_blocking_queue.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="oplog_buffer_collection",
     source=[
         "oplog_buffer_collection.cpp",
@@ -429,16 +365,6 @@ env.Library(
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/catalog/document_validation",
         "$BUILD_DIR/mongo/db/ops/write_ops_exec",
-    ],
-)
-
-env.Library(
-    target="oplog_buffer_proxy",
-    source=[
-        "oplog_buffer_proxy.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -949,17 +875,6 @@ env.Library(
 )
 
 env.Library(
-    "speculative_majority_read_info",
-    source=[
-        "speculative_majority_read_info.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "optime",
-    ],
-)
-
-env.Library(
     target="replica_set_messages",
     source=[
         "hello_response.cpp",
@@ -1210,20 +1125,6 @@ env.Library(
 )
 
 env.Library(
-    target="optime",
-    source=[
-        "bson_extract_optime.cpp",
-        "optime.cpp",
-        "optime_base_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/bson/util/bson_extract",
-        "$BUILD_DIR/mongo/idl/idl_parser",
-    ],
-)
-
-env.Library(
     target="data_replicator_external_state_impl",
     source=[
         "data_replicator_external_state_impl.cpp",
@@ -1265,18 +1166,6 @@ env.Library(
         "oplog_entry",
         "optime",
         "replica_set_messages",
-    ],
-)
-
-env.Library(
-    target="repl_sync_shared_data",
-    source=[
-        "repl_sync_shared_data.cpp",
-        "initial_sync_shared_data.cpp",
-        "tenant_migration_shared_data.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -1414,16 +1303,6 @@ env.Library(
         "primary_only_service",
         "replication_auth",
         "split_horizon",
-    ],
-)
-
-env.Library(
-    target="tenant_migration_errors",
-    source=[
-        "tenant_migration_conflict_info.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -2078,29 +1957,6 @@ env.Library(
         "election_reason_counter",
         "election_reason_counter_parser",
         "topology_coordinator",
-    ],
-)
-
-env.Library(
-    target="election_reason_counter",
-    source=[
-        "election_reason_counter.cpp",
-        "election_reason_counter_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
-    ],
-)
-
-env.Library(
-    target="election_reason_counter_parser",
-    source=[
-        "election_reason_counter_parser.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "election_reason_counter",
     ],
 )
 

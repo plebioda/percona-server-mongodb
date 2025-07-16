@@ -2,6 +2,8 @@
  * Test that tassert during find command execution will log diagnostics about the query.
  */
 
+const hasEnterpriseModule = getBuildInfo().modules.includes("enterprise");
+
 function setup(conn) {
     const db = conn.getDB("test");
     const coll = db[jsTestName()];
@@ -11,11 +13,19 @@ function setup(conn) {
 }
 
 function runTest({description, filter, expectedDiagnosticInfo, redact}) {
+    // Can't run cases that depend on log redaction without the enterprise module.
+    if (!hasEnterpriseModule && redact) {
+        return;
+    }
+
     // Each test case needs to start a new mongod to clear the previous logs.
     const conn = MongoRunner.runMongod({useLogFiles: true});
     const {db, coll} = setup(conn);
 
-    assert.commandWorked(db.adminCommand({setParameter: 1, redactClientLogData: redact}));
+    if (hasEnterpriseModule) {
+        assert.commandWorked(db.adminCommand({setParameter: 1, redactClientLogData: redact}));
+    }
+
     assert.commandWorked(db.adminCommand({
         'configureFailPoint': 'planExecutorAlwaysFails',
         'mode': 'alwaysOn',

@@ -11,12 +11,12 @@ Import(
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "boolean_simplification",
         "bson",
         "ce",
         "collation",
-        "cost_model",
         "datetime",
         "optimizer",
         "plan_cache",
@@ -60,6 +60,7 @@ env.Library(
         "$BUILD_DIR/mongo/crypto/encrypted_field_config",
         "$BUILD_DIR/mongo/db/pipeline/pipeline",
         "$BUILD_DIR/mongo/db/query_expressions",
+        "canonical_distinct",
         "collation/collator_factory_interface",
         "collation/collator_interface",
         "projection_ast",
@@ -74,6 +75,7 @@ env.Library(
 env.Library(
     target="query_planner",
     source=[
+        "distinct_access.cpp",
         "expression_index_knobs_gen.cpp",
         "expression_index.cpp",
         "index_bounds_builder.cpp",
@@ -158,12 +160,15 @@ env.Library(
 )
 
 env.Library(
-    target="index_hint",
+    target="canonical_distinct",
     source=[
-        "index_hint_gen.cpp",
-        "index_hint.cpp",
+        "canonical_distinct.cpp",
+    ],
+    LIBDEPS=[
+        "$BUILD_DIR/mongo/db/query_expressions",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/server_base",
     ],
 )
@@ -189,7 +194,6 @@ env.Library(
 env.Library(
     target="query_common",
     source=[
-        "canonical_distinct.cpp",
         "explain_common.cpp",
         "find_common.cpp",
     ],
@@ -225,27 +229,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/service_context",
         "$BUILD_DIR/mongo/transport/transport_layer_common",
-    ],
-)
-
-env.Library(
-    target="map_reduce_output_format",
-    source=[
-        "map_reduce_output_format.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="cursor_response_idl",
-    source=[
-        "cursor_idl_validator.cpp",
-        "cursor_response_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
     ],
 )
 
@@ -310,7 +293,6 @@ env.Library(
     target="query_knobs",
     source=[
         "ce_mode_parameter.cpp",
-        "cost_model/cost_model_on_update.cpp",
         "explain_version_validator.cpp",
         "framework_control.cpp",
         "query_feature_flags_gen.cpp",
@@ -367,17 +349,6 @@ env.Library(
 )
 
 env.Library(
-    target="hint_parser",
-    source=[
-        "hint_parser.cpp",
-        "hint_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="sort_pattern",
     source=[
         "sort_pattern.cpp",
@@ -389,16 +360,6 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
-    ],
-)
-
-env.Library(
-    target="str_trim_utils",
-    source=[
-        "str_trim_utils.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -489,6 +450,7 @@ env.CppUnitTest(
         "query_planner_array_test.cpp",
         "query_planner_collation_test.cpp",
         "query_planner_columnar_test.cpp",
+        "query_planner_distinct_test.cpp",
         "query_planner_geo_test.cpp",
         "query_planner_hashed_index_test.cpp",
         "query_planner_index_test.cpp",

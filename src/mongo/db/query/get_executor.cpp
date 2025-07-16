@@ -110,9 +110,9 @@
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/collection_query_info.h"
+#include "mongo/db/query/distinct_access.h"
 #include "mongo/db/query/eof_node_type.h"
 #include "mongo/db/query/find_command.h"
-#include "mongo/db/query/index_bounds.h"
 #include "mongo/db/query/index_bounds_builder.h"
 #include "mongo/db/query/index_hint.h"
 #include "mongo/db/query/internal_plans.h"
@@ -213,7 +213,7 @@ boost::intrusive_ptr<ExpressionContext> makeExpressionContextForGetExecutor(
 }
 
 namespace {
-namespace wcp = ::mongo::wildcard_planning;
+
 // The body is below in the "count hack" section but getExecutor calls it.
 bool turnIxscanIntoCount(QuerySolution* soln);
 }  // namespace
@@ -506,14 +506,23 @@ public:
             return buildSubPlan();
         }
 
-        auto statusWithMultiPlanSolns = QueryPlanner::plan(*_cq, *_plannerParams);
-        if (!statusWithMultiPlanSolns.isOK()) {
-            return statusWithMultiPlanSolns.getStatus().withContext(
-                str::stream() << "error processing query: " << _cq->toStringForErrorMsg()
-                              << " planner returned error");
+        std::vector<std::unique_ptr<QuerySolution>> solutions;
+        if (planRankerMode.load()) {
+            auto statusWithCBRSolns = QueryPlanner::planWithCostBasedRanking(*_cq, *_plannerParams);
+            if (!statusWithCBRSolns.isOK()) {
+                return statusWithCBRSolns.getStatus();
+            }
+            solutions = std::move(statusWithCBRSolns.getValue().solutions);
+        } else {
+            auto statusWithMultiPlanSolns = QueryPlanner::plan(*_cq, *_plannerParams);
+            if (!statusWithMultiPlanSolns.isOK()) {
+                return statusWithMultiPlanSolns.getStatus().withContext(
+                    str::stream() << "error processing query: " << _cq->toStringForErrorMsg()
+                                  << " planner returned error");
+            }
+            solutions = std::move(statusWithMultiPlanSolns.getValue());
         }
 
-        auto solutions = std::move(statusWithMultiPlanSolns.getValue());
         // The planner should have returned an error status if there are no solutions.
         invariant(solutions.size() > 0);
 
@@ -1357,16 +1366,13 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getSearchMetada
         opCtx, cq, metadataCursorId, remoteCursors.get(), sbeYieldPolicy.get());
     return plan_executor_factory::make(opCtx,
                                        nullptr /* cq */,
-                                       nullptr /*pipeline*/,
                                        nullptr /* solution */,
                                        std::move(root),
-                                       nullptr /* optimizerData */,
                                        {} /* plannerOptions */,
                                        cq.nss(),
                                        std::move(sbeYieldPolicy),
                                        false /* planIsFromCache */,
                                        boost::none /* cachedPlanHash */,
-                                       false /* generatedByBonsai */,
                                        {} /* optCounterInfo */,
                                        std::move(remoteCursors));
 }
@@ -1835,70 +1841,6 @@ bool turnIxscanIntoCount(QuerySolution* soln) {
     return true;
 }
 
-/**
- * Returns true if indices contains an index that can be used with DistinctNode (the "fast distinct
- * hack" node, which can be used only if there is an empty query predicate).  Sets indexOut to the
- * array index of PlannerParams::indices.  Look for the index for the fewest fields.  Criteria for
- * suitable index is that the index should be of type BTREE or HASHED and the index cannot be a
- * partial index.
- *
- * Multikey indices are not suitable for DistinctNode when the projection is on an array element.
- * Arrays are flattened in a multikey index which makes it impossible for the distinct scan stage
- * (plan stage generated from DistinctNode) to select the requested element by array index.
- *
- * Multikey indices cannot be used for the fast distinct hack if the field is dotted.  Currently the
- * solution generated for the distinct hack includes a projection stage and the projection stage
- * cannot be covered with a dotted field.
- */
-bool getDistinctNodeIndex(const std::vector<IndexEntry>& indices,
-                          const std::string& field,
-                          const CollatorInterface* collator,
-                          size_t* indexOut) {
-    invariant(indexOut);
-    int minFields = std::numeric_limits<int>::max();
-    for (size_t i = 0; i < indices.size(); ++i) {
-        // Skip indices with non-matching collator.
-        if (!CollatorInterface::collatorsMatch(indices[i].collator, collator)) {
-            continue;
-        }
-        // Skip partial indices.
-        if (indices[i].filterExpr) {
-            continue;
-        }
-        // Skip indices where the first key is not 'field'.
-        auto firstIndexField = indices[i].keyPattern.firstElement();
-        if (firstIndexField.fieldNameStringData() != StringData(field)) {
-            continue;
-        }
-        // Skip the index if the first key is a "plugin" such as "hashed", "2dsphere", and so on.
-        if (!firstIndexField.isNumber()) {
-            continue;
-        }
-        // Compound hashed indexes can use distinct scan if the first field is 1 or -1. For the
-        // other special indexes, the 1 or -1 index fields may be stored as a function of the data
-        // rather than the raw data itself. Storing f(d) instead of 'd' precludes the distinct_scan
-        // due to the possibility that f(d1) == f(d2).  Therefore, after fetching the base data,
-        // either d1 or d2 would be incorrectly missing from the result set.
-        auto indexPluginName = IndexNames::findPluginName(indices[i].keyPattern);
-        switch (IndexNames::nameToType(indexPluginName)) {
-            case IndexType::INDEX_BTREE:
-            case IndexType::INDEX_HASHED:
-                break;
-            default:
-                // All other index types are not eligible.
-                continue;
-        }
-
-        int nFields = indices[i].keyPattern.nFields();
-        // Pick the index with the lowest number of fields.
-        if (nFields < minFields) {
-            minFields = nFields;
-            *indexOut = i;
-        }
-    }
-    return minFields != std::numeric_limits<int>::max();
-}
-
 }  // namespace
 
 StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorCount(
@@ -2010,261 +1952,27 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorCoun
     return result->runtimePlanner->makeExecutor(std::move(cq));
 }
 
-//
-// Distinct hack
-//
-
-bool turnIxscanIntoDistinctIxscan(QuerySolution* soln,
-                                  const std::string& field,
-                                  bool strictDistinctOnly,
-                                  bool flipDistinctScanDirection) {
-    auto root = soln->root();
-
-    // We can attempt to convert a plan if it follows one of these patterns (starting from the
-    // root):
-    //   1. PROJECT=>FETCH=>IXSCAN
-    //   2. FETCH=>IXSCAN
-    //   3. PROJECT=>IXSCAN
-    QuerySolutionNode* projectNode = nullptr;
-    IndexScanNode* indexScanNode = nullptr;
-    FetchNode* fetchNode = nullptr;
-
-    switch (root->getType()) {
-        case STAGE_PROJECTION_DEFAULT:
-        case STAGE_PROJECTION_COVERED:
-        case STAGE_PROJECTION_SIMPLE:
-            projectNode = root;
-            break;
-        case STAGE_FETCH:
-            fetchNode = static_cast<FetchNode*>(root);
-            break;
-        default:
-            return false;
-    }
-
-    if (!fetchNode && (STAGE_FETCH == root->children[0]->getType())) {
-        fetchNode = static_cast<FetchNode*>(root->children[0].get());
-    }
-
-    if (fetchNode && (STAGE_IXSCAN == fetchNode->children[0]->getType())) {
-        indexScanNode = static_cast<IndexScanNode*>(fetchNode->children[0].get());
-    } else if (projectNode && (STAGE_IXSCAN == projectNode->children[0]->getType())) {
-        indexScanNode = static_cast<IndexScanNode*>(projectNode->children[0].get());
-    }
-
-    if (!indexScanNode) {
-        return false;
-    }
-
-    // If the fetch has a filter, we're out of luck. We can't skip all keys with a given value,
-    // since one of them may key a document that passes the filter.
-    if (fetchNode && fetchNode->filter) {
-        return false;
-    }
-
-    if (indexScanNode->index.type == IndexType::INDEX_WILDCARD) {
-        // If the query is on a field other than the distinct key, we may have generated a $** plan
-        // which does not actually contain the distinct key field.
-        if (field != std::next(indexScanNode->index.keyPattern.begin())->fieldName()) {
-            return false;
-        }
-        // If the query includes object bounds, we cannot turn this IXSCAN into a DISTINCT_SCAN.
-        // Wildcard indexes contain multiple keys per object, one for each subpath in ascending
-        // (Path, Value, RecordId) order. If the distinct fields in two successive documents are
-        // objects with the same leaf path values but in different field order, e.g. {a: 1, b: 2}
-        // and {b: 2, a: 1}, we would therefore only return the first document and skip the other.
-        if (wcp::isWildcardObjectSubpathScan(indexScanNode)) {
-            return false;
-        }
-    }
-
-    // An additional filter must be applied to the data in the key, so we can't just skip
-    // all the keys with a given value; we must examine every one to find the one that (may)
-    // pass the filter.
-    if (indexScanNode->filter) {
-        return false;
-    }
-
-    // We only set this when we have special query modifiers (.max() or .min()) or other
-    // special cases.  Don't want to handle the interactions between those and distinct.
-    // Don't think this will ever really be true but if it somehow is, just ignore this
-    // soln.
-    if (indexScanNode->bounds.isSimpleRange) {
-        return false;
-    }
-
-    // Figure out which field we're skipping to the next value of.
-    int fieldNo = 0;
-    BSONObjIterator it(indexScanNode->index.keyPattern);
-    while (it.more()) {
-        if (field == it.next().fieldName()) {
-            break;
-        }
-        ++fieldNo;
-    }
-
-    if (strictDistinctOnly) {
-        // If the "distinct" field is not the first field in the index bounds then the only way we
-        // can guarantee that we'll never see duplicate values for the distinct field is to make
-        // sure every field before the distinct field has equality bounds. For example, a
-        // DISTINCT_SCAN on 'b' over the {a: 1, b: 1} index will scan a particular 'b' value
-        // multiple times if that 'b' value exists in documents with different 'a' values. The
-        // equality bounds on 'a' prevent the scan from seeing duplicate 'b' values by ensuring the
-        // scan is limited to a single value for the 'a' field.
-        for (size_t i = 0; i < static_cast<size_t>(fieldNo); ++i) {
-            invariant(i < indexScanNode->bounds.size());
-            if (indexScanNode->bounds.fields[i].intervals.size() != 1 ||
-                !indexScanNode->bounds.fields[i].intervals[0].isPoint()) {
-                return false;
-            }
-        }
-    }
-
-    // We should not use a distinct scan if the field over which we are computing the distinct is
-    // multikey.
-    if (indexScanNode->index.multikey) {
-        const auto& multikeyPaths = indexScanNode->index.multikeyPaths;
-        if (multikeyPaths.empty()) {
-            // We don't have path-level multikey information available.
-            return false;
-        }
-
-        if (!multikeyPaths[fieldNo].empty()) {
-            // Path-level multikey information indicates that the distinct key contains at least one
-            // array component.
-            return false;
-        }
-    }
-
-    // Make a new DistinctNode. We will swap this for the ixscan in the provided solution.
-    auto distinctNode = std::make_unique<DistinctNode>(indexScanNode->index);
-    distinctNode->direction =
-        flipDistinctScanDirection ? -indexScanNode->direction : indexScanNode->direction;
-    distinctNode->bounds =
-        flipDistinctScanDirection ? indexScanNode->bounds.reverse() : indexScanNode->bounds;
-    distinctNode->queryCollator = indexScanNode->queryCollator;
-    distinctNode->fieldNo = fieldNo;
-
-    if (fetchNode) {
-        // If the original plan had PROJECT and FETCH stages, we can get rid of the PROJECT
-        // transforming the plan from PROJECT=>FETCH=>IXSCAN to FETCH=>DISTINCT_SCAN.
-        if (projectNode) {
-            invariant(projectNode == root);
-            invariant(fetchNode == root->children[0].get());
-            invariant(STAGE_FETCH == root->children[0]->getType());
-            invariant(STAGE_IXSCAN == root->children[0]->children[0]->getType());
-            // Make the fetch the new root. This destroys the project stage.
-            soln->setRoot(std::move(root->children[0]));
-        }
-
-        // Attach the distinct node in the index scan's place.
-        fetchNode->children[0] = std::move(distinctNode);
-    } else {
-        // There is no fetch node. The PROJECT=>IXSCAN tree should become PROJECT=>DISTINCT_SCAN.
-        invariant(projectNode == root);
-        invariant(STAGE_IXSCAN == root->children[0]->getType());
-
-        // Attach the distinct node in the index scan's place.
-        root->children[0] = std::move(distinctNode);
-    }
-
-    return true;
-}
-
-namespace {
-
-std::unique_ptr<QuerySolution> createDistinctScanSolution(
-    const CanonicalDistinct& canonicalDistinct,
-    const QueryPlannerParams& plannerParams,
-    bool flipDistinctScanDirection) {
-    const auto& canonicalQuery = *canonicalDistinct.getQuery();
-    if (canonicalQuery.getFindCommandRequest().getFilter().isEmpty() &&
-        !canonicalQuery.getSortPattern()) {
-        // If a query has neither a filter nor a sort, the query planner won't attempt to use an
-        // index for it even if the index could provide the distinct semantics on the key from the
-        // 'canonicalDistinct'. So, we create the solution "manually" from a suitable index.
-        // The direction of the index doesn't matter in this case.
-        size_t distinctNodeIndex = 0;
-        auto collator = canonicalQuery.getCollator();
-        if (getDistinctNodeIndex(plannerParams.mainCollectionInfo.indexes,
-                                 canonicalDistinct.getKey(),
-                                 collator,
-                                 &distinctNodeIndex)) {
-            auto dn = std::make_unique<DistinctNode>(
-                plannerParams.mainCollectionInfo.indexes[distinctNodeIndex]);
-            dn->direction = 1;
-            IndexBoundsBuilder::allValuesBounds(
-                dn->index.keyPattern, &dn->bounds, dn->index.collator != nullptr);
-            dn->queryCollator = collator;
-            dn->fieldNo = 0;
-
-            // An index with a non-simple collation requires a FETCH stage.
-            std::unique_ptr<QuerySolutionNode> solnRoot = std::move(dn);
-            if (plannerParams.mainCollectionInfo.indexes[distinctNodeIndex].collator) {
-                if (!solnRoot->fetched()) {
-                    auto fetch = std::make_unique<FetchNode>();
-                    fetch->children.push_back(std::move(solnRoot));
-                    solnRoot = std::move(fetch);
-                }
-            }
-
-            // While on this path there are no sort or filter, the solution still needs to create
-            // the projection and 'analyzeDataAccess()' would do that. NB: whether other aspects of
-            // data access are important, it's hard to say, this code has been like this since long
-            // ago (and it has always passed in new 'QueryPlannerParams').
-            auto soln = QueryPlannerAnalysis::analyzeDataAccess(
-                canonicalQuery,
-                // TODO SERVER-87683 Investigate why empty parameters are used instead of
-                // 'plannerParams'.
-                QueryPlannerParams{QueryPlannerParams::ArgsForTest{}},
-                std::move(solnRoot));
-            uassert(8404000, "Failed to finalize a DISTINCT_SCAN plan", soln);
-            return soln;
-        }
-    } else {
-        // Ask the QueryPlanner for a list of solutions that scan one of the indexes from
-        // 'plannerParams' (i.e., the indexes that include the distinct field). Then try to convert
-        // one of these plans to a DISTINCT_SCAN.
-        auto multiPlanSolns = QueryPlanner::plan(canonicalQuery, plannerParams);
-        if (multiPlanSolns.isOK()) {
-            auto& solutions = multiPlanSolns.getValue();
-            const bool strictDistinctOnly = (plannerParams.mainCollectionInfo.options &
-                                             QueryPlannerParams::STRICT_DISTINCT_ONLY);
-
-            for (size_t i = 0; i < solutions.size(); ++i) {
-                if (turnIxscanIntoDistinctIxscan(solutions[i].get(),
-                                                 canonicalDistinct.getKey(),
-                                                 strictDistinctOnly,
-                                                 flipDistinctScanDirection)) {
-                    // The first suitable distinct scan is as good as any other.
-                    return std::move(solutions[i]);
-                }
-            }
-        }
-    }
-    return nullptr;  // no suitable solution has been found
-}
-}  // namespace
-
-StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> tryGetExecutorDistinct(
+StatusWith<std::unique_ptr<QuerySolution>> tryGetQuerySolutionForDistinct(
     const MultipleCollectionAccessor& collections,
     size_t plannerOptions,
-    CanonicalDistinct& canonicalDistinct,
+    const CanonicalQuery& canonicalQuery,
+    bool isDistinctMultiplanningEnabled,
     bool flipDistinctScanDirection) {
+    tassert(9245500, "Expected distinct property on CanonicalQuery", canonicalQuery.getDistinct());
+
     const auto& collectionPtr = collections.getMainCollection();
     if (!collectionPtr) {
         // The caller should create EOF plan for the appropriate engine.
         return {ErrorCodes::NoQueryExecutionPlans, "No viable DISTINCT_SCAN plan"};
     }
 
-    const auto& canonicalQuery = *canonicalDistinct.getQuery();
     auto* opCtx = canonicalQuery.getExpCtx()->opCtx;
 
     auto getQuerySolution = [&](size_t options) -> std::unique_ptr<QuerySolution> {
         auto plannerParams =
             std::make_unique<QueryPlannerParams>(QueryPlannerParams::ArgsForDistinct{
                 opCtx,
-                canonicalDistinct,
+                canonicalQuery,
                 collections,
                 options,
                 flipDistinctScanDirection,
@@ -2274,8 +1982,10 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> tryGetExecutorD
         if (plannerParams->mainCollectionInfo.indexes.empty()) {
             return nullptr;
         }
-        return createDistinctScanSolution(
-            canonicalDistinct, *plannerParams, flipDistinctScanDirection);
+        return createDistinctScanSolution(canonicalQuery,
+                                          *plannerParams,
+                                          isDistinctMultiplanningEnabled,
+                                          flipDistinctScanDirection);
     };
     auto soln = getQuerySolution(plannerOptions);
     if (!soln) {
@@ -2286,19 +1996,30 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> tryGetExecutorD
         return {ErrorCodes::NoQueryExecutionPlans, "No viable DISTINCT_SCAN plan"};
     }
 
-    // Convert the solution into an executable tree.
+    return {std::move(soln)};
+}
+
+StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorDistinct(
+    const MultipleCollectionAccessor& collections,
+    size_t plannerOptions,
+    std::unique_ptr<CanonicalQuery> canonicalQuery,
+    std::unique_ptr<QuerySolution> soln) {
+    tassert(9245501, "Expected distinct property on CanonicalQuery", canonicalQuery->getDistinct());
+
+    const auto& collectionPtr = collections.getMainCollection();
+    auto* opCtx = canonicalQuery->getExpCtx()->opCtx;
     std::unique_ptr<WorkingSet> ws = std::make_unique<WorkingSet>();
     auto collPtrOrAcq = collections.getMainCollectionPtrOrAcquisition();
     auto&& root = stage_builder::buildClassicExecutableTree(
-        opCtx, collPtrOrAcq, canonicalQuery, *soln, ws.get());
+        opCtx, collPtrOrAcq, *canonicalQuery, *soln, ws.get());
 
-    auto cq = canonicalDistinct.releaseQuery();
-    LOGV2_DEBUG(20932, 2, "Using fast distinct", "query"_attr = redact(cq->toStringShort()));
+    LOGV2_DEBUG(
+        20932, 2, "Using fast distinct", "query"_attr = redact(canonicalQuery->toStringShort()));
 
     // Stop the query planning timer once we have an execution plan.
     CurOp::get(opCtx)->stopQueryPlanningTimer();
 
-    return plan_executor_factory::make(std::move(cq),
+    return plan_executor_factory::make(std::move(canonicalQuery),
                                        std::move(ws),
                                        std::move(root),
                                        collPtrOrAcq,

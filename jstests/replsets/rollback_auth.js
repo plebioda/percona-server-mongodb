@@ -10,6 +10,8 @@
 // run on ephemeral storage engines.
 // @tags: [requires_persistence]
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 // Multiple users cannot be authenticated on one connection within a session.
 TestData.disableImplicitSessions = true;
 
@@ -120,6 +122,8 @@ assert.commandFailedWithCode(B_test.runCommand({collStats: 'foo'}), authzErrorCo
 assert.commandFailedWithCode(B_test.runCommand({collStats: 'bar'}), authzErrorCode);
 assert.commandFailedWithCode(B_test.runCommand({collStats: 'baz'}), authzErrorCode);
 assert.commandFailedWithCode(B_test.runCommand({collStats: 'foobar'}), authzErrorCode);
+
+replTest.awaitLastOpCommitted();
 
 jsTestLog("Doing writes that will eventually be rolled back");
 

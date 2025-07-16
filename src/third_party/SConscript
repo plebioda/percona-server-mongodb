@@ -362,20 +362,9 @@ def shim_library(env, name, **kwargs):
 
 env.AddMethod(shim_library, 'ShimLibrary')
 
-s2Env = env.Clone()
-s2Env.InjectThirdParty(libraries=[
-    's2',
-    'boost',
-    'abseil-cpp',
-    'fmt',
-    'safeint',
-])
-s2Env.InjectMongoIncludePaths()
-s2Env.SConscript('s2/SConscript', exports={'env': s2Env})
-
 if jsEngine:
     mozjsEnv = env.Clone()
-    mozjsEnv.SConscript('mozjs/SConscript', exports={'env': mozjsEnv})
+    mozjsEnv.SConscript('mozjs/SConscript', must_exist=1, exports={'env': mozjsEnv})
 
 wiredtigerEnv = env.Clone()
 if wiredtiger:
@@ -386,7 +375,7 @@ if wiredtiger:
     else:
         wiredtigerEnv = wiredtigerEnv.Clone()
         wiredtigerEnv.InjectThirdParty(libraries=['wiredtiger', 'wiredtiger_checksum'])
-        wiredtigerEnv.SConscript('wiredtiger/SConscript', exports={'env': wiredtigerEnv})
+        wiredtigerEnv.SConscript('wiredtiger/SConscript', must_exist=1, exports={'env': wiredtigerEnv})
         wiredtigerEnv = wiredtigerEnv.Clone(LIBDEPS_INTERFACE=[
             'wiredtiger/wiredtiger',
             'wiredtiger/wiredtiger_checksum',
@@ -420,7 +409,7 @@ if env.TargetOSIs('linux') and env['ENABLE_GRPC_BUILD']:
     else:
         protobufEnv.SConscript(dirs=[
             'protobuf',
-        ], duplicate=False, exports={'env': env})
+        ], duplicate=False, exports={'env': env},  must_exist=1,)
         protobufEnv = protobufEnv.Clone(LIBDEPS_INTERFACE=[
             'protobuf/protoc',
         ])
@@ -434,9 +423,10 @@ if env.TargetOSIs('linux') and env['ENABLE_GRPC_BUILD']:
             env['LIBDEPS_GRPCXX_REFLECTION_SYSLIBDEP'],
         ])
     else:
-        grpcEnv.SConscript(dirs=[
+        grpcEnv.SConscript(
+   dirs=[
             'grpc',
-        ], duplicate=False, exports={'env': env})
+        ], duplicate=False, exports={'env': env}, must_exist=1,)
         grpcEnv = grpcEnv.Clone(LIBDEPS_INTERFACE=[
             'grpc/grpc++_reflection',
         ])

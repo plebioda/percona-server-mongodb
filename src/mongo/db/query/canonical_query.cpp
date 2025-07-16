@@ -47,7 +47,6 @@
 #include "mongo/db/pipeline/document_source_match.h"
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/canonical_query_encoder.h"
-#include "mongo/db/query/cqf_command_utils.h"
 #include "mongo/db/query/indexability.h"
 #include "mongo/db/query/parsed_find_command.h"
 #include "mongo/db/query/projection_ast_util.h"
@@ -410,14 +409,6 @@ std::string CanonicalQuery::toStringShort(bool forErrMsg) const {
     }
 
     return ss;
-}
-
-CanonicalQuery::QueryShapeString CanonicalQuery::encodeKey() const {
-    return (!getExpCtx()->getQueryKnobConfiguration().isForceClassicEngineEnabled() &&
-            _sbeCompatible)
-        ? canonical_query_encoder::encodeSBE(*this,
-                                             canonical_query_encoder::Optimizer::kSbeStageBuilders)
-        : canonical_query_encoder::encodeClassic(*this);
 }
 
 CanonicalQuery::QueryShapeString CanonicalQuery::encodeKeyForPlanCacheCommand() const {

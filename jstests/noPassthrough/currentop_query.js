@@ -6,17 +6,18 @@
  *    requires_sharding,
  * ]
  */
+import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
 import {
     checkCascadesOptimizerEnabled,
     checkExperimentalCascadesOptimizerEnabled
 } from "jstests/libs/optimizer_utils.js";
 import {checkSbeFullyEnabled} from "jstests/libs/sbe_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 // This test runs manual getMores using different connections, which will not inherit the
 // implicit session of the cursor establishing command.
 TestData.disableImplicitSessions = true;
-
-import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
 
 // Set up a 2-shard cluster. Configure 'internalQueryExecYieldIterations' on both shards such
 // that operations will yield on each PlanExecuter iteration.
@@ -55,17 +56,9 @@ function dropAndRecreateTestCollection() {
     assert.commandWorked(
         mongosDB.adminCommand({shardCollection: mongosColl.getFullName(), key: {_id: "hashed"}}));
     // The insert via direct connection will fail with stale config if the metadata is unknown, so
-    // we wait for the refresh spawned by shardCollection to complete.
-    let curOps = [];
-    assert.soon(() => {
-        curOps = rsConn.getDB("admin")
-                     .aggregate([
-                         {$currentOp: {allUsers: true}},
-                         {$match: {"command._flushRoutingTableCacheUpdates": {$exists: true}}}
-                     ])
-                     .toArray();
-        return curOps.length == 0;
-    }, "Timed out waiting for create refreshes to finish, found: " + tojson(curOps));
+    // we forcefully refresh it.
+    assert.commandWorked(
+        rsConn.adminCommand({_flushRoutingTableCacheUpdates: mongosColl.getFullName()}));
 }
 
 /**
@@ -275,7 +268,13 @@ function runTests({conn, currentOp, truncatedOps, localOps}) {
                 },
                 command: "distinct",
                 planSummary: "COLLSCAN",
-                queryFramework: sbeEnabled ? "sbe" : "classic",
+                /* Distinct multiplanning does not generate SBE plans, even if the resulting query
+                   solution doesn't contain a DISTINCT_SCAN. */
+                queryFramework:
+                    (!FeatureFlagUtil.isPresentAndEnabled(conn, "ShardFilteringDistinctScan") &&
+                     sbeEnabled)
+                    ? "sbe"
+                    : "classic",
                 currentOpFilter:
                     {"command.query.$comment": "currentop_query", "command.collation.locale": "fr"}
             },

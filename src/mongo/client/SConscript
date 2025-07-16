@@ -7,6 +7,7 @@ Import("wiredtiger")
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=["sdam"],
     exports=["env"],
 )
@@ -47,18 +48,6 @@ env.Library(
 )
 
 if get_option("ssl") == "on":
-    env.Library(
-        target=[
-            "sasl_aws_common",
-        ],
-        source=[
-            "sasl_aws_protocol_common_gen.cpp",
-        ],
-        LIBDEPS_PRIVATE=[
-            "$BUILD_DIR/mongo/db/server_base",
-        ],
-    )
-
     kmsEnv = env.Clone()
 
     kmsEnv.InjectThirdParty(libraries=["libmongocrypt"])

@@ -666,7 +666,7 @@ def auto_install_bazel(env, libdep, shlib_suffix):
 
         bazel_node = env.File(f"#/{line}")
         auto_install_mapping = env["AIB_SUFFIX_MAP"].get(shlib_suffix)
-        bazel_debug(f"Bazel AutoInstalling {bazel_node}")
+
         new_installed_files = env.AutoInstall(
             auto_install_mapping.directory,
             bazel_node,
@@ -677,6 +677,8 @@ def auto_install_bazel(env, libdep, shlib_suffix):
 
         if not new_installed_files:
             new_installed_files = getattr(bazel_node.attributes, "AIB_INSTALLED_FILES", [])
+        else:
+            bazel_debug(f"Bazel AutoInstalling {bazel_node}")
         installed_files = getattr(bazel_libdep.attributes, "AIB_INSTALLED_FILES", [])
         setattr(
             bazel_libdep.attributes, "AIB_INSTALLED_FILES", new_installed_files + installed_files
@@ -820,8 +822,8 @@ def generate(env: SCons.Environment.Environment) -> None:
         f'--//bazel/config:disable_warnings_as_errors={env.GetOption("disable-warnings-as-errors") == "source"}',
         f'--//bazel/config:gcov={env.GetOption("gcov") is not None}',
         f'--//bazel/config:pgo_profile={env.GetOption("pgo-profile") is not None}',
-        f"--platforms=//bazel/platforms:{distro_or_os}_{normalized_arch}_{env.ToolchainName()}",
-        f"--host_platform=//bazel/platforms:{distro_or_os}_{normalized_arch}_{env.ToolchainName()}",
+        f"--platforms=//bazel/platforms:{distro_or_os}_{normalized_arch}",
+        f"--host_platform=//bazel/platforms:{distro_or_os}_{normalized_arch}",
         f'--//bazel/config:ssl={"True" if env.GetOption("ssl") == "on" else "False"}',
         f'--//bazel/config:full-featured={env.GetOption("full-featured") is not None}',
         f'--//bazel/config:enable-fipsmode={env.GetOption("enable-fipsmode") is not None}',

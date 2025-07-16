@@ -42,16 +42,6 @@ scripting_common_env.Library(
 )
 
 env.Library(
-    target="bson_template_evaluator",
-    source=[
-        "bson_template_evaluator.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="scripting_none",
     source=[
         "engine_none.cpp",
@@ -81,13 +71,6 @@ if jsEngine:
         ],
     )
     scriptingEnv.InjectMozJS()
-
-    scriptingEnv.JSHeader(
-        target="mozjs/mongohelpers_js.cpp",
-        source=["mozjs/mongohelpers.js"],
-    )
-
-    env.Alias("generated-sources", "mozjs/mongohelpers_js.cpp")
 
     scriptingEnv.Library(
         target="scripting",

@@ -3,6 +3,7 @@
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 const testUser = "user1";
 const testDB = "user_cache_invalidation";
@@ -184,8 +185,10 @@ function runTest(writeNode, readNode, awaitReplication, lock, unlock) {
     jsTest.log('Looking for invalidation');
     assertHasLogAndAdvance(readNode, invalidateUserEvent);
 
-    jsTest.log('Looking for new acquisiiton');
+    jsTest.log('Looking for new acquisition');
     assertHasLogAndAdvance(readNode, acquireUserEvent);
+
+    jsTest.log('Unlocking batch application');
     unlock();
 
     jsTest.log('Waiting for second resolve roles');

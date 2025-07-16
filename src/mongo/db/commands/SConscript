@@ -7,6 +7,7 @@ Import("get_option")
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "query_cmd",
     ],
@@ -23,20 +24,6 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="server_status_core",
-    source=[
-        "server_status.cpp",
-        "server_status_metric.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -268,39 +255,6 @@ env.Library(
 )
 
 env.Library(
-    target="list_databases_command",
-    source=[
-        "list_databases_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/auth/authprivilege",
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="list_databases_for_all_tenants_command",
-    source=[
-        "list_databases_for_all_tenants_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/auth/authprivilege",
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="lock_info_command",
-    source=[
-        "lock_info_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/auth/authprivilege",
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
     target="create_command",
     source=[
         "create_gen.cpp",
@@ -313,16 +267,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/server_options",
         "$BUILD_DIR/mongo/db/timeseries/timeseries_options",
-    ],
-)
-
-env.Library(
-    target="validate_db_metadata_command",
-    source=[
-        "validate_db_metadata_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
     ],
 )
 
@@ -488,16 +432,6 @@ env.Library(
 )
 
 env.Library(
-    target="notify_sharding_event_idl",
-    source=[
-        "notify_sharding_event_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
     target="set_index_commit_quorum_idl",
     source=[
         "set_index_commit_quorum_gen.cpp",
@@ -506,36 +440,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/catalog/commit_quorum_options",
         "$BUILD_DIR/mongo/db/rw_concern_d",
         "$BUILD_DIR/mongo/idl/idl_parser",
-    ],
-)
-
-env.Library(
-    target="set_user_write_block_mode_idl",
-    source=[
-        "set_user_write_block_mode_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="rename_collection_idl",
-    source=[
-        "rename_collection_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="set_feature_compatibility_version_idl",
-    source=[
-        "set_feature_compatibility_version_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
     ],
 )
 
@@ -753,17 +657,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/serverless/serverless_types_idl",
         "$BUILD_DIR/mongo/idl/idl_parser",
-    ],
-)
-env.Library(
-    target="txn_cmd_request",
-    source=[
-        "txn_cmds_gen.cpp",
-        "txn_two_phase_commit_cmds_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/auth/authprivilege",
-        "$BUILD_DIR/mongo/db/server_base",
     ],
 )
 

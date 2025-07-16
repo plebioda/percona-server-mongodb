@@ -41,7 +41,6 @@ const paramList = [
     {name: "allowDiskUseByDefault", value: false},
     {name: "internalQueryMaxNumberOfFieldsToChooseUnfilteredColumnScan", value: 100},
     {name: "internalQueryMaxNumberOfFieldsToChooseFilteredColumnScan", value: 100},
-    {name: "internalCostModelCoefficients", value: '{"filterIncrementalCost": 1.0}'},
     {name: "internalQueryColumnScanMinAvgDocSizeBytes", value: 2048},
     {name: "internalQueryColumnScanMinCollectionSizeBytes", value: 2048},
     {name: "internalQueryColumnScanMinNumColumnFilters", value: 5},
@@ -56,6 +55,7 @@ const paramList = [
     {name: "internalCascadesOptimizerMaxIndexEqPrefixes", value: 2},
     {name: "internalQuerySlotBasedExecutionDisableTimeSeriesPushdown", value: true},
     {name: "internalQueryDisablePlanCache", value: true},
+    {name: "planRankerMode", value: true},
 ];
 
 const conn = MongoRunner.runMongod();

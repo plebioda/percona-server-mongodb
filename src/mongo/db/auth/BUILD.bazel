@@ -140,3 +140,45 @@ idl_generator(
         "//src/mongo/db:basic_types_gen",
     ],
 )
+
+mongo_cc_library(
+    name = "auth_options",
+    srcs = [
+        ":auth_options_gen",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+    ],
+)
+
+mongo_cc_library(
+    name = "authprivilege",
+    srcs = [
+        "access_checks_gen",
+        "action_set.cpp",
+        "action_type.cpp",
+        "action_type_gen",
+        "authorization_contract.cpp",
+        "parsed_privilege_gen",
+        "privilege.cpp",
+        "resource_pattern.cpp",
+    ],
+    hdrs = [
+        "access_checks_gen",
+        "action_type_gen",
+        "auth_types_gen",
+        "parsed_privilege_gen",
+        "//src/mongo/db:basic_types_gen",
+        "//src/mongo/db/query:explain_verbosity_gen",
+    ],
+    header_deps = [
+        "//src/mongo/db:change_stream_state",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/bson/mutable:mutable_bson",
+        "//src/mongo/db:common",
+        "//src/mongo/db:server_base",
+        "//src/mongo/idl:idl_parser",
+    ],
+)

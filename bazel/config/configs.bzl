@@ -500,6 +500,17 @@ ssl = rule(
     build_setting = config.bool(flag = True),
 )
 
+# =========
+# audit
+# =========
+
+audit_provider = provider(doc = "Enable audit logging", fields = ["enabled"])
+
+audit = rule(
+    implementation = lambda ctx: audit_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
 # --------------------------------------
 # full-featured
 # --------------------------------------

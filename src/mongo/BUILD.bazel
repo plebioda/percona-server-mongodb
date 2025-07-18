@@ -70,6 +70,11 @@ generate_config_header(
         },
         "//conditions:default": {},
     }) | select({
+        "//bazel/config:audit_enabled": {
+            "PERCONA_AUDIT_ENABLED": "1",
+        },
+        "//conditions:default": {},
+    }) | select({
         "@platforms//os:windows": {
             "MONGO_CONFIG_SSL_PROVIDER": "MONGO_CONFIG_SSL_PROVIDER_WINDOWS",
         },

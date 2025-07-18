@@ -456,6 +456,7 @@ def get_config_header_substs():
         ("@mongo_config_glibc_rseq@", "MONGO_CONFIG_GLIBC_RSEQ"),
         ("@mongo_config_tcmalloc_google@", "MONGO_CONFIG_TCMALLOC_GOOGLE"),
         ("@mongo_config_tcmalloc_gperf@", "MONGO_CONFIG_TCMALLOC_GPERF"),
+        ("@percona_audit_enabled@", "PERCONA_AUDIT_ENABLED"),
         ("@percona_fipsmode_enabled@", "PERCONA_FIPSMODE_ENABLED"),
         (
             "@mongo_config_have_basic_stringbuf_str_rvalue@",

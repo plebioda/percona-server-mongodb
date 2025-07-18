@@ -4,6 +4,7 @@ load(
     "//bazel/config:configs.bzl",
     "allocator",
     "asan",
+    "audit",
     "build_enterprise",
     "build_grpc",
     "compiler_type",
@@ -1772,6 +1773,29 @@ selects.config_setting_group(
         "@platforms//os:linux",
         ":ssl_disabled",
     ],
+)
+
+# --------------------------------------
+# audit
+# --------------------------------------
+
+audit(
+    name = "audit",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "audit_enabled",
+    flag_values = {
+        "//bazel/config:audit": "True",
+    },
+)
+
+config_setting(
+    name = "audit_disabled",
+    flag_values = {
+        "//bazel/config:audit": "False",
+    },
 )
 
 # --------------------------------------

@@ -1,3 +1,6 @@
+import { ReplSetTest } from "jstests/libs/replsettest.js";
+import { ShardingTest } from "jstests/libs/shardingtest.js";
+
 var getDBPath = function() {
     return MongoRunner.dataDir !== undefined ?
            MongoRunner.dataDir : '/data/db';

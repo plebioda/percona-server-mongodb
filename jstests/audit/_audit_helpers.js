@@ -1,147 +1,154 @@
-import { ReplSetTest } from "jstests/libs/replsettest.js";
-import { ShardingTest } from "jstests/libs/shardingtest.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
-var getDBPath = function() {
-    return MongoRunner.dataDir !== undefined ?
-           MongoRunner.dataDir : '/data/db';
+export function getDBPath() {
+    return MongoRunner.dataDir !== undefined ? MongoRunner.dataDir : '/data/db';
 }
 
-var auditTest = function(name, fn, serverParams) {
-    var loudTestEcho = function(msg) {
-        s = '----------------------------- AUDIT UNIT TEST: ' + msg + '-----------------------------';
+export function auditTest(name, fn, serverParams) {
+    let loudTestEcho = function(msg) {
+        const s =
+            `----------------------------- AUDIT UNIT TEST: ${msg} -----------------------------`;
         print(Array(s.length + 1).join('-'));
         print(s);
-    }
+    };
 
-    loudTestEcho(name + ' STARTING ');
+    loudTestEcho(`${name} STARTING`);
+    const dbpath = getDBPath();
+    const auditPath = dbpath + '/auditLog.json';
     removeFile(auditPath);
-    var dbpath = getDBPath();
-    var auditPath = dbpath + '/auditLog.json';
-    removeFile(auditPath);
-    var port = allocatePorts(1);
-    var conn
-    var startServer = function(extraParams) {
-        params = Object.merge(mongodOptions(serverParams), extraParams);
+    let port = allocatePorts(1);
+    let conn;
+    let startServer = function(extraParams) {
+        let params = Object.merge(mongodOptions(serverParams), extraParams);
         if (serverParams === undefined || serverParams.config === undefined) {
-            params = Object.merge({
-                auditDestination: 'file',
-                auditPath: auditPath,
-                auditFormat: 'JSON'
-            }, params);
+            params = Object.merge(
+                {auditDestination: 'file', auditPath: auditPath, auditFormat: 'JSON'}, params);
         }
-        conn = MongoRunner.runMongod(
-            Object.merge({
-                port: port,
-                dbpath: dbpath,
-            }, params)
-        );
+        conn = MongoRunner.runMongod(Object.merge({
+            port: port,
+            dbpath: dbpath,
+        },
+                                                  params));
         return conn;
-    }
-    var stopServer = function() {
+    };
+    let stopServer = function() {
         MongoRunner.stopMongod(conn);
-    }
-    var restartServer = function() {
+    };
+    let restartServer = function() {
         stopServer();
-        return startServer({ noCleanData: true });
-    }
+        return startServer({noCleanData: true});
+    };
     try {
         fn(startServer(), restartServer);
     } finally {
         MongoRunner.stopMongod(conn);
     }
-    loudTestEcho(name + ' PASSED ');
+    loudTestEcho(`${name} PASSED`);
 }
 
-var auditTestRepl = function(name, fn, serverParams) {
-    var loudTestEcho = function(msg) {
-        s = '----------------------------- AUDIT REPL UNIT TEST: ' + msg + '-----------------------------';
+export function auditTestRepl(name, fn, serverParams) {
+    let loudTestEcho = function(msg) {
+        const s = `----------------------------- AUDIT REPL UNIT TEST: ${
+            msg} -----------------------------`;
         print(Array(s.length + 1).join('-'));
         print(s);
-    }
+    };
 
-    loudTestEcho(name + ' STARTING ');
-    var replTest = new ReplSetTest({ name: 'auditTestReplSet', cleanData: true, nodes: 2, nodeOptions: mongodOptions(serverParams) });
-    replTest.startSet({ auditDestination: 'file' });
-    var config = {
+    loudTestEcho(`${name} STARTING`);
+    let replTest = new ReplSetTest({
+        name: 'auditTestReplSet',
+        cleanData: true,
+        nodes: 2,
+        nodeOptions: mongodOptions(serverParams)
+    });
+    replTest.startSet({auditDestination: 'file'});
+    let config = {
         _id: 'auditTestReplSet',
         members: [
-            { _id: 0, host: getHostName() + ":" + replTest.ports[0], priority: 2 },
-            { _id: 1, host: getHostName() + ":" + replTest.ports[1], priority: 1 },
+            {_id: 0, host: getHostName() + ":" + replTest.ports[0], priority: 2},
+            {_id: 1, host: getHostName() + ":" + replTest.ports[1], priority: 1},
         ]
     };
     replTest.initiate(config);
     fn(replTest);
-    loudTestEcho(name + ' PASSED ');
+    loudTestEcho(`${name} PASSED`);
 }
 
-var auditTestShard = function(name, fn, serverParams) {
-    var loudTestEcho = function(msg) {
-        s = '----------------------------- AUDIT SHARDED UNIT TEST: ' + msg + '-----------------------------';
+export function auditTestShard(name, fn, serverParams) {
+    let loudTestEcho = function(msg) {
+        const s = `----------------------------- AUDIT SHARDED UNIT TEST: ${
+            msg} -----------------------------`;
         print(Array(s.length + 1).join('-'));
         print(s);
-    }
+    };
 
-    loudTestEcho(name + ' STARTING ');
+    loudTestEcho(`${name} STARTING`);
 
-    var dbpath = getDBPath();
-    var st = new ShardingTest({ name: 'auditTestSharding',
-                                verbose: 1,
-                                mongos: [
-                                    Object.merge({
-                                        auditPath: dbpath + '/auditLog-s0.json',
-                                        auditDestination: 'file',
-                                        auditFormat: 'JSON'
-                                    }, serverParams),
-                                    Object.merge({
-                                        auditPath: dbpath + '/auditLog-s1.json',
-                                        auditDestination: 'file',
-                                        auditFormat: 'JSON'
-                                    }, serverParams),
-                                ],
-                                shards: [
-                                    Object.merge({
-                                        auditPath: dbpath + '/auditLog-d0.json',
-                                        auditDestination: 'file',
-                                        auditFormat: 'JSON'
-                                    }, mongodOptions(serverParams)),
-                                    Object.merge({
-                                        auditPath: dbpath + '/auditLog-d1.json',
-                                        auditDestination: 'file',
-                                        auditFormat: 'JSON'
-                                    }, mongodOptions(serverParams))
-                                ],
-                                config: {
-                                    configOptions: {
-                                        auditPath: dbpath + '/auditLog-c0.json',
-                                        auditDestination: 'file',
-                                        auditFormat: 'JSON'
-                                    },
-                                },
-                              });
+    const dbpath = getDBPath();
+    let st = new ShardingTest({
+        name: 'auditTestSharding',
+        verbose: 1,
+        mongos: [
+            Object.merge({
+                auditPath: dbpath + '/auditLog-s0.json',
+                auditDestination: 'file',
+                auditFormat: 'JSON'
+            },
+                         serverParams),
+            Object.merge({
+                auditPath: dbpath + '/auditLog-s1.json',
+                auditDestination: 'file',
+                auditFormat: 'JSON'
+            },
+                         serverParams),
+        ],
+        shards: [
+            Object.merge({
+                auditPath: dbpath + '/auditLog-d0.json',
+                auditDestination: 'file',
+                auditFormat: 'JSON'
+            },
+                         mongodOptions(serverParams)),
+            Object.merge({
+                auditPath: dbpath + '/auditLog-d1.json',
+                auditDestination: 'file',
+                auditFormat: 'JSON'
+            },
+                         mongodOptions(serverParams))
+        ],
+        config: {
+            configOptions: {
+                auditPath: dbpath + '/auditLog-c0.json',
+                auditDestination: 'file',
+                auditFormat: 'JSON'
+            },
+        },
+    });
     try {
         fn(st);
     } finally {
         st.stop();
     }
-    loudTestEcho(name + ' PASSED ');
+    loudTestEcho(`${name} PASSED`);
 }
 
 // Drop the existing audit events collection, import
 // the audit json file, then return the new collection.
-var getAuditEventsCollection =
-    function(m, dbname, primary, useAuth, loadRotated) {
-    var adminDB = m.getDB('admin');
-    var auth = ((useAuth !== undefined) && (useAuth != false)) ? true : false;
+export function getAuditEventsCollection(m, dbname, primary, useAuth, loadRotated) {
+    let adminDB = m.getDB('admin');
+    let auth = ((useAuth !== undefined) && (useAuth != false)) ? true : false;
     if (auth) {
-        assert(adminDB.auth('admin','admin'), "could not auth as admin (pwd admin)");
+        assert(adminDB.auth('admin', 'admin'), "could not auth as admin (pwd admin)");
     }
 
     // the audit log is specifically parsable by mongoimport,
     // so we use that to conveniently read its contents.
-    var auditOptions = adminDB.runCommand('auditGetOptions');
-    var auditPath = auditOptions.path;
-    var auditCollectionName = 'auditCollection';
-    return loadAuditEventsIntoCollection(m, auditPath, dbname, auditCollectionName, primary, auth, loadRotated);
+    let auditOptions = adminDB.runCommand('auditGetOptions');
+    let auditPath = auditOptions.path;
+    let auditCollectionName = 'auditCollection';
+    return loadAuditEventsIntoCollection(
+        m, auditPath, dbname, auditCollectionName, primary, auth, loadRotated);
 }
 
 function dirname(path) {
@@ -166,7 +173,7 @@ function dirname(path) {
 
 // Checks if the file path has a valid date suffix
 // The suffix should be in the format 'YYYY-MM-DDTHH-MM-SS'
-function isValidDateSuffix(rotatedFileName, baseFileName) {
+export function isValidDateSuffix(rotatedFileName, baseFileName) {
     if (typeof rotatedFileName !== 'string' || typeof baseFileName !== 'string') {
         throw new TypeError('Both rotatedFileName and baseFileName must be strings');
     }
@@ -192,8 +199,7 @@ function isValidDateSuffix(rotatedFileName, baseFileName) {
 }
 
 // Import a JSON file into a MongoDB collection.
-const importFile =
-    function(filename, collection) {
+function importFile(filename, collection) {
     cat(filename)
         .split('\n')
         .filter(line => line.length > 0)
@@ -201,24 +207,24 @@ const importFile =
 }
 
 // Load audit log events into a named collection
-var loadAuditEventsIntoCollection =
-    function(m, filename, dbname, collname, primary, auth, loadRotated) {
-    var db = primary !== undefined ? primary.getDB(dbname) : m.getDB(dbname);
+export function loadAuditEventsIntoCollection(
+    m, filename, dbname, collname, primary, auth, loadRotated) {
+    let db = primary !== undefined ? primary.getDB(dbname) : m.getDB(dbname);
 
     // Make all audit events durable
     // To make "non-durable" events like auth checks or app messages durable
     // we need to put some "durable" events after them.
     // Those extra events won't affect our tests because all tests search
     // events only in strict time range  (beforeCmd, beforeLoad).
-    var fooColl = db.getCollection('foo' + Date.now());
-    fooColl.insert({a:1});
+    let fooColl = db.getCollection('foo' + Date.now());
+    fooColl.insert({a: 1});
     fooColl.drop();
     sleep(110);
 
     // drop collection
     db[collname].drop();
     // load data from audit log file
-    var auditCollection = db.getCollection(collname);
+    let auditCollection = db.getCollection(collname);
     importFile(filename, auditCollection);
 
     // conditionally import all rotated audit log files to collection
@@ -234,48 +240,46 @@ var loadAuditEventsIntoCollection =
     // because during some runs of audit_<something>_sharding.js tests
     // we observed "logout" records with identical timestamps
     assert.commandWorked(auditCollection.createIndex(
-        { atype: 1, ts: 1, local: 1, remote: 1, users: 1, param: 1, result: 1 },
-        { unique: false }
-    ));
+        {atype: 1, ts: 1, local: 1, remote: 1, users: 1, param: 1, result: 1}, {unique: false}));
 
     return auditCollection;
 }
 
 // Get a query that matches any timestamp generated in the interval
 // of (t - n) <= t <= now for some time t.
-var withinFewSecondsBefore = function(t, n) {
-    fewSecondsAgo = t - ((n !== undefined ? n : 3) * 1000);
-    return { '$gte' : new Date(fewSecondsAgo), '$lte': new Date() };
+function withinFewSecondsBefore(t, n) {
+    const fewSecondsAgo = t - ((n !== undefined ? n : 3) * 1000);
+    return {'$gte': new Date(fewSecondsAgo), '$lte': new Date()};
 }
 
 // Get a query that matches any timestamp generated in the interval
 // of t <= x <= e for some timestamps t and e.
-var withinInterval = function(t, e = Date.now())  {
-    return { '$gte': new Date(t), '$lte': new Date(e) };
+export function withinInterval(t, e = Date.now()) {
+    return {'$gte': new Date(t), '$lte': new Date(e)};
 }
 
 // Create Admin user.  Used for authz tests.
-var createAdminUserForAudit = function (m) {
-    var adminDB = m.getDB('admin');
-    adminDB.createUser( {'user':'admin', 
-                      'pwd':'admin', 
-                      'roles' : ['readWriteAnyDatabase',
-                                 'userAdminAnyDatabase',
-                                 'clusterAdmin']} );
+export function createAdminUserForAudit(m) {
+    let adminDB = m.getDB('admin');
+    adminDB.createUser({
+        'user': 'admin',
+        'pwd': 'admin',
+        'roles': ['readWriteAnyDatabase', 'userAdminAnyDatabase', 'clusterAdmin']
+    });
 }
 
 // Creates a User with limited permissions. Used for authz tests.
-var createNoPermissionUserForAudit = function (m, db) {
-    var passwordUserNameUnion = 'tom';
-    var adminDB = m.getDB('admin');
-    adminDB.auth('admin','admin');
-    db.createUser( {'user':'tom', 'pwd':'tom', 'roles':[]} );
+export function createNoPermissionUserForAudit(m, db) {
+    let passwordUserNameUnion = 'tom';
+    let adminDB = m.getDB('admin');
+    adminDB.auth('admin', 'admin');
+    db.createUser({'user': 'tom', 'pwd': 'tom', 'roles': []});
     adminDB.logout();
     return passwordUserNameUnion;
 }
 
 // Extracts mongod options from TestData and appends them to the object
-var mongodOptions = function(o) {
+function mongodOptions(o) {
     if ('storageEngine' in TestData && TestData.storageEngine != "") {
         o.storageEngine = TestData.storageEngine;
     }

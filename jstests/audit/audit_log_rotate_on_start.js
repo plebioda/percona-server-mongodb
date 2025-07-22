@@ -1,8 +1,4 @@
-if (TestData.testData !== undefined) {
-    load(TestData.testData + '/audit/_audit_helpers.js');
-} else {
-    load('jstests/audit/_audit_helpers.js');
-}
+import {getDBPath, isValidDateSuffix} from 'jstests/audit/_audit_helpers.js';
 
 const auditLogDir = getDBPath() + '/auditLogs';
 

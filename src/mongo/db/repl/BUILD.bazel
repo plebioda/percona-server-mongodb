@@ -452,6 +452,7 @@ mongo_cc_library(
         "//src/mongo/db/query/util:deferred.h",
         "//src/mongo/db/query/util:make_data_structure.h",
         "//src/mongo/db/query/util:memory_util.h",
+        "//src/mongo/db/query/util:named_enum.h",
         "//src/mongo/db/session:internal_session_pool.h",
         "//src/mongo/db/session:logical_session_cache_gen",
         "//src/mongo/db/storage:backup_block.h",
@@ -776,5 +777,20 @@ mongo_cc_library(
     deps = [
         ":optime",
         "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "split_horizon",
+    srcs = [
+        "split_horizon.cpp",
+    ],
+    hdrs = [
+        "split_horizon.h",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+        "//src/mongo/util/concurrency:spin_lock",
+        "//src/mongo/util/net:network",
     ],
 )

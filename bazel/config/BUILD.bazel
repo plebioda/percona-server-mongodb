@@ -10,6 +10,7 @@ load(
     "compiler_type",
     "dbg",
     "detect_odr_violations",
+    "developer_dir",
     "disable_warnings_as_errors",
     "dwarf_version",
     "fipsmode",
@@ -1902,4 +1903,56 @@ config_setting(
     flag_values = {
         "//bazel/config:scons_query": "True",
     },
+)
+
+# --------------------------------------
+# crypto options
+# --------------------------------------
+
+# Note: This intentionally matches regardless of SSL setting.
+config_setting(
+    name = "mongo_crypto_windows",
+    constraint_values = ["@platforms//os:windows"],
+)
+
+# Note: This intentionally matches regardless of SSL setting.
+config_setting(
+    name = "mongo_crypto_apple",
+    constraint_values = ["@platforms//os:macos"],
+)
+
+selects.config_setting_group(
+    name = "mongo_crypto_openssl",
+    match_all = [
+        ":ssl_enabled_linux",
+    ],
+)
+
+selects.config_setting_group(
+    name = "mongo_crypto_tom",
+    match_all = [
+        ":ssl_disabled_linux",
+    ],
+)
+
+# --------------------------------------
+# symbol reordering options
+# --------------------------------------
+
+selects.config_setting_group(
+    name = "symbol_ordering_file_enabled",
+    match_all = [
+        "@platforms//os:linux",
+        ":opt_any",
+        ":linker_lld",
+    ],
+)
+
+# --------------------------------------
+# developer dir
+# --------------------------------------
+
+developer_dir(
+    name = "developer_dir",
+    build_setting_default = "/Applications/Xcode.app",
 )

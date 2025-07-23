@@ -112,27 +112,6 @@ env.Library(
 )
 
 env.Library(
-    target="md5",
-    source=[
-        "md5.cpp",
-        "password_digest.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/third_party/tomcrypt-1.18.2/tomcrypt_md5",
-    ],
-)
-
-env.Library(
-    target="clock_source_mock",
-    source=[
-        "clock_source_mock.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="processinfo",
     source=[
         "processinfo.cpp",
@@ -147,18 +126,6 @@ env.Library(
     ],
 )
 
-env.Library(
-    target="fail_point",
-    source=[
-        "fail_point.cpp",
-        "fail_point_server_parameter_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/bson/util/bson_extract",
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
 env.Benchmark(
     target="fail_point_bm",
     source=[
@@ -166,17 +133,6 @@ env.Benchmark(
     ],
     LIBDEPS=[
         "fail_point",
-    ],
-)
-
-env.Library(
-    target="testing_options",
-    source=[
-        "testing_options.cpp",
-        "testing_options_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
     ],
 )
 
@@ -218,19 +174,6 @@ env.Library(
 )
 
 env.Library(
-    target="mock_periodic_runner",
-    source=[
-        "mock_periodic_runner.cpp",
-    ],
-    LIBDEPS=[
-        "periodic_runner",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="caching",
     source=[
         "read_through_cache.cpp",
@@ -239,16 +182,6 @@ env.Library(
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/db/service_context",
         "concurrency/spin_lock",
-    ],
-)
-
-env.Library(
-    target="tracing_support",
-    source=[
-        "tracing_support.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -433,37 +366,6 @@ env.Benchmark(
 )
 
 env.Library(
-    target="elapsed_tracker",
-    source=[
-        "elapsed_tracker.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "net/network",  # this is for using listener to check elapsed time
-    ],
-)
-
-env.Library(
-    target="dns_query",
-    source=[
-        "dns_query.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="system_perf",
-    source=[
-        "sysprofile.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="signal_handlers",
     source=[
         "signal_handlers.cpp",
@@ -478,18 +380,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/server_base",
     ],
 )
-
-env.Library(
-    target="password",
-    source=[
-        "password.cpp",
-        "password_params_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
 
 env.CppUnitTest(
     target="executor_stats_test",
@@ -543,18 +433,6 @@ env.Library(
         "$BUILD_DIR/mongo/executor/task_executor_interface",
     ],
 )
-
-if env.TargetOSIs("linux"):
-    env.Library(
-        target="pin_code_segments",
-        source=[
-            "pin_code_segments.cpp",
-            "pin_code_segments_params_gen.cpp",
-        ],
-        LIBDEPS_PRIVATE=[
-            "$BUILD_DIR/mongo/db/server_base",
-        ],
-    )
 
 pcre_env = env.Clone()
 pcre_env.InjectThirdParty(libraries=["pcre2"])

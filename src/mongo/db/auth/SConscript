@@ -401,17 +401,6 @@ yamlEnv.Library(
 )
 
 env.Library(
-    target="sasl_options",
-    source=[
-        "sasl_options.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/stats/counters",
-    ],
-)
-
-env.Library(
     target="sasl_options_init",
     source=[
         "sasl_options_init.cpp",
@@ -501,20 +490,6 @@ env.Library(
 )
 
 env.Library(
-    target="oidc_protocol",
-    source=[
-        "oauth_authorization_server_metadata_gen.cpp",
-        "oauth_discovery_factory.cpp",
-        "oidc_protocol_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
-        "$BUILD_DIR/mongo/util/net/http_client",
-    ],
-)
-
-env.Library(
     target="authorization_session_test_fixture",
     source=[
         "authorization_session_for_test.cpp",
@@ -558,6 +533,7 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/client/native_sasl_client",
         "$BUILD_DIR/mongo/db/common",
         "$BUILD_DIR/mongo/db/concurrency/exception_util",
+        "$BUILD_DIR/mongo/db/op_observer/op_observer_util",
         "$BUILD_DIR/mongo/db/pipeline/pipeline",
         "$BUILD_DIR/mongo/db/repl/oplog",
         "$BUILD_DIR/mongo/db/repl/oplog_interface_local",

@@ -8,48 +8,73 @@ const coll = db.sort_by_search_score;
 coll.drop();
 assert.commandWorked(coll.insert([
     {_id: 0, size: "small"},
-    {_id: 1, size: "medium", mood: "hungry"},
-    {_id: 2, size: "medium", mood: "very hungry"},
-    {_id: 3, size: "large", mood: "hungry"}
+    {_id: 1, size: "medium", mood: "content hippo"},
+    {_id: 2, size: "large", mood: "very hungry hippo"}
 ]));
 
 coll.createSearchIndex({name: "test-dynamic", definition: {"mappings": {"dynamic": true}}});
 var searchIndexes = coll.aggregate([{"$listSearchIndexes": {}}]).toArray();
 assert.eq(searchIndexes.length, 1, searchIndexes);
 
-const searchForHunger = {
+const searchForHungryHippo = {
     $search: {
         index: "test-dynamic",
-        text: {query: "hungry", path: ["mood"]},
+        text: {query: "hungry hippo", path: ["mood"]},
     }
 };
 
+// Test basic ranking, with no 'partitionBy'.
 {
-    // Test a basic ranking, with no 'partitionBy'.
     const results =
         coll.aggregate([
-                searchForHunger,
+                searchForHungryHippo,
                 {
                     $setWindowFields:
                         {sortBy: {score: {$meta: "searchScore"}}, output: {rank: {$rank: {}}}}
                 },
-                {$sort: {score: {$meta: "searchScore"}, size: 1}},
             ])
             .toArray();
 
-    // We should see a tie for first place rank, and then the "very hungry" document in third place.
-    // Note there is a tie-breaking sort on 'size' (after assigning rank), so the order here is
-    // important/deterministic.
-    assert.eq(results.length, 3);
-    assert.docEq(results[0], {_id: 3, size: "large", mood: "hungry", rank: 1});
-    assert.docEq(results[1], {_id: 1, size: "medium", mood: "hungry", rank: 1});
-    assert.docEq(results[2], {_id: 2, size: "medium", mood: "very hungry", rank: 3});
+    // We should see that the document matching both search terms scores higher than the one
+    // matching only a single term.
+    assert.eq(results.length, 2);
+    assert.docEq(results[0], {_id: 2, size: "large", mood: "very hungry hippo", rank: 1});
+    assert.docEq(results[1], {_id: 1, size: "medium", mood: "content hippo", rank: 2});
+}
+{
+    // Test ranking with ties.
+    const scoreForAnyMatch = 1;
+    const results =
+        coll.aggregate([
+                {
+                    $search: {
+                        index: "test-dynamic",
+                        text: {
+                            query: "hungry hippo",
+                            path: ["mood"],
+                            score: {constant: {value: scoreForAnyMatch}}
+                        },
+                    }
+                },
+                {
+                    $setWindowFields:
+                        {sortBy: {score: {$meta: "searchScore"}}, output: {rank: {$rank: {}}}}
+                },
+                {$sort: {_id: 1}}
+            ])
+            .toArray();
+
+    assert.eq(results.length, 2);
+    // Because we manually override the score by passing the 'score' option, these should tie. The
+    // order in 'results' is based on the trailing $sort by '_id'.
+    assert.docEq(results[0], {_id: 1, size: "medium", mood: "content hippo", rank: 1});
+    assert.docEq(results[1], {_id: 2, size: "large", mood: "very hungry hippo", rank: 1});
 }
 
 {
     // Test with a 'partitionBy' argument.
     const results = coll.aggregate([
-                            searchForHunger,
+                            searchForHungryHippo,
                             {
                                 $setWindowFields: {
                                     sortBy: {score: {$meta: "searchScore"}},
@@ -57,14 +82,12 @@ const searchForHunger = {
                                     output: {rank: {$rank: {}}}
                                 }
                             },
-                            {$sort: {score: {$meta: "searchScore"}, size: 1}},
+                            {$sort: {_id: 1}},
                         ])
                         .toArray();
-    // Now that we have partitioned by size, the same first place documents are still first place,
-    // but now the 'very hungry' result is in second place - not third. Note there is a tie-breaking
-    // sort on 'size' (after assigning rank), so the order here is important/deterministic.
-    assert.eq(results.length, 3);
-    assert.docEq(results[0], {_id: 3, size: "large", mood: "hungry", rank: 1});
-    assert.docEq(results[1], {_id: 1, size: "medium", mood: "hungry", rank: 1});
-    assert.docEq(results[2], {_id: 2, size: "medium", mood: "very hungry", rank: 2});
+    // Now that we have partitioned by size, each document is in first place within their size
+    // category. The results are still in a deteministic order due to the sort on _id.
+    assert.eq(results.length, 2);
+    assert.docEq(results[0], {_id: 1, size: "medium", mood: "content hippo", rank: 1});
+    assert.docEq(results[1], {_id: 2, size: "large", mood: "very hungry hippo", rank: 1});
 }

@@ -7,7 +7,7 @@
 # https://github.com/10gen/mongo/blob/master/docs/owners/owners_format.md
 
 # The following patterns are parsed from ./OWNERS.yml
-OWNERS.yml @IamXander @anna-wawrzyniak @dhly-etc @dstorch @kaloianm @markbenvenuto @mbroadst @visemet
+OWNERS.yml @IamXander @anna-wawrzyniak @dhly-etc @dstorch @kaloianm @markbenvenuto @mbroadst
 .bazelignore @10gen/devprod-build
 .bazelrc @10gen/devprod-build
 .bazelversion @10gen/devprod-build
@@ -689,8 +689,8 @@ WORKSPACE.bazel @10gen/devprod-build
 
 # The following patterns are parsed from ./src/mongo/db/storage/OWNERS.yml
 /src/mongo/db/storage/**/* @10gen/server-rss-sydney @10gen/server-storage-execution
-/src/mongo/db/storage/**/*named_pipe* @10gen/query-integration
-/src/mongo/db/storage/**/*column_store* @10gen/query-integration
+/src/mongo/db/storage/**/named_pipe* @10gen/query-integration
+/src/mongo/db/storage/**/column_store* @10gen/query-integration
 
 # The following patterns are parsed from ./src/mongo/db/test_output/exec/OWNERS.yml
 /src/mongo/db/test_output/exec/**/* @10gen/query-execution

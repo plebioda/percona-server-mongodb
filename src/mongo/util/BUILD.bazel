@@ -31,6 +31,18 @@ idl_generator(
     src = "fail_point_server_parameter.idl",
 )
 
+mongo_cc_library(
+    name = "fail_point",
+    srcs = [
+        "fail_point.cpp",
+        "fail_point_server_parameter_gen",
+    ],
+    deps = [
+        "//src/mongo/bson/util:bson_extract",
+        "//src/mongo/db:server_base",
+    ],
+)
+
 idl_generator(
     name = "testing_options_gen",
     src = "testing_options.idl",
@@ -323,5 +335,146 @@ mongo_cc_library(
     ],
     deps = [
         "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "dns_query",
+    srcs = [
+        "dns_query.cpp",
+    ],
+    hdrs = [
+        "dns_query.h",
+    ] + select({
+        "@platforms//os:windows": ["dns_query_windows-impl.h"],
+        "//bazel/config:posix": ["dns_query_posix-impl.h"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "password",
+    srcs = [
+        "password.cpp",
+        ":password_params_gen",
+    ],
+    hdrs = [
+        "password.h",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+    ],
+)
+
+mongo_cc_library(
+    name = "pin_code_segments",
+    srcs = [
+        "pin_code_segments.cpp",
+        ":pin_code_segments_params_gen",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//src/mongo/db:server_base",
+    ],
+)
+
+mongo_cc_library(
+    name = "system_perf",
+    srcs = [
+        "sysprofile.cpp",
+    ],
+    hdrs = [
+        "sysprofile.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "testing_options",
+    srcs = [
+        "testing_options.cpp",
+        ":testing_options_gen",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+    ],
+)
+
+mongo_cc_library(
+    name = "md5",
+    srcs = [
+        "md5.cpp",
+        "password_digest.cpp",
+    ],
+    hdrs = [
+        "md5.h",
+        "password_digest.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/third_party/tomcrypt-1.18.2:tomcrypt_md5",
+    ],
+)
+
+mongo_cc_library(
+    name = "clock_source_mock",
+    srcs = [
+        "clock_source_mock.cpp",
+    ],
+    hdrs = [
+        "clock_source_mock.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "mock_periodic_runner",
+    srcs = [
+        "mock_periodic_runner.cpp",
+    ],
+    hdrs = [
+        "mock_periodic_runner.h",
+        "tick_source_mock.h",
+    ],
+    deps = [
+        "periodic_runner",
+        "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "tracing_support",
+    srcs = [
+        "tracing_support.cpp",
+    ],
+    hdrs = [
+        "tracing_support.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "elapsed_tracker",
+    srcs = [
+        "elapsed_tracker.cpp",
+    ],
+    hdrs = [
+        "elapsed_tracker.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/util/net:network",  # this is for using listener to check elapsed time
     ],
 )

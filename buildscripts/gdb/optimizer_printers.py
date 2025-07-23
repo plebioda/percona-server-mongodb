@@ -682,30 +682,6 @@ class SeekNodePrinter(FixedArityNodePrinter):
         )
 
 
-class MemoLogicalDelegatorNodePrinter(FixedArityNodePrinter):
-    """Pretty-printer for MemoLogicalDelegatorNode."""
-
-    def __init__(self, val):
-        """Initialize MemoLogicalDelegatorNodePrinter."""
-        super().__init__(val, 0, "MemoLogicalDelegator")
-
-    def to_string(self):
-        return "MemoLogicalDelegator[{}]".format(self.val["_groupId"])
-
-
-class MemoPhysicalDelegatorNodePrinter(FixedArityNodePrinter):
-    """Pretty-printer for MemoPhysicalDelegatorNode."""
-
-    def __init__(self, val):
-        """Initialize MemoPhysicalDelegatorNodePrinter."""
-        super().__init__(val, 0, "MemoPhysicalDelegator")
-
-    def to_string(self):
-        return "MemoPhysicalDelegator[group: {}, index: {}]".format(
-            self.val["_nodeId"]["_groupId"], self.val["_nodeId"]["_index"]
-        )
-
-
 class ResidualRequirementPrinter(object):
     """Pretty-printer for ResidualRequirement."""
 
@@ -748,36 +724,6 @@ class ScanParamsPrinter(object):
             res += "residual: " + str(residual_reqs)
         res += ")"
         return res
-
-
-class SargableNodePrinter(FixedArityNodePrinter):
-    """Pretty-printer for SargableNode."""
-
-    def __init__(self, val):
-        """Initialize SargableNodePrinter."""
-        # Although Sargable technically has 3 children, avoid printing the refs (child1) and bind block (child2).
-        super().__init__(val, 1, "Sargable")
-
-        # Add children for requirements, candidateIndex, and scan_params.
-        self.add_child(str(self.val["_reqMap"]).replace("\n", ""))
-        self.add_child(self.print_candidate_indexes())
-
-        scan_params = get_boost_optional(self.val["_scanParams"])
-        if scan_params is not None:
-            self.add_child(scan_params)
-
-    def print_candidate_indexes(self):
-        res = "candidateIndexes: ["
-        indexes = Vector(self.val["_candidateIndexes"])
-        for i in range(indexes.count()):
-            if i > 0:
-                res += ", "
-            res += "<id: " + str(i) + ", " + str(indexes.get(i)).replace("\n", "") + ">"
-        res += "]"
-        return res
-
-    def to_string(self):
-        return "Sargable [" + strip_namespace(str(self.val["_target"])) + "]"
 
 
 class RIDIntersectNodePrinter(FixedArityNodePrinter):
@@ -1247,11 +1193,8 @@ def register_optimizer_printers(pp):
         "CoScanNode",
         "IndexScanNode",
         "SeekNode",
-        "MemoLogicalDelegatorNode",
-        "MemoPhysicalDelegatorNode",
         "FilterNode",
         "EvaluationNode",
-        "SargableNode",
         "RIDIntersectNode",
         "RIDUnionNode",
         "BinaryJoinNode",

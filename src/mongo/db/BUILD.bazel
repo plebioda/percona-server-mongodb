@@ -105,6 +105,20 @@ idl_generator(
     src = "server_feature_flags.idl",
 )
 
+mongo_cc_library(
+    name = "server_feature_flags",
+    srcs = [
+        ":feature_flag_test_gen",
+        ":server_feature_flags_gen",
+        "//src/mongo/db:change_streams_cluster_parameter.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/db:server_base",
+        "//src/mongo/idl:cluster_server_parameter",
+    ],
+)
+
 idl_generator(
     name = "redaction_parameter_gen",
     src = "redaction_parameter.idl",
@@ -247,6 +261,19 @@ idl_generator(
     deps = [
         ":basic_types_gen",
         "//src/mongo/idl:cluster_server_parameter_gen",
+    ],
+)
+
+mongo_cc_library(
+    name = "change_stream_options",
+    srcs = [
+        "change_stream_options_gen",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/bson:bson_validate",
+        "//src/mongo/db:server_base",
+        "//src/mongo/idl:cluster_server_parameter",
     ],
 )
 
@@ -840,5 +867,39 @@ mongo_cc_library(
     ],
     deps = [
         ":common",
+    ],
+)
+
+mongo_cc_library(
+    name = "multi_key_path_tracker",
+    srcs = [
+        "multi_key_path_tracker.cpp",
+    ],
+    hdrs = [
+        "multi_key_path_tracker.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/db/storage:key_string",
+    ],
+)
+
+mongo_cc_library(
+    name = "keys_collection_client_sharded",
+    srcs = [
+        "keys_collection_client_sharded.cpp",
+    ],
+    hdrs = [
+        "keys_collection_client.h",
+        "keys_collection_client_sharded.h",
+    ],
+    header_deps = [
+        "//src/mongo/bson/mutable:mutable_bson",
+        "//src/mongo/db/commands:server_status_core",
+    ],
+    deps = [
+        "keys_collection_document",
+        "server_base",
+        "//src/mongo/s/catalog:sharding_catalog_client",
     ],
 )

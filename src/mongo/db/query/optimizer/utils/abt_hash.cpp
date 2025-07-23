@@ -200,27 +200,12 @@ public:
                                   bindResult);
     }
 
-    size_t transport(const MemoLogicalDelegatorNode& node) {
-        return computeHashSeq<4>(std::hash<GroupIdType>()(node.getGroupId()));
-    }
-
     size_t transport(const FilterNode& node, size_t childResult, size_t filterResult) {
         return computeHashSeq<5>(filterResult, childResult);
     }
 
     size_t transport(const EvaluationNode& node, size_t childResult, size_t projectionResult) {
         return computeHashSeq<6>(projectionResult, childResult);
-    }
-
-    size_t transport(const SargableNode& node,
-                     size_t childResult,
-                     size_t /*bindResult*/,
-                     size_t /*refResult*/) {
-        // Specifically not hashing the candidate indexes and ScanParams. Those are derivative of
-        // the requirements, and can have temp projection names.
-        return computeHashSeq<44>(ABTHashGenerator::generate(node.getReqMap()),
-                                  std::hash<IndexReqTarget>()(node.getTarget()),
-                                  childResult);
     }
 
     size_t transport(const RIDIntersectNode& node,

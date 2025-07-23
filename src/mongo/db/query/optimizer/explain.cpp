@@ -904,8 +904,7 @@ public:
                 !(_displayProperties && _nodeCEMap));
         // Only allow in V2 and V3 explain. No point in printing CE when we have a delegator
         // node.
-        if (!_nodeCEMap || version == ExplainVersion::V1 || n.is<MemoLogicalDelegatorNode>() ||
-            n.is<MemoPhysicalDelegatorNode>()) {
+        if (!_nodeCEMap || version == ExplainVersion::V1) {
             return;
         }
         auto it = _nodeCEMap->find(&node);
@@ -1549,29 +1548,6 @@ public:
         return printer;
     }
 
-    ExplainPrinter transport(const ABT::reference_type n, const MemoLogicalDelegatorNode& node) {
-        ExplainPrinter printer("MemoLogicalDelegator");
-        maybePrintProps(printer, node);
-        printer.separator(" [").fieldName("groupId").print(node.getGroupId()).separator("]");
-        nodeCEPropsPrint(printer, n, node);
-        return printer;
-    }
-
-    ExplainPrinter transport(const ABT::reference_type /*n*/,
-                             const MemoPhysicalDelegatorNode& node) {
-        const auto id = node.getNodeId();
-
-        ExplainPrinter printer("MemoPhysicalDelegator");
-        printer.separator(" [")
-            .fieldName("groupId")
-            .print(id._groupId)
-            .separator(", ")
-            .fieldName("index")
-            .print(id._index)
-            .separator("]");
-        return printer;
-    }
-
     ExplainPrinter transport(const ABT::reference_type n,
                              const FilterNode& node,
                              ExplainPrinter childResult,
@@ -1644,93 +1620,6 @@ public:
         ExplainPrinter residualReqsPrinter;
         BoolExprPrinter<ResidualRequirement>{printFn}.print(residualReqsPrinter, residualReqs);
         parent.fieldName("residualReqs").print(residualReqsPrinter);
-    }
-
-    ExplainPrinter transport(const ABT::reference_type n,
-                             const SargableNode& node,
-                             ExplainPrinter childResult,
-                             ExplainPrinter bindResult,
-                             ExplainPrinter refsResult) {
-        const auto& scanParams = node.getScanParams();
-
-        ExplainPrinter printer("Sargable");
-        maybePrintProps(printer, node);
-        printer.separator(" [")
-            .fieldName("target", ExplainVersion::V3)
-            .print(toStringData(node.getTarget()))
-            .separator("]");
-        nodeCEPropsPrint(printer, n, node);
-
-        size_t childCount = 2;
-        if (scanParams) {
-            childCount++;
-        }
-        if (!node.getCandidateIndexes().empty()) {
-            childCount++;
-        }
-        // In V3 only we include the bind block and ref block (see at the end of this function), so
-        // V3 has two more children.
-        if constexpr (version == ExplainVersion::V3) {
-            childCount += 2;
-        }
-        printer.setChildCount(childCount);
-
-        if constexpr (version < ExplainVersion::V3) {
-            ExplainPrinter local;
-            printPartialSchemaReqMap(local, node.getReqMap());
-            printer.print(local);
-        } else if constexpr (version == ExplainVersion::V3) {
-            printPartialSchemaReqMap(printer, node.getReqMap());
-        } else {
-            MONGO_UNREACHABLE;
-        }
-
-        if (const auto& candidateIndexes = node.getCandidateIndexes(); !candidateIndexes.empty()) {
-            std::vector<ExplainPrinter> candidateIndexesPrinters;
-            for (size_t index = 0; index < candidateIndexes.size(); index++) {
-                const CandidateIndexEntry& candidateIndexEntry = candidateIndexes.at(index);
-
-                ExplainPrinter local;
-                local.fieldName("candidateId").print(index + 1).separator(", ");
-                printCandidateIndexEntry(local, candidateIndexEntry);
-                candidateIndexesPrinters.push_back(std::move(local));
-            }
-            ExplainPrinter candidateIndexesPrinter;
-            candidateIndexesPrinter.fieldName("candidateIndexes").print(candidateIndexesPrinters);
-            printer.printAppend(candidateIndexesPrinter);
-        }
-
-        if (scanParams) {
-            ExplainPrinter local;
-            local.separator("{");
-            printFieldProjectionMap(local, scanParams->_fieldProjectionMap);
-            local.separator("}");
-
-            if (const auto& residualReqs = scanParams->_residualRequirements) {
-                if constexpr (version < ExplainVersion::V3) {
-                    ExplainPrinter residualReqMapPrinter;
-                    printResidualRequirements(residualReqMapPrinter, *residualReqs);
-                    local.print(residualReqMapPrinter);
-                } else if (version == ExplainVersion::V3) {
-                    printResidualRequirements(local, *residualReqs);
-                } else {
-                    MONGO_UNREACHABLE;
-                }
-            }
-
-            ExplainPrinter scanParamsPrinter;
-            scanParamsPrinter.fieldName("scanParams").print(local);
-            printer.printAppend(scanParamsPrinter);
-        }
-
-        if constexpr (version == ExplainVersion::V3) {
-            printer.fieldName("bindings")
-                .print(bindResult)
-                .fieldName("references")
-                .print(refsResult);
-        }
-        printer.fieldName("child", ExplainVersion::V3).print(childResult);
-        return printer;
     }
 
     ExplainPrinter transport(const ABT::reference_type n,

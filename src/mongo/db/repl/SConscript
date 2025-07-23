@@ -675,20 +675,6 @@ env.Library(
 )
 
 env.Library(
-    target="split_horizon",
-    source=[
-        "split_horizon.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/util/net/network",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/util/concurrency/spin_lock",
-    ],
-)
-
-env.Library(
     target="member_data",
     source=[
         "member_data.cpp",
@@ -1688,6 +1674,7 @@ if wiredtiger:
             "dbcheck_test.cpp",
             "delayable_timeout_callback_test.cpp",
             "drop_pending_collection_reaper_test.cpp",
+            "get_next_optimes_test.cpp",
             "idempotency_document_structure_test.cpp",
             "initial_syncer_test.cpp",
             "insert_group_test.cpp",

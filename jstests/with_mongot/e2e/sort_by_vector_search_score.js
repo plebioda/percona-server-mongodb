@@ -20,19 +20,19 @@ assert.commandWorked(coll.insertMany(allSeedData));
 // Create vector search index on movie plot embeddings.
 coll.createSearchIndex(getVectorSearchIndexSpec());
 
+// Our main use case of interest: using the score to compute a rank, with no 'partitionBy'.
+const testRankingPipeline = [
+    // Get the embedding for 'Beauty and the Beast', which has _id = 14.
+    makeVectorQuery({queryVector: getPlotEmbeddingById(14), limit: 10}),
+    {
+        $setWindowFields:
+            {sortBy: {score: {$meta: "vectorSearchScore"}}, output: {rank: {$rank: {}}}}
+    },
+    {$sort: {score: {$meta: "vectorSearchScore"}, _id: 1}},
+    {$project: {rank: 1, score: {$meta: "vectorSearchScore"}, _id: 1}}
+];
 {
-    // Test a basic ranking, with no 'partitionBy'.
-    const testPipeline = [
-        // Get the embedding for 'Beauty and the Beast', which has _id = 14.
-        makeVectorQuery({queryVector: getPlotEmbeddingById(14), limit: 10}),
-        {
-            $setWindowFields:
-                {sortBy: {score: {$meta: "vectorSearchScore"}}, output: {rank: {$rank: {}}}}
-        },
-        {$sort: {score: {$meta: "vectorSearchScore"}, _id: 1}},
-        {$project: {rank: 1, score: {$meta: "vectorSearchScore"}, _id: 1}}
-    ];
-    let results = coll.aggregate(testPipeline).toArray();
+    const results = coll.aggregate(testRankingPipeline).toArray();
 
     // So far these are all unique movies with unique embeddings, so we should see unique ranks:
     // 1 through 10.
@@ -42,28 +42,6 @@ coll.createSearchIndex(getVectorSearchIndexSpec());
         // Adjusting for off-by-one, since 'i' is 0-based indexing and rank is 1-based.
         assert.eq(results[i].rank, i + 1, results[i]);
     }
-
-    // Now insert a duplicate record of 'Beauty and the Beast' - we should see two records with
-    // rank 1, the rest should be in order now starting at rank 3.
-    assert.commandWorked(coll.insertOne(
-        coll.aggregate([{$match: {_id: 14}}, {$set: {_id: {$const: "duplicate"}}}]).next()));
-    waitUntilDocIsVisibleByQuery({
-        docId: "duplicate",
-        coll: coll,
-        queryPipeline: [makeVectorQuery({queryVector: getPlotEmbeddingById(14), limit: 10})]
-    });
-
-    results = coll.aggregate(testPipeline).toArray();
-    assert.eq(results.length, 10, "still specified a limit of 10");
-    // We broke the score tie with a sort on _id. Strings come after numbers.
-    assert.eq(results[0]._id, 14, results[0]);
-    assert.eq(results[1]._id, "duplicate", results[1]);
-    assert.eq(results[0].rank, 1, results[0]);
-    assert.eq(results[1].rank, 1, results[1]);
-    for (let i = 2; i < results.length; ++i) {
-        // Adjusting for off-by-one, since 'i' is 0-based indexing and rank is 1-based.
-        assert.eq(results[i].rank, i + 1);
-    }
 }
 
 {
@@ -71,7 +49,6 @@ coll.createSearchIndex(getVectorSearchIndexSpec());
     // should create two streams of ranks of approximately equal size.
     const results = coll.aggregate([
                             makeVectorQuery({queryVector: getPlotEmbeddingById(14), limit: 20}),
-                            {$match: {_id: {$ne: "duplicate"}}},
                             {
                                 $setWindowFields: {
                                     sortBy: {score: {$meta: "vectorSearchScore"}},
@@ -95,4 +72,28 @@ coll.createSearchIndex(getVectorSearchIndexSpec());
     // We should have partitioned to assign ranks, meaning the last place result should not have
     // rank 'results.length' (as it would otherwise assuming no ties).
     assert.lt(results[results.length - 1].rank, results.length, results[results.length - 1]);
+}
+
+{
+    // Now insert a duplicate record of 'Beauty and the Beast' - we should see two records with
+    // rank 1, the rest should be in order now starting at rank 3.
+    assert.commandWorked(coll.insertOne(
+        coll.aggregate([{$match: {_id: 14}}, {$set: {_id: {$const: "duplicate"}}}]).next()));
+    waitUntilDocIsVisibleByQuery({
+        docId: "duplicate",
+        coll: coll,
+        queryPipeline: [makeVectorQuery({queryVector: getPlotEmbeddingById(14), limit: 10})]
+    });
+
+    const results = coll.aggregate(testRankingPipeline).toArray();
+    assert.eq(results.length, 10, "still specified a limit of 10");
+    // We broke the score tie with a sort on _id. Strings come after numbers.
+    assert.eq(results[0]._id, 14, results[0]);
+    assert.eq(results[1]._id, "duplicate", results[1]);
+    assert.eq(results[0].rank, 1, results[0]);
+    assert.eq(results[1].rank, 1, results[1]);
+    for (let i = 2; i < results.length; ++i) {
+        // Adjusting for off-by-one, since 'i' is 0-based indexing and rank is 1-based.
+        assert.eq(results[i].rank, i + 1);
+    }
 }

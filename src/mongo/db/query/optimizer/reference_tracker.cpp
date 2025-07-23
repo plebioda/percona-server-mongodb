@@ -325,15 +325,6 @@ struct Collector {
     }
 
     CollectedInfo transport(const ABT& n,
-                            const MemoLogicalDelegatorNode& memoLogicalDelegatorNode) {
-        tasserted(9366401, "Should not be seeing memo logical delegator in this context");
-    }
-
-    CollectedInfo transport(const ABT& n, const MemoPhysicalDelegatorNode& node) {
-        tasserted(7088004, "Should not be seeing memo physical delegator in this context");
-    }
-
-    CollectedInfo transport(const ABT& n,
                             const FilterNode& filterNode,
                             CollectedInfo childResult,
                             CollectedInfo exprResult) {
@@ -362,27 +353,6 @@ struct Collector {
             Definition{n.ref(), evaluationNode.getProjection().ref()};
 
         result.nodeDefs[&evaluationNode] = result.defs;
-
-        return result;
-    }
-
-    CollectedInfo transport(const ABT& n,
-                            const SargableNode& node,
-                            CollectedInfo childResult,
-                            CollectedInfo bindResult,
-                            CollectedInfo /*refResult*/) {
-        CollectedInfo result{collectorState};
-
-        result.merge(std::move(childResult));
-        result.mergeNoDefs(std::move(bindResult));
-
-        const auto& projectionNames = node.binder().names();
-        const auto& projections = node.binder().exprs();
-        for (size_t i = 0; i < projectionNames.size(); i++) {
-            result.defs[projectionNames.at(i)] = Definition{n.ref(), projections[i].ref()};
-        }
-
-        result.nodeDefs[&node] = result.defs;
 
         return result;
     }

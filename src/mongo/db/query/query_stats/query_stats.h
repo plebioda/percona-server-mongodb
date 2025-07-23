@@ -253,7 +253,7 @@ void writeQueryStats(OperationContext* opCtx,
                      boost::optional<size_t> queryStatsKeyHash,
                      std::unique_ptr<Key> key,
                      const QueryStatsSnapshot& snapshot,
-                     std::unique_ptr<SupplementalStatsEntry> supplementalMetrics = nullptr,
+                     std::vector<std::unique_ptr<SupplementalStatsEntry>> supplementalMetrics = {},
                      bool willNeverExhaust = false);
 
 /**

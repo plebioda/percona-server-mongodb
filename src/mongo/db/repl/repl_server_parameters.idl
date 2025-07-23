@@ -853,6 +853,19 @@ server_parameters:
         default: false
         redact: false
 
+    dbCheckSecondaryBatchMaxTimeMs:
+        description: >-
+            The maximum amount of time for a dbcheck batch to run on a secondary.
+            Once the time limit is hit the secondary will stop running the batch.
+        set_at: [ startup, runtime ]
+        cpp_vartype: AtomicWord<int>
+        cpp_varname: dbCheckSecondaryBatchMaxTimeMs
+        default: 5000
+        validator:
+            gte: 10
+            lte: 50000
+        redact: false
+
     dbCheckMaxInternalRetries:
         description: >-
             The maximum number of internal retries that dbCheck will run on a batch.
@@ -874,6 +887,17 @@ server_parameters:
         default: 10000
         validator:
             gte: 0
+        redact: false
+
+    allowEmptyOplogBatchesToPropagateCommitPoint:
+        description: >-
+            Whether oplog cursors should skip waiting for new data to return if the commit point advances.
+            This can be useful to disable in testing to intentionally slow commit point propagation.
+        test_only: true
+        set_at: startup
+        cpp_vartype: bool
+        cpp_varname: allowEmptyOplogBatchesToPropagateCommitPoint
+        default: true
         redact: false
 
 feature_flags:

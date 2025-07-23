@@ -52,7 +52,6 @@
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kStorage
 
 namespace mongo {
-MONGO_FAIL_POINT_DEFINE(slowCollectionSamplingReads);
 
 namespace {
 
@@ -228,7 +227,8 @@ CollectionTruncateMarkers::InitialSetOfMarkers CollectionTruncateMarkers::create
     const NamespaceString& ns,
     int64_t estimatedRecordsPerMarker,
     int64_t estimatedBytesPerMarker,
-    std::function<RecordIdAndWallTime(const Record&)> getRecordIdAndWallTime) {
+    std::function<RecordIdAndWallTime(const Record&)> getRecordIdAndWallTime,
+    TickSource* tickSource) {
     auto startTime = curTimeMicros64();
 
     LOGV2_INFO(7393210,
@@ -310,14 +310,12 @@ CollectionTruncateMarkers::InitialSetOfMarkers CollectionTruncateMarkers::create
     // right edge of each logical section.
 
     std::vector<RecordIdAndWallTime> collectionEstimates;
-    Timer lastProgressTimer;
+    Timer lastProgressTimer(tickSource);
 
     for (int i = 0; i < numSamples; ++i) {
         auto nextRandom = collectionIterator.getNextRandom();
         const auto [rId, doc] = *nextRandom;
         auto samplingLogIntervalSeconds = gCollectionSamplingLogIntervalSeconds.load();
-        slowCollectionSamplingReads.execute(
-            [&](const BSONObj& dataObj) { sleepsecs(dataObj["delay"].numberInt()); });
         if (!nextRandom) {
             // This shouldn't really happen unless the size storer values are far off from reality.
             // The collection is probably empty, but fall back to scanning the collection just in

@@ -75,6 +75,7 @@
 #include "mongo/db/auth/validated_tenancy_scope_factory.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/hasher.h"
+#include "mongo/db/query/collation/collator_factory_icu.h"
 #include "mongo/platform/decimal128.h"
 #include "mongo/platform/mutex.h"
 #include "mongo/platform/random.h"
@@ -788,45 +789,148 @@ BSONObj _fnvHashToHexString(const BSONObj& args, void*) {
     return BSON("" << fmt::format("{0:x}", hashed));
 }
 
-void sortBSONObjectInternallyHelper(const BSONObj& input, BSONObjBuilder& bob);
+// Comparison function for sorting BSON elements in an array.
+bool cmpBSONElements(const BSONElement& lhs, const BSONElement& rhs) {
+    // Use the woCompare method with no bits set, so field names are ignored. This is helpful for
+    // comparing elements in an array without considering their initial ordering/id.
+    BSONObj lhsObj = lhs.wrap();
+    BSONObj rhsObj = rhs.wrap();
+    return lhsObj.woCompare(rhsObj, BSONObj(), false, nullptr) < 0;
+}
+
+void sortBSONObjectInternallyHelper(const BSONObj& input,
+                                    BSONObjBuilder& bob,
+                                    NormalizationOptsSet opts);
 
 // Helper for `sortBSONObjectInternally`, handles a BSONElement for different recursion cases.
-void sortBSONElementInternally(const BSONElement& el, BSONObjBuilder& bob) {
+void sortBSONElementInternally(const BSONElement& el,
+                               BSONObjBuilder& bob,
+                               NormalizationOptsSet opts) {
     if (el.type() == BSONType::Array) {
-        BSONObjBuilder sub(bob.subarrayStart(el.fieldNameStringData()));
-        for (const auto& child : el.Array()) {
-            sortBSONElementInternally(child, sub);
+        std::vector<BSONElement> arr = el.Array();
+
+        if (isSet(opts, NormalizationOpts::kSortArrays)) {
+            // Sort each individual BSONElement in the array internally.
+            std::vector<BSONObj> sortedObjs;
+            for (const auto& child : arr) {
+                BSONObjBuilder tmp;
+                sortBSONElementInternally(child, tmp, opts);
+                sortedObjs.push_back(tmp.obj());
+            }
+
+            // Sort the top-level elements in the array among each other. The elements have already
+            // been sorted individually.
+            std::sort(
+                sortedObjs.begin(), sortedObjs.end(), [&](const BSONObj& lhs, const BSONObj& rhs) {
+                    return cmpBSONElements(lhs.firstElement(), rhs.firstElement());
+                });
+
+            // Append the elements back to the top-level BSONObjBuilder.
+            BSONArrayBuilder sub(bob.subarrayStart(el.fieldNameStringData()));
+            for (const auto& child : sortedObjs) {
+                sub.append(child.firstElement());
+            }
+            sub.doneFast();
+        } else {
+            BSONObjBuilder sub(bob.subarrayStart(el.fieldNameStringData()));
+            for (const auto& child : arr) {
+                sortBSONElementInternally(child, sub, opts);
+            }
+            sub.doneFast();
         }
-        sub.doneFast();
     } else if (el.type() == BSONType::Object) {
         BSONObjBuilder sub(bob.subobjStart(el.fieldNameStringData()));
-        sortBSONObjectInternallyHelper(el.Obj(), sub);
+        sortBSONObjectInternallyHelper(el.Obj(), sub, opts);
         sub.doneFast();
     } else {
         bob.append(el);
     }
 }
 
-void sortBSONObjectInternallyHelper(const BSONObj& input, BSONObjBuilder& bob) {
+void sortBSONObjectInternallyHelper(const BSONObj& input,
+                                    BSONObjBuilder& bob,
+                                    NormalizationOptsSet opts) {
     BSONObjIteratorSorted it(input);
     while (it.more()) {
-        sortBSONElementInternally(it.next(), bob);
+        sortBSONElementInternally(it.next(), bob, opts);
     }
 }
 
-// Returns a new BSON with the same field/value pairings, but is recursively sorted by the fields.
-// Arrays are not changed.
-BSONObj sortBSONObjectInternally(const BSONObj& input) {
+/**
+ * Returns a new BSON with the same field/value pairings, but is recursively sorted by the fields.
+ * By default, arrays are not sorted unless NormalizationOptsSet has the kSortArrays bit set.
+ */
+BSONObj sortBSONObjectInternally(const BSONObj& input,
+                                 NormalizationOptsSet opts = NormalizationOpts::kSortBSON) {
     BSONObjBuilder bob(input.objsize());
-    sortBSONObjectInternallyHelper(input, bob);
+    sortBSONObjectInternallyHelper(input, bob, opts);
     return bob.obj();
 }
 
-// Sorts a vector of BSON objects by their fields as they appear in the BSON.
 void sortQueryResults(std::vector<BSONObj>& input) {
     std::sort(input.begin(), input.end(), [&](const BSONObj& lhs, const BSONObj& rhs) {
         return SimpleBSONObjComparator::kInstance.evaluate(lhs < rhs);
     });
+}
+
+void normalizeNumericElementsHelper(const BSONObj& input, BSONObjBuilder& bob);
+
+void normalizeNumericElements(const BSONElement& el, BSONObjBuilder& bob) {
+    switch (el.type()) {
+        case NumberInt:
+        case NumberLong:
+        case NumberDouble:
+        case NumberDecimal: {
+            bob.append(el.fieldName(), el.numberDecimal().normalize());
+            break;
+        }
+        case Array: {
+            BSONObjBuilder sub(bob.subarrayStart(el.fieldNameStringData()));
+            for (const auto& child : el.Array()) {
+                normalizeNumericElements(child, sub);
+            }
+            sub.doneFast();
+            break;
+        }
+        case Object: {
+            BSONObjBuilder sub(bob.subobjStart(el.fieldNameStringData()));
+            normalizeNumericElementsHelper(el.Obj(), sub);
+            sub.doneFast();
+            break;
+        }
+        default:
+            bob.append(el);
+            break;
+    }
+}
+
+void normalizeNumericElementsHelper(const BSONObj& input, BSONObjBuilder& bob) {
+    BSONObjIterator it(input);
+    while (it.more()) {
+        normalizeNumericElements(it.next(), bob);
+    }
+}
+
+/**
+ * Returns a new BSONObj with the same field/value pairings, but with numeric types converted into
+ * Decimal128 and normalized to maximum precision. For example, NumberInt(1), NumberLong(1), 1.0,
+ * and NumberDecimal('1.0000') would be normalized into the same number.
+ */
+BSONObj normalizeNumerics(const BSONObj& input) {
+    BSONObjBuilder bob(input.objsize());
+    normalizeNumericElementsHelper(input, bob);
+    return bob.obj();
+}
+
+BSONObj normalizeBSONObj(const BSONObj& input, NormalizationOptsSet opts) {
+    BSONObj result = input;
+    if (isSet(opts, NormalizationOpts::kNormalizeNumerics)) {
+        result = normalizeNumerics(input);
+    }
+    if (isSet(opts, NormalizationOpts::kSortBSON)) {
+        result = sortBSONObjectInternally(result, opts);
+    }
+    return result;
 }
 
 /*
@@ -890,6 +994,36 @@ BSONObj _resultSetsEqualUnordered(const BSONObj& input, void*) {
     return BSON("" << true);
 }
 
+/*
+ * Takes two strings and a valid collation document and returns the comparison result (a number < 0
+ * if 'left' is less than 'right', a number > 0 if 'left' is greater than 'right', and 0 if 'left'
+ * and 'right' are equal) with respect to the collation
+ * Refer to https://www.mongodb.com/docs/manual/reference/collation and
+ * https://unicode-org.github.io/icu/userguide/collation for the expected behaviour when collation
+ * is specified
+ */
+BSONObj _compareStringsWithCollation(const BSONObj& input, void*) {
+    BSONObjIterator i(input);
+
+    uassert(9367800, "Expected left argument", i.more());
+    auto left = i.next();
+    uassert(9367801, "Left argument should be a string", left.type() == BSONType::String);
+
+    uassert(9367802, "Expected right argument", i.more());
+    auto right = i.next();
+    uassert(9367803, "Right argument should be string", right.type() == BSONType::String);
+
+    uassert(9367804, "Expected collation argument", i.more());
+    auto collatorSpec = i.next();
+    uassert(9367805, "Expected a collation object", collatorSpec.type() == BSONType::Object);
+
+    CollatorFactoryICU collationFactory;
+    auto collator = uassertStatusOK(collationFactory.makeFromBSON(collatorSpec.Obj()));
+
+    int cmp = collator->compare(left.valueStringData(), right.valueStringData());
+    return BSON("" << cmp);
+}
+
 void installShellUtils(Scope& scope) {
     scope.injectNative("getMemInfo", JSGetMemInfo);
     scope.injectNative("_createSecurityToken", _createSecurityToken);
@@ -913,6 +1047,7 @@ void installShellUtils(Scope& scope) {
     scope.injectNative("_buildBsonObj", _buildBsonObj);
     scope.injectNative("_fnvHashToHexString", _fnvHashToHexString);
     scope.injectNative("_resultSetsEqualUnordered", _resultSetsEqualUnordered);
+    scope.injectNative("_compareStringsWithCollation", _compareStringsWithCollation);
 
     installShellUtilsLauncher(scope);
     installShellUtilsExtended(scope);

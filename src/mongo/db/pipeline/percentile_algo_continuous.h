@@ -27,34 +27,26 @@
  *    it in the license file.
  */
 
-#pragma once
+#include <boost/optional/optional.hpp>
 
-#include "mongo/db/operation_context.h"
+#include "mongo/db/pipeline/percentile_algo_accurate.h"
 
 namespace mongo {
 
-namespace refresh_util {
-
 /**
- * This method implements a best-effort attempt to wait for a future to complete, throwing an
- * exception if it fails or times out.
- *
- * All waits on futures in a shard should go through this code path, because it also accounts for
- * transactions and locking.
+ *'ContinuousPercentile' algorithm for computing accurate continuous percentiles
  */
-void waitForFutureToComplete(OperationContext* opCtx, SharedSemiFuture<void> future);
+class ContinuousPercentile : public AccuratePercentile {
+public:
+    ContinuousPercentile() = default;  // no config required for this algorithm
 
-/**
- * This method implements a best-effort attempt to wait for the critical section to complete
- * before returning to the router at the previous step in order to prevent it from busy spinning
- * while the critical section is in progress.
- *
- * All waits for migration critical section should go through this code path, because it also
- * accounts for transactions and locking.
- */
-Status waitForCriticalSectionToComplete(OperationContext* opCtx,
-                                        SharedSemiFuture<void> critSecSignal) noexcept;
+    static double computeTrueRank(int n, double p) {
+        return p * (n - 1);
+    }
 
-}  // namespace refresh_util
+    double linearInterpolate(double rank, int rank_ceil, int rank_floor);
+
+    boost::optional<double> computePercentile(double p) final;
+};
 
 }  // namespace mongo

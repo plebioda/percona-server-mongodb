@@ -1431,7 +1431,7 @@ auto makeReplicaSetNodeExecutor(ServiceContext* serviceContext) {
         stdx::lock_guard<Client> lk(cc());
         cc().setSystemOperationUnkillableByStepdown(lk);
     };
-    return std::make_unique<executor::ThreadPoolTaskExecutor>(
+    return executor::ThreadPoolTaskExecutor::create(
         std::make_unique<ThreadPool>(tpOptions),
         executor::makeNetworkInterface(
             "ReplNodeDbWorkerNetwork", nullptr, makeShardingEgressHooksList(serviceContext)));
@@ -1451,7 +1451,7 @@ auto makeReplicationExecutor(ServiceContext* serviceContext) {
     };
     auto hookList = std::make_unique<rpc::EgressMetadataHookList>();
     hookList->addHook(std::make_unique<rpc::VectorClockMetadataHook>(serviceContext));
-    return std::make_unique<executor::ThreadPoolTaskExecutor>(
+    return executor::ThreadPoolTaskExecutor::create(
         std::make_unique<ThreadPool>(tpOptions),
         executor::makeNetworkInterface("ReplNetwork", nullptr, std::move(hookList)));
 }

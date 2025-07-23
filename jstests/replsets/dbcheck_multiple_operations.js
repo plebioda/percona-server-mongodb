@@ -199,8 +199,50 @@ function testTooManyDbChecks(docSuffix) {
     checkHealthLog(primaryHealthlog, logQueries.allErrorsOrWarningsQuery, 11);
 }
 
+function testQueuedDbCheckStepDown(docSuffix) {
+    jsTestLog("Testing stepdown with queued dbCheck operations");
+
+    const collectionNames = [collName1, collName2, collName3, collName4, collName5, collName6];
+    collectionNames.forEach((collName) => {
+        primaryDB.getCollection(collName);
+        resetAndInsert(replSet, primaryDB, collName, nDocs, docSuffix);
+        assert.commandWorked(primaryDB.runCommand({
+            createIndexes: collName,
+            indexes: [{key: {a: 1}, name: 'a_1'}],
+        }));
+    });
+    replSet.awaitReplication();
+
+    const firstDbCheckFailPoint = configureFailPoint(primaryDB, "hangBeforeExtraIndexKeysCheck");
+
+    runDbCheck(replSet, primaryDB, collName1, dbCheckParametersExtraKeysCheck);
+    firstDbCheckFailPoint.wait();
+    runDbCheck(replSet, primaryDB, collName2, dbCheckParametersMissingKeysCheck);
+    runDbCheck(replSet, primaryDB, collName3, dbCheckParametersMissingKeysCheck);
+    runDbCheck(replSet, primaryDB, collName4, dbCheckParametersExtraKeysCheck);
+    runDbCheck(replSet, primaryDB, collName5, dbCheckParametersMissingKeysCheck);
+    runDbCheck(replSet, primaryDB, collName6, dbCheckParametersExtraKeysCheck);
+
+    // Check that an error health log entry is generated for having too many dbchecks in queue. This
+    // makes sure that the dbcheck for collection 6 will not be added to the queue as the node steps
+    // down and as the dbchecks get popped off the queue after logging stepdown warning entry.
+    checkHealthLog(
+        primaryHealthlog,
+        {...logQueries.tooManyDbChecksInQueue, $expr: {$eq: [{$size: "$data.dbCheckQueue"}, 5]}},
+        1);
+
+    // Step down the primary and wait for a new primary.
+    assert.commandWorked(primaryDB.adminCommand({"replSetStepDown": 60}));
+    replSet.awaitNodesAgreeOnPrimary();
+
+    firstDbCheckFailPoint.off();
+    // Verify that the old primary successfully logged health log warnings for primary stepdown.
+    checkHealthLog(primaryHealthlog, logQueries.primarySteppedDown, 5);
+}
+
 testMultipleDbCheckOnDiffCollections("");
 testTooManyDbChecks("aaaaaaaaaa");
+testQueuedDbCheckStepDown("");
 
 replSet.stopSet(undefined /* signal */,
                 false /* forRestart */,

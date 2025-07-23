@@ -277,6 +277,7 @@ env.Library(
         "list_databases_for_all_tenants.cpp",
         "list_indexes.cpp",
         "lock_info.cpp",
+        "query_cmd/aggregation_execution_state.cpp",
         "query_cmd/analyze_cmd.cpp",
         "query_cmd/count_cmd.cpp",
         "query_cmd/current_op.cpp",
@@ -418,20 +419,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/catalog/commit_quorum_options",
         "$BUILD_DIR/mongo/db/rw_concern_d",
         "$BUILD_DIR/mongo/idl/idl_parser",
-    ],
-)
-
-env.Library(
-    target="shutdown_idl",
-    source=[
-        "shutdown.cpp",
-        "shutdown_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/bson/bson_validate",
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/service_context",
-        "$BUILD_DIR/mongo/util/fail_point",
     ],
 )
 

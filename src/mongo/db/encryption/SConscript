@@ -3,18 +3,6 @@ Import("env")
 
 env = env.Clone()
 
-env.Library(
-    target="key",
-    source=[
-        "key.cpp",
-        "key_id.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/base/secure_allocator",
-    ],
-)
-
 env.CppUnitTest(
     target="db_encryption_key_id_test",
     source=[

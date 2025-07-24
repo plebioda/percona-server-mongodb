@@ -206,6 +206,7 @@ mongo_cc_library(
     deps = [
         "//src/mongo/bson:bson_validate",
         "//src/mongo/db:server_base",
+        "//src/mongo/db/encryption:key",
         "//src/mongo/db/query/bson:dotted_path_support",
     ],
 )

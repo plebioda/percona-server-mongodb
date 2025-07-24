@@ -467,7 +467,7 @@ private:
                               const std::string& ident,
                               LastShutdownState lastShutdownState,
                               ReconcileResult* reconcileResult,
-                              std::set<std::string>* internalIdentsToDrop,
+                              std::set<std::string>* internalIdentsToKeep,
                               std::set<std::string>* allInternalIdents);
 
     class RemoveDBChange;

@@ -313,6 +313,12 @@ add_option(
 )
 
 add_option(
+    "enable-fcbis",
+    help="Enable file copy-based initial sync",
+    nargs=0,
+)
+
+add_option(
     "full-featured",
     help="Enable all optional features",
     nargs=0,
@@ -2835,6 +2841,9 @@ if has_option("audit"):
 
 if has_option("enable-fipsmode") or has_option("full-featured"):
     env["PSMDB_PRO_FEATURES"].append("FIPSMode")
+
+if has_option("enable-fcbis") or has_option("full-featured"):
+    env["PSMDB_PRO_FEATURES"].append("FCBIS")
 
 env.Tool("forceincludes")
 

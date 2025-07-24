@@ -1,7 +1,7 @@
 /*======
 This file is part of Percona Server for MongoDB.
 
-Copyright (C) 2021-present Percona and/or its affiliates. All rights reserved.
+Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the Server Side Public License, version 1,
@@ -31,17 +31,27 @@ Copyright (C) 2021-present Percona and/or its affiliates. All rights reserved.
 
 #pragma once
 
-#include <boost/none.hpp>
+#include <array>
+#include <fstream>
+#include <memory>
+#include <set>
+#include <string>
 
-#include "mongo/db/auth/resource_pattern.h"
+#include <boost/optional/optional.hpp>
+
+#include "mongo/base/string_data.h"
+#include "mongo/bson/bsonelement.h"
+#include "mongo/db/namespace_string.h"
 #include "mongo/db/pipeline/document_source.h"
-#include "mongo/db/repl/read_concern_level.h"
+#include "mongo/db/pipeline/lite_parsed_document_source.h"
+#include "mongo/stdx/unordered_set.h"
+#include "mongo/util/uuid.h"
 
 namespace mongo {
 
-class DocumentSourceBackupCursor : public DocumentSource {
+class DocumentSourceBackupFile final : public DocumentSource {
 public:
-    static constexpr StringData kStageName = "$backupCursor"_sd;
+    static constexpr StringData kStageName = "$_backupFile"_sd;
 
     class LiteParsed final : public LiteParsedDocumentSource {
     public:
@@ -51,35 +61,17 @@ public:
                                                  const BSONElement& spec);
 
         stdx::unordered_set<NamespaceString> getInvolvedNamespaces() const final {
-            return stdx::unordered_set<NamespaceString>();
+            return {};
         }
 
-        PrivilegeVector requiredPrivileges(bool isMongos,
-                                           bool bypassDocumentValidation) const final {
+        PrivilegeVector requiredPrivileges(
+            [[maybe_unused]] bool isMongos,
+            [[maybe_unused]] bool bypassDocumentValidation) const final {
             return {Privilege(ResourcePattern::forClusterResource(boost::none), ActionType::fsync)};
         }
 
         bool isInitialSource() const final {
             return true;
-        }
-
-        // Ideally this stage should only support local read concern, but PBM executes it with
-        // "majority" read concern. So in order to be compatible with that we allow 'local' and
-        // 'majority' read concerns.
-        ReadConcernSupportResult supportsReadConcern(repl::ReadConcernLevel level,
-                                                     bool isImplicitDefault) const final {
-            // return onlyReadConcernLocalSupported(kStageName, level, isImplicitDefault);
-            return {{(level != repl::ReadConcernLevel::kLocalReadConcern &&
-                      level != repl::ReadConcernLevel::kMajorityReadConcern) &&
-                         !isImplicitDefault,
-                     {ErrorCodes::InvalidOptions,
-                      str::stream() << "Aggregation stage " << kStageName
-                                    << " cannot run with a readConcern other than 'local' or "
-                                       "'majority'. Current readConcern: "
-                                    << repl::readConcernLevels::toString(level)}},
-                    {{ErrorCodes::InvalidOptions,
-                      str::stream() << "Aggregation stage " << kStageName
-                                    << " does not permit default readConcern to be applied."}}};
         }
 
         void assertSupportsMultiDocumentTransaction() const final {
@@ -88,16 +80,27 @@ public:
     };
 
     /**
-     * Parses a $backupCursor stage from 'spec'.
+     * Parses a $_backupFile stage from 'spec'.
      */
     static boost::intrusive_ptr<DocumentSource> createFromBson(
         BSONElement spec, const boost::intrusive_ptr<ExpressionContext>& pCtx);
 
-    ~DocumentSourceBackupCursor() override;
+    DocumentSourceBackupFile(const boost::intrusive_ptr<ExpressionContext>& expCtx,
+                             UUID backupId,
+                             std::string filePath,
+                             long long byteOffset,
+                             std::ifstream file);
+
+    DocumentSourceBackupFile(const DocumentSourceBackupFile&) = delete;
+    DocumentSourceBackupFile& operator=(const DocumentSourceBackupFile&) = delete;
+    DocumentSourceBackupFile(DocumentSourceBackupFile&&) = delete;
+    DocumentSourceBackupFile& operator=(DocumentSourceBackupFile&&) = delete;
+
+    ~DocumentSourceBackupFile() override;
 
     const char* getSourceName() const override;
 
-    StageConstraints constraints(Pipeline::SplitState pipeState) const override {
+    StageConstraints constraints([[maybe_unused]] Pipeline::SplitState pipeState) const override {
         StageConstraints constraints{StreamType::kStreaming,
                                      PositionRequirement::kFirst,
                                      HostTypeRequirement::kNone,
@@ -122,15 +125,15 @@ public:
 
 protected:
     GetNextResult doGetNext() override;
-    DocumentSourceBackupCursor(StorageEngine::BackupOptions&& options,
-                               const boost::intrusive_ptr<ExpressionContext>& expCtx);
 
 private:
-    const StorageEngine::BackupOptions _backupOptions;
-    BackupCursorState _backupCursorState;
-    // Current batch of backup blocks
-    std::deque<BackupBlock> _backupBlocks;
-    std::deque<BackupBlock>::const_iterator _docIt;
+    static constexpr std::streamsize kBlockSize = 1 << 20;
+
+    std::array<char, kBlockSize> _dataBuf;
+    const UUID _backupId;
+    const std::string _filePath;
+    const long long _byteOffset;
+    std::ifstream _file;
 };
 
 }  // namespace mongo

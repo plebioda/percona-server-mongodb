@@ -9,6 +9,7 @@
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {extractUUIDFromObject, getUUIDFromListCollections} from "jstests/libs/uuid_util.js";
 import {CreateShardedCollectionUtil} from "jstests/sharding/libs/create_sharded_collection_util.js";
 
@@ -107,25 +108,28 @@ shard0Primary.getDB(inputCollection.getDB().getName())
     .advanceClusterTime(inputCollection.getDB().getSession().getClusterTime());
 
 jsTestLog("About to start resharding, first attempt");
-const reshardShell = startParallelShell(
-    funWithArgs((inputCollectionFullName,
-                 inputCollectionUUID,
-                 shardName,
-                 atClusterTime,
-                 tempCollectionFullName) => {assert.commandWorked(db.adminCommand({
-                    testReshardCloneCollection: inputCollectionFullName,
-                    shardKey: {newKey: 1},
-                    uuid: inputCollectionUUID,
-                    shardId: shardName,
-                    atClusterTime: atClusterTime,
-                    outputNs: tempCollectionFullName,
-                }))},
-                inputCollection.getFullName(),
-                inputCollectionUUID,
-                st.shard0.shardName,
-                originalInsertsTs,
-                temporaryReshardingCollection.getFullName()),
-    shard0Primary.port);
+const reshardShell =
+    startParallelShell(funWithArgs(
+                           (inputCollectionFullName,
+                            inputCollectionUUID,
+                            shardName,
+                            atClusterTime,
+                            tempCollectionFullName) => {
+                               assert.commandWorked(db.adminCommand({
+                                   testReshardCloneCollection: inputCollectionFullName,
+                                   shardKey: {newKey: 1},
+                                   uuid: inputCollectionUUID,
+                                   shardId: shardName,
+                                   atClusterTime: atClusterTime,
+                                   outputNs: tempCollectionFullName,
+                               }));
+                           },
+                           inputCollection.getFullName(),
+                           inputCollectionUUID,
+                           st.shard0.shardName,
+                           originalInsertsTs,
+                           temporaryReshardingCollection.getFullName()),
+                       shard0Primary.port);
 // Wait for the first attempt to fail.
 attemptFp.wait();
 

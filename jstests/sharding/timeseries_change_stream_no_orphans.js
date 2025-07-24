@@ -10,14 +10,13 @@
  *   # TODO (SERVER-70605): Remove this tag once the time-series always compressed buckets feature
  *   # flag can be removed.
  *   multiversion_incompatible,
- *   # To avoid burn-in tests in in-memory build variants
- *   requires_persistence,
  *   uses_change_streams,
  * ]
  */
 import {TimeseriesTest} from "jstests/core/timeseries/libs/timeseries.js";
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 // Asserts that there is no change stream event.
 function assertNoChanges(csCursor) {

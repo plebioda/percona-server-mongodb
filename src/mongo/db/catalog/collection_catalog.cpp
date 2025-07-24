@@ -90,6 +90,15 @@
 
 
 namespace mongo {
+
+// Failpoint which causes catalog updates to hang right before performing a durable commit of them.
+// This causes updates to have been precommitted.
+MONGO_FAIL_POINT_DEFINE(hangAfterPreCommittingCatalogUpdates);
+
+// Failpoint which causes to hang after wuow commits, before publishing the catalog updates on a
+// given namespace.
+MONGO_FAIL_POINT_DEFINE(hangBeforePublishingCatalogUpdates);
+
 /**
  * If a collection is initially created with an untimestamped write, but later DDL operations
  * (including drop) on this collection are timestamped, set this decoration to 'true' for
@@ -141,7 +150,7 @@ const RecoveryUnit::Snapshot::Decoration<std::shared_ptr<const CollectionCatalog
 /**
  * Returns true if the collection is compatible with the read timestamp.
  */
-bool isExistingCollectionCompatible(std::shared_ptr<Collection> coll,
+bool isExistingCollectionCompatible(const std::shared_ptr<const Collection>& coll,
                                     boost::optional<Timestamp> readTimestamp) {
     if (!coll || !readTimestamp) {
         return false;
@@ -359,6 +368,7 @@ public:
             // up for other transactions.
             uncommittedCatalogUpdates.markPrecommitted();
         });
+        hangAfterPreCommittingCatalogUpdates.pauseWhileSet();
     }
 
     void commit(OperationContext* opCtx, boost::optional<Timestamp> commitTime) override {
@@ -368,6 +378,21 @@ public:
         // Create catalog write jobs for all updates registered in this WriteUnitOfWork
         auto entries = _uncommittedCatalogUpdates.releaseEntries();
         for (auto&& entry : entries) {
+            hangBeforePublishingCatalogUpdates.executeIf(
+                [&](const BSONObj& data) {
+                    LOGV2(
+                        9089303, "hangBeforePublishingCatalogUpdates enabled", logAttrs(entry.nss));
+                    hangBeforePublishingCatalogUpdates.pauseWhileSet();
+                },
+                [&](const BSONObj& data) {
+                    const auto tenantField = data.getField("tenant");
+                    const auto tenantId = tenantField.ok()
+                        ? boost::optional<TenantId>(TenantId::parseFromBSON(tenantField))
+                        : boost::none;
+                    const auto fpNss =
+                        NamespaceStringUtil::parseFailPointData(data, "collectionNS", tenantId);
+                    return fpNss.isEmpty() || entry.nss == fpNss;
+                });
             switch (entry.action) {
                 case UncommittedCatalogUpdates::Entry::Action::kWritableCollection: {
                     writeJobs.push_back([collection = std::move(entry.collection),
@@ -928,6 +953,13 @@ std::vector<const Collection*> CollectionCatalog::establishConsistentCollections
     return result;
 }
 
+bool CollectionCatalog::_collectionHasPendingCommits(const NamespaceStringOrUUID& nssOrUUID) const {
+    if (nssOrUUID.isNamespaceString()) {
+        return _pendingCommitNamespaces.find(nssOrUUID.nss());
+    } else {
+        return _pendingCommitUUIDs.find(nssOrUUID.uuid());
+    }
+}
 
 bool CollectionCatalog::_needsOpenCollection(OperationContext* opCtx,
                                              const NamespaceStringOrUUID& nsOrUUID,
@@ -945,13 +977,15 @@ bool CollectionCatalog::_needsOpenCollection(OperationContext* opCtx,
 
     if (readTimestamp) {
         auto coll = lookupCollectionByNamespaceOrUUID(opCtx, nsOrUUID);
-        return !coll || *readTimestamp < coll->getMinimumValidSnapshot();
+
+        // If the collections doesn't exist then we have to reinstantiate it from the WT snapshot.
+        if (!coll)
+            return true;
+
+        // Otherwise we only verify that the collection is valid for the given timestamp.
+        return *readTimestamp < coll->getMinimumValidSnapshot();
     } else {
-        if (nsOrUUID.isNamespaceString()) {
-            return _pendingCommitNamespaces.find(nsOrUUID.nss());
-        } else {
-            return _pendingCommitUUIDs.find(nsOrUUID.uuid());
-        }
+        return _collectionHasPendingCommits(nsOrUUID);
     }
 }
 
@@ -1177,13 +1211,13 @@ const Collection* CollectionCatalog::_openCollectionAtPointInTimeByNamespaceOrUU
     if (!catalogEntry) {
         openedCollections.store(
             nullptr,
-            [nssOrUUID]() -> boost::optional<NamespaceString> {
+            [&]() -> boost::optional<NamespaceString> {
                 if (nssOrUUID.isNamespaceString()) {
                     return nssOrUUID.nss();
                 }
                 return boost::none;
             }(),
-            [nssOrUUID]() -> boost::optional<UUID> {
+            [&]() -> boost::optional<UUID> {
                 if (nssOrUUID.isUUID()) {
                     return nssOrUUID.uuid();
                 }
@@ -1715,6 +1749,12 @@ const Collection* CollectionCatalog::lookupCollectionByNamespace(OperationContex
 
 boost::optional<NamespaceString> CollectionCatalog::lookupNSSByUUID(OperationContext* opCtx,
                                                                     const UUID& uuid) const {
+    return _lookupNSSByUUID(opCtx, uuid, false);
+}
+
+boost::optional<NamespaceString> CollectionCatalog::_lookupNSSByUUID(OperationContext* opCtx,
+                                                                     const UUID& uuid,
+                                                                     bool withCommitPending) const {
     // It's important to look in UncommittedCatalogUpdates before OpenedCollections because in a
     // multi-document transaction it's permitted to perform a lookup on a non-existent
     // collection followed by creating the collection. This lookup will store a nullptr in
@@ -1738,8 +1778,14 @@ boost::optional<NamespaceString> CollectionCatalog::lookupNSSByUUID(OperationCon
         }
     }
 
-    const std::shared_ptr<Collection>* collPtr = _catalog.find(uuid);
-    if (collPtr) {
+    if (withCommitPending) {
+        if (const auto collPtr = _pendingCommitUUIDs.find(uuid); collPtr && *collPtr) {
+            auto coll = *collPtr;
+            return coll->ns();
+        }
+    }
+
+    if (const auto collPtr = _catalog.find(uuid)) {
         auto coll = *collPtr;
         return coll->ns();
     }
@@ -1883,12 +1929,35 @@ NamespaceString CollectionCatalog::resolveNamespaceStringOrUUID(
         return nsOrUUID.nss();
     }
 
-    return resolveNamespaceStringFromDBNameAndUUID(opCtx, nsOrUUID.dbName(), nsOrUUID.uuid());
+    return _resolveNamespaceStringFromDBNameAndUUID(
+        opCtx, nsOrUUID.dbName(), nsOrUUID.uuid(), false);
+}
+
+NamespaceString CollectionCatalog::resolveNamespaceStringOrUUIDWithCommitPendingEntries_UNSAFE(
+    OperationContext* opCtx, const NamespaceStringOrUUID& nsOrUUID) const {
+    if (nsOrUUID.isNamespaceString()) {
+        uassert(ErrorCodes::InvalidNamespace,
+                str::stream() << "Namespace " << nsOrUUID.toStringForErrorMsg()
+                              << " is not a valid collection name",
+                nsOrUUID.nss().isValid());
+        return nsOrUUID.nss();
+    }
+
+    return _resolveNamespaceStringFromDBNameAndUUID(
+        opCtx, nsOrUUID.dbName(), nsOrUUID.uuid(), true);
 }
 
 NamespaceString CollectionCatalog::resolveNamespaceStringFromDBNameAndUUID(
     OperationContext* opCtx, const DatabaseName& dbName, const UUID& uuid) const {
-    auto resolvedNss = lookupNSSByUUID(opCtx, uuid);
+    return _resolveNamespaceStringFromDBNameAndUUID(opCtx, dbName, uuid, false);
+}
+
+NamespaceString CollectionCatalog::_resolveNamespaceStringFromDBNameAndUUID(
+    OperationContext* opCtx,
+    const DatabaseName& dbName,
+    const UUID& uuid,
+    bool withCommitPending) const {
+    auto resolvedNss = _lookupNSSByUUID(opCtx, uuid, withCommitPending);
     uassert(ErrorCodes::NamespaceNotFound,
             str::stream() << "Unable to resolve " << uuid.toString(),
             resolvedNss && resolvedNss->isValid());
@@ -2000,6 +2069,47 @@ std::set<TenantId> CollectionCatalog::getAllTenants() const {
                                       SerializationContext(SerializationContext::Source::Catalog)),
                                   maxUuid);
         });
+    return ret;
+}
+
+std::vector<DatabaseName> CollectionCatalog::getAllConsistentDbNames(
+    OperationContext* opCtx) const {
+    return getAllConsistentDbNamesForTenant(opCtx, boost::none);
+}
+
+std::vector<DatabaseName> CollectionCatalog::getAllConsistentDbNamesForTenant(
+    OperationContext* opCtx, boost::optional<TenantId> tenantId) const {
+    // The caller must have an active storage snapshot
+    tassert(9089300,
+            "cannot get database list consistent to a snapshot without an active snapshot",
+            shard_role_details::getRecoveryUnit(opCtx)->isActive());
+
+    // First get the dbnames that are not pending commit
+    std::vector<DatabaseName> ret = getAllDbNamesForTenant(tenantId);
+    stdx::unordered_set<DatabaseName> visitedDBs(ret.begin(), ret.end());
+    auto insertSortedIfUnique = [&ret, &visitedDBs](DatabaseName dbname) {
+        auto [_, isNewDB] = visitedDBs.emplace(dbname);
+        if (isNewDB) {
+            ret.insert(std::lower_bound(ret.begin(), ret.end(), dbname), dbname);
+        }
+    };
+
+    // Now iterate over uncommitted list and validate against the storage snapshot.
+    // Only consider databases we have not seen so far.
+    auto readTimestamp =
+        shard_role_details::getRecoveryUnit(opCtx)->getPointInTimeReadTimestamp(opCtx);
+    tassert(9089301,
+            "point in time catalog lookup for a database list is not supported",
+            RecoveryUnit::ReadSource::kNoTimestamp ==
+                shard_role_details::getRecoveryUnit(opCtx)->getTimestampReadSource());
+    for (auto const& [ns, coll] : _pendingCommitNamespaces) {
+        if (!visitedDBs.contains(ns.dbName())) {
+            if (establishConsistentCollection(opCtx, ns, readTimestamp)) {
+                insertSortedIfUnique(ns.dbName());
+            }
+        }
+    }
+
     return ret;
 }
 

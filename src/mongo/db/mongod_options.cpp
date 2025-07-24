@@ -776,31 +776,19 @@ Status storeMongodOptions(const moe::Environment& params) {
             return Status(ErrorCodes::BadValue,
                           str::stream() << "Cannot start magic restore without --replSet.");
         }
+
+        if (params.count("sharding.clusterRole")) {
+            return Status(ErrorCodes::BadValue,
+                          str::stream()
+                              << "Cannot start magic restore with --shardsvr or --configsvr. Magic "
+                                 "restore performs the restore procedure as a replica set node.");
+        }
+
         storageGlobalParams.magicRestore = 1;
 
         // Use an ephemeral port so that users don't connect to a node that is being restored.
         if (!params.count("net.port")) {
             serverGlobalParams.port = ServerGlobalParams::DefaultMagicRestorePort;
-        }
-    }
-
-    serverGlobalParams.enableMajorityReadConcern = true;
-
-    if (storageGlobalParams.engineSetByUser && (storageGlobalParams.engine == "devnull")) {
-        LOGV2(5324701,
-              "Test storage engine does not support enableMajorityReadConcern=true, forcibly "
-              "setting to false",
-              "storageEngine"_attr = storageGlobalParams.engine);
-        serverGlobalParams.enableMajorityReadConcern = false;
-    }
-
-    if (!serverGlobalParams.enableMajorityReadConcern) {
-        // Lock-free reads is not supported with enableMajorityReadConcern=false, so we disable it.
-        if (!storageGlobalParams.disableLockFreeReads) {
-            LOGV2_WARNING(4788401,
-                          "Lock-free reads is not compatible with "
-                          "enableMajorityReadConcern=false: disabling lock-free reads.");
-            storageGlobalParams.disableLockFreeReads = true;
         }
     }
 
@@ -835,11 +823,6 @@ Status storeMongodOptions(const moe::Environment& params) {
         }
         if (clusterRoleParam == "configsvr") {
             serverGlobalParams.clusterRole = {ClusterRole::ShardServer, ClusterRole::ConfigServer};
-            // Config server requires majority read concern.
-            uassert(5324702,
-                    str::stream() << "Cannot initialize config server with "
-                                  << "enableMajorityReadConcern=false",
-                    serverGlobalParams.enableMajorityReadConcern);
 
             if (!params.count("storage.dbPath")) {
                 storageGlobalParams.dbpath = storageGlobalParams.kDefaultConfigDbPath;

@@ -5,6 +5,8 @@
  *   requires_replication,
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 const rst = new ReplSetTest({
     nodes: 2,
     nodeOptions: {setParameter: {"aggregateOperationResourceConsumptionMetrics": true}}
@@ -199,6 +201,9 @@ let nextId = nDocs;
 })();
 
 (function changeStreamSecondary() {
+    // Ensure change streams don't see previous writes.
+    rst.awaitReplication();
+
     clearMetrics(secondary);
     const cur = secondaryDB[collName].watch([], {fullDocument: "updateLookup"});
 

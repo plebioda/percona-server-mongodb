@@ -2,9 +2,8 @@
 // queryPlanner and allPlansExecution, but SBE format for executionStats.
 // @tags: [
 //  assumes_unsharded_collection,
-//  featureFlagClassicRuntimePlanningForSbe,
 //  featureFlagSbeFull,
-//  requires_fcv_80,  # because featureFlagClassicRuntimePlanningForSbe was enabled starting in 8.0
+//  requires_fcv_80,  # because ClassicRuntimePlanningForSbe was enabled starting in 8.0
 // ]
 
 import {
@@ -54,7 +53,7 @@ function assertExplainFormat(explain, expectedNumReturned) {
     // executionStats - SBE format:
     const stages = getExecutionStages(explain);
     assert.eq(stages.length, 1, explain);
-    const execStage = stages[0]
+    const execStage = stages[0];
     assert(execStage.hasOwnProperty("opens"), explain);
     assert(execStage.hasOwnProperty("closes"), explain);
     assert(!execStage.hasOwnProperty("works"), explain);

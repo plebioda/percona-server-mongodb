@@ -1,12 +1,19 @@
 /**
  * Tests hedging metrics in the serverStatus output.
  * @tags: [
- *    requires_fcv_70,
- *    temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
+ *    # Hedged Reads are deprecated in v8.0 and have different defaults than older versions. This
+ *    # test will be removed in 8.0+
+ *    multiversion_incompatible,
+ *    # This test is known to be racey due to implementation of hedged reads (SERVER-65329).
+ *    # Disable windows testing as this feature is deprecated in v8.0.
+ *    incompatible_with_windows_tls,
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 function setCommandDelay(nodeConn, command, delay, ns) {
     assert.commandWorked(nodeConn.adminCommand({

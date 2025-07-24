@@ -8,6 +8,8 @@
  *   requires_fcv_80,
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 TestData.testingDiagnosticsEnabled = false;
 
 const rst = new ReplSetTest({nodes: 1});
@@ -95,7 +97,7 @@ function runIntermediateDataCheckTest(isOrdered) {
         assert.eq(stats.bucketCount, 3);
         assert.eq(buckets.length, 3);
         assert.eq(buckets[0].meta, 1);
-        assert.eq(buckets[0].control.count, 2)
+        assert.eq(buckets[0].control.count, 2);
         assert.eq(buckets[1].meta, 2);
         assert.eq(buckets[1].control.count, 2);
         assert.eq(buckets[2].meta, "A");

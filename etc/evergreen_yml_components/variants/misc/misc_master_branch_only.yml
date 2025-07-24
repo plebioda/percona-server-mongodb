@@ -5,36 +5,15 @@
 # and LTS release (v7.0, v6.0 etc.) branch projects
 
 buildvariants:
-  - name: &shared-scons-cache-pruning shared-scons-cache-pruning
-    display_name: "Shared SCons Cache Pruning"
-    tags: []
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
-    run_on:
-      - ubuntu2204-small
-    stepback: false
-    tasks:
-      - name: shared_scons_cache_pruning
-
-  - name: &windows-shared-scons-cache-pruning windows-shared-scons-cache-pruning
-    display_name: "Windows shared SCons Cache Pruning"
-    tags: []
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
-    run_on:
-      - windows-vsCurrent-small
-    stepback: false
-    expansions:
-      python: "/cygdrive/c/python/python310/python.exe"
-    tasks:
-      - name: win_shared_scons_cache_pruning
-
   - name: &stm-daily-cron stm-daily-cron
     display_name: "* STM Daily Cron"
     tags: ["suggested"]
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
-      - rhel80-small
+      - rhel8.8-small
     expansions:
       multiversion_platform: rhel80
+      multiversion_platform_50_or_later: rhel8
       multiversion_edition: enterprise
       compile_variant: *stm-daily-cron
     stepback: false
@@ -46,4 +25,4 @@ buildvariants:
       - name: daily_task_scanner
       - name: monitor_build_status
         distros:
-          - rhel80-large
+          - ubuntu2404-large

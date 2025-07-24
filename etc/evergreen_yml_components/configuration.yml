@@ -44,6 +44,8 @@ parameters:
     description: "Cron schedule for nightly variants"
   - key: bazel_scons_diff_targets
     description: "Targets to run the bazel-scons diff on in this patch"
+  - key: convert_bazel_headers_target
+    description: "Target to generate bazel headers for"
 
 #######################################
 #               Modules               #
@@ -85,6 +87,7 @@ post:
   - func: "upload jstestfuzz minimized output"
   - func: "upload clang tidy results"
   - func: "kill processes"
+  - func: "save code coverage data"
   - func: "save local client logs"
   - func: "save jepsen artifacts"
   - func: "save mongo coredumps"

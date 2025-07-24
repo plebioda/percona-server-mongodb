@@ -59,20 +59,12 @@ public:
                     serverGlobalParams.featureCompatibility.acquireFCVSnapshot()));
 
             const auto& nss = ns();
-            ShardsvrReshardCollection shardsvrReshardCollection(nss);
-            shardsvrReshardCollection.setDbName(request().getDbName());
-
-            ReshardCollectionRequest reshardCollectionRequest;
-            reshardCollectionRequest.setKey(BSON("_id" << 1));
-            reshardCollectionRequest.setProvenance(ProvenanceEnum::kMoveCollection);
-
-            std::vector<mongo::ShardKeyRange> destinationShard = {request().getToShard()};
-            reshardCollectionRequest.setShardDistribution(destinationShard);
-            reshardCollectionRequest.setForceRedistribution(true);
-            reshardCollectionRequest.setNumInitialChunks(1);
-
-            shardsvrReshardCollection.setReshardCollectionRequest(
-                std::move(reshardCollectionRequest));
+            auto moveCollectionRequest = cluster::unsplittable::makeMoveCollectionRequest(
+                request().getDbName(),
+                nss,
+                request().getToShard(),
+                ProvenanceEnum::kMoveCollection,
+                request().getOplogBatchApplierTaskCount());
 
             LOGV2(7973800,
                   "Running a reshard collection command for the move collection request.",
@@ -82,11 +74,11 @@ public:
             auto catalogCache = Grid::get(opCtx)->catalogCache();
             const auto dbInfo = uassertStatusOK(catalogCache->getDatabase(opCtx, nss.dbName()));
 
-            auto cmdResponse = executeCommandAgainstDatabasePrimary(
+            auto cmdResponse = executeDDLCoordinatorCommandAgainstDatabasePrimary(
                 opCtx,
                 DatabaseName::kAdmin,
                 dbInfo,
-                CommandHelpers::appendMajorityWriteConcern(shardsvrReshardCollection.toBSON(),
+                CommandHelpers::appendMajorityWriteConcern(moveCollectionRequest.toBSON(),
                                                            opCtx->getWriteConcern()),
                 ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                 Shard::RetryPolicy::kIdempotent);

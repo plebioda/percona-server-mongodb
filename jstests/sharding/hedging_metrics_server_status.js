@@ -1,11 +1,15 @@
 /**
  * Tests hedging metrics in the serverStatus output.
  * @tags: [
- *   requires_fcv_70,
- *   temp_disabled_embedded_router_metrics,
+ *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
+ *    # Hedged Reads are deprecated in v8.0 and have different defaults than older versions. This
+ *    # test will be removed in 8.0+
+ *    multiversion_incompatible,
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 /*
  * Verifies that the server status response has the hegingMetrics fields that we expect.

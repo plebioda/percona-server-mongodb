@@ -9,9 +9,9 @@
  *   featureFlagRouterPort,
  * ]
  */
-
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 /*
  * Returns the string representation of the given opId. Removes the 'config:' prefix if exists.
@@ -40,7 +40,7 @@ function dropCollection(host, dbName, collName) {
     return conn.getDB(dbName).runCommand({drop: collName});
 }
 
-const st = ShardingTest({
+const st = new ShardingTest({
     shards: 1,
     rs: {nodes: 1},
     configShard: true,
@@ -113,7 +113,7 @@ let clusterDropOpId, shardsvrDropOpId;
     assert.eq(ops0.length, 1, ops0);
     assert.eq(ops0[0].role, "ClusterRole{shard}", ops0);
     assert.eq(ops0[0].host, primary.host, ops0);
-    shardsvrDropOpId = ops0[0].opid
+    shardsvrDropOpId = ops0[0].opid;
 
     const ops1 = primary.getDB("admin")
                      .aggregate([
@@ -268,7 +268,7 @@ assert.commandWorked(primaryTestDB.killOp(clusterDropOpId));
     assert.eq(ops0.length, 1, ops0);
     assert.eq(ops0[0].role, "ClusterRole{shard}", ops0);
     assert.eq(ops0[0].host, primary.host, ops0);
-    shardsvrDropOpId = ops0[0].opid
+    shardsvrDropOpId = ops0[0].opid;
 
     const ops1 = primary.getDB("admin")
                      .aggregate([

@@ -8,6 +8,8 @@
  *   featureFlagRecordIdsReplicated,
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 const replSet = new ReplSetTest({nodes: [{}, {rsConfig: {votes: 0, priority: 0}}]});
 replSet.startSet();
 replSet.initiate();
@@ -41,7 +43,7 @@ jsTestLog('Result from successful collMod command: ' + tojson(result));
 
 // Check for "Unsetting 'recordIdsReplicated' catalog entry flag" debug log message.
 checkLog.containsJson(primary, 8650601, {namespace: coll.getFullName()});
-assert.commandWorked(testDB.setLogLevel(originalStorageLogLevel, 'storage'))
+assert.commandWorked(testDB.setLogLevel(originalStorageLogLevel, 'storage'));
 
 // Confirm that 'recordIdsReplicated' option has been removed from collection options.
 const collInfo = coll.exists();

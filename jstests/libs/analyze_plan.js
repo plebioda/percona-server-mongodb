@@ -33,9 +33,22 @@ export function getQueryPlanner(explain) {
     assert(explain.hasOwnProperty("stages"), explain);
     const stage = explain.stages[0];
     assert(stage.hasOwnProperty("$cursor"), explain);
-    const cursorStage = stage.$cursor
+    const cursorStage = stage.$cursor;
     assert(cursorStage.hasOwnProperty("queryPlanner"), explain);
     return cursorStage.queryPlanner;
+}
+
+/**
+ * Help function to extract shards from explain in sharded environment. Returns null for
+ * non-sharded plans.
+ */
+export function getShardsFromExplain(explain) {
+    if (explain.hasOwnProperty("queryPlanner") &&
+        explain.queryPlanner.hasOwnProperty("winningPlan")) {
+        return explain.queryPlanner.winningPlan.shards;
+    }
+
+    return null;
 }
 
 /**
@@ -58,14 +71,8 @@ export function getAllNodeExplains(explain) {
 
     // NOTE: When shards explain is present in the 'queryPlanner.winningPlan' the shard explains are
     // placed in the array and therefore there is no need to call Object.values() on each element.
-    const shards = (function() {
-        if (explain.hasOwnProperty("queryPlanner") &&
-            explain.queryPlanner.hasOwnProperty("winningPlan")) {
-            return explain.queryPlanner.winningPlan.shards;
-        }
+    const shards = getShardsFromExplain(explain);
 
-        return null;
-    }());
     if (shards) {
         assert(Array.isArray(shards), shards);
         shardsExplain.push(...shards);
@@ -112,7 +119,7 @@ export function getWinningPlan(queryPlanner) {
 }
 
 export function getWinningSBEPlan(queryPlanner) {
-    assert(queryPlanner.winningPlan.hasOwnProperty("slotBasedPlan"), queryPlanner)
+    assert(queryPlanner.winningPlan.hasOwnProperty("slotBasedPlan"), queryPlanner);
     return queryPlanner.winningPlan.slotBasedPlan;
 }
 
@@ -200,6 +207,173 @@ export function getCachedPlan(cachedPlan) {
     // will hold a serialized cached plan, otherwise it will be stored in the 'cachedPlan' field
     // itself.
     return cachedPlan.hasOwnProperty("queryPlan") ? cachedPlan.queryPlan : cachedPlan;
+}
+
+function isPlainObject(value) {
+    return value && typeof (value) == "object" && value.constructor === Object;
+}
+
+/**
+ * Flattens the given plan by turning it into an array of stages/children. It excludes fields which
+ * might differ in the explain across multiple executions of the same query.
+ */
+export function flattenPlan(plan) {
+    const results = [];
+
+    if (!isPlainObject(plan)) {
+        return results;
+    }
+
+    const childFields = [
+        "inputStage",
+        "inputStages",
+        "thenStage",
+        "elseStage",
+        "outerStage",
+        "stages",
+        "innerStage",
+        "child",
+        "leftChild",
+        "rightChild"
+    ];
+
+    // Expand this array if you find new fields which are inconsistent across different test runs.
+    const ignoreFields = ["isCached", "indexVersion", "filter", "planNodeId"];
+
+    // Iterates over the plan while ignoring the `ignoreFields`, to create flattened stages whenever
+    // `childFields` are encountered.
+    const stack = [["root", {...plan}]];
+    while (stack.length > 0) {
+        const [_, next] = stack.pop();
+        ignoreFields.forEach(field => delete next[field]);
+
+        for (const childField of childFields) {
+            if (childField in next) {
+                const child = next[childField];
+                delete next[childField];
+                if (Array.isArray(child)) {
+                    for (let i = 0; i < child.length; i++) {
+                        stack.push([childField, child[i]]);
+                    }
+                } else {
+                    stack.push([childField, child]);
+                }
+            }
+        }
+
+        results.push(next);
+    }
+
+    return results;
+}
+
+/**
+ * Returns an object containing the winning plan and an array of rejected plans for the given
+ * queryPlanner. Each of those plans is returned in its flattened form.
+ */
+export function formatQueryPlanner(queryPlanner) {
+    return {
+        winningPlan: flattenPlan(getWinningPlan(queryPlanner)),
+        rejectedPlans: queryPlanner.rejectedPlans.map(flattenPlan),
+    };
+}
+
+/**
+ * Formats the given pipeline, which must be an array of stage objects. Returns an array of
+ * formatted stages. It excludes fields which might differ in the explain across multiple executions
+ * of the same query.
+ */
+export function formatPipeline(pipeline) {
+    const results = [];
+
+    // Pipeline must be an array of objects
+    if (!pipeline || !Array.isArray(pipeline) || !pipeline.every(isPlainObject)) {
+        return results;
+    }
+
+    // Expand this array if you find new fields which are inconsistent across different test runs.
+    const ignoreFields = ["lsid"];
+
+    for (const stage of pipeline) {
+        const keys = Object.keys(stage).filter(key => key.startsWith("$"));
+        if (keys.length !== 1) {
+            throw Error("This is not a stage: " + tojson(stage));
+        }
+
+        const stageName = keys[0];
+        if (stageName == "$cursor") {
+            const queryPlanner = stage[stageName].queryPlanner;
+            results.push({[stageName]: formatQueryPlanner(queryPlanner)});
+        } else {
+            const stageCopy = {...stage[stageName]};
+            ignoreFields.forEach(field => delete stageCopy[field]);
+            // Don't keep any fields that are on the same level as the stage name
+            results.push({[stageName]: stageCopy});
+        }
+    }
+
+    return results;
+}
+
+/**
+ * Helper function to only add `field` to `dest` if it is present in `src`. A lambda can be passed
+ * to transform the field value when it is added to `dest`.
+ */
+function addIfPresent(field, src, dest, lambda = i => i) {
+    if (src && dest && field in src) {
+        dest[field] = lambda(src[field]);
+    }
+}
+
+/**
+ * If queryPlanner contains an array of shards, this returns both the merger part and shards
+ * part. Both are flattened.
+ */
+function invertShards(queryPlanner) {
+    const winningPlan = queryPlanner.winningPlan;
+    const shards = winningPlan.shards;
+    if (!Array.isArray(shards)) {
+        throw Error("Expected shards field to be array, got: " + tojson(shards));
+    }
+
+    const topStage = {...winningPlan};
+    delete topStage.shards;
+
+    const res = {mergerPart: flattenPlan(topStage), shardsPart: {}};
+    shards.forEach(shard => res.shardsPart[shard.shardName] = formatQueryPlanner(shard));
+
+    return res;
+}
+
+/**
+ * Returns a formatted version of the explain, excluding fields which might differ in the explain
+ * across multiple executions of the same query (e.g. caching information or UUIDs).
+ */
+export function formatExplainRoot(explain) {
+    let res = {};
+    if (!isPlainObject(explain)) {
+        return res;
+    }
+
+    addIfPresent("mergeType", explain, res);
+    if ("splitPipeline" in explain) {
+        addIfPresent("mergerPart", explain.splitPipeline, res, formatPipeline);
+        addIfPresent("shardsPart", explain.splitPipeline, res, formatPipeline);
+    }
+
+    if ("shards" in explain) {
+        for (const [shardName, shardExplain] of Object.entries(explain["shards"])) {
+            res[shardName] = formatPipeline(shardExplain.stages);
+        }
+    } else if ("queryPlanner" in explain && "shards" in explain.queryPlanner.winningPlan) {
+        res = {...res, ...invertShards(explain.queryPlanner)};
+    } else if ("queryPlanner" in explain) {
+        res = {...res, ...formatQueryPlanner(explain.queryPlanner)};
+    } else if ("stages" in explain) {
+        res.stages = formatPipeline(explain.stages);
+    }
+
+    return res;
 }
 
 /**
@@ -298,7 +472,7 @@ export function getAllPlanStages(root) {
  * This helper function can be used for any optimizer.
  */
 export function getPlanStage(root, stage) {
-    assert(stage, "Stage was not defined in getPlanStage.")
+    assert(stage, "Stage was not defined in getPlanStage.");
     var planStageList = getPlanStages(root, stage);
 
     if (planStageList.length === 0) {
@@ -317,16 +491,20 @@ export function getPlanStage(root, stage) {
  * This helper function can be used for any optimizer.
  */
 export function getRejectedPlans(root) {
-    if (root.queryPlanner.winningPlan.hasOwnProperty("shards")) {
-        const rejectedPlans = [];
-        for (let shard of root.queryPlanner.winningPlan.shards) {
-            for (let rejectedPlan of shard.rejectedPlans) {
-                rejectedPlans.push(Object.assign({shardName: shard.shardName}, rejectedPlan));
+    if (root.hasOwnProperty('queryPlanner')) {
+        if (root.queryPlanner.winningPlan.hasOwnProperty("shards")) {
+            const rejectedPlans = [];
+            for (let shard of root.queryPlanner.winningPlan.shards) {
+                for (let rejectedPlan of shard.rejectedPlans) {
+                    rejectedPlans.push(Object.assign({shardName: shard.shardName}, rejectedPlan));
+                }
             }
+            return rejectedPlans;
         }
-        return rejectedPlans;
+        return root.queryPlanner.rejectedPlans;
+    } else {
+        return root.stages[0]['$cursor'].queryPlanner.rejectedPlans;
     }
-    return root.queryPlanner.rejectedPlans;
 }
 
 /**
@@ -636,7 +814,7 @@ export function getAggPlanStages(root, stage, useQueryPlannerSection = false) {
  * This helper function can be used for any optimizer.
  */
 export function getAggPlanStage(root, stage, useQueryPlannerSection = false) {
-    assert(stage, "Stage was not defined in getAggPlanStage.")
+    assert(stage, "Stage was not defined in getAggPlanStage.");
     let planStageList = getAggPlanStages(root, stage, useQueryPlannerSection);
 
     if (planStageList.length === 0) {
@@ -667,7 +845,7 @@ export function aggPlanHasStage(root, stage) {
  * returns true if the plan has a stage called 'stage'.
  */
 export function planHasStage(db, root, stage) {
-    assert(stage, "Stage was not defined in planHasStage.")
+    assert(stage, "Stage was not defined in planHasStage.");
     return getPlanStages(root, stage).length > 0;
 }
 
@@ -930,7 +1108,7 @@ export function assertCoveredQueryAndCount({collection, query, project, count}) 
                    "Winning plan was not covered: " + tojson(explain.queryPlanner.winningPlan));
             break;
         default:
-            break
+            break;
     }
 
     // Same query as a count command should also be covered.
@@ -944,7 +1122,7 @@ export function assertCoveredQueryAndCount({collection, query, project, count}) 
             assertExplainCount({explainResults: explain, expectedCount: count});
             break;
         default:
-            break
+            break;
     }
 }
 

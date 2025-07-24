@@ -80,6 +80,7 @@ public:
                   const CollectionPtr& coll,
                   StmtId stmtId,
                   const BSONObj& doc,
+                  const DocumentKey& documentKey,
                   const OplogDeleteEntryArgs& args,
                   OpStateAccumulator* opAccumulator = nullptr) override;
 
@@ -94,9 +95,6 @@ public:
 
     void onMajorityCommitPointUpdate(ServiceContext* service,
                                      const repl::OpTime& newCommitPoint) override;
-
-private:
-    void _tickTopologyTimeIfNecessary(ServiceContext* service, Timestamp newCommitPointTime);
 };
 
 }  // namespace mongo

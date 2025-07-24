@@ -5,12 +5,15 @@
  * @tags: [
  *   multiversion_incompatible,
  *   requires_persistence,
+ *   # TODO (SERVER-88123): Re-enable this test.
  *   # Test doesn't start enough mongods to have num_mongos routers
- *   temp_disabled_embedded_router_num_routers,
+ *   embedded_router_incompatible,
  * ]
  */
 
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {waitForAllMembers} from "jstests/replsets/rslib.js";
 import {removeShard} from "jstests/sharding/libs/remove_shard_util.js";
 

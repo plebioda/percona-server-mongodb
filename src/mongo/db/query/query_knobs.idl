@@ -32,10 +32,9 @@ imports:
 global:
   cpp_namespace: "mongo"
   cpp_includes:
-    - "mongo/db/query/cost_model/cost_model_on_update.h"
     - "mongo/db/query/ce_mode_parameter.h"
     - "mongo/db/query/explain_version_validator.h"
-    - "mongo/db/query/sbe_plan_cache_on_parameter_change.h"
+    - "mongo/db/query/plan_cache/sbe_plan_cache_on_parameter_change.h"
     - "mongo/db/query/query_knob_expressions.h"
     - "mongo/db/query/query_stats/query_stats_on_parameter_change.h"
     - "mongo/platform/atomic_proxy.h"
@@ -55,14 +54,6 @@ enums:
             kTrySbeRestricted: "trySbeRestricted"
             # Attempt to use SBE for eligible queries, otherwise fallback to the classic engine.
             kTrySbeEngine: "trySbeEngine"
-            # Attempt to use the Bonsai optimizer and lower to SBE for eligible queries, otherwise
-            # fallback to the default framework control.
-            kTryBonsai: "tryBonsai"
-            # Like, "tryBonsai", but additionally includes features that should not be enabled by
-            # default. Falls back to the default framework control for ineligible queries.
-            kTryBonsaiExperimental: "tryBonsaiExperimental"
-            # Force the Bonsai optimizer for all queries.
-            kForceBonsai: "forceBonsai"
 
 structs:
   InternalQueryCutoffForSampleFromRandomCursorStorage:
@@ -440,6 +431,15 @@ server_parameters:
     default: false
     redact: false
 
+  internalQueryPlannerIgnoreIndexWithCollationForRegex:
+    description: "Do we want to leverage indexes with collation for regex predicates?"
+    set_at: [ startup, runtime ]
+    cpp_varname: "internalQueryPlannerIgnoreIndexWithCollationForRegex"
+    cpp_vartype: AtomicWord<bool>
+    default: true
+    on_update: plan_cache_util::clearSbeCacheOnParameterChange
+    redact: false
+
   #
   # Query execution
   #
@@ -471,6 +471,26 @@ server_parameters:
     cpp_varname: "internalQueryExecYieldPeriodMS"
     cpp_vartype: AtomicWord<int>
     default: 10
+    validator:
+      gte: 0
+    redact: false
+
+  internalQueryExpressionInterruptIterations:
+    description: "In some potentially long running expressions every n checks, we wake up and see if the query was killed"
+    set_at: [ startup, runtime ]
+    cpp_varname: "internalQueryExpressionInterruptIterations"
+    cpp_vartype: AtomicWord<int>
+    default: 10
+    validator:
+      gte: 0
+    redact: false
+  
+  internalQueryExpressionInterruptPeriodMS:
+    description: "In some potentially long running expressions check if the query has been killed every time this period has elapsed."
+    set_at: [ startup, runtime ]
+    cpp_varname: "internalQueryExpressionInterruptPeriodMS"
+    cpp_vartype: AtomicWord<int>
+    default: 1000
     validator:
       gte: 0
     redact: false
@@ -615,11 +635,34 @@ server_parameters:
         gt: 0
     redact: false
 
+  internalQueryMaxMapReduceExpressionBytes:
+    description: "Limits the amount of memory that can be used while constructing the result of a $map or $range expression"
+    set_at: [ startup, runtime ]
+    cpp_varname: "internalQueryMaxMapFilterReduceBytes"
+    cpp_vartype: AtomicWord<int>
+    default:
+      expr: 100 * 1024 * 1024
+    validator:
+        gt: 0
+    redact: false
+
   internalQueryMaxAddToSetBytes:
     description: "Limits the vector of values pushed into a single array while grouping with the
     $addToSet accumulator."
     set_at: [ startup, runtime ]
     cpp_varname: "internalQueryMaxAddToSetBytes"
+    cpp_vartype: AtomicWord<long long>
+    default:
+      expr: 100 * 1024 * 1024
+    validator:
+        gt: 0
+    on_update: plan_cache_util::clearSbeCacheOnParameterChange
+    redact: false
+
+  internalQueryMaxPercentileAccumulatorBytes:
+    description: "The maximum amount of memory that can be used by an individual $percentile accumulator."
+    set_at: [ startup, runtime ]
+    cpp_varname: "internalQueryMaxPercentileAccumulatorBytes"
     cpp_vartype: AtomicWord<long long>
     default:
       expr: 100 * 1024 * 1024
@@ -1247,14 +1290,6 @@ server_parameters:
         expr: false
     redact: false
 
-  internalCostModelCoefficients:
-    description: "Cost Model Coefficients Override"
-    set_at: [ startup, runtime ]
-    cpp_varname: "internalCostModelCoefficients"
-    cpp_vartype: synchronized_value<std::string>
-    on_update: cost_model::updateCostCoefficientsOnUpdate
-    redact: false
-
   # TODO SERVER-68341 Remove this query knob after tenancy is supported in the sharded cluster.
   internalChangeStreamUseTenantIdForTesting:
     description: "If true, then change streams will operate upon an internal tenant id for testing
@@ -1664,6 +1699,17 @@ server_parameters:
     default: false
     redact: false
 
+  internalQueryFindCommandBatchSize:
+    description: "The batch size used for find commands as a default if none is specified."
+    set_at: [ startup, runtime ]
+    cpp_varname: "internalQueryFindCommandBatchSize"
+    cpp_vartype: AtomicWord<long long>
+    default:
+      expr: 101
+    validator:
+      gt: 0
+    redact: false
+
   internalQueryEnableAggressiveSpillsInGroup:
     description: "Enable spilling in $group every time there is a duplicate id to stress merge logic."
     set_at: [ startup ]
@@ -1671,6 +1717,16 @@ server_parameters:
     cpp_vartype: bool
     default: false
     redact: false
+
+  planRankerMode:
+    description: "Enable cost-based ranking of query plans."
+    set_at: [ startup, runtime ]
+    cpp_varname: planRankerMode
+    # TODO SERVER-92587: change to an enum
+    cpp_vartype: AtomicWord<bool>
+    default: false
+    redact: false
+    on_update: plan_cache_util::clearSbeCacheOnParameterChange
 
 # Note for adding additional query knobs:
 #

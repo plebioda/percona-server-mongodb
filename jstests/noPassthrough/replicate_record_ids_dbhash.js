@@ -10,6 +10,7 @@
  */
 import {assertDropAndRecreateCollection} from "jstests/libs/collection_drop_recreate.js";
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 // Skip DB hash check in stopSet() since we expect it to fail in this test.
 TestData.skipCheckDBHashes = true;
@@ -29,8 +30,7 @@ const findRecordId = function(testDB, collName, doc) {
     return res["$recordId"];
 };
 
-const insertDocWithInconsistentRids =
-    function(primaryDB, secondaryDB, docToInsertWithDifRid) {
+const insertDocWithInconsistentRids = function(primaryDB, secondaryDB, docToInsertWithDifRid) {
     const explicitlySetRecordIdOnInsert = configureFailPoint(
         secondaryDB,
         "explicitlySetRecordIdOnInsert",
@@ -43,7 +43,7 @@ const insertDocWithInconsistentRids =
         primaryDB.runCommand({insert: collName, documents: [docToInsertWithDifRid]}));
     rst.awaitReplication();
     explicitlySetRecordIdOnInsert.off();
-}
+};
 
 const runTest = function(replicatedRecordIds) {
     const primaryDB = primary.getDB(dbName);

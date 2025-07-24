@@ -4,12 +4,14 @@
  * @tags: [
  *   multiversion_incompatible,
  *   requires_fcv_80,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 import {getDBNameAndCollNameFromFullNamespace} from "jstests/libs/namespace_utils.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     moveDatabaseAndUnshardedColls
 } from "jstests/sharding/libs/move_database_and_unsharded_coll_helper.js";

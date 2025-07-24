@@ -1,19 +1,25 @@
 /**
- * Test the use of "explain" with the "$search" aggregation stage.
+ * Test the use of "explain" with the "$search" aggregation stage, but does not check the value of
+ * executionStats.
  */
 import {getAggPlanStage} from "jstests/libs/analyze_plan.js";
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 import {checkSbeRestrictedOrFullyEnabled} from "jstests/libs/sbe_util.js";
 import {getUUIDFromListCollections} from "jstests/libs/uuid_util.js";
 import {MongotMock} from "jstests/with_mongot/mongotmock/lib/mongotmock.js";
-
+import {
+    getDefaultLastExplainContents,
+    setUpMongotReturnExplain,
+    setUpMongotReturnExplainAndCursor,
+} from "jstests/with_mongot/mongotmock/lib/utils.js";
 // Set up mongotmock and point the mongod to it.
 const mongotmock = new MongotMock();
 mongotmock.start();
 const mongotConn = mongotmock.getConnection();
 
 const conn = MongoRunner.runMongod({setParameter: {mongotHost: mongotConn.host}});
-const db = conn.getDB("test");
+const dbName = jsTestName();
+const db = conn.getDB(dbName);
 const coll = db.search;
 coll.drop();
 
@@ -37,27 +43,9 @@ const searchQuery = {
     query: "Chekhov",
     path: "name"
 };
-const explainContents = {
-    profession: "writer"
-};
-const cursorId = NumberLong(123);
+const explainContents = getDefaultLastExplainContents();
 
-for (const currentVerbosity of ["queryPlanner", "executionStats", "allPlansExecution"]) {
-    const searchCmd = {
-        search: coll.getName(),
-        collectionUUID: collUUID,
-        query: searchQuery,
-        explain: {verbosity: currentVerbosity},
-        $db: "test"
-    };
-    // Give mongotmock some stuff to return.
-    {
-        const history = [{expectedCommand: searchCmd, response: {explain: explainContents, ok: 1}}];
-        assert.commandWorked(
-            mongotConn.adminCommand({setMockResponses: 1, cursorId: cursorId, history: history}));
-    }
-    const result = coll.explain(currentVerbosity).aggregate([{$search: searchQuery}]);
-
+function checkExplain(result) {
     const searchStage = getAggPlanStage(result, "$_internalSearchMongotRemote");
     assert.neq(searchStage, null, result);
     const stage = searchStage["$_internalSearchMongotRemote"];
@@ -65,5 +53,54 @@ for (const currentVerbosity of ["queryPlanner", "executionStats", "allPlansExecu
     assert.eq(explainContents, stage["explain"]);
 }
 
+function runExplainTest(currentVerbosity) {
+    const searchCmd = {
+        search: coll.getName(),
+        collectionUUID: collUUID,
+        query: searchQuery,
+        explain: {verbosity: currentVerbosity},
+        $db: dbName
+    };
+    // Give mongotmock some stuff to return.
+    setUpMongotReturnExplain({
+        searchCmd,
+        mongotMock: mongotmock,
+    });
+    const result = coll.explain(currentVerbosity).aggregate([{$search: searchQuery}]);
+    checkExplain(result);
+}
+
+function runExplainAndCursorTest(currentVerbosity) {
+    const searchCmd = {
+        search: coll.getName(),
+        collectionUUID: collUUID,
+        query: searchQuery,
+        explain: {verbosity: currentVerbosity},
+        $db: dbName
+    };
+    setUpMongotReturnExplainAndCursor({
+        mongotMock: mongotmock,
+        coll,
+        searchCmd,
+        nextBatch: [
+            {_id: 1, $searchScore: 0.321},
+        ],
+    });
+    const result = coll.explain(currentVerbosity).aggregate([{$search: searchQuery}]);
+    checkExplain(result);
+}
+
+runExplainTest("queryPlanner");
+// TODO SERVER-85637 Remove the gated tests when the feature flag is removed, as they will fail.
+// They are tested with the feature flag enabled in search_explain_execution_stats.js.
+if (!FeatureFlagUtil.isPresentAndEnabled(db.getMongo(), 'SearchExplainExecutionStats')) {
+    // TODO SERVER-91594: Testing "executionStats" and "allPlansExecution" for runExplainTest() is
+    // not necessary after mongot will always return a cursor for execution stats verbosties.
+    runExplainTest("executionStats");
+    runExplainTest("allPlansExecution");
+}
+
+runExplainAndCursorTest("executionStats");
+runExplainAndCursorTest("allPlansExecution");
 MongoRunner.stopMongod(conn);
 mongotmock.stop();

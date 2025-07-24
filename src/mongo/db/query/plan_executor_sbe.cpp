@@ -55,7 +55,7 @@
 #include "mongo/db/query/plan_ranker.h"
 #include "mongo/db/query/plan_yield_policy_remote_cursor.h"
 #include "mongo/db/query/sbe_plan_ranker.h"
-#include "mongo/db/query/sbe_stage_builder.h"
+#include "mongo/db/query/stage_builder/sbe/builder.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/storage/recovery_unit.h"
@@ -82,14 +82,11 @@ extern FailPoint planExecutorHangBeforeShouldWaitForInserts;
 
 PlanExecutorSBE::PlanExecutorSBE(OperationContext* opCtx,
                                  std::unique_ptr<CanonicalQuery> cq,
-                                 std::unique_ptr<Pipeline, PipelineDeleter> pipeline,
-                                 std::unique_ptr<optimizer::AbstractABTPrinter> optimizerData,
-                                 sbe::CandidatePlans candidates,
+                                 sbe::plan_ranker::CandidatePlans candidates,
                                  bool returnOwnedBson,
                                  NamespaceString nss,
                                  bool isOpen,
                                  std::unique_ptr<PlanYieldPolicySBE> yieldPolicy,
-                                 bool generatedByBonsai,
                                  boost::optional<size_t> cachedPlanHash,
                                  OptimizerCounterInfo optCounterInfo,
                                  std::unique_ptr<RemoteCursorMap> remoteCursors,
@@ -104,9 +101,7 @@ PlanExecutorSBE::PlanExecutorSBE(OperationContext* opCtx,
       _solution{std::move(candidates.winner().solution)},
       _stash{std::move(candidates.winner().results)},
       _cq{std::move(cq)},
-      _pipeline{std::move(pipeline)},
       _yieldPolicy(std::move(yieldPolicy)),
-      _generatedByBonsai(generatedByBonsai),
       _remoteCursors(std::move(remoteCursors)),
       _remoteExplains(std::move(remoteExplains)) {
     invariant(!_nss.isEmpty());
@@ -184,7 +179,6 @@ PlanExecutorSBE::PlanExecutorSBE(OperationContext* opCtx,
         : plan_explainer_factory::make(_root.get(),
                                        &_rootData,
                                        _solution.get(),
-                                       std::move(optimizerData),
                                        std::move(candidates.plans),
                                        isMultiPlan,
                                        isCachedCandidate,
@@ -295,7 +289,7 @@ PlanExecutor::ExecState PlanExecutorSBE::getNextDocument(Document* objOut, Recor
 
     Document obj;
     auto result = getNextImpl(&obj, dlOut);
-    if (result == PlanExecutor::ExecState::ADVANCED) {
+    if (objOut && result == PlanExecutor::ExecState::ADVANCED) {
         *objOut = std::move(obj);
     }
     return result;
@@ -308,7 +302,7 @@ PlanExecutor::ExecState PlanExecutorSBE::getNext(BSONObj* out, RecordId* dlOut) 
 
     BSONObj obj;
     auto result = getNextImpl(&obj, dlOut);
-    if (result == PlanExecutor::ExecState::ADVANCED) {
+    if (out && result == PlanExecutor::ExecState::ADVANCED) {
         *out = std::move(obj);
     }
     return result;
@@ -330,6 +324,11 @@ PlanExecutor::ExecState PlanExecutorSBE::getNextImpl(ObjectType* out, RecordId* 
     static_assert(isDocument || isBson);
 
     invariant(!_isDisposed);
+
+    // TODO SERVER-93079: This function expects to always produce an output document. This could be
+    // optimized in the future if we wish to use SBE for count-like queries which do not need to
+    // produce any documents.
+    tassert(9212602, "fetchNextImpl() expects a non-null object pointer", out);
 
     checkFailPointPlanExecAlwaysFails();
 

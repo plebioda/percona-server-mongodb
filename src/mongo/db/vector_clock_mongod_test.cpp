@@ -83,8 +83,8 @@ protected:
 
         ShardingMongoDTestFixture::setUp();
 
-        auto keysCollectionClient = std::make_unique<KeysCollectionClientDirect>(
-            !getServiceContext()->getStorageEngine()->supportsReadConcernMajority());
+        auto keysCollectionClient =
+            std::make_unique<KeysCollectionClientDirect>(false /*mustUseLocalReads*/);
 
         VectorClockMutable::get(getServiceContext())
             ->tickClusterTimeTo(LogicalTime(Timestamp(1, 0)));
@@ -100,13 +100,6 @@ protected:
         LogicalTimeValidator::get(getServiceContext())->shutDown();
 
         ShardingMongoDTestFixture::tearDown();
-    }
-
-    /**
-     * Forces KeyManager to refresh cache and generate new keys.
-     */
-    void refreshKeyManager() {
-        _keyManager->refreshNow(operationContext());
     }
 
     void setupOpObservers() override {
@@ -158,25 +151,25 @@ TEST_F(VectorClockMongoDTest, TickToClusterTime) {
     ASSERT_EQ(LogicalTime(Timestamp(3, 3)), t3.clusterTime());
 }
 
-DEATH_TEST_F(VectorClockMongoDTest, CannotTickConfigTime, "Hit a MONGO_UNREACHABLE") {
+DEATH_TEST_F(VectorClockMongoDTest, CannotTickConfigTime, "invariant") {
     auto sc = getServiceContext();
     auto vc = VectorClockMutable::get(sc);
     vc->tickConfigTime(1);
 }
 
-DEATH_TEST_F(VectorClockMongoDTest, CannotTickToConfigTime, "Hit a MONGO_UNREACHABLE") {
+DEATH_TEST_F(VectorClockMongoDTest, CannotTickToConfigTime, "invariant") {
     auto sc = getServiceContext();
     auto vc = VectorClockMutable::get(sc);
     vc->tickConfigTimeTo(LogicalTime());
 }
 
-DEATH_TEST_F(VectorClockMongoDTest, CannotTickTopologyTime, "Hit a MONGO_UNREACHABLE") {
+DEATH_TEST_F(VectorClockMongoDTest, CannotTickTopologyTime, "invariant") {
     auto sc = getServiceContext();
     auto vc = VectorClockMutable::get(sc);
     vc->tickTopologyTime(1);
 }
 
-DEATH_TEST_F(VectorClockMongoDTest, CannotTickToTopologyTime, "Hit a MONGO_UNREACHABLE") {
+DEATH_TEST_F(VectorClockMongoDTest, CannotTickToTopologyTime, "invariant") {
     auto sc = getServiceContext();
     auto vc = VectorClockMutable::get(sc);
     vc->tickTopologyTimeTo(LogicalTime());
@@ -187,7 +180,6 @@ TEST_F(VectorClockMongoDTest, GossipOutInternal) {
     auto vc = VectorClockMutable::get(sc);
 
     LogicalTimeValidator::get(getServiceContext())->enableKeyGenerator(operationContext(), true);
-    refreshKeyManager();
 
     const auto clusterTime = vc->tickClusterTime(1);
 
@@ -208,7 +200,6 @@ TEST_F(VectorClockMongoDTest, GossipOutExternal) {
     auto vc = VectorClockMutable::get(sc);
 
     LogicalTimeValidator::get(getServiceContext())->enableKeyGenerator(operationContext(), true);
-    refreshKeyManager();
 
     const auto clusterTime = vc->tickClusterTime(1);
 

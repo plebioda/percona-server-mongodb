@@ -6,16 +6,6 @@ Import("get_option")
 env = env.Clone()
 
 env.Library(
-    target="mongo_process_interface",
-    source=[
-        "mongo_process_interface.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="common_process_interface",
     source=[
         "common_process_interface.cpp",
@@ -62,6 +52,7 @@ env.Library(
         "$BUILD_DIR/mongo/db/ops/write_ops",
         "$BUILD_DIR/mongo/db/repl/primary_only_service",
         "$BUILD_DIR/mongo/db/s/query_analysis_writer",
+        "$BUILD_DIR/mongo/db/s/transaction_coordinator",
         "$BUILD_DIR/mongo/db/server_feature_flags",
         "$BUILD_DIR/mongo/db/session/session_catalog",
         "$BUILD_DIR/mongo/db/stats/top",
@@ -118,8 +109,8 @@ env.Library(
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/pipeline/pipeline",
         "$BUILD_DIR/mongo/db/pipeline/sharded_agg_helpers",
-        "$BUILD_DIR/mongo/s/query/async_results_merger",
-        "$BUILD_DIR/mongo/s/query/cluster_query",
+        "$BUILD_DIR/mongo/s/query/exec/async_results_merger",
+        "$BUILD_DIR/mongo/s/query/exec/cluster_cursor",
         "common_process_interface",
     ],
     LIBDEPS_PRIVATE=[

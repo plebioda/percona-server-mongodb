@@ -1,3 +1,7 @@
 version: 1.0.0
 options:
   no_parent_owners: true
+filters:
+  - "analyze_shard_key.py":
+    approvers:
+      - 10gen/server-cluster-scalability

@@ -546,6 +546,11 @@ void ReplicationCoordinatorNoOp::createWMajorityWriteAvailabilityDateWaiter(OpTi
     MONGO_UNREACHABLE;
 }
 
+Status ReplicationCoordinatorNoOp::waitForPrimaryMajorityReadsAvailable(
+    OperationContext* opCtx) const {
+    MONGO_UNREACHABLE;
+}
+
 void ReplicationCoordinatorNoOp::clearCommittedSnapshot() {
     MONGO_UNREACHABLE;
 }
@@ -655,6 +660,14 @@ OpTime ReplicationCoordinatorNoOp::getMyLastWrittenOpTime() const {
 
 OpTimeAndWallTime ReplicationCoordinatorNoOp::getMyLastWrittenOpTimeAndWallTime(
     bool rollbackSafe) const {
+    MONGO_UNREACHABLE;
+}
+
+bool ReplicationCoordinatorNoOp::isDataConsistent() const {
+    MONGO_UNREACHABLE;
+}
+
+void ReplicationCoordinatorNoOp::clearSyncSource() {
     MONGO_UNREACHABLE;
 }
 

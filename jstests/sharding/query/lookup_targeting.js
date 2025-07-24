@@ -10,7 +10,8 @@
  *   requires_profiling,
  *   # Needed to run createUnsplittableCollection
  *   featureFlagAuthoritativeShardCollection,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  *   requires_fcv_80,
  *   # TODO (SERVER-89166) Remove the multiversion_incompatible once the bug is fixed
  *   # Old binary version nodes are started up with different parameters than the new binary nodes,
@@ -24,6 +25,7 @@ import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
 import {checkSbeRestrictedOrFullyEnabled} from "jstests/libs/sbe_util.js";
 import {ShardTargetingTest} from "jstests/libs/shard_targeting_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const kDbName = "lookup_targeting";
 const st = new ShardingTest({shards: 3, mongos: 2});
@@ -1031,11 +1033,10 @@ if (checkSbeRestrictedOrFullyEnabled(db)) {
 
     // Function which runs our $lookup and asserts the expected results. Used to gossip the updated
     // routing information of the inner collection.
-    const runAggregateToRefresh =
-        () => {
-            assert.eq(db[kUnsplittable1CollName].aggregate(sbeLookupPipeline).toArray(),
-                      expectedResults);
-        }
+    const runAggregateToRefresh = () => {
+        assert.eq(db[kUnsplittable1CollName].aggregate(sbeLookupPipeline).toArray(),
+                  expectedResults);
+    };
 
     // Function which verifies that SBE $lookup fails with a 'QueryPlanKilled' error when a
     // collection is moved across getMore commands.
@@ -1071,9 +1072,9 @@ if (checkSbeRestrictedOrFullyEnabled(db)) {
             funWithArgs(function(dbName, collName, pipeline) {
                 // At some point during yielding, we expect a QueryPlanKilled error because the
                 // underlying sharding state has changed
-                assert.throwsWithCode(
-                    () => {db.getSiblingDB(dbName)[collName].aggregate(pipeline).toArray()},
-                    ErrorCodes.QueryPlanKilled);
+                assert.throwsWithCode(() => {
+                    db.getSiblingDB(dbName)[collName].aggregate(pipeline).toArray();
+                }, ErrorCodes.QueryPlanKilled);
             }, kDbName, kUnsplittable1CollName, sbeLookupPipeline), st.s.port);
 
         failpoint.wait();

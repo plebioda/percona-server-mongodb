@@ -69,12 +69,6 @@ public:
 
     ~DocumentSourceMatch() override = default;
 
-    boost::intrusive_ptr<DocumentSource> clone(
-        const boost::intrusive_ptr<ExpressionContext>& newExpCtx) const override {
-        // Raw new is needed to access non-public constructors.
-        return new DocumentSourceMatch(*this, newExpCtx);
-    }
-
     static constexpr StringData kStageName = "$match"_sd;
     /**
      * Convenience method for creating a $match stage.
@@ -126,15 +120,17 @@ public:
     const char* getSourceName() const override;
 
     StageConstraints constraints(Pipeline::SplitState pipeState) const override {
-        return {StreamType::kStreaming,
-                PositionRequirement::kNone,
-                HostTypeRequirement::kNone,
-                DiskUseRequirement::kNoDiskUse,
-                FacetRequirement::kAllowed,
-                TransactionRequirement::kAllowed,
-                LookupRequirement::kAllowed,
-                UnionRequirement::kAllowed,
-                ChangeStreamRequirement::kAllowlist};
+        StageConstraints constraints{StreamType::kStreaming,
+                                     PositionRequirement::kNone,
+                                     HostTypeRequirement::kNone,
+                                     DiskUseRequirement::kNoDiskUse,
+                                     FacetRequirement::kAllowed,
+                                     TransactionRequirement::kAllowed,
+                                     LookupRequirement::kAllowed,
+                                     UnionRequirement::kAllowed,
+                                     ChangeStreamRequirement::kAllowlist};
+        constraints.noFieldModifications = true;
+        return constraints;
     }
 
     Value serialize(const SerializationOptions& opts = SerializationOptions{}) const override;
@@ -260,6 +256,44 @@ private:
     bool _isTextQuery{false};
     boost::optional<MatchProcessor> _matchProcessor;
     SbeCompatibility _sbeCompatibility{SbeCompatibility::notCompatible};
+};
+
+/**
+ * A DocumentSource class for all internal change stream stages that are also match stages. This
+ * currently handles parsing for query stats.
+ */
+class DocumentSourceInternalChangeStreamMatch : public DocumentSourceMatch {
+public:
+    DocumentSourceInternalChangeStreamMatch(std::unique_ptr<MatchExpression> expr,
+                                            const boost::intrusive_ptr<ExpressionContext>& expCtx)
+        : DocumentSourceMatch(std::move(expr), expCtx) {}
+
+    static boost::intrusive_ptr<DocumentSourceInternalChangeStreamMatch> create(
+        BSONObj filter, const boost::intrusive_ptr<ExpressionContext>& expCtx);
+
+    /**
+     * Must override the serialize method, since internal change stream stages are serialized
+     * differently than match stages. This function mirrors
+     * DocumentSourceInternalChangeStreamStage::serialize and was added because this class cannot
+     * inherit from both DocumentSourceInternalChangeStreamStage and DocumentSourceMatch.
+     */
+    Value serialize(const SerializationOptions& opts = SerializationOptions{}) const final;
+
+    virtual Value doSerialize(const SerializationOptions& opts) const {
+        return DocumentSourceMatch::serialize(opts);
+    };
+
+protected:
+    DocumentSourceInternalChangeStreamMatch(const BSONObj& query,
+                                            const boost::intrusive_ptr<ExpressionContext>& expCtx)
+        : DocumentSourceMatch(query, expCtx) {}
+
+    DocumentSourceInternalChangeStreamMatch(
+        const DocumentSourceInternalChangeStreamMatch& other,
+        const boost::intrusive_ptr<ExpressionContext>& newExpCtx)
+        : DocumentSourceMatch(
+              other.serialize().getDocument().toBson().firstElement().embeddedObject(),
+              newExpCtx ? newExpCtx : other.pExpCtx) {}
 };
 
 }  // namespace mongo

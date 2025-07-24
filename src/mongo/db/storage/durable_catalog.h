@@ -81,6 +81,15 @@ public:
 
     /**
      * `Entry` ties together the common identifiers of a single `_mdb_catalog` document.
+     *
+     * Idents can come in 4 forms depending on server parameters:
+     * wtdfi    = --wiredTigerDirectoryForIndexes
+     * dirperdb = --directoryperdb
+     *
+     * default:          <collection|index>-<counter>-<random number>
+     * dirperdb:         <db>/<collection|index>-<counter>-<random number>
+     * wtdfi:            <collection|index>/<counter>-<random number>
+     * dirperdb & wtdfi: <db>/<collection|index>/<counter>-<random number>
      */
     struct EntryIdentifier {
         EntryIdentifier() {}
@@ -154,6 +163,13 @@ public:
 
     EntryIdentifier getEntry(const RecordId& catalogId) const;
 
+    /**
+     * First tries to return the in-memory entry. If not found, e.g. when collection is dropped
+     * after the provided timestamp, loads the entry from the persisted catalog at the provided
+     * timestamp.
+     */
+    NamespaceString getNSSFromCatalog(OperationContext* opCtx, const RecordId& catalogId) const;
+
     std::string getIndexIdent(OperationContext* opCtx,
                               const RecordId& id,
                               StringData idxName) const;
@@ -164,7 +180,8 @@ public:
      * Get a raw catalog entry for catalogId as BSON.
      */
     BSONObj getCatalogEntry(OperationContext* opCtx, const RecordId& catalogId) const {
-        return _findEntry(opCtx, catalogId);
+        auto cursor = _rs->getCursor(opCtx);
+        return _findEntry(*cursor, catalogId).getOwned();
     }
 
     /**
@@ -340,7 +357,11 @@ private:
     friend class DurableCatalogTest;
     friend class StorageEngineTest;
 
-    BSONObj _findEntry(OperationContext* opCtx, const RecordId& catalogId) const;
+    /**
+     * Finds the durable catalog entry using the provided RecordStore cursor.
+     * The returned BSONObj is unowned and is only valid while the cursor is positioned.
+     */
+    BSONObj _findEntry(SeekableRecordCursor& cursor, const RecordId& catalogId) const;
     StatusWith<EntryIdentifier> _addEntry(OperationContext* opCtx,
                                           NamespaceString nss,
                                           const CollectionOptions& options);

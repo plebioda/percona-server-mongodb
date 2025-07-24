@@ -168,10 +168,6 @@ public:
         return _modeForTicket == MODE_IX || _modeForTicket == MODE_X;
     }
 
-    Microseconds getTimeQueuedForTicketMicros() const {
-        return _timeQueuedForTicketMicros;
-    }
-
     /**
      * This should be the first method invoked for a particular Locker object. It acquires the
      * Global lock in the specified mode and effectively indicates the mode of the operation.
@@ -266,11 +262,6 @@ public:
               ResourceId resId,
               LockMode mode,
               Date_t deadline = Date_t::max());
-
-    /**
-     * Downgrades the specified resource's lock mode without changing the reference count.
-     */
-    void downgrade(ResourceId resId, LockMode newMode);
 
     /**
      * Releases a lock previously acquired through a lock call. It is an error to try to
@@ -463,6 +454,17 @@ public:
     }
 
     /**
+     * When true, fatally assert when a lock acquisition or ticket acquisition is attempted.
+     */
+    void setAssertOnLockAttempt(bool assert) {
+        _assertOnLockAttempt = assert;
+    }
+
+    bool getAssertOnLockAttempt() const {
+        return _assertOnLockAttempt;
+    }
+
+    /**
      * Retrieves the mode in which a lock is held or checks whether the lock held for a particular
      * resource covers the specified mode.
      *
@@ -525,7 +527,7 @@ public:
     /**
      * Returns a vector with the lock information from the given resource lock holders.
      */
-    std::vector<LogDegugInfo> getLockInfoFromResourceHolders(ResourceId resId) const;
+    std::vector<LogDebugInfo> getLockInfoFromResourceHolders(ResourceId resId) const;
 
     void dump() const;
 
@@ -555,10 +557,6 @@ public:
 
     bool isRSTLExclusive() const {
         return getLockMode(resourceIdReplicationStateTransitionLock) == MODE_X;
-    }
-
-    void addTicketQueueTime(Milliseconds queueTime) {
-        _timeQueuedForTicketMicros += duration_cast<Microseconds>(queueTime);
     }
 
     void addFlowControlTicketQueueTime(Milliseconds queueTime) {
@@ -737,10 +735,6 @@ protected:
     // db.currentOp. Complementary to the per-instance locking statistics.
     AtomicLockStats _stats;
 
-    // If set to true, this opts out of a fatal assertion where operations which are holding open an
-    // oplog hole cannot try to acquire subsequent locks.
-    bool _shouldAllowLockAcquisitionOnTimestampedUnitOfWork = false;
-
     /**
      * The number of LockRequests to unlock at the end of this WUOW. This is used for locks
      * participating in two-phase locking.
@@ -772,9 +766,6 @@ protected:
     // This will only be valid when holding a ticket.
     boost::optional<Ticket> _ticket;
 
-    // Tracks accumulated time spent waiting for a ticket.
-    Microseconds _timeQueuedForTicketMicros{0};
-
     // Tracks the global lock modes ever acquired in this Locker's life. This value should only ever
     // be accessed from the thread that owns the Locker.
     unsigned char _globalLockMode = (1 << MODE_NONE);
@@ -785,6 +776,9 @@ protected:
     // If isValid(), the ResourceId of the resource currently waiting for the lock. If not valid,
     // there is no resource currently waiting.
     ResourceId _waitingResource;
+
+    // When true, fatally assert when a lock acquisition or ticket acquisition is attempted.
+    bool _assertOnLockAttempt = false;
 };
 
 /**
@@ -801,9 +795,8 @@ protected:
 class AllowLockAcquisitionOnTimestampedUnitOfWork {
 public:
     explicit AllowLockAcquisitionOnTimestampedUnitOfWork(Locker* locker)
-        : _locker(locker),
-          _originalValue(_locker->_shouldAllowLockAcquisitionOnTimestampedUnitOfWork) {
-        _locker->_shouldAllowLockAcquisitionOnTimestampedUnitOfWork = true;
+        : _locker(locker), _originalValue(_locker->getAssertOnLockAttempt()) {
+        _locker->setAssertOnLockAttempt(false);
     }
 
     AllowLockAcquisitionOnTimestampedUnitOfWork(
@@ -812,7 +805,7 @@ public:
         const AllowLockAcquisitionOnTimestampedUnitOfWork&) = delete;
 
     ~AllowLockAcquisitionOnTimestampedUnitOfWork() {
-        _locker->_shouldAllowLockAcquisitionOnTimestampedUnitOfWork = _originalValue;
+        _locker->setAssertOnLockAttempt(_originalValue);
     }
 
 private:

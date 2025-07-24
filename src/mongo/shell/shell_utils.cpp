@@ -61,6 +61,7 @@
 #include "mongo/base/status.h"
 #include "mongo/base/status_with.h"
 #include "mongo/bson/bsonmisc.h"
+#include "mongo/bson/bsonobj_comparator.h"
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/bsontypes.h"
 #include "mongo/client/client_api_version_parameters_gen.h"
@@ -74,6 +75,7 @@
 #include "mongo/db/auth/validated_tenancy_scope_factory.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/hasher.h"
+#include "mongo/db/query/collation/collator_factory_icu.h"
 #include "mongo/platform/decimal128.h"
 #include "mongo/platform/mutex.h"
 #include "mongo/platform/random.h"
@@ -154,9 +156,7 @@ boost::filesystem::path mongo::shell_utils::getHistoryFilePath() {
 namespace mongo {
 namespace JSFiles {
 extern const JSFile servers;
-extern const JSFile shardingtest;
 extern const JSFile servers_misc;
-extern const JSFile replsettest;
 extern const JSFile data_consistency_checker;
 extern const JSFile bridge;
 extern const JSFile feature_compatibility_version;
@@ -563,7 +563,10 @@ BSONObj numberDecimalsEqual(const BSONObj& input, void*) {
 
 BSONObj numberDecimalsAlmostEqual(const BSONObj& input, void*) {
     if (input.nFields() != 3) {
-        return BSON("" << false);
+        uassert(9193200,
+                "numberDecimalsAlmostEqual expects three arguments, two NumberDecimal inputs and an"
+                "integer for how many decimal places to check.",
+                input.nFields() == 3);
     }
 
     BSONObjIterator i(input);
@@ -744,6 +747,10 @@ BSONObj _buildBsonObj(const BSONObj& args, void*) {
         if (name.type() == BSONType::EOO) {
             break;
         }
+
+        uassert(9197700,
+                str::stream() << "BSON field name must not contain null terminators.",
+                std::string::npos == name.str().find('\0'));
         uassert(7587900,
                 str::stream() << "BSON field name must be a string: " << name,
                 name.type() == BSONType::String);
@@ -782,6 +789,241 @@ BSONObj _fnvHashToHexString(const BSONObj& args, void*) {
     return BSON("" << fmt::format("{0:x}", hashed));
 }
 
+// Comparison function for sorting BSON elements in an array.
+bool cmpBSONElements(const BSONElement& lhs, const BSONElement& rhs) {
+    // Use the woCompare method with no bits set, so field names are ignored. This is helpful for
+    // comparing elements in an array without considering their initial ordering/id.
+    BSONObj lhsObj = lhs.wrap();
+    BSONObj rhsObj = rhs.wrap();
+    return lhsObj.woCompare(rhsObj, BSONObj(), false, nullptr) < 0;
+}
+
+void sortBSONObjectInternallyHelper(const BSONObj& input,
+                                    BSONObjBuilder& bob,
+                                    NormalizationOptsSet opts);
+
+// Helper for `sortBSONObjectInternally`, handles a BSONElement for different recursion cases.
+void sortBSONElementInternally(const BSONElement& el,
+                               BSONObjBuilder& bob,
+                               NormalizationOptsSet opts) {
+    if (el.type() == BSONType::Array) {
+        std::vector<BSONElement> arr = el.Array();
+
+        if (isSet(opts, NormalizationOpts::kSortArrays)) {
+            // Sort each individual BSONElement in the array internally.
+            std::vector<BSONObj> sortedObjs;
+            for (const auto& child : arr) {
+                BSONObjBuilder tmp;
+                sortBSONElementInternally(child, tmp, opts);
+                sortedObjs.push_back(tmp.obj());
+            }
+
+            // Sort the top-level elements in the array among each other. The elements have already
+            // been sorted individually.
+            std::sort(
+                sortedObjs.begin(), sortedObjs.end(), [&](const BSONObj& lhs, const BSONObj& rhs) {
+                    return cmpBSONElements(lhs.firstElement(), rhs.firstElement());
+                });
+
+            // Append the elements back to the top-level BSONObjBuilder.
+            BSONArrayBuilder sub(bob.subarrayStart(el.fieldNameStringData()));
+            for (const auto& child : sortedObjs) {
+                sub.append(child.firstElement());
+            }
+            sub.doneFast();
+        } else {
+            BSONObjBuilder sub(bob.subarrayStart(el.fieldNameStringData()));
+            for (const auto& child : arr) {
+                sortBSONElementInternally(child, sub, opts);
+            }
+            sub.doneFast();
+        }
+    } else if (el.type() == BSONType::Object) {
+        BSONObjBuilder sub(bob.subobjStart(el.fieldNameStringData()));
+        sortBSONObjectInternallyHelper(el.Obj(), sub, opts);
+        sub.doneFast();
+    } else {
+        bob.append(el);
+    }
+}
+
+void sortBSONObjectInternallyHelper(const BSONObj& input,
+                                    BSONObjBuilder& bob,
+                                    NormalizationOptsSet opts) {
+    BSONObjIteratorSorted it(input);
+    while (it.more()) {
+        sortBSONElementInternally(it.next(), bob, opts);
+    }
+}
+
+/**
+ * Returns a new BSON with the same field/value pairings, but is recursively sorted by the fields.
+ * By default, arrays are not sorted unless NormalizationOptsSet has the kSortArrays bit set.
+ */
+BSONObj sortBSONObjectInternally(const BSONObj& input,
+                                 NormalizationOptsSet opts = NormalizationOpts::kSortBSON) {
+    BSONObjBuilder bob(input.objsize());
+    sortBSONObjectInternallyHelper(input, bob, opts);
+    return bob.obj();
+}
+
+void sortQueryResults(std::vector<BSONObj>& input) {
+    std::sort(input.begin(), input.end(), [&](const BSONObj& lhs, const BSONObj& rhs) {
+        return SimpleBSONObjComparator::kInstance.evaluate(lhs < rhs);
+    });
+}
+
+void normalizeNumericElementsHelper(const BSONObj& input, BSONObjBuilder& bob);
+
+void normalizeNumericElements(const BSONElement& el, BSONObjBuilder& bob) {
+    switch (el.type()) {
+        case NumberInt:
+        case NumberLong:
+        case NumberDouble:
+        case NumberDecimal: {
+            bob.append(el.fieldName(), el.numberDecimal().normalize());
+            break;
+        }
+        case Array: {
+            BSONObjBuilder sub(bob.subarrayStart(el.fieldNameStringData()));
+            for (const auto& child : el.Array()) {
+                normalizeNumericElements(child, sub);
+            }
+            sub.doneFast();
+            break;
+        }
+        case Object: {
+            BSONObjBuilder sub(bob.subobjStart(el.fieldNameStringData()));
+            normalizeNumericElementsHelper(el.Obj(), sub);
+            sub.doneFast();
+            break;
+        }
+        default:
+            bob.append(el);
+            break;
+    }
+}
+
+void normalizeNumericElementsHelper(const BSONObj& input, BSONObjBuilder& bob) {
+    BSONObjIterator it(input);
+    while (it.more()) {
+        normalizeNumericElements(it.next(), bob);
+    }
+}
+
+/**
+ * Returns a new BSONObj with the same field/value pairings, but with numeric types converted into
+ * Decimal128 and normalized to maximum precision. For example, NumberInt(1), NumberLong(1), 1.0,
+ * and NumberDecimal('1.0000') would be normalized into the same number.
+ */
+BSONObj normalizeNumerics(const BSONObj& input) {
+    BSONObjBuilder bob(input.objsize());
+    normalizeNumericElementsHelper(input, bob);
+    return bob.obj();
+}
+
+BSONObj normalizeBSONObj(const BSONObj& input, NormalizationOptsSet opts) {
+    BSONObj result = input;
+    if (isSet(opts, NormalizationOpts::kNormalizeNumerics)) {
+        result = normalizeNumerics(input);
+    }
+    if (isSet(opts, NormalizationOpts::kSortBSON)) {
+        result = sortBSONObjectInternally(result, opts);
+    }
+    return result;
+}
+
+/*
+ * Takes two arrays of documents, and returns whether they contain the same set of BSON Objects. The
+ * BSON do not need to be in the same order for this to return true. Has no special logic for
+ * handling double/NumberDecimal closeness.
+ */
+BSONObj _resultSetsEqualUnordered(const BSONObj& input, void*) {
+    BSONObjIterator i(input);
+    auto first = i.next();
+    auto second = i.next();
+    uassert(9193201,
+            str::stream() << "_resultSetsEqualUnordered expects two arrays of containing objects "
+                             "as input received "
+                          << first.type() << " and " << second.type(),
+            first.type() == BSONType::Array && second.type() == BSONType::Array);
+
+    auto firstAsBson = first.Array();
+    auto secondAsBson = second.Array();
+
+    for (const auto& el : firstAsBson) {
+        uassert(9193202,
+                str::stream() << "_resultSetsEqualUnordered expects all elements of input arrays "
+                                 "to be objects, received "
+                              << el.type(),
+                el.type() == BSONType::Object);
+    }
+    for (const auto& el : secondAsBson) {
+        uassert(9193203,
+                str::stream() << "_resultSetsEqualUnordered expects all elements of input arrays "
+                                 "to be objects, received "
+                              << el.type(),
+                el.type() == BSONType::Object);
+    }
+
+    if (firstAsBson.size() != secondAsBson.size()) {
+        return BSON("" << false);
+    }
+
+    // Optimistically assume they're already in the same order.
+    if (first.binaryEqualValues(second)) {
+        return BSON("" << true);
+    }
+
+    std::vector<BSONObj> firstSorted;
+    std::vector<BSONObj> secondSorted;
+    for (size_t i = 0; i < firstAsBson.size(); i++) {
+        firstSorted.push_back(sortBSONObjectInternally(firstAsBson[i].Obj()));
+        secondSorted.push_back(sortBSONObjectInternally(secondAsBson[i].Obj()));
+    }
+
+    sortQueryResults(firstSorted);
+    sortQueryResults(secondSorted);
+
+    for (size_t i = 0; i < firstSorted.size(); i++) {
+        if (!firstSorted[i].binaryEqual(secondSorted[i])) {
+            return BSON("" << false);
+        }
+    }
+
+    return BSON("" << true);
+}
+
+/*
+ * Takes two strings and a valid collation document and returns the comparison result (a number < 0
+ * if 'left' is less than 'right', a number > 0 if 'left' is greater than 'right', and 0 if 'left'
+ * and 'right' are equal) with respect to the collation
+ * Refer to https://www.mongodb.com/docs/manual/reference/collation and
+ * https://unicode-org.github.io/icu/userguide/collation for the expected behaviour when collation
+ * is specified
+ */
+BSONObj _compareStringsWithCollation(const BSONObj& input, void*) {
+    BSONObjIterator i(input);
+
+    uassert(9367800, "Expected left argument", i.more());
+    auto left = i.next();
+    uassert(9367801, "Left argument should be a string", left.type() == BSONType::String);
+
+    uassert(9367802, "Expected right argument", i.more());
+    auto right = i.next();
+    uassert(9367803, "Right argument should be string", right.type() == BSONType::String);
+
+    uassert(9367804, "Expected collation argument", i.more());
+    auto collatorSpec = i.next();
+    uassert(9367805, "Expected a collation object", collatorSpec.type() == BSONType::Object);
+
+    CollatorFactoryICU collationFactory;
+    auto collator = uassertStatusOK(collationFactory.makeFromBSON(collatorSpec.Obj()));
+
+    int cmp = collator->compare(left.valueStringData(), right.valueStringData());
+    return BSON("" << cmp);
+}
+
 void installShellUtils(Scope& scope) {
     scope.injectNative("getMemInfo", JSGetMemInfo);
     scope.injectNative("_createSecurityToken", _createSecurityToken);
@@ -804,6 +1046,8 @@ void installShellUtils(Scope& scope) {
     scope.injectNative("_closeGoldenData", _closeGoldenData);
     scope.injectNative("_buildBsonObj", _buildBsonObj);
     scope.injectNative("_fnvHashToHexString", _fnvHashToHexString);
+    scope.injectNative("_resultSetsEqualUnordered", _resultSetsEqualUnordered);
+    scope.injectNative("_compareStringsWithCollation", _compareStringsWithCollation);
 
     installShellUtilsLauncher(scope);
     installShellUtilsExtended(scope);
@@ -827,9 +1071,7 @@ void initScope(Scope& scope) {
     scope.externalSetup();
     mongo::shell_utils::installShellUtils(scope);
     scope.execSetup(JSFiles::servers);
-    scope.execSetup(JSFiles::shardingtest);
     scope.execSetup(JSFiles::servers_misc);
-    scope.execSetup(JSFiles::replsettest);
     scope.execSetup(JSFiles::data_consistency_checker);
     scope.execSetup(JSFiles::bridge);
     scope.execSetup(JSFiles::feature_compatibility_version);

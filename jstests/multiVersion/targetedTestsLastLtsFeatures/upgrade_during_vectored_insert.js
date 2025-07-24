@@ -7,6 +7,7 @@ import "jstests/multiVersion/libs/multi_rs.js";
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 "use strict";
 
@@ -48,7 +49,7 @@ let insertThread = new Thread(function(host, testCollFullName) {
     TestData.disableImplicitSessions = true;
     assert(jsTest.options().disableImplicitSessions);
     let conn = new Mongo(host);
-    let testColl = conn.getCollection(testCollFullName)
+    let testColl = conn.getCollection(testCollFullName);
     // Run a batch that will fail on the last document due to a DuplicateKeyError.
     jsTestLog("Inserting data");
     let res = testColl.insert(

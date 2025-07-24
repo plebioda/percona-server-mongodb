@@ -3,8 +3,11 @@
  *
  * @tags: [
  *  featureFlagReshardingForTimeseries,
+ *  requires_fcv_80,
  * ]
  */
+
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({mongos: 1, shards: 2});
 const kDbName = 'db';
@@ -29,7 +32,7 @@ assert.commandWorked(st.s.adminCommand({
     timeseries: timeseriesOptions,
 }));
 
-const kBucketCollName = "system.buckets.foo"
+const kBucketCollName = "system.buckets.foo";
 
 const doc1 = {
     data: 1,

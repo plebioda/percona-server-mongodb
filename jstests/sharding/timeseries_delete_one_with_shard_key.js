@@ -5,10 +5,10 @@
  *   # TODO (SERVER-70605): Remove this tag once the time-series always compressed buckets feature
  *   # flag can be removed.
  *   multiversion_incompatible,
- *   # To avoid burn-in tests in in-memory build variants
- *   requires_persistence,
  * ]
  */
+
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({shards: 2, rs: {nodes: 2}});
 

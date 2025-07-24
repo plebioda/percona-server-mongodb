@@ -1,0 +1,29 @@
+load("//bazel:mongo_src_rules.bzl", "mongo_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    glob([
+        "*.h",
+        "*.cpp",
+    ]),
+)
+
+mongo_cc_library(
+    name = "update_document_diff",
+    srcs = [
+        "document_diff_applier.cpp",
+        "document_diff_calculator.cpp",
+        "document_diff_serialization.cpp",
+    ],
+    hdrs = [
+        "document_diff_calculator.h",
+        "//src/mongo/base:error_codes_header",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/bson/mutable:mutable_bson",
+        "//src/mongo/db:common",
+        "//src/mongo/db:update_index_data",
+    ],
+)

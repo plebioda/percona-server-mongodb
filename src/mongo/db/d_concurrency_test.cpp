@@ -372,135 +372,6 @@ TEST_F(DConcurrencyTestFixture, GlobalWriteAndGlobalRead) {
     ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
 }
 
-TEST_F(DConcurrencyTestFixture,
-       GlobalWriteRequiresExplicitDowngradeToIntentWriteModeIfDestroyedWhileHoldingDatabaseLock) {
-    auto opCtx = makeOperationContextWithLocker();
-    auto lockState = shard_role_details::getLocker(opCtx.get());
-
-    auto globalWrite = std::make_unique<Lock::GlobalWrite>(opCtx.get());
-    ASSERT(lockState->isW());
-    ASSERT(MODE_X == lockState->getLockMode(resourceIdGlobal))
-        << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-    ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-
-    {
-        Lock::DBLock dbWrite(
-            opCtx.get(), DatabaseName::createDatabaseName_forTest(boost::none, "db"), MODE_IX);
-        ASSERT(lockState->isW());
-        ASSERT(MODE_X == lockState->getLockMode(resourceIdGlobal))
-            << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-
-        // If we destroy the GlobalWrite out of order relative to the DBLock, we will leave the
-        // global lock resource locked in MODE_X. We have to explicitly downgrade this resource to
-        // MODE_IX to allow other write operations to make progress.
-        // This test case illustrates non-recommended usage of the RAII types. See SERVER-30948.
-        globalWrite = {};
-        ASSERT(lockState->isW());
-        ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-
-        lockState->downgrade(resourceIdGlobal, MODE_IX);
-        ASSERT_FALSE(lockState->isW());
-        ASSERT(lockState->isWriteLocked());
-        ASSERT(MODE_IX == lockState->getLockMode(resourceIdGlobal))
-            << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-        ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-    }
-
-
-    ASSERT_FALSE(lockState->isW());
-    ASSERT_FALSE(lockState->isWriteLocked());
-    ASSERT(MODE_NONE == lockState->getLockMode(resourceIdGlobal))
-        << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-    ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_NONE);
-}
-
-TEST_F(DConcurrencyTestFixture,
-       GlobalWriteRequiresSupportsDowngradeToIntentWriteModeWhileHoldingDatabaseLock) {
-    auto opCtx = makeOperationContextWithLocker();
-    auto lockState = shard_role_details::getLocker(opCtx.get());
-
-    auto globalWrite = std::make_unique<Lock::GlobalWrite>(opCtx.get());
-    ASSERT(lockState->isW());
-    ASSERT(MODE_X == lockState->getLockMode(resourceIdGlobal))
-        << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-    ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-
-    {
-        Lock::DBLock dbWrite(
-            opCtx.get(), DatabaseName::createDatabaseName_forTest(boost::none, "db"), MODE_IX);
-        ASSERT(lockState->isW());
-        ASSERT(MODE_X == lockState->getLockMode(resourceIdGlobal))
-            << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-        ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-
-        // Downgrade global lock resource to MODE_IX to allow other write operations to make
-        // progress.
-        lockState->downgrade(resourceIdGlobal, MODE_IX);
-        ASSERT_FALSE(lockState->isW());
-        ASSERT(lockState->isWriteLocked());
-        ASSERT(MODE_IX == lockState->getLockMode(resourceIdGlobal))
-            << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-        ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-    }
-
-    ASSERT_FALSE(lockState->isW());
-    ASSERT(lockState->isWriteLocked());
-    ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-
-    globalWrite = {};
-    ASSERT_FALSE(lockState->isW());
-    ASSERT_FALSE(lockState->isWriteLocked());
-    ASSERT(MODE_NONE == lockState->getLockMode(resourceIdGlobal))
-        << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-    ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_NONE);
-}
-
-TEST_F(DConcurrencyTestFixture,
-       NestedGlobalWriteSupportsDowngradeToIntentWriteModeWhileHoldingDatabaseLock) {
-    auto opCtx = makeOperationContextWithLocker();
-    auto lockState = shard_role_details::getLocker(opCtx.get());
-
-    auto outerGlobalWrite = std::make_unique<Lock::GlobalWrite>(opCtx.get());
-    auto innerGlobalWrite = std::make_unique<Lock::GlobalWrite>(opCtx.get());
-    ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-
-    {
-        Lock::DBLock dbWrite(
-            opCtx.get(), DatabaseName::createDatabaseName_forTest(boost::none, "db"), MODE_IX);
-        ASSERT(lockState->isW());
-        ASSERT(MODE_X == lockState->getLockMode(resourceIdGlobal))
-            << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-        ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-
-        // Downgrade global lock resource to MODE_IX to allow other write operations to make
-        // progress.
-        lockState->downgrade(resourceIdGlobal, MODE_IX);
-        ASSERT_FALSE(lockState->isW());
-        ASSERT(lockState->isWriteLocked());
-        ASSERT(MODE_IX == lockState->getLockMode(resourceIdGlobal))
-            << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-        ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-    }
-
-    ASSERT_FALSE(lockState->isW());
-    ASSERT(lockState->isWriteLocked());
-    ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-
-    innerGlobalWrite = {};
-    ASSERT_FALSE(lockState->isW());
-    ASSERT(lockState->isWriteLocked());
-    ASSERT(MODE_IX == lockState->getLockMode(resourceIdGlobal))
-        << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-    ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_IX);
-
-    outerGlobalWrite = {};
-    ASSERT_FALSE(lockState->isW());
-    ASSERT_FALSE(lockState->isWriteLocked());
-    ASSERT(MODE_NONE == lockState->getLockMode(resourceIdGlobal))
-        << "unexpected global lock mode " << modeName(lockState->getLockMode(resourceIdGlobal));
-    ASSERT_EQ(lockState->getLockMode(resourceIdReplicationStateTransitionLock), MODE_NONE);
-}
-
 TEST_F(DConcurrencyTestFixture, GlobalLockS_Timeout) {
     auto clients = makeKClientsWithLockers(2);
 
@@ -2505,6 +2376,32 @@ TEST_F(DConcurrencyTestFixture, TestGlobalLockAbandonsSnapshotWhenNotInWriteUnit
 
         ASSERT(recovUnitBorrowed->activeTransaction);
         ASSERT(gw1.isLocked());
+    }
+    ASSERT_FALSE(recovUnitBorrowed->activeTransaction);
+}
+
+TEST_F(DConcurrencyTestFixture, TestGlobalLockAbandonsSnapshotWhenAllGlobalLocksAreReleased) {
+    auto clients = makeKClientsWithLockers(1);
+    auto opCtx = clients[0].second.get();
+    auto recovUnitOwned = std::make_unique<RecoveryUnitMock>();
+    auto recovUnitBorrowed = recovUnitOwned.get();
+    shard_role_details::setRecoveryUnit(opCtx,
+                                        std::unique_ptr<RecoveryUnit>(recovUnitOwned.release()),
+                                        WriteUnitOfWork::RecoveryUnitState::kNotInUnitOfWork);
+
+    {
+        boost::optional<Lock::GlobalLock> gw1 =
+            Lock::GlobalLock(opCtx, MODE_IS, Date_t::now(), Lock::InterruptBehavior::kThrow);
+        ASSERT(gw1->isLocked());
+        ASSERT(recovUnitBorrowed->activeTransaction);
+
+        Lock::GlobalLock gw2(opCtx, MODE_IS, Date_t::now(), Lock::InterruptBehavior::kThrow);
+        ASSERT(gw2.isLocked());
+        ASSERT(recovUnitBorrowed->activeTransaction);
+
+        // Clear the first global lock to test out-of-order releases.
+        gw1.reset();
+        ASSERT(recovUnitBorrowed->activeTransaction);
     }
     ASSERT_FALSE(recovUnitBorrowed->activeTransaction);
 }

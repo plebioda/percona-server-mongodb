@@ -36,12 +36,6 @@ feature_flags:
       default: false
       shouldBeFCVGated: false
 
-    featureFlagOptimizerPlanCache:
-      description: "Enables the plan cache for the Cascades-based query optimizer"
-      cpp_varname: gFeatureFlagOptimizerPlanCache
-      default: true
-      shouldBeFCVGated: false
-
     featureFlagColumnstoreIndexes:
       description: "Enables creation of a new columnstore index type"
       cpp_varname: gFeatureFlagColumnstoreIndexes
@@ -79,15 +73,13 @@ feature_flags:
       description: "Feature flag to enable the search batchsize and limit optimization."
       cpp_varname: gFeatureFlagSearchBatchSizeLimit
       default: true
-      version: 7.1
-      shouldBeFCVGated: true
+      shouldBeFCVGated: false
 
     featureFlagAggOutTimeseries:
       description: "Feature flag for enabling support for $out to write to time-series collections"
       cpp_varname: gFeatureFlagAggOutTimeseries
       default: true
-      version: 7.1
-      shouldBeFCVGated: true
+      shouldBeFCVGated: false
 
     featureFlagQuerySettings:
       description: "Feature flag for enabling persistent query settings"
@@ -120,14 +112,6 @@ feature_flags:
       default: true
       shouldBeFCVGated: false
 
-    featureFlagClassicRuntimePlanningForSbe:
-      description: "Enables use of the classic engine's MultiPlanStage and SubplanStage to perform
-                    plan selection for queries that use SBE. When disabled, the SBE multi-planner
-                    and subplanner are used instead."
-      cpp_varname: gFeatureFlagClassicRuntimePlanningForSbe
-      default: true
-      shouldBeFCVGated: false
-
     featureFlagBinDataConvert:
       description: "Feature flag to enable BinData support in $convert."
       cpp_varname: gFeatureFlagBinDataConvert
@@ -138,5 +122,45 @@ feature_flags:
     featureFlagSearchBatchSizeTuning:
       description: "Feature flag to enable batchSize tuning for search queries."
       cpp_varname: gFeatureFlagSearchBatchSizeTuning
+      default: false
+      shouldBeFCVGated: false
+
+    featureFlagSearchHybridScoring:
+      description: "Feature flag to introduce MQL syntax to allow customizable scoring
+                    of multiple ranked pipelines."
+      cpp_varname: gFeatureFlagSearchHybridScoring
+      default: false
+      shouldBeFCVGated: true
+
+    featureFlagBinDataConvertNumeric:
+      description: "Feature flag to enable extended BinData support for int, double and long in $convert."
+      cpp_varname: gFeatureFlagBinDataConvertNumeric
+      default: true
+      version: 8.1
+      shouldBeFCVGated: true
+
+    featureFlagAccuratePercentiles:
+      description: "Feature flag to enable accurate continuous and discrete $percentile accumulator/expression."
+      cpp_varname: gFeatureFlagAccuratePercentiles
+      default: false
+      shouldBeFCVGated: true
+
+    featureFlagSearchHybridScoringPrerequisites:
+      description: "Feature flag to introduce $sigmoid and $minMaxScaler helpers, as well as permit
+                    $vectorSearch within $union and $lookup stages. (M1 and M2 of Vector search
+                    Hybrid Scoring)"
+      cpp_varname: gFeatureFlagSearchHybridScoringPrerequisites
+      default: false
+      shouldBeFCVGated: true
+
+    featureFlagSearchExplainExecutionStats:
+      description: "Feature flag to enable executing search queries for explain."
+      cpp_varname: gFeatureFlagSearchExplainExecutionStats
+      default: false
+      shouldBeFCVGated: false
+
+    featureFlagShardFilteringDistinctScan:
+      description: "Feature flag to support shard filtering in distinct scan optimization"
+      cpp_varname: gFeatureFlagShardFilteringDistinctScan
       default: false
       shouldBeFCVGated: true

@@ -20,6 +20,7 @@
  * @tags: [uses_transactions, uses_prepare_transaction]
  */
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 // Use a single node replica set for simplicity. Note that an oplog hole on a single node replica
 // will block new writes from becoming majority committed.
@@ -83,10 +84,10 @@ const triggerPrepareConflictThread = new Thread(function(host, dbName, collName)
     const session = conn.startSession({retryWrites: true});
     const collection = session.getDatabase(dbName).getCollection(collName);
     jsTestLog("Inserting a conflicting operation while keeping a hole open.");
-    assert.throwsWithCode(
-        () => {collection.findAndModify(
-            {query: {a: 3}, update: {a: 2, fromFindAndModify: true}, upsert: true})},
-        ErrorCodes.DuplicateKey);
+    assert.throwsWithCode(() => {
+        collection.findAndModify(
+            {query: {a: 3}, update: {a: 2, fromFindAndModify: true}, upsert: true});
+    }, ErrorCodes.DuplicateKey);
 }, primary.host, db.getName(), collName);
 
 triggerPrepareConflictThread.start();

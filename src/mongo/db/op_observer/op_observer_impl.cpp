@@ -44,6 +44,7 @@
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/bsonobjbuilder.h"
+#include "mongo/db/catalog/backwards_compatible_collection_options_util.h"
 #include "mongo/db/catalog/collection_catalog.h"
 #include "mongo/db/catalog/collection_operation_source.h"
 #include "mongo/db/catalog/collection_options.h"
@@ -107,9 +108,6 @@
 namespace mongo {
 using repl::MutableOplogEntry;
 using ChangeStreamPreImageRecordingMode = repl::ReplOperation::ChangeStreamPreImageRecordingMode;
-
-const auto destinedRecipientDecoration =
-    OplogDeleteEntryArgs::declareDecoration<boost::optional<ShardId>>();
 
 namespace {
 
@@ -1062,32 +1060,22 @@ void OpObserverImpl::onUpdate(OperationContext* opCtx,
     }
 }
 
-void OpObserverImpl::aboutToDelete(OperationContext* opCtx,
-                                   const CollectionPtr& coll,
-                                   BSONObj const& doc,
-                                   OplogDeleteEntryArgs* args,
-                                   OpStateAccumulator* opAccumulator) {
-    const auto& nss = coll->ns();
-    documentKeyDecoration(args).emplace(getDocumentKey(coll, doc));
-
-    // No need to create ShardingWriteRouter if isOplogDisabledFor is true.
-    if (!repl::ReplicationCoordinator::get(opCtx)->isOplogDisabledFor(opCtx, nss)) {
-        ShardingWriteRouter shardingWriteRouter(opCtx, nss);
-        destinedRecipientDecoration(args) = shardingWriteRouter.getReshardingDestinedRecipient(doc);
-    }
-}
-
 void OpObserverImpl::onDelete(OperationContext* opCtx,
                               const CollectionPtr& coll,
                               StmtId stmtId,
                               const BSONObj& doc,
+                              const DocumentKey& documentKey,
                               const OplogDeleteEntryArgs& args,
                               OpStateAccumulator* opAccumulator) {
     const auto& nss = coll->ns();
+    boost::optional<ShardId> destinedRecipient = boost::none;
+    // No need to create ShardingWriteRouter if isOplogDisabledFor is true.
+    if (!repl::ReplicationCoordinator::get(opCtx)->isOplogDisabledFor(opCtx, nss)) {
+        ShardingWriteRouter shardingWriteRouter(opCtx, nss);
+        destinedRecipient = shardingWriteRouter.getReshardingDestinedRecipient(doc);
+    }
+
     const auto uuid = coll->uuid();
-    auto optDocKey = documentKeyDecoration(args);
-    invariant(optDocKey, nss.toStringForErrorMsg());
-    auto& documentKey = optDocKey.value();
     auto replCoord = repl::ReplicationCoordinator::get(opCtx);
     const bool isOplogDisabled = replCoord->isOplogDisabledFor(opCtx, nss);
     auto txnParticipant = TransactionParticipant::get(opCtx);
@@ -1104,7 +1092,7 @@ void OpObserverImpl::onDelete(OperationContext* opCtx,
     if (inBatchedWrite) {
         auto operation =
             MutableOplogEntry::makeDeleteOperation(nss, uuid, documentKey.getShardKeyAndId());
-        operation.setDestinedRecipient(destinedRecipientDecoration(args));
+        operation.setDestinedRecipient(destinedRecipient);
         operation.setFromMigrateIfTrue(args.fromMigrate);
 
         if (!args.replicatedRecordId.isNull()) {
@@ -1150,7 +1138,7 @@ void OpObserverImpl::onDelete(OperationContext* opCtx,
                 ChangeStreamPreImageRecordingMode::kPreImagesCollection);
         }
 
-        operation.setDestinedRecipient(destinedRecipientDecoration(args));
+        operation.setDestinedRecipient(destinedRecipient);
         operation.setFromMigrateIfTrue(args.fromMigrate);
         txnParticipant.addTransactionOperation(opCtx, operation);
     } else {
@@ -1179,7 +1167,7 @@ void OpObserverImpl::onDelete(OperationContext* opCtx,
                                stmtId,
                                args.fromMigrate,
                                documentKey,
-                               destinedRecipientDecoration(args),
+                               destinedRecipient,
                                _operationLogger.get());
         if (opAccumulator) {
             opAccumulator->opTime.writeOpTime = opTime.writeOpTime;
@@ -1280,11 +1268,18 @@ void OpObserverImpl::onCollMod(OperationContext* opCtx,
                                const BSONObj& collModCmd,
                                const CollectionOptions& oldCollOptions,
                                boost::optional<IndexCollModInfo> indexInfo) {
+    const auto [collModOplogCmd, additionalO2Field] =
+        backwards_compatible_collection_options::getCollModCmdAndAdditionalO2Field(collModCmd);
 
     if (!repl::ReplicationCoordinator::get(opCtx)->isOplogDisabledFor(opCtx, nss)) {
         // Create the 'o2' field object. We save the old collection metadata and TTL expiration.
         BSONObjBuilder o2Builder;
+
         o2Builder.append("collectionOptions_old", oldCollOptions.toBSON());
+        if (!additionalO2Field.isEmpty()) {
+            o2Builder.append(backwards_compatible_collection_options::additionalCollModO2Field,
+                             additionalO2Field);
+        }
         if (indexInfo) {
             BSONObjBuilder oldIndexOptions;
             if (indexInfo->oldExpireAfterSeconds) {
@@ -1309,7 +1304,7 @@ void OpObserverImpl::onCollMod(OperationContext* opCtx,
         oplogEntry.setTid(nss.tenantId());
         oplogEntry.setNss(nss.getCommandNS());
         oplogEntry.setUuid(uuid);
-        oplogEntry.setObject(makeCollModCmdObj(collModCmd, oldCollOptions, indexInfo));
+        oplogEntry.setObject(makeCollModCmdObj(collModOplogCmd, oldCollOptions, indexInfo));
         oplogEntry.setObject2(o2Builder.done());
         auto opTime =
             logOperation(opCtx, &oplogEntry, true /*assignWallClockTime*/, _operationLogger.get());
@@ -1337,7 +1332,9 @@ void OpObserverImpl::onCollMod(OperationContext* opCtx,
     invariant(coll->uuid() == uuid);
 }
 
-void OpObserverImpl::onDropDatabase(OperationContext* opCtx, const DatabaseName& dbName) {
+void OpObserverImpl::onDropDatabase(OperationContext* opCtx,
+                                    const DatabaseName& dbName,
+                                    bool markFromMigrate) {
     const auto nss = NamespaceString::makeCommandNamespace(dbName);
     if (repl::ReplicationCoordinator::get(opCtx)->isOplogDisabledFor(opCtx, nss)) {
         return;
@@ -1348,6 +1345,7 @@ void OpObserverImpl::onDropDatabase(OperationContext* opCtx, const DatabaseName&
 
     oplogEntry.setTid(dbName.tenantId());
     oplogEntry.setNss(nss);
+    oplogEntry.setFromMigrate(markFromMigrate);
     oplogEntry.setObject(BSON("dropDatabase" << 1));
     auto opTime =
         logOperation(opCtx, &oplogEntry, true /*assignWallClockTime*/, _operationLogger.get());
@@ -1527,24 +1525,6 @@ void OpObserverImpl::onImportCollection(OperationContext* opCtx,
     oplogEntry.setTid(nss.tenantId());
     oplogEntry.setNss(nss.getCommandNS());
     oplogEntry.setObject(importCollection.toBSON());
-    logOperation(opCtx, &oplogEntry, true /*assignWallClockTime*/, _operationLogger.get());
-}
-
-
-void OpObserverImpl::onEmptyCapped(OperationContext* opCtx,
-                                   const NamespaceString& collectionName,
-                                   const UUID& uuid) {
-    if (repl::ReplicationCoordinator::get(opCtx)->isOplogDisabledFor(opCtx, collectionName)) {
-        return;
-    }
-
-    MutableOplogEntry oplogEntry;
-    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
-
-    oplogEntry.setTid(collectionName.tenantId());
-    oplogEntry.setNss(collectionName.getCommandNS());
-    oplogEntry.setUuid(uuid);
-    oplogEntry.setObject(BSON("emptycapped" << collectionName.coll()));
     logOperation(opCtx, &oplogEntry, true /*assignWallClockTime*/, _operationLogger.get());
 }
 

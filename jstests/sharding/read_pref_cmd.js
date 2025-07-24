@@ -3,10 +3,12 @@
  * of 5MB across all sharding tests in wiredTiger.
  * @tags: [
  *   resource_intensive,
- *   temp_disabled_embedded_router_metrics,
+ *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {awaitRSClientHosts, reconnect} from "jstests/replsets/rslib.js";
 
 const nodeCount = 3;

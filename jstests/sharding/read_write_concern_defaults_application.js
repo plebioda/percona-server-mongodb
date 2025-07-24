@@ -32,6 +32,8 @@
  * ]
  */
 import {profilerHasSingleMatchingEntryOrThrow} from "jstests/libs/profiler.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     commandsRemovedFromMongodSinceLastLTS
 } from "jstests/sharding/libs/last_lts_mongod_commands.js";
@@ -516,7 +518,6 @@ let testCases = {
         useLogs: true,
     },
     echo: {skip: "does not accept read or write concern"},
-    emptycapped: {skip: "test command"},
     enableSharding: {skip: "does not accept read or write concern"},
     endSessions: {skip: "does not accept read or write concern"},
     explain: {skip: "TODO SERVER-45478"},
@@ -666,7 +667,6 @@ let testCases = {
     refineCollectionShardKey: {skip: "does not accept read or write concern"},
     refreshLogicalSessionCacheNow: {skip: "does not accept read or write concern"},
     refreshSessions: {skip: "does not accept read or write concern"},
-    refreshSessionsInternal: {skip: "internal command"},
     removeShard: {skip: "does not accept read or write concern"},
     removeShardFromZone: {skip: "does not accept read or write concern"},
     renameCollection: {
@@ -754,6 +754,7 @@ let testCases = {
     },
     rolesInfo: {skip: "does not accept read or write concern"},
     rotateCertificates: {skip: "does not accept read or write concern"},
+    rotateFTDC: {skip: "does not accept read or write concern"},
     saslContinue: {skip: "does not accept read or write concern"},
     saslStart: {skip: "does not accept read or write concern"},
     sbe: {skip: "internal command"},
@@ -956,8 +957,9 @@ function createProfileFilterForTestCase(test, targetId, explicitRWC) {
 function runScenario(
     desc, conn, regularCheckConn, configSvrCheckConn, {explicitRWC, explicitProvenance = false}) {
     let runCommandTest = function(cmdName, test) {
-        // These commands were removed but break this test in multiversion
-        if (cmdName === "getFreeMonitoringStatus" || cmdName === "setFreeMonitoring") {
+        // The emptycapped command was removed but breaks this test in multiversion.
+        // TODO (SERVER-92950): Remove this check.
+        if (cmdName == "emptycapped") {
             return;
         }
 

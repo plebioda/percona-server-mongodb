@@ -121,23 +121,8 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getSearchMetada
     std::unique_ptr<executor::TaskExecutorCursor> metadataCursor);
 
 /**
- * If possible, turn the provided QuerySolution into a QuerySolution that uses a DistinctNode
- * to provide results for the distinct command.
- *
- * When 'strictDistinctOnly' is false, any resulting QuerySolution will limit the number of
- * documents that need to be examined to compute the results of a distinct command, but it may not
- * guarantee that there are no duplicate values for the distinct field.
- *
- * If the provided solution could be mutated successfully, returns true, otherwise returns
- * false.
- */
-bool turnIxscanIntoDistinctIxscan(QuerySolution* soln,
-                                  const std::string& field,
-                                  bool strictDistinctOnly);
-
-/**
- * Attempts to get an executor that uses a DISTINCT_SCAN, intended for either a "distinct" command
- * or an aggregation pipeline that uses a $group stage with distinct-like semantics. If a
+ * Attempts to get a query solution that uses a DISTINCT_SCAN, intended for either a "distinct"
+ * command or an aggregation pipeline that uses a $group stage with distinct-like semantics. If a
  * DISTINCT_SCAN cannot be created for the given arguments, returns
  * ErrorCodes::NoQueryExecutionPlans.
  *
@@ -157,11 +142,23 @@ bool turnIxscanIntoDistinctIxscan(QuerySolution* soln,
  * documents for the original [10, 11] and 12 values. Thus, the latter would use the
  * STRICT_DISTINCT_ONLY option to preserve the arrays.
  */
-StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> tryGetExecutorDistinct(
+StatusWith<std::unique_ptr<QuerySolution>> tryGetQuerySolutionForDistinct(
     const MultipleCollectionAccessor& collections,
     size_t plannerOptions,
-    CanonicalDistinct& canonicalDistinct,
+    const CanonicalQuery& canonicalQuery,
+    /* Keep multiplanning configurable for aggregation.
+    TODO SERVER-92615: Refactor it in the aggregation path. */
+    bool allowMultiplanning,
     bool flipDistinctScanDirection = false);
+
+/**
+ * Get a PlanExecutor for a query solution that includes a DISTINCT_SCAN.
+ */
+StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorDistinct(
+    const MultipleCollectionAccessor& collections,
+    size_t plannerOptions,
+    std::unique_ptr<CanonicalQuery> canonicalQuery,
+    std::unique_ptr<QuerySolution> soln);
 
 /*
  * Get a PlanExecutor for a query executing as part of a count command.

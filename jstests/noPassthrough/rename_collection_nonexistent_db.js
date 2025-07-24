@@ -11,6 +11,7 @@
 
 import {waitForCurOpByFailPointNoNS} from "jstests/libs/curop_helpers.js";
 import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 function runTestRenameCollectionOnEvent(st, eventFunction, expectedErrorCode) {
     let testDb = st.s.getDB("sourceDb");
@@ -51,14 +52,14 @@ function runTestRenameCollectionOnEvent(st, eventFunction, expectedErrorCode) {
 const st = new ShardingTest({shards: 2, mongos: 1, config: 1});
 
 // Tests that the rename command errors if the source database is dropped during execution.
-runTestRenameCollectionOnEvent(
-    st,
-    (testDb) => {assert.commandWorked(testDb.runCommand({dropDatabase: 1}))},
-    ErrorCodes.NamespaceNotFound);
+runTestRenameCollectionOnEvent(st, (testDb) => {
+    assert.commandWorked(testDb.runCommand({dropDatabase: 1}));
+}, ErrorCodes.NamespaceNotFound);
 
 // Tests that the rename command errors if the source collection is dropped during execution.
-runTestRenameCollectionOnEvent(
-    st, (testDb) => {testDb.renameDifferentDb.drop()}, ErrorCodes.NamespaceNotFound);
+runTestRenameCollectionOnEvent(st, (testDb) => {
+    testDb.renameDifferentDb.drop();
+}, ErrorCodes.NamespaceNotFound);
 
 // Tests that the rename command errors if the destination collection is created during execution.
 const createDestinationCollection = (testDb) => {
@@ -73,7 +74,7 @@ runTestRenameCollectionOnEvent(
 // during execution.
 const dropDestinationDatabase = (testDb) => {
     const destDb = testDb.getSiblingDB("destDb");
-    assert.commandWorked(destDb.runCommand({dropDatabase: 1}))
+    assert.commandWorked(destDb.runCommand({dropDatabase: 1}));
 };
 runTestRenameCollectionOnEvent(st, dropDestinationDatabase, ErrorCodes.NamespaceNotFound);
 

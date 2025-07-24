@@ -1,9 +1,14 @@
 /**
  * Tests deleteOne with id without shard key works with StaleConfigError.
  *
- * @tags: [requires_fcv_80, temp_disabled_embedded_router_uncategorized]
+ * @tags: [
+ *    requires_fcv_80,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
+ * ]
  */
 
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {CreateShardedCollectionUtil} from "jstests/sharding/libs/create_sharded_collection_util.js";
 
 const st = new ShardingTest({shards: 2, mongos: 2});
@@ -26,7 +31,7 @@ CreateShardedCollectionUtil.shardCollectionWithChunks(coll, {x: 1}, [
 assert.commandWorked(coll.insert({x: -1, _id: -1}));
 assert.commandWorked(coll.insert({x: 1, _id: 1}));
 
-assert.neq(st.s1.getDB(jsTestName()).coll.findOne({x: -1, _id: -1}))
+assert.neq(st.s1.getDB(jsTestName()).coll.findOne({x: -1, _id: -1}));
 
 // Move chunk from shard0 to shard1.
 assert.commandWorked(

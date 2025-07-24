@@ -11,6 +11,7 @@
  */
 import {TimeseriesTest} from "jstests/core/timeseries/libs/timeseries.js";
 import {isLinux} from "jstests/libs/os_helpers.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {checkSbeRestrictedOrFullyEnabled} from "jstests/libs/sbe_util.js";
 
 const dbName = jsTestName();
@@ -1542,7 +1543,7 @@ const runTest = (db) => {
         print(`Caught ${assertions.length} test assertion failures:`);
         assertions.forEach((a) => {
             print(a);
-        })
+        });
         doassert(`Test failed with ${assertions.length} failures`);
         assertions = [];
     }

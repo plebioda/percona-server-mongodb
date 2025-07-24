@@ -8,7 +8,7 @@
  * ]
  */
 
-import {safeToCreateColumnStoreIndex} from "jstests/libs/columnstore_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 const assertStats = (db, assertFn) => {
     const stats = db.serverStatus().indexStats;
@@ -20,31 +20,10 @@ const assertStats = (db, assertFn) => {
     }
 };
 
-// If new features are added, they must also be added to this list or the test will fail.
-const knownFeatures = [
-    "2d",
-    "2dsphere",
-    "2dsphere_bucket",
-    "collation",
-    "columnstore",
-    "compound",
-    "hashed",
-    "id",
-    "normal",
-    "partial",
-    "single",
-    "sparse",
-    "text",
-    "ttl",
-    "unique",
-    "wildcard",
-];
-
 const assertZeroCounts = (db) => {
     assertStats(db, (featureStats) => {
         assert.eq(featureStats.count, 0);
         for (const [feature, stats] of Object.entries(featureStats.features)) {
-            assert.contains(feature, knownFeatures, "unknown feature reported by indexStats");
             assert.eq(0, stats.count, feature);
         }
     });
@@ -53,7 +32,6 @@ const assertZeroCounts = (db) => {
 const assertZeroAccess = (db) => {
     assertStats(db, (featureStats) => {
         for (const [feature, stats] of Object.entries(featureStats.features)) {
-            assert.contains(feature, knownFeatures, "unknown feature reported by indexStats");
             assert.eq(0, stats.accesses, feature);
         }
     });
@@ -227,21 +205,6 @@ assertStats(db, (stats) => {
 
 lastStats = db.serverStatus().indexStats;
 
-const columnstoreIndexesEnabled = safeToCreateColumnStoreIndex(db);
-if (columnstoreIndexesEnabled) {
-    // TODO SERVER-61644 (or sooner) should support accessing/using index and seeing that reflected.
-    assert.commandWorked(db.testColl.createIndex({'$**': 'columnstore'}));
-    assertStats(db, (stats) => {
-        assertCountIncrease(lastStats, stats, 1);
-        assertFeatureCountIncrease(lastStats, stats, 'columnstore', 1);
-
-        assertFeatureAccessIncrease(lastStats, stats, 'id', 0);
-        assertFeatureAccessIncrease(lastStats, stats, 'columnstore', 0);
-    });
-}
-
-lastStats = db.serverStatus().indexStats;
-
 // After restarting the server, we expect all of the access counters to reset to zero, but that the
 // feature counters remain the same as before startup.
 replSet.stopSet(undefined, /* restart */ true);
@@ -255,7 +218,6 @@ assertStats(db, (stats) => {
 
     const features = stats.features;
     for (const [feature, _] of Object.entries(features)) {
-        assert.contains(feature, knownFeatures);
         assertFeatureCountIncrease(lastStats, stats, feature, 0);
     }
 });

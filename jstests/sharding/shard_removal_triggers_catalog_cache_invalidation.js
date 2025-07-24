@@ -2,9 +2,11 @@
  * Tests that shard removal triggers an update of the catalog cache so that routers don't continue
  * to target shards that have been removed.
  * @tags: [
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     moveDatabaseAndUnshardedColls
 } from "jstests/sharding/libs/move_database_and_unsharded_coll_helper.js";

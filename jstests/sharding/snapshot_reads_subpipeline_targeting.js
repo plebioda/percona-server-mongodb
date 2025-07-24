@@ -3,6 +3,7 @@
 // @tags: [
 //   requires_sharding,
 // ]
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {CreateShardedCollectionUtil} from "jstests/sharding/libs/create_sharded_collection_util.js";
 
 const st = new ShardingTest({
@@ -26,8 +27,8 @@ const st = new ShardingTest({
 
 const dbName = jsTestName();
 const db = st.s.getDB(dbName);
-const local = db.local
-const foreign = db.foreign
+const local = db.local;
+const foreign = db.foreign;
 
 assert.commandWorked(
     st.s.adminCommand({enableSharding: dbName, primaryShard: st.shard0.shardName}));
@@ -64,7 +65,7 @@ jsTestLog("Running operations with readConcert: " + tojson(readConcern));
 const resBefore = local.aggregate(pipeline, {readConcern: readConcern}).toArray();
 
 // Update collection and move chunk.
-const session = db.getMongo().startSession({retryWrites: true})
+const session = db.getMongo().startSession({retryWrites: true});
 assert.commandWorked(
     session.getDatabase(dbName).getCollection("foreign").updateOne({a: -5}, {$set: {a: 5}}));
 assert.commandWorked(

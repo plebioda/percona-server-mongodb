@@ -31,6 +31,7 @@
 #include <boost/optional.hpp>
 
 #include "mongo/base/string_data.h"
+#include "mongo/platform/waitable_atomic.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/tick_source.h"
 
@@ -86,10 +87,18 @@ public:
      */
     int getAdmissions() const;
 
+    /**
+     * Returns true if the operation is already holding a ticket.
+     */
+    bool isHoldingTicket() const {
+        return _holdingTicket.loadRelaxed();
+    }
+
     Priority getPriority() const;
 
 protected:
     friend class ScopedAdmissionPriorityBase;
+    friend class Ticket;
     friend class TicketHolder;
     friend class WaitingForAdmissionGuard;
 
@@ -97,12 +106,25 @@ protected:
 
     void recordAdmission();
 
+    void markTicketHeld() {
+        tassert(
+            9150200,
+            "Operation may not hold more than one ticket at a time for the same admission context",
+            !_holdingTicket.loadRelaxed());
+        _holdingTicket.store(true);
+    }
+
+    void markTicketReleased() {
+        _holdingTicket.store(false);
+    }
+
     constexpr static TickSource::Tick kNotQueueing = -1;
 
     Atomic<int32_t> _admissions{0};
     Atomic<Priority> _priority{Priority::kNormal};
     Atomic<int64_t> _totalTimeQueuedMicros;
-    Atomic<TickSource::Tick> _startQueueingTime{kNotQueueing};
+    WaitableAtomic<TickSource::Tick> _startQueueingTime{kNotQueueing};
+    Atomic<bool> _holdingTicket;
 };
 
 /**
@@ -111,6 +133,11 @@ protected:
 class MockAdmissionContext : public AdmissionContext {
 public:
     MockAdmissionContext() = default;
+    // Block until this AdmissionContext is queued waiting on a ticket or the timeout expires.
+    // Returns true if we got queued, or false if the timeout expired.
+    bool waitUntilQueued(Nanoseconds timeout) {
+        return bool(_startQueueingTime.waitFor(kNotQueueing, timeout));
+    }
 };
 
 /**

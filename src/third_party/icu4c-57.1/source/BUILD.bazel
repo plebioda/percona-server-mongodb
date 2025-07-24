@@ -2,24 +2,36 @@ load("//bazel:mongo_src_rules.bzl", "mongo_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "mongo_sources/icudt57b.dat",
+    "mongo_sources/icudt57l.dat",
+])
+
 ICU4C_DEFINES = [
     "UCONFIG_NO_BREAK_ITERATION=1",
     "UCONFIG_NO_FORMATTING=1",
     "UCONFIG_NO_TRANSLITERATION=1",
     "UCONFIG_NO_REGULAR_EXPRESSIONS=1",
     "U_CHARSET_IS_UTF8=1",
-    "U_DISABLE_RENAMING=1",
     "U_STATIC_IMPLEMENTATION=1",
     "U_USING_ICU_NAMESPACE=0",
 ]
 
 ICU4C_COPTS = select({
     "//bazel/config:gcc_or_clang": [
+        # TODO: Omit this flag when a resolution for cxxopts vs copts issue is achieved.
+        "-w",
         "-Wno-sign-compare",
+        "-Wno-deprecated-volatile",
+        "-Wno-implicit-fallthrough",
+        "-Wno-ambiguous-reversed-operator",
+        "-Wno-deprecated-anon-enum-enum-conversion",
+        "-Wno-deprecated-array-compare",
     ],
     "@platforms//os:windows": [
         # C4996: "...": was declared deprecated
         "/wd4996",
+        "/wd5056",
     ],
     "//conditions:default": [],
 })
@@ -33,10 +45,13 @@ mongo_cc_library(
         "**/*.h",
     ]),
     copts = ICU4C_COPTS,
+    defines = ICU4C_DEFINES,
+    features = [
+        "no_deprecated_enum_enum_conversion",
+    ],
     includes = [
         "common",
     ],
-    local_defines = ICU4C_DEFINES,
 )
 
 mongo_cc_library(
@@ -229,10 +244,13 @@ mongo_cc_library(
         "**/*.h",
     ]),
     copts = ICU4C_COPTS,
+    features = [
+        "no_deprecated_enum_enum_conversion",
+    ],
     includes = [
         "common",
     ],
-    local_defines = ICU4C_DEFINES + [
+    local_defines = [
         "U_COMMON_IMPLEMENTATION=1",
     ],
     deps = [
@@ -446,10 +464,13 @@ mongo_cc_library(
         "**/*.h",
     ]),
     copts = ICU4C_COPTS,
+    features = [
+        "no_deprecated_enum_enum_conversion",
+    ],
     includes = [
         "i18n",
     ],
-    local_defines = ICU4C_DEFINES + [
+    local_defines = [
         "U_I18N_IMPLEMENTATION=1",
     ],
     deps = [

@@ -16,7 +16,8 @@
  * @tags: [
  *   requires_fcv_70,
  *   requires_persistence,
- *   temp_disabled_embedded_router_metrics,
+ *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  *   uses_prepare_transaction,
  *   uses_transactions,
  * ]
@@ -30,6 +31,7 @@ TestData.skipCheckShardFilteringMetadata = true;
 
 import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
 import {getCollectionNameFromFullNamespace} from "jstests/libs/namespace_utils.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 // Replica set nodes started with --shardsvr do not enable key generation until they are added
 // to a sharded cluster and reject commands with gossiped clusterTime from users without the
@@ -154,7 +156,7 @@ function runCommandOnAllPrimaries({dbName, cmdObj, username, password}) {
 }
 
 // Functions to support running an operation in a parallel shell for testing allUsers behaviour.
-function runInParallelShell({conn, testfunc, username, password}) {
+function runInParallelShell({conn, testfunc, username, password, ns}) {
     TestData.aggCurOpTest = testfunc;
     TestData.aggCurOpUser = username;
     TestData.aggCurOpPwd = password;
@@ -163,7 +165,8 @@ function runInParallelShell({conn, testfunc, username, password}) {
         dbName: "admin",
         username: username,
         password: password,
-        cmdObj: {configureFailPoint: "setYieldAllLocksHang", mode: "alwaysOn"}
+        cmdObj:
+            {configureFailPoint: "setYieldAllLocksHang", data: {namespace: ns}, mode: "alwaysOn"}
     });
 
     testfunc = function() {
@@ -553,7 +556,8 @@ function runLocalOpsTests(conn) {
         },
         conn: conn,
         username: "admin",
-        password: "pwd"
+        password: "pwd",
+        ns: conn.getDB(jsTestName()).test.getFullName(),
     });
 
     assertCurrentOpHasSingleMatchingEntry({

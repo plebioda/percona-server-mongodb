@@ -3,6 +3,7 @@
  */
 
 import {kDefaultWaitForFailPointTimeout} from "jstests/libs/fail_point_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {extractUUIDFromObject, getUUIDFromListCollections} from "jstests/libs/uuid_util.js";
 import {TwoPhaseDropCollectionTest} from "jstests/replsets/libs/two_phase_drops.js";
 
@@ -39,6 +40,8 @@ function setupTest({failPoint, extraFailPointData, secondaryStartupParams}) {
 
     jsTestLog("Restarting secondary with failPoint " + failPoint + " set for " + nss);
     secondaryStartupParams = secondaryStartupParams || {};
+    secondaryStartupParams = Object.merge(
+        secondaryStartupParams, {logComponentVerbosity: tojson({replication: {verbosity: 2}})});
     secondaryStartupParams['failpoint.' + failPoint] = tojson({mode: 'alwaysOn', data: data});
     // Skip clearing initial sync progress after a successful initial sync attempt so that we
     // can check initialSyncStatus fields after initial sync is complete.
@@ -67,6 +70,11 @@ function finishTest({failPoint, expectedLog, waitForDrop, createNew}) {
     const uuid_obj = getUUIDFromListCollections(primaryDB, collName);
     const uuid = extractUUIDFromObject(uuid_obj);
 
+    jsTestLog("Doing further inserts and updates on the collection");
+    assert.commandWorked(primaryColl.insert([{_id: 11}]));
+    assert.commandWorked(primaryColl.update({_id: 1}, {a: 2}));
+    assert.commandWorked(primaryColl.update({_id: 11}, {a: 22}));
+    assert.commandWorked(primaryColl.remove({_id: 2}));
     jsTestLog("Dropping collection on primary: " + primaryColl.getFullName());
     assert(primaryColl.drop());
 
@@ -111,6 +119,21 @@ function finishTest({failPoint, expectedLog, waitForDrop, createNew}) {
     } else {
         assert.eq(0, secondaryColl.find().itcount());
     }
+
+    // The additional ops should fail with NamespaceNotFound.  We ignore the failure but
+    // log it.
+    const kNamespaceNotFoundInCrudOp = 9067401;
+    checkLog.checkContainsWithCountJson(
+        secondary,
+        kNamespaceNotFoundInCrudOp,
+        {} /*attrs*/,
+        4 /* count */,
+        null /* severity */,
+        true /* isRelaxed */,
+        (actual, expected) => {
+            assert.eq(actual, expected, "Wrong number of NamespaceNotFound log messages");
+            return true;
+        });
     replTest.checkReplicatedDataHashes();
 }
 
@@ -136,9 +159,7 @@ runDropTest({
 let expectedLogFor3and4 =
     '{code: 21132, attr: { namespace: nss, uuid: (x)=>(x.uuid.$uuid === uuid)}}';
 
-// We don't support 4.2 style two-phase drops with EMRC=false - in that configuration, the
-// collection will instead be renamed to a <db>.system.drop.* namespace before being dropped. Since
-// the cloner queries collection by UUID, it may observe the first drop phase as a rename.
+// Since the cloner queries collection by UUID, it may observe the first drop phase as a rename.
 // We still want to check that initial sync succeeds in such a case.
 if (TwoPhaseDropCollectionTest.supportsDropPendingNamespaces(replTest)) {
     expectedLogFor3and4 =

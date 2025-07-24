@@ -75,11 +75,45 @@ MONGO_FAIL_POINT_DEFINE(hangWhileTargetingLocalHost);
 using RemoteCommandCallbackArgs = executor::TaskExecutor::RemoteCommandCallbackArgs;
 using ResponseStatus = executor::TaskExecutor::ResponseStatus;
 
+bool shouldActivateFailpoint(BSONObj commandObj, BSONObj data) {
+    LOGV2(4131400,
+          "Assessing TransactionCoordinator failpoint for activation with command and data",
+          "cmdObj"_attr = commandObj,
+          "data"_attr = data);
+    BSONElement twoPhaseCommitStage = data["twoPhaseCommitStage"];
+    invariant(!twoPhaseCommitStage.eoo());
+    invariant(twoPhaseCommitStage.type() == BSONType::String);
+    StringData twoPhaseCommitStageValue = twoPhaseCommitStage.valueStringData();
+    constexpr std::array<StringData, 3> fieldNames{
+        "prepareTransaction"_sd, "commitTransaction"_sd, "abortTransaction"_sd};
+    std::array<BSONElement, 3> fields;
+    commandObj.getFields(fieldNames, &fields);
+    const bool commandIsPrepare = !fields[0].eoo();
+    const bool commandIsDecision = !(fields[1].eoo() && fields[2].eoo());
+    if (commandIsDecision && twoPhaseCommitStageValue == "decision") {
+        return true;
+    }
+    if (commandIsPrepare && twoPhaseCommitStageValue == "prepare") {
+        return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 AsyncWorkScheduler::AsyncWorkScheduler(ServiceContext* serviceContext)
+    : AsyncWorkScheduler(serviceContext, nullptr, WithLock::withoutLock() /* No parent */) {}
+
+AsyncWorkScheduler::AsyncWorkScheduler(ServiceContext* serviceContext,
+                                       AsyncWorkScheduler* parent,
+                                       WithLock withParentLock)
     : _serviceContext(serviceContext),
-      _executor(Grid::get(_serviceContext)->getExecutorPool()->getFixedExecutor()) {}
+      _executor(Grid::get(_serviceContext)->getExecutorPool()->getFixedExecutor()),
+      _parent(parent) {
+    if (_parent) {
+        _itToRemove = _parent->_childSchedulers.emplace(_parent->_childSchedulers.begin(), this);
+    }
+}
 
 AsyncWorkScheduler::~AsyncWorkScheduler() {
     {
@@ -93,7 +127,6 @@ AsyncWorkScheduler::~AsyncWorkScheduler() {
     stdx::lock_guard<Latch> lg(_parent->_mutex);
     _parent->_childSchedulers.erase(_itToRemove);
     _parent->_notifyAllTasksComplete(lg);
-    _parent = nullptr;
 }
 
 Future<executor::TaskExecutor::ResponseStatus> AsyncWorkScheduler::scheduleRemoteCommand(
@@ -138,7 +171,8 @@ Future<executor::TaskExecutor::ResponseStatus> AsyncWorkScheduler::scheduleRemot
             AuthorizationSession::get(opCtx->getClient())
                 ->grantInternalAuthorization(opCtx->getClient());
 
-            if (MONGO_unlikely(hangWhileTargetingLocalHost.shouldFail())) {
+            if (MONGO_unlikely(hangWhileTargetingLocalHost.shouldFail(
+                    [&](BSONObj data) { return shouldActivateFailpoint(commandObj, data); }))) {
                 LOGV2(22449, "Hit hangWhileTargetingLocalHost failpoint");
                 hangWhileTargetingLocalHost.pauseWhileSet(opCtx);
             }
@@ -166,7 +200,7 @@ Future<executor::TaskExecutor::ResponseStatus> AsyncWorkScheduler::scheduleRemot
         });
     }
 
-    return _targetHostAsync(shardId, readPref, operationContextFn)
+    return _targetHostAsync(shardId, readPref, operationContextFn, commandObj)
         .then([this, shardId, commandObj = commandObj.getOwned(), readPref](
                   HostAndShard hostAndShard) mutable {
             executor::RemoteCommandRequest request(hostAndShard.hostTargeted,
@@ -228,14 +262,13 @@ Future<executor::TaskExecutor::ResponseStatus> AsyncWorkScheduler::scheduleRemot
 }
 
 std::unique_ptr<AsyncWorkScheduler> AsyncWorkScheduler::makeChildScheduler() {
-    auto child = std::make_unique<AsyncWorkScheduler>(_serviceContext);
 
     stdx::lock_guard<Latch> lg(_mutex);
+    // This is to enable access to the private AsyncWorkScheduler ctor.
+    std::unique_ptr<AsyncWorkScheduler> child(new AsyncWorkScheduler(_serviceContext, this, lg));
+
     if (!_shutdownStatus.isOK())
         child->shutdown(_shutdownStatus);
-
-    child->_parent = this;
-    child->_itToRemove = _childSchedulers.emplace(_childSchedulers.begin(), child.get());
 
     return child;
 }
@@ -273,25 +306,30 @@ void AsyncWorkScheduler::join() {
 Future<AsyncWorkScheduler::HostAndShard> AsyncWorkScheduler::_targetHostAsync(
     const ShardId& shardId,
     const ReadPreferenceSetting& readPref,
-    OperationContextFn operationContextFn) {
-    return scheduleWork([this, shardId, readPref, operationContextFn](OperationContext* opCtx) {
-        operationContextFn(opCtx);
-        const auto shardRegistry = Grid::get(opCtx)->shardRegistry();
-        auto shard = uassertStatusOK(shardRegistry->getShard(opCtx, shardId));
+    OperationContextFn operationContextFn,
+    BSONObj commandObj) {
+    return scheduleWork(
+        [this, shardId, readPref, operationContextFn, commandObj = commandObj.getOwned()](
+            OperationContext* opCtx) {
+            operationContextFn(opCtx);
+            const auto shardRegistry = Grid::get(opCtx)->shardRegistry();
+            auto shard = uassertStatusOK(shardRegistry->getShard(opCtx, shardId));
 
-        if (MONGO_unlikely(hangWhileTargetingRemoteHost.shouldFail())) {
-            LOGV2(22450, "Hit hangWhileTargetingRemoteHost failpoint", "shardId"_attr = shardId);
-            hangWhileTargetingRemoteHost.pauseWhileSet(opCtx);
-        }
+            if (MONGO_unlikely(hangWhileTargetingRemoteHost.shouldFail(
+                    [&](BSONObj data) { return shouldActivateFailpoint(commandObj, data); }))) {
+                LOGV2(
+                    22450, "Hit hangWhileTargetingRemoteHost failpoint", "shardId"_attr = shardId);
+                hangWhileTargetingRemoteHost.pauseWhileSet(opCtx);
+            }
 
-        auto targeter = shard->getTargeter();
-        return targeter->findHost(readPref, CancellationToken::uncancelable())
-            .thenRunOn(_executor)
-            .unsafeToInlineFuture()
-            .then([shard = std::move(shard)](HostAndPort host) mutable -> HostAndShard {
-                return {std::move(host), std::move(shard)};
-            });
-    });
+            auto targeter = shard->getTargeter();
+            return targeter->findHost(readPref, CancellationToken::uncancelable())
+                .thenRunOn(_executor)
+                .unsafeToInlineFuture()
+                .then([shard = std::move(shard)](HostAndPort host) mutable -> HostAndShard {
+                    return {std::move(host), std::move(shard)};
+                });
+        });
 }
 
 bool AsyncWorkScheduler::_quiesced(WithLock) const {

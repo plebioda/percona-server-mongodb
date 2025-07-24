@@ -1,6 +1,11 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
@@ -10,58 +15,6 @@ env.SConscript(
     ],
     exports=[
         "env",
-    ],
-)
-
-env.Library(
-    target="security_token",
-    source=[
-        "validated_tenancy_scope.idl",
-        "validated_tenancy_scope_decoration.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/service_context",
-    ],
-)
-
-env.Library(
-    target="security_token_auth",
-    source=[
-        "security_token_authentication_guard.cpp",
-        "validated_tenancy_scope_factory.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/crypto/jwt_types",
-        "$BUILD_DIR/mongo/db/auth/auth",
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/server_feature_flags",
-        "$BUILD_DIR/mongo/db/service_context",
-        "authprivilege",
-        "security_token",
-    ],
-)
-
-# The Auth library should consist only of the shimmed API for Auth usage and the implementations of
-# the data structures used in that API.  No actual Auth subsystem implementation should exist in
-# this library.
-env.Library(
-    target="auth",
-    source=[
-        "auth_decorations.cpp",
-        "authorization_manager.cpp",
-        "authorization_manager_factory.cpp",
-        "authorization_session.cpp",
-        "role_name_or_string.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/service_context",
-        "auth_options",
-        "cluster_auth_mode",
-        "sasl_options",
     ],
 )
 
@@ -76,6 +29,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/audit",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/connection_health_metrics_parameter",
         "$BUILD_DIR/mongo/db/service_context",
         "$BUILD_DIR/mongo/db/stats/counters",
@@ -83,94 +37,10 @@ env.Library(
 )
 
 env.Library(
-    target="user",
-    source=[
-        "user.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/crypto/sha_block_${MONGO_CRYPTO}",
-        "$BUILD_DIR/mongo/db/server_base",
-        "auth",
-        "authprivilege",
-    ],
-)
-
-# This needs to use its own env to tell scons to suppress scanning the .tpl.cpp input
-# for #includes since they aren't directly preprocessed. Scons will still scan the generated files
-# to produce the correct implicit dependencies when they are compiled.
-env_for_builtin_roles = env.Clone()
-env_for_builtin_roles["SCANNERS"] = []
-generateBuiltinRoles = env_for_builtin_roles.Command(
-    target=[
-        "builtin_roles.cpp",
-    ],
-    source=[
-        "builtin_roles_gen.py",
-        "builtin_roles.yml",
-        "builtin_roles.tpl.cpp",
-    ],
-    action=[
-        "$PYTHON ${SOURCES[0]} ${SOURCES[1]} ${SOURCES[2]} ${TARGETS[0]}",
-    ],
-)
-
-env.Alias("generated-sources", generateBuiltinRoles)
-
-env.Library(
-    target="builtin_roles",
-    source=[
-        "builtin_roles.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "auth",
-        "auth_options",
-        "authprivilege",
-    ],
-)
-
-env.Library(
-    target="user_document_parser",
-    source=[
-        "user_document_parser.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/bson/util/bson_extract",
-        "auth",
-        "user",
-    ],
-    LIBDEPS_PRIVATE=[
-        "address_restriction",
-        "authprivilege",
-    ],
-)
-
-env.Library(
-    target="cluster_auth_mode",
-    source=[
-        "cluster_auth_mode.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="auth_options",
-    source=[
-        "auth_options.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
     target="auth_impl_internal",
     source=[
         "authorization_manager_impl.cpp",
-        "authorization_manager_impl_parameters.idl",
+        "authorization_manager_impl_parameters_gen.cpp",
         "authorization_session_impl.cpp",
         "authz_manager_external_state.cpp",
         "authz_session_external_state.cpp",
@@ -202,6 +72,7 @@ env.Library(
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/api_parameters",
         "$BUILD_DIR/mongo/db/audit",  # audit:logLogout in AuthZSession.
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/stats/counters",
         "$BUILD_DIR/mongo/util/background_job",
         "$BUILD_DIR/mongo/util/caching",
@@ -229,7 +100,7 @@ env.Library(
     target="user_cache_invalidator",
     source=[
         "user_cache_invalidator_job.cpp",
-        "user_cache_invalidator_job_parameters.idl",
+        "user_cache_invalidator_job_parameters_gen.cpp",
     ],
     LIBDEPS=[
         "auth",
@@ -251,7 +122,7 @@ env.Library(
         "authz_session_external_state_server_common.cpp",
         "authz_session_external_state_d.cpp",
         "authz_session_external_state_s.cpp",
-        "enable_localhost_auth_bypass_parameter.idl",
+        "enable_localhost_auth_bypass_parameter_gen.cpp",
     ],
     LIBDEPS=[
         "auth",
@@ -282,6 +153,7 @@ env.Library(
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/db/audit",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/catalog/collection_options",
         "$BUILD_DIR/mongo/db/index/index_access_method",
         "$BUILD_DIR/mongo/db/op_observer/op_observer",
@@ -309,28 +181,8 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/audit",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="authprivilege",
-    source=[
-        "access_checks.idl",
-        "action_set.cpp",
-        "action_type.cpp",
-        "action_type.idl",
-        "authorization_contract.cpp",
-        "parsed_privilege.idl",
-        "privilege.cpp",
-        "resource_pattern.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/bson/mutable/mutable_bson",
-        "$BUILD_DIR/mongo/db/common",
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
     ],
 )
 
@@ -356,7 +208,7 @@ env.Library(
     target="authorization_manager_global",
     source=[
         "authorization_manager_global.cpp",
-        "authorization_manager_global_parameters.idl",
+        "authorization_manager_global_parameters_gen.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/ldap/ldapmanager",
@@ -400,11 +252,12 @@ env.Library(
     target="sasl_commands",
     source=[
         "sasl_commands.cpp",
-        "sasl_commands.idl",
+        "sasl_commands_gen.cpp",
         "sasl_payload.cpp",
     ],
     LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/client/sasl_client",
+        "$BUILD_DIR/mongo/client/native_sasl_client",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/commands/test_commands_enabled",
         "auth",
@@ -427,18 +280,7 @@ yamlEnv.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/third_party/shim_yaml",
-    ],
-)
-
-env.Library(
-    target="sasl_options",
-    source=[
-        "sasl_options.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/stats/counters",
+        "$BUILD_DIR/third_party/yaml-cpp/yaml",
     ],
 )
 
@@ -446,7 +288,7 @@ env.Library(
     target="sasl_options_init",
     source=[
         "sasl_options_init.cpp",
-        "sasl_options.idl",
+        "sasl_options_gen.cpp",
     ],
     LIBDEPS=[
         "sasl_options",
@@ -499,46 +341,8 @@ env.Library(
         "auth_impl_internal",
         "auth_impl_internal_local",
     ],
-)
-
-env.Library(
-    target="address_restriction",
-    source=[
-        "address_restriction.cpp",
-        "address_restriction.idl",
-    ],
     LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
-        "$BUILD_DIR/mongo/util/net/network",
-    ],
-)
-
-env.Library(
-    target="user_acquisition_stats",
-    source=[
-        "ldap_operation_stats.cpp",
-        "ldap_cumulative_operation_stats.cpp",
-        "user_cache_access_stats.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/service_context",
-        "auth",
-    ],
-)
-
-env.Library(
-    target="oidc_protocol",
-    source=[
-        "oauth_authorization_server_metadata.idl",
-        "oauth_discovery_factory.cpp",
-        "oidc_protocol.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
-        "$BUILD_DIR/mongo/util/net/http_client",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
     ],
 )
 
@@ -583,9 +387,10 @@ env.CppUnitTest(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/client/sasl_client",
+        "$BUILD_DIR/mongo/client/native_sasl_client",
         "$BUILD_DIR/mongo/db/common",
         "$BUILD_DIR/mongo/db/concurrency/exception_util",
+        "$BUILD_DIR/mongo/db/op_observer/op_observer_util",
         "$BUILD_DIR/mongo/db/pipeline/pipeline",
         "$BUILD_DIR/mongo/db/repl/oplog",
         "$BUILD_DIR/mongo/db/repl/oplog_interface_local",

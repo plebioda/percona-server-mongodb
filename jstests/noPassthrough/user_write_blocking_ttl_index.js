@@ -5,9 +5,13 @@
 //   requires_fcv_60,
 //   requires_non_retryable_commands,
 //   requires_replication,
+//   # system.js stored functions only work for collections that live on the db-primary shard so
+//   # we have to make sure it wont be moved anywhere by the balancer
+//   assumes_balancer_off,
 // ]
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 // Test on replset primary
 const rst = new ReplSetTest({
@@ -64,7 +68,8 @@ function runTest(conn, testCase) {
                 "error": {
                     "code": ErrorCodes.UserWritesBlocked,
                     "codeName": "UserWritesBlocked",
-                    "errmsg": "User writes blocked"
+                    "errmsg":
+                        "Plan executor error during delete :: caused by :: User writes blocked"
                 }
             });
         }

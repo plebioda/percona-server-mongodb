@@ -3,18 +3,6 @@ Import("env")
 
 env = env.Clone()
 
-env.Library(
-    target="key",
-    source=[
-        "key.cpp",
-        "key_id.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/base/secure_allocator",
-    ],
-)
-
 env.CppUnitTest(
     target="db_encryption_key_id_test",
     source=[
@@ -84,7 +72,6 @@ kmipClientEnv.Library(
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/base/secure_allocator",
-        "$BUILD_DIR/third_party/shim_boost",
         "$BUILD_DIR/third_party/shim_kmippp",
         "$BUILD_DIR/third_party/shim_libkmip",
     ],
@@ -106,5 +93,30 @@ env.Library(
         "kmip_client",
         "read_file_to_secure_string",
         "vault_client",
+    ],
+)
+
+env.Library(
+    target="encryption_status",
+    source=[
+        "encryption_status.cpp",
+    ],
+    LIBDEPS=[
+        "$BUILD_DIR/mongo/base",
+        "$BUILD_DIR/mongo/db/commands/server_status_core",
+        "encryption_options",
+        "key_management",
+    ],
+)
+
+env.CppUnitTest(
+    target="encryption_status_test",
+    source=[
+        "encryption_status_test.cpp",
+    ],
+    LIBDEPS=[
+        "$BUILD_DIR/mongo/db/commands/server_status_core",
+        "$BUILD_DIR/mongo/db/service_context",
+        "encryption_status",
     ],
 )

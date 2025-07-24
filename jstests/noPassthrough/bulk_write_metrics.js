@@ -5,6 +5,8 @@
  */
 
 import {BulkWriteMetricChecker} from "jstests/libs/bulk_write_utils.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 function runTest(isMongos, cluster, bulkWrite, retryCount, timeseries) {
     // We are ok with the randomness here since we clearly log the state.
@@ -14,7 +16,7 @@ function runTest(isMongos, cluster, bulkWrite, retryCount, timeseries) {
 
     const dbName = "testDB";
     const collName1 = "testColl1";
-    const collName2 = "testColl2"
+    const collName2 = "testColl2";
     const namespace1 = `${dbName}.${collName1}`;
     const namespace2 = `${dbName}.${collName2}`;
     const session = isMongos ? cluster.s.startSession() : cluster.getPrimary().startSession();

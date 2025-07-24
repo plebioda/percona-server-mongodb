@@ -168,7 +168,7 @@ std::vector<BSONObj> CommonProcessInterface::getCurrentOps(
             // Next, append the stripped-down version of the generic cursor. This will avoid
             // duplicating information reported at the top level.
             cursorObj.append("cursor",
-                             CurOp::truncateAndSerializeGenericCursor(&cursor, boost::none));
+                             CurOp::truncateAndSerializeGenericCursor(cursor, boost::none));
 
             ops.emplace_back(cursorObj.obj());
         }
@@ -247,6 +247,15 @@ boost::optional<ShardVersion> CommonProcessInterface::refreshAndGetCollectionVer
                                          ->getCollectionRoutingInfoWithRefresh(expCtx->opCtx, nss));
 
     return cri.cm.isSharded() ? boost::make_optional(cri.getCollectionVersion()) : boost::none;
+}
+
+boost::optional<mongo::DatabaseVersion> CommonProcessInterface::refreshAndGetDatabaseVersion(
+    const boost::intrusive_ptr<ExpressionContext>& expCtx, const DatabaseName& dbName) const {
+
+    auto db =
+        Grid::get(expCtx->opCtx)->catalogCache()->getDatabaseWithRefresh(expCtx->opCtx, dbName);
+
+    return db.isOK() ? boost::make_optional(db.getValue()->getVersion()) : boost::none;
 }
 
 std::vector<FieldPath> CommonProcessInterface::shardKeyToDocumentKeyFields(

@@ -48,8 +48,8 @@
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/feature_flag.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/query/plan_cache.h"
-#include "mongo/db/query/sbe_plan_cache.h"
+#include "mongo/db/query/plan_cache/plan_cache.h"
+#include "mongo/db/query/plan_cache/sbe_plan_cache.h"
 #include "mongo/db/repl/read_concern_args.h"
 #include "mongo/db/repl/read_concern_level.h"
 #include "mongo/db/s/operation_sharding_state.h"
@@ -158,10 +158,10 @@ void checkShardingMetadataWasValidAtTxnClusterTime(
 CollectionShardingRuntime::CollectionShardingRuntime(ServiceContext* service, NamespaceString nss)
     : _serviceContext(service),
       _nss(std::move(nss)),
-      _metadataType(_nss.isNamespaceAlwaysUntracked() ||
-                            !ShardingState::get(_serviceContext)->enabled()
-                        ? MetadataType::kUntracked
-                        : MetadataType::kUnknown) {}
+      _metadataType(_nss.isNamespaceAlwaysUntracked() ? MetadataType::kUntracked
+                                                      : MetadataType::kUnknown) {}
+
+CollectionShardingRuntime::~CollectionShardingRuntime() = default;
 
 CollectionShardingRuntime::ScopedSharedCollectionShardingRuntime
 CollectionShardingRuntime::assertCollectionLockedAndAcquireShared(OperationContext* opCtx,
@@ -227,6 +227,11 @@ ScopedCollectionDescription CollectionShardingRuntime::getCollectionDescription(
 
 ScopedCollectionDescription CollectionShardingRuntime::getCollectionDescription(
     OperationContext* opCtx, bool operationIsVersioned) const {
+    // If this node is not part of a sharded cluster, or the ShardingState has not been recovered
+    // yet, consider all collections as untracked.
+    if (!ShardingState::get(opCtx)->enabled())
+        return {kUntrackedCollection};
+
     // Present the collection as unsharded to internal or direct commands against shards
     if (!operationIsVersioned)
         return {kUntrackedCollection};
@@ -477,6 +482,11 @@ CollectionShardingRuntime::_getMetadataWithVersionCheckAt(
     const boost::optional<ShardVersion>& optReceivedShardVersion,
     bool preserveRange,
     bool supportNonVersionedOperations) const {
+    // If this node is not part of a sharded cluster, or the ShardingState has not been recovered
+    // yet, consider all collections as untracked.
+    if (!ShardingState::get(opCtx)->enabled())
+        return {kUntrackedCollection};
+
     if (repl::ReadConcernArgs::get(opCtx).getLevel() ==
         repl::ReadConcernLevel::kAvailableReadConcern)
         return kUntrackedCollection;

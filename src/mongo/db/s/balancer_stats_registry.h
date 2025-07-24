@@ -68,13 +68,6 @@ public:
     static BalancerStatsRegistry* get(OperationContext* opCtx);
 
     /**
-     * Non blocking initialization. Performs an asyncronous initialization of this registry.
-     */
-    void initializeAsync(OperationContext* opCtx);
-
-    void terminate();
-
-    /**
      * Update orphan document count for a specific collection.
      * `delta` is the increment/decrement that will be applied to the current cached count.
      *
@@ -95,15 +88,18 @@ public:
 
 private:
     void onSetCurrentConfig(OperationContext* opCtx) final {}
-    void onInitialDataAvailable(OperationContext* opCtx, bool isMajorityDataAvailable) final {}
+    void onConsistentDataAvailable(OperationContext* opCtx,
+                                   bool isMajority,
+                                   bool isRollback) final {}
     void onStepUpBegin(OperationContext* opCtx, long long term) final {}
     void onBecomeArbiter() final {}
-    void onShutdown() final {}
-    void onRollback() final {}
+    void onRollbackBegin() final {}
 
     void onStartup(OperationContext* opCtx) final;
     void onStepUpComplete(OperationContext* opCtx, long long term) final;
     void onStepDown() final;
+    void onShutdown() final;
+
     inline std::string getServiceName() const final {
         return "BalancerStatsRegistry";
     }
@@ -112,6 +108,16 @@ private:
     bool _isInitialized() const {
         return _state.load() == State::kInitialized;
     }
+
+    /**
+     * Non blocking initialization. Performs an asynchronous initialization of this registry.
+     */
+    void _initializeAsync(OperationContext* opCtx);
+
+    /**
+     * Terminate the asynchronous initialization of this registry.
+     */
+    void _terminate();
 
     struct CollectionStats {
         // Number of orphan documents for this collection

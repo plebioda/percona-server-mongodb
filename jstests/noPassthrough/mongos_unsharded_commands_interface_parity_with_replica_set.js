@@ -59,8 +59,9 @@
  */
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
-import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     assertWriteConcernError,
     restartReplicationOnAllShards,
@@ -321,19 +322,19 @@ function collModParity(db, collModCommand) {
     // Run collmod on a unsplitable collection
     db.runCommand({createUnsplittableCollection: "x"});
     db.runCommand({createIndexes: "x", indexes: [{key: {"age": 1}, name: "ageIndex"}]});
-    collModCommand.command.collMod = "x"
+    collModCommand.command.collMod = "x";
     const unsplitableResultKeys = Object.keys(runAndAssertTestCase(collModCommand, db));
 
     // Run collmod on an unsharded collection
     db.runCommand({create: "y"});
     db.runCommand({createIndexes: "y", indexes: [{key: {"age": 1}, name: "ageIndex"}]});
-    collModCommand.command.collMod = "y"
+    collModCommand.command.collMod = "y";
     const unshardedResultKeys = Object.keys(runAndAssertTestCase(collModCommand, db));
 
     // Run collmod on an sharded collection
     db.runCommand({create: "z"});
     db.runCommand({createIndexes: "z", indexes: [{key: {"age": 1}, name: "ageIndex"}]});
-    collModCommand.command.collMod = "z"
+    collModCommand.command.collMod = "z";
     const shardedResultKeys = Object.keys(runAndAssertTestCase(collModCommand, db));
 
     assert(isSubset(unsplitableResultKeys, unshardedResultKeys) &&
@@ -377,7 +378,7 @@ function collModParityTests(db) {
 }
 
 function runAndAssertTestCaseWithForcedWriteConcern(testCase, testFixture) {
-    testFixture.stopReplication(testFixture.mongoConfig)
+    testFixture.stopReplication(testFixture.mongoConfig);
     testCase.command.writeConcern = {w: "majority", wtimeout: 1};
     const result = testFixture.db.runCommand(testCase.command);
     assertWriteConcernError(result);
@@ -439,14 +440,14 @@ function assertMongosAndReplicaSetInterfaceParity(test, testCase, forceWriteConc
         mongoConfig: rst,
         stopReplication: stopReplicationOnSecondaries,
         restartReplication: restartReplicationOnSecondaries,
-    }
+    };
 
     const mongosTestFixture = {
         db: mongosDb,
         mongoConfig: st,
         stopReplication: stopReplicationOnSecondariesOfAllShards,
         restartReplication: restartReplicationOnAllShards,
-    }
+    };
 
     const replSetResultKeys = Object.keys(runTestCase(
         test,

@@ -236,13 +236,10 @@ public:
     void push(OperationContext*,
               Batch::const_iterator,
               Batch::const_iterator,
-              boost::optional<std::size_t> bytes) final {
+              boost::optional<const Cost&> cost) final {
         MONGO_UNREACHABLE;
     }
-    void waitForSpace(OperationContext*, std::size_t) final {
-        MONGO_UNREACHABLE;
-    }
-    std::size_t getMaxSize() const final {
+    void waitForSpace(OperationContext*, const Cost&) final {
         MONGO_UNREACHABLE;
     }
     std::size_t getSize() const final {
@@ -343,14 +340,6 @@ void ReplicationRecoveryImpl::_assertNoRecoveryNeededOnUnstableCheckpoint(Operat
             "Unexpected recovery needed, appliedThrough is not at top of oplog, indicating "
             "oplog has not been fully applied",
             "appliedThrough"_attr = appliedThrough.toString());
-    }
-
-    const auto minValid = _consistencyMarkers->getMinValid(opCtx);
-    if (minValid > topOfOplog) {
-        LOGV2_FATAL_NOTRACE(31366,
-                            "Unexpected recovery needed, top of oplog is not consistent",
-                            "topOfOplog"_attr = topOfOplog,
-                            "minValid"_attr = minValid);
     }
 }
 
@@ -496,12 +485,6 @@ boost::optional<Timestamp> ReplicationRecoveryImpl::recoverFromOplog(
 
     hangAfterOplogTruncationInRollback.pauseWhileSet();
 
-    // Truncation may need to adjust the initialDataTimestamp so we let it complete first.
-    if (!isRollbackRecovery) {
-        ReplicaSetAwareServiceRegistry::get(getGlobalServiceContext())
-            .onInitialDataAvailable(opCtx, true /* isMajorityDataAvailable */);
-    }
-
     auto topOfOplogSW = _getTopOfOplog(opCtx);
     if (topOfOplogSW.getStatus() == ErrorCodes::CollectionIsEmpty ||
         topOfOplogSW.getStatus() == ErrorCodes::NamespaceNotFound) {
@@ -514,6 +497,14 @@ boost::optional<Timestamp> ReplicationRecoveryImpl::recoverFromOplog(
     const auto topOfOplog = topOfOplogSW.getValue();
 
     if (stableTimestamp) {
+        // For recovery from a stable timestamp, data is already consistent before oplog recovery.
+        // For initial sync, we only mark data consistent when the entire initial sync process
+        // completes.
+        if (!_duringInitialSync) {
+            ReplicationCoordinator::get(opCtx)->setConsistentDataAvailable(
+                opCtx,
+                /*isDataMajorityCommitted=*/true);
+        }
         invariant(supportsRecoveryTimestamp);
         const auto recoveryMode = isRollbackRecovery ? RecoveryMode::kRollbackFromStableTimestamp
                                                      : RecoveryMode::kStartupFromStableTimestamp;
@@ -521,6 +512,14 @@ boost::optional<Timestamp> ReplicationRecoveryImpl::recoverFromOplog(
     } else {
         _recoverFromUnstableCheckpoint(
             opCtx, _consistencyMarkers->getAppliedThrough(opCtx), topOfOplog);
+        // For recovery from an unstable timestamp, data is consistent after oplog recovery.
+        // For initial sync, we only mark data consistent when the entire initial sync process
+        // completes.
+        if (!_duringInitialSync) {
+            ReplicationCoordinator::get(opCtx)->setConsistentDataAvailable(
+                opCtx,
+                /*isDataMajorityCommitted=*/false);
+        }
     }
     return stableTimestamp;
 } catch (const ExceptionFor<ErrorCodes::DuplicateKey>& e) {

@@ -3,11 +3,14 @@
  *
  * @tags: [
  *   requires_fcv_73,
- *   temp_disabled_embedded_router_metrics,
+ *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {Thread} from "jstests/libs/parallelTester.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 function assertNoDirectShardConnectionsMetrics(conn) {
     const res = conn.adminCommand({serverStatus: 1});

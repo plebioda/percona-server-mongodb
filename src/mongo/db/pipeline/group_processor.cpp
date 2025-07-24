@@ -34,6 +34,7 @@
 #include "mongo/db/exec/document_value/value_comparator.h"
 #include "mongo/db/pipeline/expression.h"
 #include "mongo/db/pipeline/expression_context.h"
+#include "mongo/db/query/query_knobs_gen.h"
 #include "mongo/db/stats/counters.h"
 
 namespace mongo {
@@ -171,7 +172,7 @@ void GroupProcessor::add(const Value& groupKey, const Document& root) {
         }
     }
 
-    if (shouldSpillWithAttemptToSaveMemory() || shouldSpillForDebugBuild(inserted)) {
+    if (shouldSpillWithAttemptToSaveMemory() || shouldSpillOnEveryDuplicateId(inserted)) {
         spill();
     }
 }
@@ -227,19 +228,16 @@ bool GroupProcessor::shouldSpillWithAttemptToSaveMemory() {
     return false;
 }
 
-bool GroupProcessor::shouldSpillForDebugBuild(bool isNewGroup) {
-    // In debug mode, spill every time we have a duplicate id to stress merge logic.
-    return (kDebugBuild && !_expCtx->opCtx->readOnly() && !isNewGroup &&  // is not a new group
+bool GroupProcessor::shouldSpillOnEveryDuplicateId(bool isNewGroup) {
+    // Spill every time we have a duplicate id to stress merge logic.
+    return (internalQueryEnableAggressiveSpillsInGroup && !_expCtx->opCtx->readOnly() &&
+            !isNewGroup &&                    // is not a new group
             !_expCtx->inMongos &&             // can't spill to disk in mongos
             _memoryTracker.allowDiskUse() &&  // never spill when disk use is explicitly prohibited
             _sortedFiles.size() < 20);
 }
 
 void GroupProcessor::spill() {
-    _stats.spills++;
-    _stats.numBytesSpilledEstimate += _memoryTracker.currentMemoryBytes();
-    _stats.spilledRecords += _groups.size();
-
     std::vector<const GroupProcessorBase::GroupsMap::value_type*>
         ptrs;  // using pointers to speed sorting
     ptrs.reserve(_groups.size());
@@ -280,15 +278,22 @@ void GroupProcessor::spill() {
             }
             break;
     }
+    _sortedFiles.emplace_back(writer.done());
+
+    _stats.spills++;
+    _stats.numBytesSpilledEstimate += _memoryTracker.currentMemoryBytes();
+    _stats.spilledRecords += _groups.size();
+
+    int64_t spilledBytes = 0;
+    if (_spillStats) {
+        spilledBytes = _spillStats->bytesSpilled() - _stats.spilledDataStorageSize;
+        _stats.spilledDataStorageSize = _spillStats->bytesSpilled();
+    }
+    groupCounters.incrementGroupCountersPerSpilling(1 /* spills */, spilledBytes, _groups.size());
 
     // Zero out the current per-accumulation statement memory consumption, as the memory has been
     // freed by spilling.
     GroupProcessorBase::reset();
-
-    _sortedFiles.emplace_back(writer.done());
-    if (_spillStats) {
-        _stats.spilledDataStorageSize = _spillStats->bytesSpilled();
-    }
 }
 
 }  // namespace mongo

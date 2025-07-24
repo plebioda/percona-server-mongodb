@@ -1,9 +1,14 @@
 /**
  * Tests batched updateOnes & deleteOnes with id without shard key work with StaleConfigError.
  *
- * @tags: [requires_fcv_80, temp_disabled_embedded_router_metrics]
+ * @tags: [
+ *    requires_fcv_80,
+ *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
+ * ]
  */
 
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {CreateShardedCollectionUtil} from "jstests/sharding/libs/create_sharded_collection_util.js";
 
 const st = new ShardingTest({shards: 2, mongos: 2});
@@ -22,8 +27,7 @@ CreateShardedCollectionUtil.shardCollectionWithChunks(coll, {x: 1}, [
     {min: {x: 0}, max: {x: MaxKey}, shard: st.shard1.shardName},
 ]);
 
-const performOps =
-    function(ordered, numRetryCount) {
+const performOps = function(ordered, numRetryCount) {
     jsTest.log("Perform write with ordered: " + ordered);
     // Write two documents.
     assert.commandWorked(coll.insert({x: -1, _id: -1}));
@@ -68,7 +72,7 @@ const performOps =
     assert.eq(numRetryCount,
               mongosServerStatus.metrics.query.deleteOneWithoutShardKeyWithIdRetryCount);
     session.endSession();
-}
+};
 
 // Test batched ops with ordered: true and ordered: false.
 performOps(false, 3);

@@ -125,7 +125,7 @@ public:
      * Gets the horizon name for which the parameters (captured during the first `hello`)
      * correspond.
      */
-    StringData determineHorizon(const SplitHorizon::Parameters& params) const {
+    std::string determineHorizon(const SplitHorizon::Parameters& params) const {
         return _splitHorizon.determineHorizon(params);
     }
 
@@ -267,7 +267,7 @@ private:
     // Allow MutableReplSetConfig to modify the newlyAdded field.
     friend class MutableReplSetConfig;
 
-    friend void setNewlyAdded_ForTest(MemberConfig*, boost::optional<bool>);
+    friend void setNewlyAdded_forTest(MemberConfig*, boost::optional<bool>);
 
     /**
      * Constructor used by IDL; does not set up tags because we cannot pass TagConfig through IDL.

@@ -1458,6 +1458,11 @@ AsioTransportLayer::_createSSLContext(std::shared_ptr<SSLManagerInterface>& mana
             newSSLContext->ingress->native_handle(), asyncOCSPStaple);
 
         if (!resp.isOK()) {
+            // The stapleOCSPResponse call above may have started a periodic OCSP fetch job
+            // on a separate thread which keeps a copy of the manager shared pointer.
+            // This stops that thread so that the transient manager can be destructed.
+            // TODO: SERVER-93207 should fix stapleOCSPResponse to obviate the need for this
+            newSSLContext->manager->stopJobs();
             return Status(ErrorCodes::InvalidSSLConfiguration,
                           str::stream()
                               << "Can not staple OCSP Response. Reason: " << resp.reason());
@@ -1494,7 +1499,7 @@ AsioTransportLayer::createTransientSSLContext(const TransientSSLParams& transien
 
         return _createSSLContext(manager, sslMode(), true /* asyncOCSPStaple */);
     } catch (...) {
-        LOGV2_DEBUG(307470,
+        LOGV2_DEBUG(9079000,
                     1,
                     "Exception in createTransientSSLContext",
                     "error"_attr = describeActiveException());
@@ -1506,12 +1511,7 @@ AsioTransportLayer::createTransientSSLContext(const TransientSSLParams& transien
 
 #ifdef __linux__
 BatonHandle AsioTransportLayer::makeBaton(OperationContext* opCtx) const {
-    invariant(!opCtx->getBaton());
-
-    auto baton = std::make_shared<AsioNetworkingBaton>(this, opCtx);
-    opCtx->setBaton(baton);
-
-    return baton;
+    return std::make_shared<AsioNetworkingBaton>(this, opCtx);
 }
 #endif
 

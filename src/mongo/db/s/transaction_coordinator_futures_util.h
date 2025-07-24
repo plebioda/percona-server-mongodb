@@ -206,6 +206,10 @@ public:
 private:
     using ChildIteratorsList = std::list<AsyncWorkScheduler*>;
 
+    AsyncWorkScheduler(ServiceContext* serviceContext,
+                       AsyncWorkScheduler* parent,
+                       WithLock withParentLock);
+
     // A targeted host and the shard object used to target it. The shard object is passed through
     // resolved so the caller can avoid a potentially blocking "ShardRegistry::getShard" call.
     struct HostAndShard {
@@ -219,7 +223,8 @@ private:
     Future<HostAndShard> _targetHostAsync(
         const ShardId& shardId,
         const ReadPreferenceSetting& readPref,
-        OperationContextFn operationContextFn = [](OperationContext*) {});
+        OperationContextFn operationContextFn = [](OperationContext*) {},
+        BSONObj commandObj = BSONObj());
 
     /**
      * Returns true when all the registered child schedulers, op contexts and handles have joined.
@@ -241,7 +246,7 @@ private:
 
     // If this work scheduler was constructed through 'makeChildScheduler', points to the parent
     // scheduler and contains the iterator from the parent, which needs to be removed on destruction
-    AsyncWorkScheduler* _parent{nullptr};
+    AsyncWorkScheduler* const _parent;
     ChildIteratorsList::iterator _itToRemove;
 
     // Mutex to protect the shared state below

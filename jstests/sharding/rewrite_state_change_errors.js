@@ -11,9 +11,12 @@
  * to the failpoint's configuration object.
  *
  * @tags: [
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
+
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 var st = new ShardingTest({shards: 1, mongos: 1});
 var mongos = st.s;

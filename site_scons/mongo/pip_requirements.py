@@ -40,7 +40,7 @@ def verify_requirements(silent: bool = False, executable=sys.executable):
     try:
         import poetry
     except ModuleNotFoundError as ex:
-        raiseSuggestion(ex, "'poetry==1.5.1'")
+        raiseSuggestion(ex, "'poetry==1.8.3'")
 
     verbose("Checking required python packages...")
 
@@ -59,8 +59,7 @@ def verify_requirements(silent: bool = False, executable=sys.executable):
         raise MissingRequirements(
             f"Detected one or more packages are out of date. "
             f"Try running:\n"
-            f"    export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring\n"
-            f"    python3 -m poetry install --no-root --sync"
+            f"    buildscripts/poetry_sync.sh -p '{executable}'\n"
         )
 
     # String match should look like the following
@@ -88,6 +87,5 @@ def verify_requirements(silent: bool = False, executable=sys.executable):
         raise MissingRequirements(
             f"Detected one or more packages are out of date. "
             f"Try running:\n"
-            f"    export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring\n"
-            f"    {executable} -m poetry install --no-root --sync"
+            f"    buildscripts/poetry_sync.sh -p '{executable}'\n"
         )

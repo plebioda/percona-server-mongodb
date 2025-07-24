@@ -1110,9 +1110,10 @@ testCases.forEach(function(test) {
         assert(arrayEq(actual, test.expected), Object.assign({actual: actual}, test));
     } else {
         assert(test.expectedErrorCode, test);
-        const result =
-            db.runCommand({find: coll.getName(), filter: test.query, projection: test.proj});
-        assert.commandFailedWithCode(
-            result, test.expectedErrorCode, Object.assign({result: result}, test));
+        let result;
+        assert.throwsWithCode(() => result = coll.find(test.query, test.proj).toArray(),
+                              test.expectedErrorCode,
+                              [],
+                              Object.assign({result: result}, test));
     }
 });

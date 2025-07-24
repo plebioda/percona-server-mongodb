@@ -9,7 +9,8 @@
  * multiversion environment.
  * @tags: [
  *   requires_fcv_73,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 
@@ -19,6 +20,7 @@ import {
     profilerHasNumMatchingEntriesOrThrow,
     profilerHasZeroMatchingEntriesOrThrow
 } from "jstests/libs/profiler.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({shards: 2, mongos: 2});
 const testName = "sharded_lookup";

@@ -129,6 +129,43 @@ class ReplSetMetadata;
 }  // namespace rpc
 
 namespace repl {
+// HashWriteConcernForReplication and EqualWriteConcernForReplication are used to make a hash
+// map of write concerns.  They should include all the fields, and only the fields which are
+// relevant to _doneWaitingForReplication -- syncMode, w, and checkCondition.
+// They are declared here, rather than inside ReplCoordinatorImpl, because it is not possible
+// to use the IsTrustedHasher template for an inner class.
+class HashWriteConcernForReplication {
+public:
+    std::size_t operator()(const WriteConcernOptions& a) const {
+        std::size_t seed = 0;
+        boost::hash_combine(seed, stdx::to_underlying(a.syncMode));
+        boost::hash_combine(seed, a.checkCondition);
+        std::visit(OverloadedVisitor{[&](const std::string& s) { boost::hash_combine(seed, s); },
+                                     [&](std::int64_t n) { boost::hash_combine(seed, n); },
+                                     [&](const WTags& tags) {
+                                         for (const auto& tag : tags) {
+                                             boost::hash_combine(seed, tag.first);
+                                             boost::hash_combine(seed, tag.second);
+                                         }
+                                     }},
+                   a.w);
+        return seed;
+    }
+};
+
+class EqualWriteConcernForReplication {
+public:
+    bool operator()(const WriteConcernOptions& a, const WriteConcernOptions& b) const {
+        return a.syncMode == b.syncMode && a.checkCondition == b.checkCondition && a.w == b.w;
+    }
+};
+}  // namespace repl
+
+template <>
+struct IsTrustedHasher<repl::HashWriteConcernForReplication, WriteConcernOptions> : std::true_type {
+};
+
+namespace repl {
 
 class HeartbeatResponseAction;
 class LastVote;
@@ -147,7 +184,7 @@ public:
     ReplicationCoordinatorImpl(ServiceContext* serviceContext,
                                const ReplSettings& settings,
                                std::unique_ptr<ReplicationCoordinatorExternalState> externalState,
-                               std::unique_ptr<executor::TaskExecutor> executor,
+                               std::shared_ptr<executor::TaskExecutor> executor,
                                std::unique_ptr<TopologyCoordinator> topoCoord,
                                ReplicationProcess* replicationProcess,
                                StorageInterface* storage,
@@ -435,6 +472,8 @@ public:
 
     void createWMajorityWriteAvailabilityDateWaiter(OpTime opTime) override;
 
+    Status waitForPrimaryMajorityReadsAvailable(OperationContext* opCtx) const override;
+
     WriteConcernOptions populateUnsetWriteConcernOptionsSyncMode(WriteConcernOptions wc) override;
 
     Status stepUpIfEligible(bool skipDryRun) override;
@@ -490,6 +529,8 @@ public:
 
     SplitPrepareSessionManager* getSplitPrepareSessionManager() override;
 
+    void clearSyncSource() override;
+
     // ==================== Private API ===================
     // Called by AutoGetRstlForStepUpStepDown before taking RSTL when making stepdown transitions
     void autoGetRstlEnterStepDown();
@@ -540,6 +581,11 @@ public:
      * Returns the catchup takeover CallbackHandle.
      */
     executor::TaskExecutor::CallbackHandle getCatchupTakeoverCbh_forTest() const;
+
+    /**
+     * Returns the cached horizon topology version from most recent SplitHorizonChange.
+     */
+    int64_t getLastHorizonChange_forTest() const;
 
     /**
      * Simple wrappers around _setLastOptimeForMember to make it easier to test.
@@ -674,6 +720,10 @@ public:
     bool isRetryableWrite(OperationContext* opCtx) const override;
 
     boost::optional<UUID> getInitialSyncId(OperationContext* opCtx) override;
+
+    void setConsistentDataAvailable(OperationContext* opCtx, bool isDataMajorityCommitted) override;
+    bool isDataConsistent() const override;
+    void setConsistentDataAvailable_forTest();
 
     class SharedReplSetConfig {
     public:
@@ -876,6 +926,7 @@ private:
 
     using SharedWaiterHandle = std::shared_ptr<Waiter>;
 
+    // This is a waiter list for things waiting on local opTimes only.
     class WaiterList {
     public:
         WaiterList() = delete;
@@ -884,16 +935,16 @@ private:
         // Adds waiter into the list.
         void add(WithLock lk, const OpTime& opTime, SharedWaiterHandle waiter);
         // Adds a waiter into the list and returns the future of the waiter's promise.
-        std::pair<SharedSemiFuture<void>, SharedWaiterHandle> add(
-            WithLock lk,
-            const OpTime& opTime,
-            boost::optional<WriteConcernOptions> w = boost::none);
+        std::pair<SharedSemiFuture<void>, SharedWaiterHandle> add(WithLock lk,
+                                                                  const OpTime& opTime);
         // Returns whether waiter is found and removed.
-        bool remove(WithLock lk, SharedWaiterHandle waiter);
+        bool remove(WithLock lk, const OpTime& opTime, SharedWaiterHandle waiter);
         // Signals all waiters whose opTime is <= the given opTime (if any) that satisfy the
         // condition in func.
-        template <typename Func>
-        void setValueIf(WithLock lk, Func&& func, boost::optional<OpTime> opTime = boost::none);
+        void setValueIf(
+            WithLock lk,
+            std::function<bool(WithLock, const OpTime&, const SharedWaiterHandle&)> func,
+            boost::optional<OpTime> opTime = boost::none);
         // Signals all waiters from the list and fulfills promises with OK status.
         void setValueAll(WithLock lk);
         // Signals all waiters from the list and fulfills promises with Error status.
@@ -907,6 +958,46 @@ private:
         // We keep a separate count outside _waiters.size() in order to avoid having to
         // take a lock to read the metric.
         Atomic64Metric& _waiterCountMetric;
+    };
+
+    // This is a waiter list for things waiting on opTimes along with a WriteConcern.  It breaks
+    // the waiters up by WriteConcern (using the hash and equal functors above) so that within a
+    // sub-list, the waiters are satisfied in order.
+    class WriteConcernWaiterList {
+    public:
+        WriteConcernWaiterList() = delete;
+        WriteConcernWaiterList(Counter64& waiterCountMetric);
+
+        // Adds waiter into the list.
+        void add(WithLock lk, const OpTime& opTime, SharedWaiterHandle waiter);
+        // Adds a waiter into the list and returns the future of the waiter's promise.
+        std::pair<SharedSemiFuture<void>, SharedWaiterHandle> add(WithLock lk,
+                                                                  const OpTime& opTime,
+                                                                  WriteConcernOptions w);
+        // Returns whether waiter is found and removed.
+        bool remove(WithLock lk, const OpTime& opTime, SharedWaiterHandle waiter);
+
+        // Signals all waiters whose opTime is <= the given opTime (if any) that satisfy the
+        // condition in func.  The func must have the property that, for any given
+        // WriteConcernOptions, there is some optime T such that func returns true for all
+        // optimes <= T, and false for all optimes > T.
+        void setValueIf(
+            WithLock lk,
+            std::function<bool(WithLock, const OpTime&, const WriteConcernOptions&)> func,
+            boost::optional<OpTime> opTime = boost::none);
+        // Signals all waiters from the list and fulfills promises with OK status.
+        void setValueAll(WithLock lk);
+        // Signals all waiters from the list and fulfills promises with Error status.
+        void setErrorAll(WithLock lk, Status status);
+
+    private:
+        // Waiters sorted by OpTime.
+        stdx::unordered_map<WriteConcernOptions,
+                            std::multimap<OpTime, SharedWaiterHandle, std::less<>>,
+                            HashWriteConcernForReplication,
+                            EqualWriteConcernForReplication>
+            _waiters;
+        Counter64& _waiterCountMetric;
     };
 
     enum class HeartbeatState { kScheduled = 0, kSent = 1 };
@@ -1541,9 +1632,8 @@ private:
      * Fills a HelloResponse with the appropriate replication related fields. horizonString
      * should be passed in if hasValidConfig is true.
      */
-    std::shared_ptr<HelloResponse> _makeHelloResponse(boost::optional<StringData> horizonString,
-                                                      WithLock,
-                                                      bool hasValidConfig) const;
+    std::shared_ptr<HelloResponse> _makeHelloResponse(
+        const boost::optional<std::string>& horizonString, WithLock, bool hasValidConfig) const;
 
     /**
      * Creates a semi-future for HelloResponse. horizonString should be passed in if and only if
@@ -1552,14 +1642,14 @@ private:
     virtual SharedSemiFuture<SharedHelloResponse> _getHelloResponseFuture(
         WithLock,
         const SplitHorizon::Parameters& horizonParams,
-        boost::optional<StringData> horizonString,
+        const boost::optional<std::string>& horizonString,
         boost::optional<TopologyVersion> clientTopologyVersion);
 
     /**
      * Returns the horizon string by parsing horizonParams if the node is a valid member of the
      * replica set. Otherwise, return boost::none.
      */
-    boost::optional<StringData> _getHorizonString(
+    boost::optional<std::string> _getHorizonString(
         WithLock, const SplitHorizon::Parameters& horizonParams) const;
 
     /**
@@ -1852,7 +1942,7 @@ private:
     std::unique_ptr<TopologyCoordinator> _topCoord;  // (M)
 
     // Executor that drives the topology coordinator.
-    std::unique_ptr<executor::TaskExecutor> _replExecutor;  // (S)
+    std::shared_ptr<executor::TaskExecutor> _replExecutor;  // (S)
 
     // Pointer to the ReplicationCoordinatorExternalState owned by this ReplicationCoordinator.
     std::unique_ptr<ReplicationCoordinatorExternalState> _externalState;  // (PS)
@@ -1861,7 +1951,7 @@ private:
     // Waiters in this list are checked and notified on remote nodes' opTime updates and self's
     // lastDurable opTime updates. We do not check this list on self's lastApplied opTime updates to
     // avoid checking all waiters in the list on every write.
-    WaiterList _replicationWaiterList;  // (M)
+    WriteConcernWaiterList _replicationWaiterList;  // (M)
 
     // list of information about clients waiting for a particular lastApplied opTime.
     // Waiters in this list are checked and notified on self's lastApplied opTime updates.
@@ -2009,6 +2099,9 @@ private:
     // The cached value of the 'counter' field in the server's TopologyVersion.
     AtomicWord<int64_t> _cachedTopologyVersionCounter;  // (S)
 
+    // The cached value of the topology from the most recent SplitHorizonChange.
+    int64_t _lastHorizonTopologyChange{-1};  // (M)
+
     // This should be set during sharding initialization except on config shard.
     boost::optional<bool> _wasCWWCSetOnConfigServerOnStartup;
 
@@ -2023,9 +2116,114 @@ private:
 
     // Pointer to the SplitPrepareSessionManager owned by this ReplicationCoordinator.
     SplitPrepareSessionManager _splitSessionManager;  // (S)
+
+    // Whether data writes are being done on a consistent copy of the data. The value is false until
+    // setConsistentDataAvailable is called - that's after replSetInitiate, after initial sync
+    // completes, after storage recovers from a stable checkpoint, or after replication recovery
+    // from an unstable checkpoint.
+    AtomicWord<bool> _isDataConsistent{false};
+
+    /**
+     * Manages tracking for whether this node is able to serve (non-stale) majority reads with
+     * primary read preference.
+     */
+    class PrimaryMajorityReadsAvailability {
+    public:
+        PrimaryMajorityReadsAvailability() : _promise(nullptr) {}
+
+        /**
+         * Resets the state of this type to track a new step-up and term as primary.
+         * It is an error to call this method but not follow it with a call to one of
+         * `allowReads()`, `disallowReads()`, or `onBecomeNonPrimary()`.
+         */
+        void onBecomePrimary() {
+            auto lock = _mutex.writeLock();
+            invariant(!_promise);
+            _promise = std::make_unique<SharedPromise<void>>();
+        }
+
+        /**
+         * This method must be called when a node that was primary steps down. This will unblock
+         * any reads that are currently waiting for the node to be able to serve primary majority
+         * reads.
+         */
+        void onBecomeNonPrimary() {
+            auto lock = _mutex.writeLock();
+            invariant(_promise);
+            // If we already completed the promise (either with success or error) then no reads
+            // are waiting on it and we don't need to change it, as read preference validation
+            // will reject primary read preference reads going forward.
+            // However, if we have not completed the promise (this can happen if we stepped down
+            // before we managed to create a waiter to complete it) then we need to explicitly
+            // fail it here.
+            if (!_promise->getFuture().isReady()) {
+                _promise->setError({ErrorCodes::PrimarySteppedDown,
+                                    "Primary stepped down while waiting for replication"});
+            }
+            _promise = nullptr;
+        }
+
+        /**
+         * Mark that this node can now serve primary majority reads.
+         */
+        void allowReads() {
+            auto lock = _mutex.readLock();
+            invariant(_promise);
+            _promise->emplaceValue();
+        }
+
+        /**
+         * Mark that this node cannot serve primary majority reads. This indicates the node failed
+         * to become primary. Any reads that were waiting for availability will be failed with the
+         * provided status.
+         */
+        void disallowReads(Status status) {
+            invariant(!status.isOK());
+            auto lock = _mutex.readLock();
+            invariant(_promise);
+            _promise->setError(status);
+        }
+
+        /**
+         * Waits until this node is able to serve primary majority reads.
+         */
+        Status waitForReadsAvailable(OperationContext* opCtx) const {
+            SharedSemiFuture<void> future;
+            {
+                auto lock = _mutex.readLock();
+                if (!_promise) {
+                    return {ErrorCodes::NotPrimaryNoSecondaryOk,
+                            "not primary and secondaryOk=false"};
+                }
+                future = _promise->getFuture();
+            }
+            return future.getNoThrow(opCtx);
+        }
+
+
+    private:
+        // Synchronizes reads/writes of _promise.
+        mutable WriteRarelyRWMutex _mutex;
+
+        // A promise which is fulfilled once a new primary's first write in its new term has been
+        // majority committed.
+        // This is significant as once that entry is majority committed, we know the node has
+        // majority committed all writes from earlier terms as well, and thus the node has an up-
+        // to-date view of the commit point and will not serve stale reads.
+        // This promise should always be completed (either with success or error) when a node is not
+        // primary. When a node is stepping up and before it starts accepting reads with primary
+        // read preference, it is reset with a fresh promise that will either be succeeded or failed
+        // depending on whether we successfully majority commit the node's "new primary" oplog entry
+        // written during step-up. In order to read this member and call any method on it, obtain a
+        // read lock from _mutex. A write lock is only necessary when actually overwriting the value
+        // of this member, as SharedPromise provides safety for concurrent calls to its methods.
+        std::unique_ptr<SharedPromise<void>> _promise;
+    };
+
+    PrimaryMajorityReadsAvailability _primaryMajorityReadsAvailability;  // (S)
 };
 
-extern Atomic64Metric& replicationWaiterListMetric;
+extern Counter64& replicationWaiterListMetric;
 extern Atomic64Metric& opTimeWaiterListMetric;
 
 }  // namespace repl

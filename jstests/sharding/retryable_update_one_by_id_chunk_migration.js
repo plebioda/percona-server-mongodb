@@ -10,6 +10,7 @@
  * @tags: [requires_fcv_80]
  */
 
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {CreateShardedCollectionUtil} from "jstests/sharding/libs/create_sharded_collection_util.js";
 
 (function() {
@@ -48,7 +49,7 @@ const deleteCmd = {
     deletes: [{q: {_id: 0}, limit: 1}],
     ordered: true,
     txnNumber: NumberLong(1),
-}
+};
 
 const updateCmdUnordered = {
     updates: [

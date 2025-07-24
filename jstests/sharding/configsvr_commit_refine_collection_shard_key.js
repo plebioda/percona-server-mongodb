@@ -2,9 +2,12 @@
  * Tests the idempotency of the _configsvrCommitRefineCollectionShardKey command.
  *
  * @tags: [
- *   featureFlagAuthoritativeRefineCollectionShardKey
+ *   featureFlagAuthoritativeRefineCollectionShardKey,
+ *   does_not_support_stepdowns,
  * ]
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 (function() {
 'use strict';
 

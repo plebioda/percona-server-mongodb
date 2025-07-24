@@ -40,6 +40,9 @@ selector:
     - jstests/concurrency/fsm_workloads/compact.js
     - jstests/concurrency/fsm_workloads/compact_while_creating_indexes.js
 
+    # test creates too many collections for ContinuousAddRemoveShard
+    - jstests/concurrency/fsm_workloads/create_collection.js
+
     # can cause OOM kills on test hosts
     - jstests/concurrency/fsm_workloads/findAndModify_update_grow.js
 
@@ -128,12 +131,17 @@ selector:
     - jstests/concurrency/fsm_workloads/snapshot_read_kill_op_only.js
     - jstests/concurrency/fsm_workloads/snapshot_read_kill_operations.js
 
-    # Time-series collections are not supported on mongos.
-    - jstests/concurrency/fsm_workloads/create_timeseries_collection.js
-
     # The test may spuriously fail when run against sharded clusters, due to limitations of the
     # infrastructure. See SERVER-77039 for full details.
     - jstests/concurrency/fsm_workloads/map_reduce_drop.js
+
+    # This test runs a large number of inserts, which can cause moveCollection to take a long time
+    # to finish. This can cause the CheckMetadataConsistency hook to hit LockBusy errors.
+    - jstests/concurrency/fsm_workloads/timeseries_insert_idle_bucket_expiration.js
+
+    # Exclude tests that run cleanupOrphaned, which can fail running on a config shard if a
+    # concurrent migration fails due to the config shard transitioning to dedicated.
+    - jstests/concurrency/fsm_workloads/cleanupOrphanedWhileMigrating.js
 
   exclude_with_any_tags:
     - assumes_against_mongod_not_mongos
@@ -165,14 +173,14 @@ executor:
   config:
     shell_options:
       eval: >-
-        await import("jstests/libs/override_methods/implicitly_retry_on_config_transition_errors.js");
+        await import("jstests/libs/override_methods/implicitly_retry_on_shard_transition_errors.js");
       global_vars:
         TestData:
           runningWithConfigStepdowns: true
           runningWithShardStepdowns: true
           useActionPermittedFile: true
           runningWithBalancer: true
-          transitioningConfigShard: true
+          shardsAddedRemoved: true
           shardCollectionProbability: 0.5
           fsmPreOverridesLoadedCallback: import("jstests/libs/override_methods/implicitly_retry_on_migration_in_progress.js");
 
@@ -190,7 +198,7 @@ executor:
       shell_options:
         global_vars:
           TestData:
-            transitioningConfigShard: true
+            shardsAddedRemoved: true
     - class: CheckOrphansDeleted
     - class: CheckRoutingTableConsistency
     - class: ValidateCollections # Validation can interfere with other operations, so this goes last.
@@ -211,7 +219,7 @@ executor:
           catchUpTimeoutMillis: 0
       mongod_options:
         set_parameters:
-          reshardingMinimumOperationDurationMillis: 30000 # 30 seconds
+          reshardingMinimumOperationDurationMillis: 15000 # 15 seconds
     shard_options:
       all_nodes_electable: true
       mongod_options:
@@ -225,6 +233,7 @@ executor:
         enableElectionHandoff: 0
         roleGraphInvalidationIsFatal: 1
         queryAnalysisWriterIntervalSecs: 1
+        queryAnalysisSamplerConfigurationRefreshSecs: 1
         defaultConfigCommandTimeoutMS: 90000
         skipDroppingHashedShardKeyIndex: true
         reshardingMinimumOperationDurationMillis: 0
@@ -234,12 +243,15 @@ executor:
           data:
             skipMoveCollectionThreshold: 0.5
           mode: alwaysOn
-        balancerMigrationsThrottlingMs: 100
+        balancerMigrationsThrottlingMs: 250
         featureFlagReshardingForTimeseries: true
         failpoint.movePrimaryFailIfNeedToCloneMovableCollections:
           data:
             comment: *movePrimaryComment
           mode: alwaysOn
+        # Delay orphan cleanup to get around SERVER-87673.
+        # Choose a setting lower than continuous stepdown interval to get around SERVER-90242.
+        orphanCleanupDelaySecs: 5
     num_rs_nodes_per_shard: 3
     num_shards: 3
     num_mongos: 2

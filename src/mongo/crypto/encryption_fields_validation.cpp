@@ -32,6 +32,7 @@
 #include <fmt/format.h>
 
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <utility>
 #include <variant>
@@ -60,6 +61,8 @@
 #include "mongo/util/uuid.h"
 
 namespace mongo {
+
+using namespace fmt::literals;
 
 Value coerceValueToRangeIndexTypes(Value val, BSONType fieldType) {
     BSONType valType = val.getType();
@@ -164,6 +167,99 @@ uint32_t getNumberOfBitsInDomain(const boost::optional<Decimal128>& min,
         return 0;
     }
 }
+
+std::pair<mongo::Value, mongo::Value> getRangeMinMaxDefaults(BSONType fieldType) {
+    switch (fieldType) {
+        case NumberDouble:
+            return {mongo::Value(std::numeric_limits<double>::lowest()),
+                    mongo::Value(std::numeric_limits<double>::max())};
+        case NumberDecimal:
+            return {mongo::Value(Decimal128::kLargestNegative),
+                    mongo::Value(Decimal128::kLargestPositive)};
+        case NumberInt:
+            return {mongo::Value(std::numeric_limits<int>::min()),
+                    mongo::Value(std::numeric_limits<int>::max())};
+        case NumberLong:
+            return {mongo::Value(std::numeric_limits<long long>::min()),
+                    mongo::Value(std::numeric_limits<long long>::max())};
+        case Date:
+            return {mongo::Value(Date_t::min()), mongo::Value(Date_t::max())};
+        default:
+            uasserted(7018202, "Range index only supports numeric types and the Date type.");
+    }
+    MONGO_UNREACHABLE;
+}
+
+uint64_t exp2UInt64(uint32_t exp) {
+    uassert(9203501, "Exponent out of bounds for uint64", exp < 64);
+
+    return 1ULL << exp;
+}
+
+// Validates that this assertion is true:
+//
+//            sp-1      tf
+// min ( n, 2^     * (2^   + 2 log2(n) - 1 ) )  < CBSON
+//
+void validateRangeBoundsBase(double domainSizeLog2, uint32_t sparsity, uint32_t trimFactor) {
+    uassert(
+        9203502, "domainSizeLog2 is out of bounds", domainSizeLog2 > 0 && domainSizeLog2 <= 128);
+
+    // Before we do the formula, sanity check that 2^tf * 2^{sp-1} = 2^{tf + sp - 1} <
+    // ceil(log2(CBSON)) is sane
+    uassert(9203504,
+            "Sparsity and trimFactor together are too large and could create queries that exceed "
+            "the BSON size limit",
+
+            (trimFactor + sparsity - 1) < kMaxTagLimitLog2);
+
+    // Since we now know that {tf + sp - 1} < ceil(log2(CBSON)), which means that the remainder of
+    // the formula:  2log2(N) -1 cannot cause us to overflow a double.
+
+    // trimfactor = 1 .. log2(bits) so 2^tf should be less then max_size of a type but we bounds
+    // check anyway
+    uint64_t tf_exp = exp2UInt64(trimFactor);
+
+    // sparsity = 1 .. 4 so 2^{sp-1} should be less then max_size of a type but we bounds check
+    // anyway
+    uint64_t sp_exp = exp2UInt64(sparsity);
+
+    // Compute the number of bits we need
+    // domainSizeLog2 is <= 128 at this point
+
+    double log_part2 = 2 * domainSizeLog2 - 1;
+    // log_part2 is <= 256 at this point
+
+    double log_part3 = log_part2 + tf_exp;
+
+    double total = sp_exp * log_part3;
+
+    uassert(9203508,
+            "Sparsity, trimFactor, min, and max together are too large and could create queries "
+            "that exceed the BSON size limit",
+            total < kMaxTagLimit);
+}
+
+template <typename T>
+void validateRangeBoundsInt(T typeInfo, uint32_t sparsity, uint32_t trimFactor) {
+
+    if (typeInfo.max < kMaxTagLimit) {
+        return;
+    }
+
+    double domainSizeLog2 = sizeof(typeInfo.max) * 8;
+
+    if (typeInfo.max < std::numeric_limits<decltype(typeInfo.max)>::max()) {
+        // +1 since we want the number of values between min and max, inclusive
+        domainSizeLog2 = log2(typeInfo.max - typeInfo.min + 1);
+    }
+
+    // Compute the number of bits we need
+    // domainSizeLog2 is <= 128 at this point
+    validateRangeBoundsBase(domainSizeLog2, sparsity, trimFactor);
+}
+
+
 }  // namespace
 
 uint32_t getNumberOfBitsInDomain(BSONType fieldType,
@@ -216,117 +312,106 @@ uint32_t getNumberOfBitsInDomain(BSONType fieldType,
     }
 }
 
-void validateRangeIndex(BSONType fieldType, QueryTypeConfig& query) {
+void validateRangeIndex(BSONType fieldType, StringData fieldPath, QueryTypeConfig& query) {
     uassert(6775201,
-            str::stream() << "Type '" << typeName(fieldType)
-                          << "' is not a supported range indexed type",
+            "Type '{}' is not a supported range indexed type"_format(typeName(fieldType)),
             isFLE2RangeIndexedSupportedType(fieldType));
 
-    uassert(6775202,
-            "The field 'sparsity' is missing but required for range index",
-            query.getSparsity().has_value());
-    uassert(6775214,
-            "The field 'sparsity' must be between 1 and 4",
-            query.getSparsity().value() >= 1 && query.getSparsity().value() <= 4);
+    auto& indexMin = query.getMin();
+    auto& indexMax = query.getMax();
 
-
-    switch (fieldType) {
-        case NumberDouble:
-        case NumberDecimal: {
-            if (!((query.getMin().has_value() == query.getMax().has_value()) &&
-                  (query.getMin().has_value() == query.getPrecision().has_value()))) {
-                uasserted(6967100,
-                          str::stream() << "Precision, min, and max must all be specified "
-                                        << "together for floating point fields");
-            }
-
-            if (!query.getMin().has_value()) {
-                if (fieldType == NumberDouble) {
-                    query.setMin(mongo::Value(std::numeric_limits<double>::lowest()));
-                    query.setMax(mongo::Value(std::numeric_limits<double>::max()));
-                } else {
-                    query.setMin(mongo::Value(Decimal128::kLargestNegative));
-                    query.setMax(mongo::Value(Decimal128::kLargestPositive));
-                }
-            }
-
-            if (query.getPrecision().has_value()) {
-                uint32_t precision = query.getPrecision().value();
-                if (fieldType == NumberDouble) {
-                    uassert(
-                        6966805,
-                        "The number of decimal digits for minimum value must be less than or equal "
-                        "to precision",
-                        validateDoublePrecisionRange(query.getMin()->coerceToDouble(), precision));
-                    uassert(
-                        6966806,
-                        "The number of decimal digits for maximum value must be less than or equal "
-                        "to precision",
-                        validateDoublePrecisionRange(query.getMax()->coerceToDouble(), precision));
-
-                } else {
-                    auto minDecimal = query.getMin()->coerceToDecimal();
-                    uassert(6966807,
-                            "The number of decimal digits for minimum value must be less than or "
-                            "equal to precision",
-                            validateDecimal128PrecisionRange(minDecimal, precision));
-                    auto maxDecimal = query.getMax()->coerceToDecimal();
-                    uassert(6966808,
-                            "The number of decimal digits for maximum value must be less than or "
-                            "equal to precision",
-                            validateDecimal128PrecisionRange(maxDecimal, precision));
-                }
-            }
-        }
-            // We want to perform the same validation after sanitizing floating
-            // point parameters, so we call FMT_FALLTHROUGH here.
-
-            FMT_FALLTHROUGH;
-        case NumberInt:
-        case NumberLong:
-        case Date: {
-            uassert(6775203,
-                    "The field 'min' is missing but required for range index",
-                    query.getMin().has_value());
-            uassert(6775204,
-                    "The field 'max' is missing but required for range index",
-                    query.getMax().has_value());
-
-            auto indexMin = query.getMin().value();
-            auto indexMax = query.getMax().value();
-
-            uassert(7018200,
-                    "Min should have the same type as the field.",
-                    fieldType == indexMin.getType());
-            uassert(7018201,
-                    "Max should have the same type as the field.",
-                    fieldType == indexMax.getType());
-
-            uassert(6720005,
-                    "Min must be less than max.",
-                    Value::compare(indexMin, indexMax, nullptr) < 0);
-        }
-
-        break;
-        default:
-            uasserted(7018202, "Range index only supports numeric types and the Date type.");
+    if (query.getSparsity().has_value()) {
+        uassert(6775214,
+                "The field 'sparsity' must be between 1 and 8",
+                query.getSparsity().value() >= 1 && query.getSparsity().value() <= 8);
     }
 
-    if (gFeatureFlagQERangeV2.isEnabledUseLastLTSFCVWhenUninitialized(
-            serverGlobalParams.featureCompatibility.acquireFCVSnapshot()) &&
-        query.getTrimFactor().has_value()) {
+    if (indexMin) {
+        uassert(7018200,
+                "Range field type '{}' does not match the min value type '{}'"_format(
+                    typeName(fieldType), typeName(indexMin->getType())),
+                fieldType == indexMin->getType());
+    }
+    if (indexMax) {
+        uassert(7018201,
+                "Range field type '{}' does not match the max value type '{}'"_format(
+                    typeName(fieldType), typeName(indexMax->getType())),
+                fieldType == indexMax->getType());
+    }
+    if (indexMin && indexMax) {
+        uassert(6720005,
+                "Min must be less than max.",
+                Value::compare(*indexMin, *indexMax, nullptr) < 0);
+    }
+
+    if (fieldType == NumberDouble || fieldType == NumberDecimal) {
+        if (!((indexMin.has_value() == indexMax.has_value()) &&
+              (indexMin.has_value() == query.getPrecision().has_value()))) {
+            uasserted(6967100,
+                      str::stream() << "Precision, min, and max must all be specified "
+                                    << "together for floating point fields");
+        }
+        if (query.getPrecision().has_value()) {
+            uint32_t precision = query.getPrecision().value();
+            if (fieldType == NumberDouble) {
+                auto min = query.getMin()->coerceToDouble();
+                uassert(6966805,
+                        "The number of decimal digits for minimum value of field '{}' "
+                        "must be less than or equal to precision"_format(fieldPath),
+                        validateDoublePrecisionRange(min, precision));
+                auto max = query.getMax()->coerceToDouble();
+                uassert(6966806,
+                        "The number of decimal digits for maximum value of field '{}' "
+                        "must be less than or equal to precision"_format(fieldPath),
+                        validateDoublePrecisionRange(max, precision));
+                uassert(
+                    9157100,
+                    "The domain of double values specified by the min, max, and precision "
+                    "for field '{}' cannot be represented in fewer than 64 bits"_format(fieldPath),
+                    query.getQueryType() == QueryTypeEnum::RangePreviewDeprecated ||
+                        canUsePrecisionMode(min, max, precision));
+            } else {
+                auto minDecimal = query.getMin()->coerceToDecimal();
+                uassert(6966807,
+                        "The number of decimal digits for minimum value of field '{}' "
+                        "must be less than or equal to precision"_format(fieldPath),
+                        validateDecimal128PrecisionRange(minDecimal, precision));
+                auto maxDecimal = query.getMax()->coerceToDecimal();
+                uassert(6966808,
+                        "The number of decimal digits for maximum value of field '{}' "
+                        "must be less than or equal to precision"_format(fieldPath),
+                        validateDecimal128PrecisionRange(maxDecimal, precision));
+                uassert(
+                    9157101,
+                    "The domain of decimal values specified by the min, max, and precision "
+                    "for field '{}' cannot be represented in fewer than 128 bits"_format(fieldPath),
+                    query.getQueryType() == QueryTypeEnum::RangePreviewDeprecated ||
+                        canUsePrecisionMode(minDecimal, maxDecimal, precision));
+            }
+        }
+    }
+
+    if (query.getTrimFactor().has_value()) {
         uint32_t tf = query.getTrimFactor().value();
+        auto precision = query.getPrecision().map([](int32_t i) { return (uint32_t)(i); });
+
+        auto [defMin, defMax] = getRangeMinMaxDefaults(fieldType);
         uint32_t bits = getNumberOfBitsInDomain(
-            fieldType,
-            query.getMin().value(),
-            query.getMax().value(),
-            query.getPrecision().map([](int32_t i) { return (uint32_t)(i); }));
+            fieldType, query.getMin().value_or(defMin), query.getMax().value_or(defMax), precision);
+
         // We allow the case where #bits = TF = 0.
         uassert(8574000,
                 fmt::format("The field 'trimFactor' must be >= 0 and less than the total "
                             "number of bits needed to represent elements in the domain ({})",
                             bits),
                 tf == 0 || tf < bits);
+
+        validateRangeBounds(fieldType,
+                            query.getMin().value_or(defMin),
+                            query.getMax().value_or(defMax),
+                            query.getSparsity().value_or(kFLERangeSparsityDefault),
+                            tf,
+                            precision);
     }
 }
 
@@ -347,7 +432,7 @@ void validateEncryptedField(const EncryptedField* field) {
                   field->getQueries().value());
 
         uassert(6412601,
-                "Bson type needs to be specified for an indexed field",
+                "BSON type needs to be specified for an indexed field",
                 field->getBsonType().has_value());
         auto fieldType = typeFromName(field->getBsonType().value());
 
@@ -374,7 +459,7 @@ void validateEncryptedField(const EncryptedField* field) {
                 // rangePreview is renamed to range in Range V2, but we still need to accept it as
                 // valid so that we can start up with existing rangePreview collections.
             case QueryTypeEnum::Range: {
-                validateRangeIndex(fieldType, encryptedIndex);
+                validateRangeIndex(fieldType, field->getPath(), encryptedIndex);
                 break;
             }
         }
@@ -450,5 +535,93 @@ bool validateDecimal128PrecisionRange(Decimal128& dec, uint32_t precision) {
 
     return maybe_integer == trunc_integer;
 }
+
+void setRangeDefaults(BSONType fieldType, StringData fieldPath, QueryTypeConfig* queryp) {
+    auto& query = *queryp;
+
+    // Make sure the QueryTypeConfig is valid before setting defaults
+    validateRangeIndex(fieldType, fieldPath, query);
+
+    auto [defMin, defMax] = getRangeMinMaxDefaults(fieldType);
+    query.setMin(query.getMin().value_or(defMin));
+    query.setMax(query.getMax().value_or(defMax));
+    query.setSparsity(query.getSparsity().value_or(kFLERangeSparsityDefault));
+}
+
+void validateRangeBounds(BSONType fieldType,
+                         const boost::optional<Value>& min,
+                         const boost::optional<Value>& max,
+                         uint32_t sparsity,
+                         uint32_t trimFactor,
+                         const boost::optional<uint32_t>& precision) {
+    switch (fieldType) {
+        case NumberInt:
+            return validateRangeBoundsInt32(
+                min.map(valToInt), max.map(valToInt), sparsity, trimFactor);
+        case NumberLong:
+            return validateRangeBoundsInt64(
+                min.map(valToLong), max.map(valToLong), sparsity, trimFactor);
+        case Date:
+            return validateRangeBoundsInt64(
+                min.map(valToDateToLong), max.map(valToDateToLong), sparsity, trimFactor);
+        case NumberDouble:
+            return validateRangeBoundsDouble(
+                min.map(valToDouble), max.map(valToDouble), sparsity, trimFactor, precision);
+        case NumberDecimal:
+            return validateRangeBoundsDecimal128(
+                min.map(valToDecimal), max.map(valToDecimal), sparsity, trimFactor, precision);
+        default:
+            uasserted(9203507,
+                      "Field type is invalid; must be one of int, long, date, double, or decimal");
+    }
+}
+
+void validateRangeBoundsInt32(const boost::optional<int32_t>& min,
+                              const boost::optional<int32_t>& max,
+                              uint32_t sparsity,
+                              uint32_t trimFactor) {
+    validateRangeBoundsInt(getTypeInfo32(min.value_or(0), min, max), sparsity, trimFactor);
+}
+
+void validateRangeBoundsInt64(const boost::optional<int64_t>& min,
+                              const boost::optional<int64_t>& max,
+                              uint32_t sparsity,
+                              uint32_t trimFactor) {
+    validateRangeBoundsInt(getTypeInfo64(min.value_or(0), min, max), sparsity, trimFactor);
+}
+
+void validateRangeBoundsDouble(const boost::optional<double>& min,
+                               const boost::optional<double>& max,
+                               uint32_t sparsity,
+                               uint32_t trimFactor,
+                               const boost::optional<uint32_t>& precision) {
+    validateRangeBoundsInt(
+        getTypeInfoDouble(min.value_or(0), min, max, precision), sparsity, trimFactor);
+}
+
+void validateRangeBoundsDecimal128(const boost::optional<Decimal128>& min,
+                                   const boost::optional<Decimal128>& max,
+                                   uint32_t sparsity,
+                                   uint32_t trimFactor,
+                                   const boost::optional<uint32_t>& precision) {
+    auto typeInfo =
+        getTypeInfoDecimal128(min.value_or(Decimal128::kNormalizedZero), min, max, precision);
+
+    if (typeInfo.max < kMaxTagLimit) {
+        return;
+    }
+
+    double domainSizeLog2 = 128;
+
+    if (typeInfo.max < std::numeric_limits<boost::multiprecision::uint128_t>::max()) {
+        // +1 since we want the number of values between min and max, inclusive
+        domainSizeLog2 = boost::multiprecision::msb(typeInfo.max - typeInfo.min + 1) + 1;
+    }
+
+    // Compute the number of bits we need
+    // domainSizeLog2 is <= 128 at this point
+    validateRangeBoundsBase(domainSizeLog2, sparsity, trimFactor);
+}
+
 
 }  // namespace mongo

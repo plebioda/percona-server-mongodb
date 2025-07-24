@@ -5,10 +5,13 @@
  *
  * @tags: [
  *   requires_fcv_71,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     AnalyzeShardKeyUtil
 } from "jstests/sharding/analyze_shard_key/libs/analyze_shard_key_util.js";
@@ -471,7 +474,6 @@ function runTest(fixture, {isShardedColl, shardKeyField, isHashed}) {
     // Verify that the analyzeShardKey command fails while calculating the read and write
     // distribution if the cardinality of the shard key is lower than analyzeShardKeyNumRanges.
     assert.commandWorked(sampledColl.insert({[shardKeyField]: 1}));
-
     // Wait for the write to be applied on the secondary node.
     fixture.waitForReplicationFn();
 
@@ -487,6 +489,9 @@ function runTest(fixture, {isShardedColl, shardKeyField, isHashed}) {
         docs.push({_id: i, x: i, y: i, ts: new Date()});
     }
     assert.commandWorked(sampledColl.insert(docs));
+    // Wait for the write to be applied on the secondary node.
+    fixture.waitForReplicationFn();
+
     const sampledCollUuid =
         QuerySamplingUtil.getCollectionUuid(fixture.conn.getDB(dbName), sampledCollName);
 
@@ -507,16 +512,14 @@ function runTest(fixture, {isShardedColl, shardKeyField, isHashed}) {
 
     fixture.runCmdsFn(dbName, testCase.cmdObjs);
 
-    // Turn off query sampling and wait for sampling to become inactive. The wait is necessary for
-    // preventing the internal aggregate commands run by the analyzeShardKey commands below from
-    // getting sampled.
-    assert.commandWorked(
-        fixture.conn.adminCommand({configureQueryAnalyzer: sampledNs, mode: "off"}));
-    fixture.waitForInactiveSamplingFn(sampledNs, sampledCollUuid);
-
     res = waitForSampledQueries(fixture.conn, sampledNs, shardKey, testCase);
     // Verify that the metrics are as expected.
     assertMetricsNonEmptySampleSize(res, testCase.metrics, isHashed);
+
+    // Turn off query sampling and wait for sampling to become inactive.
+    assert.commandWorked(
+        fixture.conn.adminCommand({configureQueryAnalyzer: sampledNs, mode: "off"}));
+    fixture.waitForInactiveSamplingFn(sampledNs, sampledCollUuid);
 
     assert(notSampledColl.drop());
     // Drop the sampled collection without removing its config.sampledQueries and
@@ -552,9 +555,12 @@ const mongosSetParametersOpts = {
     logComponentVerbosity: tojson({sharding: 3})
 };
 
+const eligibleForSamplingCommentBase = jsTestName() + " sampling ";
+
 {
     jsTest.log("Verify that on a sharded cluster the analyzeShardKey command returns correct read" +
                " and write distribution metrics");
+    const eligibleForSamplingCommentSharded = eligibleForSamplingCommentBase + "sharded";
 
     const numMongoses = 2;  // Test sampling on multiple mongoses.
     const numShards = 3;
@@ -569,6 +575,16 @@ const mongosSetParametersOpts = {
     // This test expects every query to get sampled regardless of which mongos or mongod routes it.
     st.configRS.nodes.forEach(node => {
         configureFailPoint(node, "queryAnalysisCoordinatorDistributeSamplesPerSecondEqually");
+    });
+
+    // We use a sampling filter to prevent internal aggregates run by AnalyzeShardKey from being
+    // sampled.
+    st.forEachConnection(conn => {
+        conn.rs.nodes.forEach(node => {
+            configureFailPoint(node,
+                               "queryAnalysisSamplerFilterByComment",
+                               {comment: eligibleForSamplingCommentSharded});
+        });
     });
 
     const fixture = {
@@ -599,6 +615,7 @@ const mongosSetParametersOpts = {
         runCmdsFn: (dbName, cmdObjs) => {
             for (let i = 0; i < cmdObjs.length; i++) {
                 const db = st["s" + String(i % numMongoses)].getDB(dbName);
+                cmdObjs[i].comment = eligibleForSamplingCommentSharded;
                 assert.commandWorked(db.runCommand(cmdObjs[i]));
             }
         },
@@ -633,14 +650,21 @@ if (!jsTestOptions().useAutoBootstrapProcedure) {  // TODO: SERVER-80318 Remove 
     jsTest.log("Verify that on a replica set the analyzeShardKey command returns correct read " +
                "and write distribution metrics");
 
+    const eligibleForSamplingCommentReplset = eligibleForSamplingCommentBase + "replset";
+
     const rst = new ReplSetTest({nodes: 2, nodeOptions: {setParameter: mongodSetParameterOpts}});
     rst.startSet();
     rst.initiate();
     const primary = rst.getPrimary();
 
-    // This test expects every query to get sampled regardless of which mongod it runs against.
     rst.nodes.forEach(node => {
+        // This test expects every query to get sampled regardless of which mongod it runs against.
         configureFailPoint(node, "queryAnalysisCoordinatorDistributeSamplesPerSecondEqually");
+        // We use a sampling filter to prevent internal aggregates run by AnalyzeShardKey from being
+        // sampled.
+        configureFailPoint(node,
+                           "queryAnalysisSamplerFilterByComment",
+                           {comment: eligibleForSamplingCommentReplset});
     });
 
     const fixture = {
@@ -654,6 +678,7 @@ if (!jsTestOptions().useAutoBootstrapProcedure) {  // TODO: SERVER-80318 Remove 
         runCmdsFn: (dbName, cmdObjs) => {
             for (let i = 0; i < cmdObjs.length; i++) {
                 const node = isReadCmdObj(cmdObjs[i]) ? rst.getSecondary() : rst.getPrimary();
+                cmdObjs[i].comment = eligibleForSamplingCommentReplset;
                 assert.commandWorked(node.getDB(dbName).runCommand(cmdObjs[i]));
             }
         },

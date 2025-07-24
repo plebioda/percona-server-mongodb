@@ -52,6 +52,9 @@ versions earlier than v5.2 may have mixed-schema data in buckets. This flag gets
 part of the upgrade process and is removed as part of the downgrade process through the
 [collMod command](https://github.com/mongodb/mongo/blob/cf80c11bc5308d9b889ed61c1a3eeb821839df56/src/mongo/db/catalog/coll_mod.cpp#L644-L663).
 
+Starting in v7.1, catalog entries for time-series collections have a new flag called
+`timeseriesBucketingParametersHaveChanged` in the `md` field.
+
 **Example**: an entry in the durable catalog for a collection `test.employees` with an in-progress
 index build on `{lastName: 1}`:
 
@@ -75,7 +78,9 @@ index build on `{lastName: 1}`:
                                'name': 'lastName_1',
                                'v': 2}}],
           'ns': 'test.employees',
-          'options': {'uuid': UUID('795453e9-867b-4804-a432-43637f500cf7')}},
+          'options': {'uuid': UUID('795453e9-867b-4804-a432-43637f500cf7')},
+          'timeseriesBucketsMayHaveMixedSchemaData': False,
+          'timeseriesBucketingParametersHaveChanged': False},
   'ns': 'test.employees'}
 ```
 
@@ -2445,7 +2450,18 @@ creation or drop, as well as `collMod` operations.
 
 **ident**: An ident is a unique identifier given to a storage engine resource. Collections and
 indexes map application-layer names to storage engine idents. In WiredTiger, idents are implemented
-as tables. For example, collection idents have the form: `collection-<counter>-<random number>`.
+as tables. Idents map to files on disk, but with a `.wt` file extension.
+
+Examples:
+
+- collection idents: `collection-<counter>-<random number>`
+- index idents: `index-<counter>-<random number>`
+
+Server flags that alter the form of idents (this applies to indexes as well):
+
+- `--directoryperdb`: `<db name>/collection-<counter>-<random number>`
+- `--wiredTigerDirectoryForIndexes`: `collection/<counter>-<random number>`
+- (both of the above): `<db name>/collection/<counter-<random number>`
 
 **oplog hole**: An uncommitted oplog write that can exist with out-of-order writes when a later
 timestamped write happens to commit first. Oplog holes can exist in-memory and persisted on disk.
@@ -2601,3 +2617,7 @@ oplog.
 | 6.1.0                  | 11.0.1     | 5   |
 | 6.2.0                  | 11.2.0     | 5   |
 | 7.0.0                  | 11.2.0     | 5   |
+| 7.1.0                  | 11.2.0     | 5   |
+| 7.2.0                  | 11.3.0     | 5   |
+| 7.3.0                  | 11.3.0     | 5   |
+| 8.0.0                  | 11.3.0     | 5   |

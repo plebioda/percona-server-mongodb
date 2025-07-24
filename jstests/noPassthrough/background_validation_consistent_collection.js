@@ -4,12 +4,15 @@
  *
  * @tags: [requires_wiredtiger, requires_persistence]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 const rst = new ReplSetTest({
     nodes: 1,
     nodeOptions: {
         setParameter: {
             // Disable the checkpoint thread.
-            syncdelay: 0
+            syncdelay: 0,
+            logComponentVerbosity: tojson({storage: {wt: {wtCheckpoint: 1}}})
         }
     }
 });

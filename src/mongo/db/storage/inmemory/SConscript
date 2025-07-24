@@ -15,7 +15,7 @@ if inmemory:
             "inmemory_global_options.cpp",
             "inmemory_init.cpp",
             "inmemory_options_init.cpp",
-            "inmemory_global_options.idl",
+            "inmemory_global_options_gen.cpp",
         ],
         LIBDEPS_PRIVATE=[
             "$BUILD_DIR/mongo/db/storage/storage_engine_common",

@@ -125,7 +125,6 @@ MONGO_FAIL_POINT_DEFINE(hangBeforeCompletingAbort);
 MONGO_FAIL_POINT_DEFINE(failIndexBuildOnCommit);
 MONGO_FAIL_POINT_DEFINE(hangIndexBuildBeforeAbortCleanUp);
 MONGO_FAIL_POINT_DEFINE(hangIndexBuildOnStepUp);
-MONGO_FAIL_POINT_DEFINE(hangAfterSettingUpResumableIndexBuild);
 MONGO_FAIL_POINT_DEFINE(hangIndexBuildBeforeCommit);
 MONGO_FAIL_POINT_DEFINE(hangBeforeBuildingIndex);
 MONGO_FAIL_POINT_DEFINE(hangBeforeBuildingIndexSecond);
@@ -134,7 +133,6 @@ MONGO_FAIL_POINT_DEFINE(hangBeforeUnregisteringAfterCommit);
 MONGO_FAIL_POINT_DEFINE(failSetUpResumeIndexBuild);
 MONGO_FAIL_POINT_DEFINE(failIndexBuildWithError);
 MONGO_FAIL_POINT_DEFINE(failIndexBuildWithErrorInSecondDrain);
-MONGO_FAIL_POINT_DEFINE(hangInRemoveIndexBuildEntryAfterCommitOrAbort);
 MONGO_FAIL_POINT_DEFINE(hangIndexBuildOnSetupBeforeTakingLocks);
 MONGO_FAIL_POINT_DEFINE(hangAbortIndexBuildByBuildUUIDAfterLocks);
 MONGO_FAIL_POINT_DEFINE(hangOnStepUpAsyncTaskBeforeCheckingCommitQuorum);
@@ -458,7 +456,7 @@ repl::OpTime getLatestOplogOpTime(OperationContext* opCtx) {
     });
 
     auto optime = repl::OpTime::parseFromOplogEntry(oplogEntryBSON);
-    invariant(optime.isOK(),
+    invariant(optime.getStatus(),
               str::stream() << "Found an invalid oplog entry: " << oplogEntryBSON
                             << ", error: " << optime.getStatus());
     return optime.getValue();
@@ -479,12 +477,6 @@ bool isIndexBuildResumable(OperationContext* opCtx,
         return false;
     }
 
-    // This check may be unnecessary due to current criteria for resumable index build support in
-    // storage engine.
-    if (!serverGlobalParams.enableMajorityReadConcern) {
-        return false;
-    }
-
     // The last optime could be null if the node is in initial sync while building the index.
     // This check may be redundant with the 'applicationMode' check and the replication requirement
     // for two phase index builds.
@@ -502,10 +494,6 @@ bool isIndexBuildResumable(OperationContext* opCtx,
               "Index build: in replication recovery. Not waiting for last optime before "
               "interceptors to be majority committed",
               "buildUUID"_attr = replState.buildUUID);
-        return false;
-    }
-
-    if (!opCtx->getServiceContext()->getStorageEngine()->supportsResumableIndexBuilds()) {
         return false;
     }
 
@@ -2136,8 +2124,9 @@ void IndexBuildsCoordinator::awaitNoBgOpInProgForDb(OperationContext* opCtx,
     activeIndexBuilds.awaitNoBgOpInProgForDb(opCtx, dbName);
 }
 
-void IndexBuildsCoordinator::waitUntilAnIndexBuildFinishes(OperationContext* opCtx) {
-    activeIndexBuilds.waitUntilAnIndexBuildFinishes(opCtx);
+void IndexBuildsCoordinator::waitUntilAnIndexBuildFinishes(OperationContext* opCtx,
+                                                           Date_t deadline) {
+    activeIndexBuilds.waitUntilAnIndexBuildFinishes(opCtx, deadline);
 }
 
 void IndexBuildsCoordinator::appendBuildInfo(const UUID& buildUUID, BSONObjBuilder* builder) const {
@@ -2734,7 +2723,8 @@ void runOnAlternateContext(OperationContext* opCtx, std::string name, Func func)
     auto newClient =
         opCtx->getServiceContext()->getService(ClusterRole::ShardServer)->makeClient(name);
 
-    // TODO(SERVER-74657): Please revisit if this thread could be made killable.
+    // The cleanup doesn't involve WT operations, and notifies the primary with a networking
+    // message, it's safe and better to keep it unkillable.
     {
         stdx::lock_guard<Client> lk(*newClient.get());
         newClient.get()->setSystemOperationUnkillableByStepdown(lk);
@@ -3049,11 +3039,6 @@ void IndexBuildsCoordinator::_resumeIndexBuildFromPhase(
     std::shared_ptr<ReplIndexBuildState> replState,
     const IndexBuildOptions& indexBuildOptions,
     const ResumeIndexInfo& resumeInfo) {
-    if (MONGO_unlikely(hangAfterSettingUpResumableIndexBuild.shouldFail())) {
-        LOGV2(4841704,
-              "Hanging index build due to failpoint 'hangAfterSettingUpResumableIndexBuild'");
-        hangAfterSettingUpResumableIndexBuild.pauseWhileSet();
-    }
 
     if (resumeInfo.getPhase() == IndexBuildPhaseEnum::kInitialized ||
         resumeInfo.getPhase() == IndexBuildPhaseEnum::kCollectionScan) {

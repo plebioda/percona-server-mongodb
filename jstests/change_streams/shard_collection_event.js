@@ -16,6 +16,7 @@ import {
     assertDropAndRecreateCollection,
     assertDropCollection
 } from "jstests/libs/collection_drop_recreate.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 jsTestLog("creating sharding test");
 var st = new ShardingTest({
@@ -194,7 +195,7 @@ function runTest(startChangeStream) {
                 "capped": false,
                 "collation": {"locale": "simple"}
             }
-        })
+        });
 }
 
 assert.commandWorked(db.adminCommand({enableSharding: dbName}));

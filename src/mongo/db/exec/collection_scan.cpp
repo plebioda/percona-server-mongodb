@@ -69,6 +69,9 @@
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kQuery
 
+namespace {
+MONGO_FAIL_POINT_DEFINE(hangCollScanDoWork);
+}  // namespace
 
 namespace mongo {
 
@@ -162,16 +165,16 @@ CollectionScan::CollectionScan(ExpressionContext* expCtx,
 
 namespace {
 
-/*
- * Returns the first entry in the collection assuming that the cursor has not been used and is
- * unpositioned.
+/**
+ * Returns the first document (owned) in the collection using the cursor 'newCursor' assuming that
+ * the cursor has not been used and is unpositioned.
  */
-repl::OplogEntry getFirstEntry(SeekableRecordCursor* newCursor) {
+BSONObj getFirstEntry(SeekableRecordCursor* newCursor) {
     auto firstRecord = newCursor->next();
     uassert(ErrorCodes::CollectionIsEmpty,
             "Found collection empty when checking that the first record has not rolled over",
             firstRecord);
-    auto entry = uassertStatusOK(repl::OplogEntry::parse(firstRecord->data.toBson()));
+    auto entry = firstRecord->data.toBson().getOwned();
 
     // If we use the cursor, unposition it so that it is ready for use by future callers.
     newCursor->saveUnpositioned();
@@ -189,31 +192,35 @@ repl::OplogEntry getFirstEntry(SeekableRecordCursor* newCursor) {
 std::unique_ptr<SeekableRecordCursor> initCursorAndAssertTsHasNotFallenOff(
     OperationContext* opCtx, const CollectionPtr& coll, Timestamp tsToCheck) {
     auto cursor = coll->getCursor(opCtx);
-
     const auto firstEntry = getFirstEntry(cursor.get());
-    const auto earliestTimestamp = firstEntry.getTimestamp();
+    const repl::OplogEntryParserNonStrict oplogEntryParser{firstEntry};
 
-    // Verify that the timestamp of the first observed oplog entry is earlier than or equal to
-    // timestamp that should not have fallen off the oplog.
-    if (earliestTimestamp <= tsToCheck) {
-        return cursor;
+    // Indicates that 'firstEntry' means initialization of a replica set.
+    bool isNewRS{false};
+    try {
+        // Verify that the timestamp of the first observed oplog entry is earlier than or equal to
+        // timestamp that should not have fallen off the oplog.
+        if (oplogEntryParser.getOpTime().getTimestamp() <= tsToCheck) {
+            return cursor;
+        }
+
+        // If the first entry we see in the oplog is the replset initialization, then it doesn't
+        // matter if its timestamp is later than the timestamp that should not have fallen off the
+        // oplog; no events earlier can have fallen off this oplog.
+        // NOTE: A change collection can be created at any moment as such it might not have replset
+        // initialization message, as such this case is not fully applicable for the change
+        // collection.
+        isNewRS = oplogEntryParser.getOpType() == repl::OpTypeEnum::kNoop &&
+            oplogEntryParser.getObject().binaryEqual(BSON("msg" << repl::kInitiatingSetMsg));
+    } catch (const AssertionException& exception) {
+        uasserted(8881102,
+                  str::stream() << "Failed to parse the oldest oplog entry" << causedBy(exception));
     }
-
-    // If the first entry we see in the oplog is the replset initialization, then it doesn't matter
-    // if its timestamp is later than the timestamp that should not have fallen off the oplog; no
-    // events earlier can have fallen off this oplog.
-    // NOTE: A change collection can be created at any moment as such it might not have replset
-    // initialization message, as such this case is not fully applicable for the change collection.
-    const bool isNewRS =
-        firstEntry.getObject().binaryEqual(BSON("msg" << repl::kInitiatingSetMsg)) &&
-        firstEntry.getOpType() == repl::OpTypeEnum::kNoop;
-
     uassert(ErrorCodes::OplogQueryMinTsMissing,
             str::stream()
                 << "Specified timestamp has already fallen off the oplog for the input timestamp: "
-                << tsToCheck << ", first oplog entry: " << firstEntry.getEntry().toString(),
+                << tsToCheck << ", first oplog entry: " << firstEntry.toString(),
             isNewRS);
-
     return cursor;
 }
 }  // namespace
@@ -234,6 +241,10 @@ void CollectionScan::initCursor(OperationContext* opCtx,
 }
 
 PlanStage::StageState CollectionScan::doWork(WorkingSetID* out) {
+    if (MONGO_unlikely(hangCollScanDoWork.shouldFail())) {
+        hangCollScanDoWork.pauseWhileSet();
+    }
+
     if (_commonStats.isEOF) {
         _priority.reset();
         return PlanStage::IS_EOF;
@@ -271,7 +282,9 @@ PlanStage::StageState CollectionScan::doWork(WorkingSetID* out) {
                     invariant(!_params.tailable && collPtr->ns().isOplog());
 
                     shard_role_details::getRecoveryUnit(opCtx())->abandonSnapshot();
-                    collPtr->getRecordStore()->waitForAllEarlierOplogWritesToBeVisible(opCtx());
+                    auto storageEngine = opCtx()->getServiceContext()->getStorageEngine();
+                    storageEngine->waitForAllEarlierOplogWritesToBeVisible(
+                        opCtx(), collPtr->getRecordStore());
                 }
 
                 try {
@@ -359,6 +372,7 @@ PlanStage::StageState CollectionScan::doWork(WorkingSetID* out) {
         if (_params.tailable) {
             _cursor.reset();
         } else {
+            _lastSeenId = RecordId();
             _commonStats.isEOF = true;
         }
 

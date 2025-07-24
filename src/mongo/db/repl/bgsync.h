@@ -176,8 +176,6 @@ private:
     /**
      * Checks current background sync state before pushing operations into blocking queue and
      * updating metrics. If the queue is full, might block.
-     *
-     * requiredRBID is reset to empty after the first call.
      */
     Status _enqueueDocuments(OplogFetcher::Documents::const_iterator begin,
                              OplogFetcher::Documents::const_iterator end,
@@ -189,7 +187,6 @@ private:
     void _runRollback(OperationContext* opCtx,
                       const Status& fetcherReturnStatus,
                       const HostAndPort& source,
-                      int requiredRBID,
                       StorageInterface* storageInterface);
 
     /**
@@ -201,21 +198,6 @@ private:
                                             OplogInterface* localOplog,
                                             StorageInterface* storageInterface,
                                             OplogInterfaceRemote::GetConnectionFn getConnection);
-
-    /**
-     * Executes a rollback via refetch in rs_rollback.cpp.
-     *
-     * We fall back on the rollback via refetch algorithm when the storage engine does not support
-     * "rollback to a checkpoint," or when the forceRollbackViaRefetch parameter is set to true.
-     *
-     * Must be called from _runRollback() which ensures that all the conditions for entering
-     * rollback have been met.
-     */
-    void _fallBackOnRollbackViaRefetch(OperationContext* opCtx,
-                                       const HostAndPort& source,
-                                       int requiredRBID,
-                                       OplogInterface* localOplog,
-                                       OplogInterfaceRemote::GetConnectionFn getConnection);
 
     // restart syncing
     void start(OperationContext* opCtx);

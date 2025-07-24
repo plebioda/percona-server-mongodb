@@ -1,7 +1,8 @@
 /**
  * @tags: [
  *   requires_sharding,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  *   uses_multi_shard_transaction,
  *   uses_transactions,
  * ]
@@ -9,6 +10,7 @@
  * Tests that when a load-balanced client disconnects, its in-progress transactions are aborted
  */
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 function setupShardedCollection(st, dbName, collName) {
     const fullNss = dbName + "." + collName;

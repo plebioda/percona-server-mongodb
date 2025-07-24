@@ -1231,7 +1231,6 @@ void InitialSyncer::_fcvFetcherCallback(const StatusWith<Fetcher::QueryResponse>
         beginFetchingOpTime,
         _syncSource,
         config,
-        _rollbackChecker->getBaseRBID(),
         initialSyncOplogFetcherBatchSize,
         OplogFetcher::RequireFresherSyncSource::kDontRequireFresherSyncSource);
     oplogFetcherConfig.startingPoint = OplogFetcher::StartingPoint::kEnqueueFirstDoc;
@@ -1245,7 +1244,7 @@ void InitialSyncer::_fcvFetcherCallback(const StatusWith<Fetcher::QueryResponse>
                   const OplogFetcher::DocumentsInfo& info) {
             return _enqueueDocuments(first, last, info);
         },
-        [=, this](const Status& s, int rbid) { _oplogFetcherCallback(s, onCompletionGuard); },
+        [=, this](const Status& s) { _oplogFetcherCallback(s, onCompletionGuard); },
         std::move(oplogFetcherConfig));
 
     LOGV2_DEBUG(21178, 2, "Starting OplogFetcher", "oplogFetcher"_attr = _oplogFetcher->toString());
@@ -1406,63 +1405,57 @@ void InitialSyncer::_lastOplogEntryFetcherCallbackForStopTimestamp(
     std::shared_ptr<OnCompletionGuard> onCompletionGuard) {
     OpTimeAndWallTime resultOpTimeAndWallTime = {OpTime(), Date_t()};
     {
-        {
-            stdx::lock_guard<Latch> lock(_mutex);
-            auto status = _checkForShutdownAndConvertStatus_inlock(
-                result.getStatus(), "error fetching last oplog entry for stop timestamp");
-            if (_shouldRetryError(lock, status)) {
-                auto scheduleStatus =
-                    (*_attemptExec)
-                        ->scheduleWork([this, onCompletionGuard](
-                                           executor::TaskExecutor::CallbackArgs args) {
-                            // It is not valid to schedule the retry from within this callback,
-                            // hence we schedule a lambda to schedule the retry.
-                            stdx::lock_guard<Latch> lock(_mutex);
-                            // Since the stopTimestamp is retrieved after we have done all the
-                            // work of retrieving collection data, we handle retries within this
-                            // class by retrying for
-                            // 'initialSyncTransientErrorRetryPeriodSeconds' (default 24 hours).
-                            // This is the same retry strategy used when retrieving collection
-                            // data, and avoids retrieving all the data and then throwing it
-                            // away due to a transient network outage.
-                            auto status = _scheduleLastOplogEntryFetcher_inlock(
-                                [=, this](const StatusWith<mongo::Fetcher::QueryResponse>& status,
-                                          mongo::Fetcher::NextAction*,
-                                          mongo::BSONObjBuilder*) {
-                                    _lastOplogEntryFetcherCallbackForStopTimestamp(
-                                        status, onCompletionGuard);
-                                },
-                                kInitialSyncerHandlesRetries);
-                            if (!status.isOK()) {
-                                onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock,
-                                                                                          status);
-                            }
-                        });
-                if (scheduleStatus.isOK())
-                    return;
-                // If scheduling failed, we're shutting down and cannot retry.
-                // So just continue with the original failed status.
-            }
-            if (!status.isOK()) {
-                onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        stdx::lock_guard<Latch> lock(_mutex);
+        auto status = _checkForShutdownAndConvertStatus_inlock(
+            result.getStatus(), "error fetching last oplog entry for stop timestamp");
+        if (_shouldRetryError(lock, status)) {
+            auto scheduleStatus =
+                (*_attemptExec)
+                    ->scheduleWork([this,
+                                    onCompletionGuard](executor::TaskExecutor::CallbackArgs args) {
+                        // It is not valid to schedule the retry from within this callback,
+                        // hence we schedule a lambda to schedule the retry.
+                        stdx::lock_guard<Latch> lock(_mutex);
+                        // Since the stopTimestamp is retrieved after we have done all the
+                        // work of retrieving collection data, we handle retries within this
+                        // class by retrying for
+                        // 'initialSyncTransientErrorRetryPeriodSeconds' (default 24 hours).
+                        // This is the same retry strategy used when retrieving collection
+                        // data, and avoids retrieving all the data and then throwing it
+                        // away due to a transient network outage.
+                        auto status = _scheduleLastOplogEntryFetcher_inlock(
+                            [=, this](const StatusWith<mongo::Fetcher::QueryResponse>& status,
+                                      mongo::Fetcher::NextAction*,
+                                      mongo::BSONObjBuilder*) {
+                                _lastOplogEntryFetcherCallbackForStopTimestamp(status,
+                                                                               onCompletionGuard);
+                            },
+                            kInitialSyncerHandlesRetries);
+                        if (!status.isOK()) {
+                            onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+                        }
+                    });
+            if (scheduleStatus.isOK())
                 return;
-            }
-
-            auto&& optimeStatus = parseOpTimeAndWallTime(result);
-            if (!optimeStatus.isOK()) {
-                onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock,
-                                                                          optimeStatus.getStatus());
-                return;
-            }
-            resultOpTimeAndWallTime = optimeStatus.getValue();
+            // If scheduling failed, we're shutting down and cannot retry.
+            // So just continue with the original failed status.
+        }
+        if (!status.isOK()) {
+            onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+            return;
         }
 
-        // Release the _mutex to write to disk.
-        auto opCtx = makeOpCtx();
-        _replicationProcess->getConsistencyMarkers()->setMinValid(opCtx.get(),
-                                                                  resultOpTimeAndWallTime.opTime);
+        auto&& optimeStatus = parseOpTimeAndWallTime(result);
+        if (!optimeStatus.isOK()) {
+            onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock,
+                                                                      optimeStatus.getStatus());
+            return;
+        }
+        resultOpTimeAndWallTime = optimeStatus.getValue();
 
-        stdx::lock_guard<Latch> lock(_mutex);
+        // Pass resultOpTimeAndWallTime.opTime to oplog apply as minValid
+        _oplogApplier->setMinValid(resultOpTimeAndWallTime.opTime);
+
         _initialSyncState->stopTimestamp = resultOpTimeAndWallTime.opTime.getTimestamp();
 
         // If the beginFetchingTimestamp is different from the stopTimestamp, it indicates that
@@ -2165,7 +2158,8 @@ Status InitialSyncer::_enqueueDocuments(OplogFetcher::Documents::const_iterator 
     invariant(_oplogBuffer);
 
     // Buffer docs for later application.
-    _oplogApplier->enqueue(makeOpCtx().get(), begin, end, info.toApplyDocumentBytes);
+    OplogBuffer::Cost cost{info.toApplyDocumentBytes, info.toApplyDocumentCount};
+    _oplogApplier->enqueue(makeOpCtx().get(), begin, end, cost);
 
     _lastFetched = info.lastDocument;
 

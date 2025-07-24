@@ -8,6 +8,8 @@
 TestData.skipEnforceFastCountOnValidate = true;
 
 import {stopServerReplication, restartServerReplication} from "jstests/libs/write_concern_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 var st = new ShardingTest({shards: 1});
 
@@ -88,7 +90,7 @@ priConn = replTest.start(priConn, {waitForConnect: false}, true);
 // have shut itself down during the rollback.
 jsTest.log("Waiting for original primary to rollback and shut down");
 // Wait until the node shuts itself down during the rollback. We will hit the first assertion if
-// we rollback using 'recoverToStableTimestamp' and the second if using 'rollbackViaRefetch'.
+// we rollback using 'recoverToStableTimestamp'.
 assert.soon(() => {
     return (rawMongoProgramOutput().search(/Fatal assertion.*(40498|50712)/) !== -1);
 });

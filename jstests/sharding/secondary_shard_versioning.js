@@ -1,10 +1,12 @@
 /**
  * Tests that secondaries participate in the shard versioning protocol.
  * @tags: [
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {profilerHasSingleMatchingEntryOrThrow} from "jstests/libs/profiler.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 // Set the secondaries to priority 0 and votes 0 to prevent the primaries from stepping down.
 let rsOpts = {nodes: [{}, {rsConfig: {priority: 0}}]};

@@ -20,7 +20,7 @@ sorterEnv.CppUnitTest(
         "$BUILD_DIR/mongo/db/service_context",
         "$BUILD_DIR/mongo/db/storage/encryption_hooks",
         "$BUILD_DIR/mongo/db/storage/storage_options",
-        "$BUILD_DIR/third_party/shim_snappy",
+        "$BUILD_DIR/third_party/snappy/snappy",
         "sorter_base",
         "sorter_stats",
     ],
@@ -36,17 +36,6 @@ env.Benchmark(
     ],
 )
 
-sorterEnv.Library(
-    target="sorter_stats",
-    source=[
-        "sorter_stats.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/commands/server_status_core",
-    ],
-)
-
 sorterBaseEnv = env.Clone()
 if wiredtiger:
     sorterBaseEnv.InjectThirdParty(libraries=["wiredtiger"])
@@ -54,11 +43,12 @@ if wiredtiger:
 sorterBaseEnv.Library(
     target="sorter_base",
     source=[
-        "sorter.idl",
+        "sorter_gen.cpp",
         "sorter_checksum_calculator.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/server_feature_flags",
+        "$BUILD_DIR/mongo/db/stats/counters",
         "sorter_stats",
     ],
     LIBDEPS_PRIVATE=[

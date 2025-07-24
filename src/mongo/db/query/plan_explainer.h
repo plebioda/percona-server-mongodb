@@ -31,9 +31,9 @@
 
 #include "mongo/bson/bsonobj.h"
 #include "mongo/db/exec/plan_stats.h"
-#include "mongo/db/query/classic_plan_cache.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/query/opt_counter_info.h"
+#include "mongo/db/query/plan_cache/classic_plan_cache.h"
 #include "mongo/db/query/plan_enumerator/plan_enumerator_explain_info.h"
 #include "mongo/db/query/plan_summary_stats.h"
 #include "mongo/db/query/query_solution.h"
@@ -115,12 +115,6 @@ public:
      * The 'verbosity' level parameter determines the amount of information to be returned.
      */
     virtual PlanStatsDetails getWinningPlanStats(ExplainOptions::Verbosity verbosity) const = 0;
-
-    /**
-     * Returns the a BSONObj containing the resulting plans from Bonsai optimization phases. For
-     * classic optimizer it returns an empty BSONObj.
-     */
-    virtual BSONObj getOptimizerDebugInfo() const = 0;
 
     /**
      * Returns statistics for the trial period of the winning plan selected by the multi-planner.

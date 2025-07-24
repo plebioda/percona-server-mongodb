@@ -149,7 +149,7 @@
 #include "mongo/platform/atomic_word.h"
 #include "mongo/platform/compiler.h"
 #include "mongo/rpc/metadata/client_metadata.h"
-#include "mongo/s/query/document_source_merge_cursors.h"
+#include "mongo/s/query/exec/document_source_merge_cursors.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/intrusive_counter.h"
@@ -204,6 +204,43 @@ std::unique_ptr<FindCommandRequest> createFindCommand(
 }
 
 /**
+ * Searches for indexes of a given geo type in 'collection' for use in $geoNear. Ignores hidden
+ * collections, and throws if there are more than one relevant non-hidden indexes.
+ *
+ * Returns the field name of a geo-indexed field, or boost::none if none were found.
+ */
+boost::optional<StringData> extractGeoNearFieldFromIndexesByType(OperationContext* opCtx,
+                                                                 const CollectionPtr& collection,
+                                                                 const string indexType) {
+    std::vector<const IndexDescriptor*> idxs;
+    const IndexDescriptor* idxToUse = nullptr;
+    collection->getIndexCatalog()->findIndexByType(opCtx, indexType, idxs);
+    for (auto it = idxs.begin(); it != idxs.end(); it++) {
+        // Ignore hidden indexes, which are indexes that users have explicitly marked as should be
+        // ignored/hidden from the query planner.
+        if (!(*it)->hidden()) {
+            uassert(ErrorCodes::IndexNotFound,
+                    str::stream() << "There is more than one " << indexType << " index on "
+                                  << collection->ns().toStringForErrorMsg()
+                                  << "; unsure which to use for $geoNear",
+                    !idxToUse);
+            idxToUse = *it;
+        }
+    }
+
+    if (idxToUse) {
+        for (auto&& elem : idxToUse->keyPattern()) {
+            if (elem.type() == BSONType::String && elem.valueStringData() == indexType) {
+                return elem.fieldNameStringData();
+            }
+        }
+        MONGO_UNREACHABLE;
+    }
+
+    return boost::none;
+}
+
+/**
  * Examines the indexes in 'collection' and returns the field name of a geo-indexed field suitable
  * for use in $geoNear. 2d indexes are given priority over 2dsphere indexes.
  *
@@ -213,41 +250,17 @@ StringData extractGeoNearFieldFromIndexes(OperationContext* opCtx,
                                           const CollectionPtr& collection) {
     invariant(collection);
 
-    std::vector<const IndexDescriptor*> idxs;
-    collection->getIndexCatalog()->findIndexByType(opCtx, IndexNames::GEO_2D, idxs);
-    uassert(ErrorCodes::IndexNotFound,
-            str::stream() << "There is more than one 2d index on "
-                          << collection->ns().toStringForErrorMsg()
-                          << "; unsure which to use for $geoNear",
-            idxs.size() <= 1U);
-    if (idxs.size() == 1U) {
-        for (auto&& elem : idxs.front()->keyPattern()) {
-            if (elem.type() == BSONType::String && elem.valueStringData() == IndexNames::GEO_2D) {
-                return elem.fieldNameStringData();
-            }
-        }
-        MONGO_UNREACHABLE;
+    // Look for relevant 2d index first. If none, look for relevant 2dsphere index.
+    auto geoNearField = extractGeoNearFieldFromIndexesByType(opCtx, collection, IndexNames::GEO_2D);
+    if (!geoNearField) {
+        geoNearField =
+            extractGeoNearFieldFromIndexesByType(opCtx, collection, IndexNames::GEO_2DSPHERE);
     }
-
-    // If there are no 2d indexes, look for a 2dsphere index.
-    idxs.clear();
-    collection->getIndexCatalog()->findIndexByType(opCtx, IndexNames::GEO_2DSPHERE, idxs);
     uassert(ErrorCodes::IndexNotFound,
             "$geoNear requires a 2d or 2dsphere index, but none were found",
-            !idxs.empty());
-    uassert(ErrorCodes::IndexNotFound,
-            str::stream() << "There is more than one 2dsphere index on "
-                          << collection->ns().toStringForErrorMsg()
-                          << "; unsure which to use for $geoNear",
-            idxs.size() <= 1U);
+            geoNearField);
 
-    invariant(idxs.size() == 1U);
-    for (auto&& elem : idxs.front()->keyPattern()) {
-        if (elem.type() == BSONType::String && elem.valueStringData() == IndexNames::GEO_2DSPHERE) {
-            return elem.fieldNameStringData();
-        }
-    }
-    MONGO_UNREACHABLE;
+    return *geoNearField;
 }
 
 /**
@@ -1124,11 +1137,13 @@ tryPrepareDistinctExecutor(const intrusive_ptr<ExpressionContext>& expCtx,
         return {swCq.getStatus()};
     }
 
+    auto cq = std::move(swCq.getValue());
+
     // If the pipeline is not eligible for distinct executor, returns the CanonicalQuery so that we
     // can create a non-distinct executor. We don't want to lose the work done inside
     // createCanonicalQuery()
     if (!rewrittenGroupStage) {
-        return StatusWith{std::move(swCq.getValue())};
+        return StatusWith{std::move(cq)};
     }
 
     std::size_t plannerOpts = QueryPlannerParams::DEFAULT;
@@ -1136,7 +1151,7 @@ tryPrepareDistinctExecutor(const intrusive_ptr<ExpressionContext>& expCtx,
         plannerOpts |= QueryPlannerParams::RETURN_OWNED_DATA;
     }
 
-    CanonicalDistinct canonicalDistinct(std::move(swCq.getValue()), rewrittenGroupStage->groupId());
+    cq->setDistinct(CanonicalDistinct(rewrittenGroupStage->groupId()));
 
     // If the GroupFromFirst transformation was generated for the $last or $bottom case, we will
     // need to flip the direction of any generated DISTINCT_SCAN to preserve the semantics of
@@ -1152,13 +1167,25 @@ tryPrepareDistinctExecutor(const intrusive_ptr<ExpressionContext>& expCtx,
     // 2) Non-strict parameter would allow use of multikey indexes for DISTINCT_SCAN, which
     //    means that for {a: [1, 2]} two distinct values would be returned, but for group keys
     //    arrays shouldn't be traversed.
-    StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> swExecutorGrouped =
-        tryGetExecutorDistinct(collections,
-                               plannerOpts | QueryPlannerParams::STRICT_DISTINCT_ONLY,
-                               canonicalDistinct,
-                               flipDistinctScanDirection);
+    auto swQuerySolution =
+        tryGetQuerySolutionForDistinct(collections,
+                                       plannerOpts | QueryPlannerParams::STRICT_DISTINCT_ONLY,
+                                       *cq,
+                                       /* TODO SERVER-92615: Support multiplanning for the distinct
+                                          scan within the aggregation path. */
+                                       false,
+                                       flipDistinctScanDirection);
+    if (swQuerySolution.isOK()) {
+        auto swExecutorGrouped =
+            getExecutorDistinct(collections,
+                                plannerOpts | QueryPlannerParams::STRICT_DISTINCT_ONLY,
+                                std::move(cq),
+                                std::move(swQuerySolution.getValue()));
+        if (!swExecutorGrouped.isOK()) {
+            return swExecutorGrouped.getStatus().withContext(
+                "Failed to determine whether query system can provide a DISTINCT_SCAN grouping");
+        }
 
-    if (swExecutorGrouped.isOK()) {
         pipeline->popFrontWithName(rewrittenGroupStage->originalStageName());
 
         boost::intrusive_ptr<DocumentSource> groupTransform(
@@ -1171,16 +1198,16 @@ tryPrepareDistinctExecutor(const intrusive_ptr<ExpressionContext>& expCtx,
         return StatusWith{std::move(swExecutorGrouped.getValue())};
     }
 
-    if (swExecutorGrouped != ErrorCodes::NoQueryExecutionPlans) {
-        return swExecutorGrouped.getStatus().withContext(
+    if (swQuerySolution != ErrorCodes::NoQueryExecutionPlans) {
+        return swQuerySolution.getStatus().withContext(
             "Failed to determine whether query system can provide a DISTINCT_SCAN grouping");
     }
 
     // Couldn't find a viable distinct executor for the query. This is not a final failure because
-    // it's possible to generate a non-distinct executor and so, returns Status::OK() with the
+    // it's possible to generate a non-distinct executor and so we return Status::OK() with the
     // CanonicalQuery. We return the CanonicalQuery since we don't want to lose the work done inside
     // createCanonicalQuery().
-    auto cq = canonicalDistinct.releaseQuery();
+
     // Non-empty sortPattern can be returned only from the case of $group with $top or $bottom, when
     // the 'sortPattern' is artificially added to leverage the DISTINCT_SCAN inside
     // createCanonicalQuery() though there is no $sort stage. Now given that we can't generate a
@@ -1189,6 +1216,14 @@ tryPrepareDistinctExecutor(const intrusive_ptr<ExpressionContext>& expCtx,
     if (sortPattern) {
         cq->resetSortPattern();
     }
+
+    // If the transition to a DISTINCT_SCAN failed for aggregation, we don't want to try it again
+    // for the find fallback, because if we failed to generate a distinct scan earlier, we don't
+    // want to try again, and instead should fall back to a different plan.
+    //
+    // TODO SERVER-92615: Remove this.
+    cq->resetDistinct();
+
     return StatusWith{std::move(cq)};
 }
 

@@ -49,10 +49,10 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/client/read_preference.h"
-#include "mongo/db/commands/bulk_write_common.h"
-#include "mongo/db/commands/bulk_write_crud_op.h"
-#include "mongo/db/commands/bulk_write_gen.h"
-#include "mongo/db/commands/bulk_write_parser.h"
+#include "mongo/db/commands/query_cmd/bulk_write_common.h"
+#include "mongo/db/commands/query_cmd/bulk_write_crud_op.h"
+#include "mongo/db/commands/query_cmd/bulk_write_gen.h"
+#include "mongo/db/commands/query_cmd/bulk_write_parser.h"
 #include "mongo/db/cursor_server_params_gen.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/error_labels.h"
@@ -925,6 +925,7 @@ StatusWith<WriteType> BulkWriteOp::target(const std::vector<std::unique_ptr<NSTa
         _writeOps,
         ordered,
         recordTargetErrors,
+        _pauseMigrationsDuringMultiUpdatesParameter,
         // getTargeterFn:
         [&](const WriteOp& writeOp) -> const NSTargeter& {
             const auto opIdx = writeOp.getWriteItem().getItemIndex();
@@ -1095,6 +1096,8 @@ BulkWriteCommandRequest BulkWriteOp::buildBulkCommandRequest(
         request.setStmtIds(stmtIds);
     }
 
+    request.setBypassEmptyTsReplacement(_clientRequest.getBypassEmptyTsReplacement());
+
     request.setDbName(DatabaseName::kAdmin);
 
     return request;
@@ -1256,7 +1259,7 @@ void BulkWriteOp::processChildBatchResponseFromRemote(
     const TargetedWriteBatch& writeBatch,
     const AsyncRequestsSender::Response& response,
     boost::optional<stdx::unordered_map<NamespaceString, TrackedErrors>&> errorsPerNamespace) {
-    invariant(response.swResponse.getStatus().isOK(), "Response status was unexpectedly not OK");
+    invariant(response.swResponse.getStatus(), "Response status was unexpectedly not OK");
 
     auto childBatchResponse = response.swResponse.getValue();
     LOGV2_DEBUG(7279200,
@@ -1921,6 +1924,8 @@ int BulkWriteOp::getBaseChildBatchCommandSizeEstimate() const {
         // above with ops, we just put an empty vector as a placeholder for now.
         request.setStmtIds({});
     }
+
+    request.setBypassEmptyTsReplacement(_clientRequest.getBypassEmptyTsReplacement());
 
     BSONObjBuilder builder;
     request.serialize(&builder);

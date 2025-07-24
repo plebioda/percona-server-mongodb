@@ -48,12 +48,12 @@
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/resource_pattern.h"
 #include "mongo/db/commands.h"
-#include "mongo/db/commands/bulk_write_common.h"
-#include "mongo/db/commands/bulk_write_crud_op.h"
-#include "mongo/db/commands/bulk_write_gen.h"
+#include "mongo/db/commands/query_cmd/bulk_write_common.h"
+#include "mongo/db/commands/query_cmd/bulk_write_crud_op.h"
+#include "mongo/db/commands/query_cmd/bulk_write_gen.h"
+#include "mongo/db/commands/query_cmd/explain_gen.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/exec/document_value/document_metadata_fields.h"
-#include "mongo/db/explain_gen.h"
 #include "mongo/db/feature_flag.h"
 #include "mongo/db/generic_argument_util.h"
 #include "mongo/db/internal_transactions_feature_flag_gen.h"
@@ -88,7 +88,7 @@
 #include "mongo/s/chunk_manager.h"
 #include "mongo/s/client/shard.h"
 #include "mongo/s/cluster_commands_helpers.h"
-#include "mongo/s/commands/cluster_explain.h"
+#include "mongo/s/commands/query_cmd/cluster_explain.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/multi_statement_transaction_requests_sender.h"
 #include "mongo/s/request_types/cluster_commands_without_shard_key_gen.h"
@@ -224,6 +224,9 @@ std::pair<DatabaseName, BSONObj> makeTargetWriteRequest(OperationContext* opCtx,
                     UpdateRequest(bulk_write_common::makeUpdateOpEntryFromUpdateOp(updateOp));
                 updateOpWithNamespace.setNamespaceString(nss);
                 updateOpWithNamespace.setLetParameters(bulkWriteRequest->getLet());
+                updateOpWithNamespace.setBypassEmptyTsReplacement(
+                    bulkWriteRequest->getBypassEmptyTsReplacement());
+
                 if (requiresOriginalQuery(opCtx, updateOpWithNamespace) ||
                     nss.isTimeseriesBucketsCollection()) {
                     queryBuilder.appendElementsUnique(updateOp->getFilter());
@@ -285,6 +288,8 @@ std::pair<DatabaseName, BSONObj> makeTargetWriteRequest(OperationContext* opCtx,
             auto updateOpWithNamespace = UpdateRequest(updateRequest.getUpdates().front());
             updateOpWithNamespace.setNamespaceString(updateRequest.getNamespace());
             updateOpWithNamespace.setLetParameters(updateRequest.getLet());
+            updateOpWithNamespace.setBypassEmptyTsReplacement(
+                updateRequest.getBypassEmptyTsReplacement());
 
             if (requiresOriginalQuery(opCtx, updateOpWithNamespace) ||
                 nss.isTimeseriesBucketsCollection()) {

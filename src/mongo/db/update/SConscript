@@ -1,6 +1,11 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
@@ -16,7 +21,7 @@ env.Library(
         "$BUILD_DIR/mongo/db/exec/document_value/document_value",
     ],
     LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/bson/dotted_path_support",
+        "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
     ],
 )
 
@@ -25,6 +30,7 @@ env.Library(
     source=[
         "field_checker.cpp",
         "path_support.cpp",
+        "runtime_update_path.cpp",
         "storage_validation.cpp",
         "v2_log_builder.cpp",
         "update_oplog_entry_serialization.cpp",
@@ -36,6 +42,9 @@ env.Library(
         "$BUILD_DIR/mongo/db/query_expressions",
         "pattern_cmp",
         "update_document_diff",
+    ],
+    LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
     ],
 )
 
@@ -100,6 +109,9 @@ env.Library(
         "$BUILD_DIR/mongo/db/server_base",
         "update",
     ],
+    LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
+    ],
 )
 
 env.Library(
@@ -109,21 +121,6 @@ env.Library(
     ],
     LIBDEPS=[
         "update",
-    ],
-)
-
-env.Library(
-    target="update_document_diff",
-    source=[
-        "document_diff_calculator.cpp",
-        "document_diff_applier.cpp",
-        "document_diff_serialization.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/bson/mutable/mutable_bson",
-        "$BUILD_DIR/mongo/db/common",
-        "$BUILD_DIR/mongo/db/update_index_data",
     ],
 )
 
@@ -164,6 +161,7 @@ env.CppUnitTest(
     LIBDEPS=[
         "$BUILD_DIR/mongo/bson/mutable/mutable_bson",
         "$BUILD_DIR/mongo/bson/mutable/mutable_bson_test_utils",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/auth/authmocks",
         "$BUILD_DIR/mongo/db/exec/document_value/document_value_test_util",
         "$BUILD_DIR/mongo/db/query/collation/collator_interface_mock",

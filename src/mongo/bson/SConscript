@@ -5,6 +5,7 @@ Import("env")
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "mutable",
         "util",
@@ -66,20 +67,6 @@ env.CppLibfuzzerTest(
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/bson/bson_validate",
         "$BUILD_DIR/mongo/bson/util/bson_column",
-    ],
-)
-
-env.Library(
-    target="bson_validate",
-    source=[
-        "bson_validate.cpp",
-        "bson_validate.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/bson/util/bson_column",
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/idl/idl_parser",
     ],
 )
 

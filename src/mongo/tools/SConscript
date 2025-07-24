@@ -3,6 +3,7 @@ Import("env")
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "mongobridge_tool",
         "mongo_tidy_checks",
@@ -18,7 +19,7 @@ perconadecrypt = env.Program(
     source=[
         "perconadecrypt.cpp",
         "perconadecrypt_options.cpp",
-        "perconadecrypt_options.idl",
+        "perconadecrypt_options_gen.cpp",
         "perconadecrypt_options_init.cpp",
     ],
     LIBDEPS=[

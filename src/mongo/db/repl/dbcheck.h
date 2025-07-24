@@ -58,6 +58,7 @@
 namespace mongo {
 
 // Forward declarations.
+class ClusteredIndexSpec;
 class Collection;
 class CollectionPtr;
 class OperationContext;
@@ -114,7 +115,7 @@ std::unique_ptr<HealthLogEntry> dbCheckWarningHealthLogEntry(
 /**
  * Get a HealthLogEntry for a dbCheck batch.
  */
-std::unique_ptr<HealthLogEntry> dbCheckBatchEntry(
+std::unique_ptr<HealthLogEntry> dbCheckBatchHealthLogEntry(
     const boost::optional<SecondaryIndexCheckParameters>& parameters,
     const boost::optional<UUID>& batchId,
     const NamespaceString& nss,
@@ -123,14 +124,18 @@ std::unique_ptr<HealthLogEntry> dbCheckBatchEntry(
     int64_t bytes,
     const std::string& expectedHash,
     const std::string& foundHash,
-    const BSONObj& minKey,
-    const BSONObj& maxKey,
+    const BSONObj& batchStart,
+    const BSONObj& batchEnd,
+    const BSONObj& lastKeyChecked,
     int64_t nConsecutiveIdenticalIndexKeysAtEnd,
     const boost::optional<Timestamp>& timestamp,
     const repl::OpTime& optime,
     const boost::optional<CollectionOptions>& options = boost::none,
     const boost::optional<BSONObj>& indexSpec = boost::none);
 
+bool isIndexOrderAndUniquenessPreserved(const KeyStringEntry& curr,
+                                        const KeyStringEntry& next,
+                                        bool isUnique);
 
 struct ReadSourceWithTimestamp {
     RecoveryUnit::ReadSource readSource;
@@ -144,6 +149,16 @@ struct ReadSourceWithTimestamp {
  */
 BSONObj _keyStringToBsonSafeHelper(const key_string::Value& keyString, const Ordering& ordering);
 BSONObj _builderToBsonSafeHelper(const key_string::Builder& builder, const Ordering& ordering);
+
+/**
+ * Helper for getting the next distinct key in the index after currKeyStringBson.
+ */
+boost::optional<KeyStringEntry> _getNextDistinctKeyInIndex(
+    OperationContext* opCtx,
+    const std::unique_ptr<SortedDataInterfaceThrottleCursor>& indexCursor,
+    const key_string::Version& version,
+    const Ordering& ordering,
+    const BSONObj& currKeyStringBson);
 
 /**
  * DbCheckAcquisition is a helper class to acquire locks and set RecoveryUnit state for the dbCheck
@@ -190,6 +205,7 @@ public:
      * @param end The last key to hash (inclusive).
      * @param maxCount The maximum number of documents or index keys to hash.
      * @param maxBytes The maximum number of bytes to hash.
+     * @param deadlineOnSecondary The time deadline to finish this batch by on the secondary.
      */
     DbCheckHasher(OperationContext* opCtx,
                   const DbCheckAcquisition& acquisition,
@@ -199,7 +215,8 @@ public:
                   DataThrottle* dataThrottle,
                   boost::optional<StringData> indexName = boost::none,
                   int64_t maxCount = std::numeric_limits<int64_t>::max(),
-                  int64_t maxBytes = std::numeric_limits<int64_t>::max());
+                  int64_t maxBytes = std::numeric_limits<int64_t>::max(),
+                  Date_t deadlineOnSecondary = Date_t::max());
 
     ~DbCheckHasher() = default;
 
@@ -208,7 +225,7 @@ public:
      */
     Status hashForCollectionCheck(OperationContext* opCtx,
                                   const CollectionPtr& collPtr,
-                                  Date_t deadline = Date_t::max());
+                                  Date_t deadlineOnPrimary = Date_t::max());
 
     /**
      * Hash index keys between first and last inclusive.
@@ -218,8 +235,9 @@ public:
      */
     Status hashForExtraIndexKeysCheck(OperationContext* opCtx,
                                       const Collection* collection,
-                                      const BSONObj& firstBson,
-                                      const BSONObj& lastBson);
+                                      const BSONObj& batchStartBson,
+                                      const BSONObj& batchEndBson,
+                                      const BSONObj& lastKeyCheckedBson);
 
     /**
      * Checks if a document has missing index keys by finding the index keys that should be
@@ -258,6 +276,11 @@ private:
      */
     bool _canHashForCollectionCheck(const BSONObj& obj);
 
+    bool _isIdSameAsRecordId(const RecordId& rid,
+                             const BSONObj& doc,
+                             const ClusteredIndexSpec& indexSpec,
+                             const CollatorInterface* collator);
+
     OperationContext* _opCtx;
     std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> _exec;
     md5_state_t _state;
@@ -284,6 +307,10 @@ private:
 
     boost::optional<SecondaryIndexCheckParameters> _secondaryIndexCheckParameters;
     DataThrottle* _dataThrottle;
+
+    // Max time that the hasher should spend on a batch. This should only be populated on the
+    // secondary since the primary has its own batch time limit.
+    Date_t _deadlineOnSecondary;
 };
 
 namespace repl {

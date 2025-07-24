@@ -29,14 +29,21 @@ export var FeatureFlagUtil = (function() {
         // In order to get an accurate answer for whether a feature flag is enabled, we need to ask
         // a mongod. If db represents a connection to mongos, or some other configuration, we need
         // to obtain the correct connection to a mongod.
-        let conn;
+        let conn = null;
         const setConn = (db) => {
-            if (FixtureHelpers.isMongos(db)) {
-                // For sharded cluster get a connection to the first replicaset
-                conn = new Mongo(FixtureHelpers.getAllReplicas(db)[0].getURL());
-            } else {
+            if (!FixtureHelpers.isMongos(db)) {
                 conn = db;
+                return;
             }
+
+            // For sharded cluster get a connection to the first replicaset through a Mongo
+            // object. We may fail to connect if we are in a stepdown/terminate passthrough, so
+            // retry on retryable errors. After the connection is established, runCommand overrides
+            // should guarantee that subsequent operations on the connection are retried in the
+            // event of network errors in suites where that possibility exists.
+            retryOnRetryableError(() => {
+                conn = new Mongo(FixtureHelpers.getAllReplicas(db)[0].getURL());
+            });
         };
         try {
             setConn(db);

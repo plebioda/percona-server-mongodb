@@ -184,11 +184,18 @@ boost::optional<InsertWaiter> checkForWait(const Stripe& stripe,
 }
 }  // namespace
 
-StripeNumber getStripeNumber(const BucketKey& key, size_t numberOfStripes) {
+StripeNumber getStripeNumber(const BucketCatalog& catalog, const BucketKey& key) {
     if (MONGO_unlikely(alwaysUseSameBucketCatalogStripe.shouldFail())) {
         return 0;
     }
-    return key.hash % numberOfStripes;
+    return key.hash % catalog.stripes.size();
+}
+
+StripeNumber getStripeNumber(const BucketCatalog& catalog, const BucketId& bucketId) {
+    if (MONGO_unlikely(alwaysUseSameBucketCatalogStripe.shouldFail())) {
+        return 0;
+    }
+    return bucketId.keySignature % catalog.stripes.size();
 }
 
 StatusWith<std::pair<BucketKey, Date_t>> extractBucketingParameters(
@@ -237,7 +244,7 @@ const Bucket* findBucket(BucketStateRegistry& registry,
             return it->second.get();
         }
 
-        if (auto state = getBucketState(registry, it->second.get());
+        if (auto state = materializeAndGetBucketState(registry, it->second.get());
             state && !conflictsWithInsertions(state.value())) {
             return it->second.get();
         }
@@ -300,7 +307,7 @@ Bucket* useBucket(OperationContext* opCtx,
             : nullptr;
     }
 
-    if (auto state = getBucketState(catalog.bucketStateRegistry, bucket);
+    if (auto state = materializeAndGetBucketState(catalog.bucketStateRegistry, bucket);
         state && !conflictsWithInsertions(state.value())) {
         markBucketNotIdle(stripe, stripeLock, *bucket);
         return bucket;
@@ -348,7 +355,7 @@ Bucket* useAlternateBucket(BucketCatalog& catalog,
             continue;
         }
 
-        auto state = getBucketState(catalog.bucketStateRegistry, potentialBucket);
+        auto state = materializeAndGetBucketState(catalog.bucketStateRegistry, potentialBucket);
         invariant(state);
         if (!conflictsWithInsertions(state.value())) {
             invariant(!potentialBucket->idleListEntry.has_value());
@@ -425,7 +432,7 @@ StatusWith<unique_tracked_ptr<Bucket>> rehydrateBucket(OperationContext* opCtx,
     auto minTime = controlField.getObjectField(kBucketControlMinFieldName)
                        .getField(options.getTimeField())
                        .Date();
-    BucketId bucketId{key.collectionUUID, bucketIdElem.OID()};
+    BucketId bucketId{key.collectionUUID, bucketIdElem.OID(), key.signature()};
     unique_tracked_ptr<Bucket> bucket = make_unique_tracked<Bucket>(
         getTrackingContext(catalog.trackingContexts, TrackingScope::kOpenBucketsById),
         catalog.trackingContexts,
@@ -519,8 +526,10 @@ StatusWith<unique_tracked_ptr<Bucket>> rehydrateBucket(OperationContext* opCtx,
                                       base64::encode(bucketDoc.objdata(), bucketDoc.objsize()));
 
             invariant(!TestingProctor::instance().isEnabled());
-            timeseries::bucket_catalog::freeze(catalog, collectionUUID, bucketId.oid);
-            return Status(BucketCompressionFailure(collectionUUID, bucketId.oid), ex.reason());
+            timeseries::bucket_catalog::freeze(catalog, bucketId);
+            return Status(
+                BucketCompressionFailure(collectionUUID, bucketId.oid, bucketId.keySignature),
+                ex.reason());
         }
     }
 
@@ -607,7 +616,7 @@ StatusWith<std::reference_wrapper<Bucket>> reuseExistingBucket(BucketCatalog& ca
     // If we have an existing bucket, passing the Bucket* will let us check if the bucket was
     // cleared as part of a set since the last time it was used. If we were to just check by OID, we
     // may miss if e.g. there was a move chunk operation.
-    auto state = getBucketState(catalog.bucketStateRegistry, &existingBucket);
+    auto state = materializeAndGetBucketState(catalog.bucketStateRegistry, &existingBucket);
     invariant(state);
     if (isBucketStateCleared(state.value()) || isBucketStateFrozen(state.value())) {
         abort(catalog,
@@ -724,8 +733,8 @@ void waitToCommitBatch(BucketStateRegistry& registry,
         boost::optional<InsertWaiter> waiter;
         {
             stdx::lock_guard stripeLock{stripe.mutex};
-            Bucket* bucket = useBucket(
-                registry, stripe, stripeLock, batch->bucketHandle.bucketId, IgnoreBucketState::kNo);
+            Bucket* bucket =
+                useBucket(registry, stripe, stripeLock, batch->bucketId, IgnoreBucketState::kNo);
             if (!bucket || isWriteBatchFinished(*batch)) {
                 return;
             }
@@ -739,8 +748,7 @@ void waitToCommitBatch(BucketStateRegistry& registry,
                 // or an archive-based request on this bucket.
                 auto& list = it->second;
                 for (auto&& request : list) {
-                    if (!request->oid.has_value() ||
-                        request->oid.value() == batch->bucketHandle.bucketId.oid) {
+                    if (!request->oid.has_value() || request->oid.value() == batch->bucketId.oid) {
                         waiter = request;
                         break;
                     }
@@ -978,11 +986,8 @@ void abort(BucketCatalog& catalog,
            std::shared_ptr<WriteBatch> batch,
            const Status& status) {
     // Before we access the bucket, make sure it's still there.
-    Bucket* bucket = useBucket(catalog.bucketStateRegistry,
-                               stripe,
-                               stripeLock,
-                               batch->bucketHandle.bucketId,
-                               IgnoreBucketState::kYes);
+    Bucket* bucket = useBucket(
+        catalog.bucketStateRegistry, stripe, stripeLock, batch->bucketId, IgnoreBucketState::kYes);
     if (!bucket) {
         // Special case, bucket has already been cleared, and we need only abort this batch.
         abortWriteBatch(*batch, status);
@@ -1055,7 +1060,7 @@ void expireIdleBuckets(OperationContext* opCtx,
            numExpired <= gTimeseriesIdleBucketExpiryMaxCountPerAttempt) {
         Bucket* bucket = stripe.idleBuckets.back();
 
-        auto state = getBucketState(catalog.bucketStateRegistry, bucket);
+        auto state = materializeAndGetBucketState(catalog.bucketStateRegistry, bucket);
         if (state && !conflictsWithInsertions(state.value())) {
             // Can archive a bucket if it's still eligible for insertions.
             archiveBucket(opCtx, catalog, stripe, stripeLock, *bucket, closedBuckets);
@@ -1157,11 +1162,12 @@ Bucket& allocateBucket(OperationContext* opCtx,
     OID oid;
     Date_t roundedTime;
     tracked_unordered_map<BucketId, unique_tracked_ptr<Bucket>, BucketHasher>::iterator it;
-    bool inserted = false;
-    for (int retryAttempts = 0; !inserted && retryAttempts < maxRetries; ++retryAttempts) {
+    bool successfullyCreatedId = false;
+    for (int retryAttempts = 0; !successfullyCreatedId && retryAttempts < maxRetries;
+         ++retryAttempts) {
         std::tie(oid, roundedTime) = generateBucketOID(time, info.options);
-        auto bucketId = BucketId{info.key.collectionUUID, oid};
-        std::tie(it, inserted) = stripe.openBucketsById.try_emplace(
+        auto bucketId = BucketId{info.key.collectionUUID, oid, info.key.signature()};
+        std::tie(it, successfullyCreatedId) = stripe.openBucketsById.try_emplace(
             bucketId,
             make_unique_tracked<Bucket>(
                 getTrackingContext(catalog.trackingContexts, TrackingScope::kOpenBucketsById),
@@ -1171,26 +1177,25 @@ Bucket& allocateBucket(OperationContext* opCtx,
                 info.options.getTimeField(),
                 roundedTime,
                 catalog.bucketStateRegistry));
-        if (!inserted) {
+        if (successfullyCreatedId) {
+            Bucket* bucket = it->second.get();
+            auto status = initializeBucketState(catalog.bucketStateRegistry, bucket->bucketId);
+            if (!status.isOK()) {
+                successfullyCreatedId = false;
+            }
+        }
+        if (!successfullyCreatedId) {
+            stripe.openBucketsById.erase(bucketId);
             resetBucketOIDCounter();
         }
     }
     uassert(6130900,
             "Unable to insert documents due to internal OID generation collision. Increase the "
             "value of server parameter 'timeseriesInsertMaxRetriesOnDuplicates' and try again",
-            inserted);
+            successfullyCreatedId);
 
     Bucket* bucket = it->second.get();
     stripe.openBucketsByKey[info.key].emplace(bucket);
-
-    auto status = initializeBucketState(catalog.bucketStateRegistry, bucket->bucketId);
-    if (!status.isOK()) {
-        // Don't track the memory usage for the bucket keys in this data structure because it is
-        // already being tracked by the Bucket itself.
-        stripe.openBucketsByKey[info.key].erase(bucket);
-        stripe.openBucketsById.erase(it);
-        throwWriteConflictException(status.reason());
-    }
 
     catalog.numberOfActiveBuckets.fetchAndAdd(1);
     // Make sure we set the control.min time field to match the rounded _id timestamp.
@@ -1467,7 +1472,7 @@ void runPostCommitDebugChecks(OperationContext* opCtx,
                               const WriteBatch& batch) {
     // Check in-memory and disk state, caller still has commit rights.
     DBDirectClient client{opCtx};
-    BSONObj queriedBucket = client.findOne(nss, BSON("_id" << batch.bucketHandle.bucketId.oid));
+    BSONObj queriedBucket = client.findOne(nss, BSON("_id" << batch.bucketId.oid));
     if (!queriedBucket.isEmpty()) {
         uint32_t memCount = batch.numPreviouslyCommittedMeasurements + batch.measurements.size();
         uint32_t diskCount = isCompressedBucket(queriedBucket)

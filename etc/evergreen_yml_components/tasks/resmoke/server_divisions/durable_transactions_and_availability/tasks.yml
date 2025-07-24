@@ -178,14 +178,6 @@ tasks:
           use_large_distro: "true"
 
   - <<: *gen_task_template
-    name: bulk_write_sharded_causally_consistent_jscore_passthrough_gen
-    tags: ["assigned_to_jira_team_server_repl", "default", "bulk_write"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
     name: bulk_write_sharded_collections_jscore_passthrough_gen
     tags: ["assigned_to_jira_team_server_repl", "default", "bulk_write"]
     commands:
@@ -231,23 +223,15 @@ tasks:
         vars:
           resmoke_jobs_max: 1
 
-  - <<: *gen_task_template
-    name: concurrency_sharded_replication_bulk_write_gen
-    tags: ["assigned_to_jira_team_server_repl", "default", "bulk_write"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-          resmoke_jobs_max: 1
-
-  - <<: *gen_task_template
-    name: magic_restore_replica_sets_jscore_passthrough_gen
-    tags: ["assigned_to_jira_team_server_repl", "default", "large"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
+  # TODO(SERVER-93789): Re-enable magic_restore passthroughs in master
+  # - <<: *gen_task_template
+  #   name: magic_restore_replica_sets_jscore_passthrough_gen
+  #   tags: ["assigned_to_jira_team_server_repl", "default", "large"]
+  #   commands:
+  #     - func: "generate resmoke tasks"
+  #       vars:
+  #         use_large_distro: "true"
+  #
   # - <<: *gen_task_template
   #   name: magic_restore_sharding_jscore_passthrough_gen
   #   tags: ["assigned_to_jira_team_server_repl", "default", "large"]
@@ -255,7 +239,7 @@ tasks:
   #     - func: "generate resmoke tasks"
   #       vars:
   #         use_large_distro: "true"
-
+  #
   # - <<: *gen_task_template
   #   name: magic_restore_sharded_collections_jscore_passthrough_gen
   #   tags: ["assigned_to_jira_team_server_repl", "default", "large"]
@@ -423,6 +407,7 @@ tasks:
         "default",
         "incompatible_inmemory",
         "incompatible_debug_mode",
+        "incompatible_tsan",
         "concurrency",
         "stepdowns",
         "initsync",
@@ -681,28 +666,43 @@ tasks:
           # historical data. We manually increase the timeout above the historical timeout to avoid this
           exec_timeout_secs: 900 # 15 mins
 
-  ## initial sync generational fuzzer ##
+  ## initial sync generational fuzzer to ensure stability in patch builds ##
   - <<: *jstestfuzz_template
-    name: initial_sync_fuzzer_gen
-    # TODO (SERVER-89735): capped:true + recordIdsReplicated:true crashes initial sync.
+    name: initial_sync_fuzzer_sanity_patch_gen
+    patch_only: true
     tags:
       [
         "assigned_to_jira_team_server_repl",
         "default",
         "require_npm",
         "random_name",
-        "exclude_when_record_ids_replicated",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars: &initial_sync_fuzzer_sanity_patch_config
+          <<: *jstestfuzz_config_vars
+          num_files: 2
+          num_tasks: 1
+          npm_command: initsync-fuzzer
+          suite: initial_sync_fuzzer
+          resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
+
+  ## initial sync generational fuzzer ##
+  - <<: *jstestfuzz_template
+    name: initial_sync_fuzzer_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_repl",
+        "non_deterministic",
+        "require_npm",
+        "random_name",
       ]
     commands:
       - func: "generate resmoke tasks"
         vars:
-          <<: *jstestfuzz_config_vars
+          <<: *initial_sync_fuzzer_sanity_patch_config
           num_files: 10
           num_tasks: 5
-          jstestfuzz_vars: --useEsModules
-          npm_command: initsync-fuzzer
-          suite: initial_sync_fuzzer
-          resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
 
   ## initial sync multiversion fuzzer ##
   - <<: *jstestfuzz_template
@@ -726,7 +726,6 @@ tasks:
           <<: *jstestfuzz_config_vars
           num_files: 10
           num_tasks: 5
-          jstestfuzz_vars: --useEsModules
           npm_command: initsync-fuzzer
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
           run_no_feature_flag_tests: "true"
@@ -766,33 +765,6 @@ tasks:
         vars:
           suite: core_txns_large_txns_format
 
-  ## jstestfuzz concurrent replication continuous stepdown with flow control engaged ##
-  - <<: *jstestfuzz_template
-    name: jstestfuzz_concurrent_replication_continuous_stepdown_flow_control_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_repl",
-        "non_deterministic",
-        "incompatible_debug_mode",
-        "jstestfuzz",
-        "repl",
-        "flow_control",
-        "stepdowns",
-        "require_npm",
-        "random_name",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          <<: *jstestfuzz_config_vars
-          num_files: 2
-          num_tasks: 1
-          jstestfuzz_vars: --jsTestsDir ../jstests
-          suite: jstestfuzz_replication_continuous_stepdown
-          resmoke_args: >-
-            --flowControlTicketOverride=10
-            --numClientsPerFixture=10
-
   ## jstestfuzz concurrent replica set ##
   - <<: *jstestfuzz_template
     name: jstestfuzz_concurrent_replication_gen
@@ -800,12 +772,12 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "release_critical",
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "common",
         "repl",
         "require_npm",
@@ -828,9 +800,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "session",
         "require_npm",
         "random_name",
@@ -852,9 +824,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "write_conflict",
         "require_npm",
         "random_name",
@@ -867,33 +839,6 @@ tasks:
           suite: jstestfuzz_replication_write_conflicts
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}' --numClientsPerFixture=10"
 
-  # jstestfuzz replication continuous stepdown with flow control engaged #
-  - <<: *jstestfuzz_template
-    name: jstestfuzz_replication_continuous_stepdown_flow_control_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_repl",
-        "non_deterministic",
-        "incompatible_debug_mode",
-        "jstestfuzz",
-        "repl",
-        "flow_control",
-        "stepdowns",
-        "require_npm",
-        "random_name",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          <<: *jstestfuzz_config_vars
-          num_files: 2
-          num_tasks: 1
-          jstestfuzz_vars: --jsTestsDir ../jstests
-          suite: jstestfuzz_replication_continuous_stepdown
-          resmoke_args: >-
-            --flowControlTicketOverride=1
-            --mongodSetParameters="{logComponentVerbosity: {command: 2}}"
-
   ## jstestfuzz file copy based initial sync replica set ##
   - <<: *jstestfuzz_template
     name: jstestfuzz_replication_fcbis_gen
@@ -901,9 +846,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "initsync",
         "fcbis",
         "require_npm",
@@ -927,12 +872,12 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "release_critical",
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "common",
         "repl",
         "require_npm",
@@ -953,9 +898,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "initsync",
         "require_npm",
         "random_name",
@@ -1006,9 +951,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "session",
         "require_npm",
         "random_name",
@@ -1046,9 +991,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "write_conflict",
         "require_npm",
         "random_name",
@@ -1251,6 +1196,22 @@ tasks:
           replica_sets_jscore_passthrough_last_lts_new_new_old: last_lts
           replica_sets_jscore_passthrough_last_lts_new_old_new: last_lts
           replica_sets_jscore_passthrough_last_lts_old_new_new: last_lts
+      - func: "generate resmoke tasks"
+        vars:
+          run_no_feature_flag_tests: "true"
+
+  - <<: *gen_task_template
+    name: replica_sets_kill_primary_jscore_multiversion_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_repl",
+        "experimental",
+        "multiversion",
+        "multiversion_passthrough",
+      ]
+    commands:
+      - func: "initialize multiversion tasks"
+        vars:
           replica_sets_kill_primary_jscore_passthrough_last_lts_new_new_old: last_lts
           replica_sets_kill_primary_jscore_passthrough_last_lts_new_old_old: last_lts
       - func: "generate resmoke tasks"
@@ -1468,6 +1429,12 @@ tasks:
       - func: "generate resmoke tasks"
 
   - <<: *gen_task_template
+    name: no_causal_consistency_replica_sets_kill_stepdown_terminate_jscore_passthrough_gen
+    tags: ["assigned_to_jira_team_server_repl", "default"]
+    commands:
+      - func: "generate resmoke tasks"
+
+  - <<: *gen_task_template
     name: replica_sets_recordids_replicated_jscore_passthrough_gen
     tags:
       [
@@ -1516,7 +1483,7 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
+        "non_deterministic",
         "rollbackfuzzer",
         "require_npm",
         "random_name",
@@ -1527,9 +1494,33 @@ tasks:
           <<: *jstestfuzz_config_vars
           num_files: 1
           num_tasks: 4
-          jstestfuzz_vars: --numLinesPerFile 300 --maxLinesBetweenEvents 50 --useEsModules
+          jstestfuzz_vars: --numLinesPerFile 300 --maxLinesBetweenEvents 50
           npm_command: rollback-fuzzer
           suite: rollback_fuzzer_clean_shutdowns
+          # Rollback suites create indexes with majority of nodes not available for replication. So, disabling
+          # index build commit quorum.
+          resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}, enableIndexBuildCommitQuorum: false}'"
+
+  ## rollback generational fuzzer to ensure stability in patch builds ##
+  - <<: *jstestfuzz_template
+    name: rollback_fuzzer_sanity_patch_gen
+    patch_only: true
+    tags:
+      [
+        "assigned_to_jira_team_server_repl",
+        "default",
+        "rollbackfuzzer",
+        "require_npm",
+        "random_name",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars: &rollback_fuzzer_sanity_patch_config
+          <<: *jstestfuzz_config_vars
+          num_files: 2
+          num_tasks: 1
+          npm_command: rollback-fuzzer
+          suite: rollback_fuzzer
           # Rollback suites create indexes with majority of nodes not available for replication. So, disabling
           # index build commit quorum.
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}, enableIndexBuildCommitQuorum: false}'"
@@ -1540,7 +1531,7 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
+        "non_deterministic",
         "rollbackfuzzer",
         "require_npm",
         "random_name",
@@ -1548,15 +1539,9 @@ tasks:
     commands:
       - func: "generate resmoke tasks"
         vars:
-          <<: *jstestfuzz_config_vars
+          <<: *rollback_fuzzer_sanity_patch_config
           num_files: 3
           num_tasks: 5
-          jstestfuzz_vars: --useEsModules
-          npm_command: rollback-fuzzer
-          suite: rollback_fuzzer
-          # Rollback suites create indexes with majority of nodes not available for replication. So, disabling
-          # index build commit quorum.
-          resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}, enableIndexBuildCommitQuorum: false}'"
 
   ## rollback generational fuzzer with unclean shutdowns ##
   - <<: *jstestfuzz_template
@@ -1564,7 +1549,7 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_repl",
-        "default",
+        "non_deterministic",
         "rollbackfuzzer",
         "require_npm",
         "random_name",
@@ -1575,7 +1560,7 @@ tasks:
           <<: *jstestfuzz_config_vars
           num_files: 1
           num_tasks: 4
-          jstestfuzz_vars: --numLinesPerFile 300 --maxLinesBetweenEvents 50 --useEsModules
+          jstestfuzz_vars: --numLinesPerFile 300 --maxLinesBetweenEvents 50
           npm_command: rollback-fuzzer
           suite: rollback_fuzzer_unclean_shutdowns
           # Rollback suites create indexes with majority of nodes not available for replication. So, disabling
@@ -1604,7 +1589,6 @@ tasks:
           <<: *jstestfuzz_config_vars
           num_files: 3
           num_tasks: 5
-          jstestfuzz_vars: --useEsModules
           npm_command: rollback-fuzzer
           # Rollback suites create indexes with majority of nodes not available for replication. So, disabling
           # index build commit quorum.
@@ -1639,6 +1623,7 @@ tasks:
         "release_critical",
         "misc_js",
         "non_win_dbg",
+        "requires_large_host",
       ]
     commands:
       - func: "do setup"
@@ -1842,35 +1827,6 @@ tasks:
           resmoke_jobs_max: 1
 
   - <<: *gen_task_template
-    name: concurrency_replication_wiredtiger_cursor_sweeps_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_execution",
-        "default",
-        "concurrency",
-        "repl",
-        "cursor_sweeps",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          resmoke_jobs_max: 1
-
-  - <<: *gen_task_template
-    name: concurrency_replication_wiredtiger_cursor_sweeps_with_replica_set_endpoint_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_cluster_scalability",
-        "experimental",
-        "replica_set_endpoint",
-        "requires_all_feature_flags",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          resmoke_jobs_max: 1
-
-  - <<: *gen_task_template
     name: concurrency_simultaneous_gen
     tags:
       [
@@ -1889,45 +1845,18 @@ tasks:
           resmoke_jobs_max: 1
 
   - <<: *gen_task_template
-    name: concurrency_simultaneous_replication_wiredtiger_cursor_sweeps_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_execution",
-        "default",
-        "concurrency",
-        "large",
-        "repl",
-        "cursor_sweeps",
-        "random_name",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          resmoke_jobs_max: 1
-
-  - <<: *task_template
-    name: config_fuzzer_concurrency
-    tags: ["assigned_to_jira_team_server_execution", "default", "config_fuzzer"]
-    commands:
-      - func: "do setup"
-      - func: "run tests"
-        vars:
-          suite: concurrency
-          resmoke_args: >-
-            --fuzzMongodConfigs=normal
-            --excludeWithAnyTags=does_not_support_config_fuzzer
-
-  - <<: *gen_task_template
     name: config_fuzzer_concurrency_replication_gen
     tags:
       [
         "assigned_to_jira_team_server_execution",
-        "default",
+        "concurrency",
         "config_fuzzer",
+        "default",
         "large",
         "incompatible_tsan",
         "incompatible_aubsan",
         "incompatible_debug_mode",
+        "incompatible_inmemory",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1935,21 +1864,55 @@ tasks:
           suite: concurrency_replication
           resmoke_args: >-
             --fuzzMongodConfigs=normal
+            --fuzzRuntimeParams
             --excludeWithAnyTags=does_not_support_config_fuzzer
           use_large_distro: "true"
+
+  - <<: *gen_task_template
+    name: config_fuzzer_jstestfuzz_concurrent_replication_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_execution",
+        "config_fuzzer",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
+        "incompatible_inmemory",
+        "incompatible_mac",
+        "incompatible_ppc",
+        "incompatible_s390x",
+        "incompatible_tsan",
+        "jstestfuzz",
+        "non_deterministic",
+        "require_npm",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          <<: *jstestfuzz_config_vars
+          num_files: ${jstestfuzz_concurrent_num_files|10}
+          num_tasks: 5
+          jstestfuzz_vars: --jsTestsDir ../jstests
+          suite: jstestfuzz_replication
+          resmoke_args: >-
+            --numClientsPerFixture=10
+            --fuzzMongodConfigs=normal
+            --fuzzRuntimeParams
+            --excludeWithAnyTags=does_not_support_config_fuzzer
 
   - <<: *gen_task_template
     name: config_fuzzer_concurrency_sharded_replication_gen
     tags:
       [
         "assigned_to_jira_team_server_execution",
-        "default",
+        "concurrency",
         "config_fuzzer",
+        "default",
         "large",
         "sharded",
         "incompatible_tsan",
         "incompatible_aubsan",
         "incompatible_debug_mode",
+        "incompatible_inmemory",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1958,6 +1921,7 @@ tasks:
           resmoke_args: >-
             --fuzzMongodConfigs=normal
             --fuzzMongosConfigs=normal
+            --fuzzRuntimeParams
             --excludeWithAnyTags=does_not_support_config_fuzzer
           use_xlarge_distro: "true"
           resmoke_jobs_max: 1
@@ -1967,12 +1931,14 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_execution",
-        "default",
+        "concurrency",
         "config_fuzzer",
+        "default",
         "large",
         "incompatible_tsan",
         "incompatible_aubsan",
         "incompatible_debug_mode",
+        "incompatible_inmemory",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1980,12 +1946,19 @@ tasks:
           suite: concurrency_simultaneous_replication
           resmoke_args: >-
             --fuzzMongodConfigs=normal
+            --fuzzRuntimeParams
             --excludeWithAnyTags=does_not_support_config_fuzzer
           use_large_distro: "true"
 
   - <<: *task_template
     name: config_fuzzer_jsCore
-    tags: ["assigned_to_jira_team_server_execution", "default", "config_fuzzer"]
+    tags:
+      [
+        "assigned_to_jira_team_server_execution",
+        "default",
+        "config_fuzzer",
+        "incompatible_inmemory",
+      ]
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -1993,6 +1966,7 @@ tasks:
           suite: core
           resmoke_args: >-
             --fuzzMongodConfigs=normal
+            --fuzzRuntimeParams
             --excludeWithAnyTags=does_not_support_config_fuzzer
 
   - <<: *gen_task_template
@@ -2006,6 +1980,7 @@ tasks:
         "incompatible_tsan",
         "incompatible_aubsan",
         "incompatible_debug_mode",
+        "incompatible_inmemory",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -2013,6 +1988,7 @@ tasks:
           suite: replica_sets_jscore_passthrough
           resmoke_args: >-
             --fuzzMongodConfigs=normal
+            --fuzzRuntimeParams
             --excludeWithAnyTags=does_not_support_config_fuzzer
           use_large_distro: "true"
 
@@ -2027,6 +2003,7 @@ tasks:
         "incompatible_tsan",
         "incompatible_aubsan",
         "incompatible_debug_mode",
+        "incompatible_inmemory",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -2035,6 +2012,7 @@ tasks:
           resmoke_args: >-
             --fuzzMongodConfigs=normal
             --fuzzMongosConfigs=normal
+            --fuzzRuntimeParams
             --excludeWithAnyTags=does_not_support_config_fuzzer
           use_large_distro: "true"
 
@@ -2050,14 +2028,19 @@ tasks:
         "incompatible_tsan",
         "incompatible_aubsan",
         "incompatible_debug_mode",
+        "incompatible_inmemory",
       ]
     commands:
       - func: "generate resmoke tasks"
         vars:
           suite: simulate_crash_concurrency_replication
+          # We disable encryption fuzzing because it increases the runtime of this task
+          # significantly (over 5x in testing). It does not cause correctness issues.
           resmoke_args: >-
             --fuzzMongodConfigs=normal
+            --fuzzRuntimeParams
             --excludeWithAnyTags=does_not_support_config_fuzzer
+            --disableEncryptionFuzzing
           use_large_distro: "true"
 
   - <<: *gen_task_template
@@ -2077,6 +2060,7 @@ tasks:
           suite: concurrency_replication
           resmoke_args: >-
             --fuzzMongodConfigs=stress
+            --fuzzRuntimeParams
             --excludeWithAnyTags=does_not_support_config_fuzzer
           use_large_distro: "true"
           exec_timeout_secs: 14400 # 4 hours
@@ -2100,6 +2084,7 @@ tasks:
           resmoke_args: >-
             --fuzzMongodConfigs=stress
             --fuzzMongosConfigs=normal
+            --fuzzRuntimeParams
             --excludeWithAnyTags=does_not_support_config_fuzzer
           use_large_distro: "true"
           exec_timeout_secs: 14400 # 4 hours
@@ -2145,12 +2130,12 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_execution",
-        "release_critical",
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "common",
         "require_npm",
         "random_name",
@@ -2172,9 +2157,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_execution",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "interrupt",
         "require_npm",
         "random_name",
@@ -2187,30 +2172,6 @@ tasks:
           suite: jstestfuzz_interrupt
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
 
-  # jstestfuzz interrupt with flow control engaged #
-  - <<: *jstestfuzz_template
-    name: jstestfuzz_interrupt_replication_flow_control_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_execution",
-        "non_deterministic",
-        "incompatible_debug_mode",
-        "jstestfuzz",
-        "interrupt",
-        "flow_control",
-        "require_npm",
-        "random_name",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          <<: *jstestfuzz_config_vars
-          num_files: 2
-          num_tasks: 1
-          jstestfuzz_vars: --jsTestsDir ../jstests
-          suite: jstestfuzz_interrupt_replication
-          resmoke_args: "--flowControlTicketOverride=1 --mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
-
   # jstestfuzz interrupt #
   - <<: *jstestfuzz_template
     name: jstestfuzz_interrupt_replication_gen
@@ -2218,9 +2179,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_execution",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "interrupt",
         "require_npm",
         "random_name",
@@ -2254,6 +2215,7 @@ tasks:
         "incompatible_s390x",
         "incompatible_debug_mode",
         "misc_js",
+        "requires_execution_on_windows_patch_build",
       ]
     commands:
       - func: "generate resmoke tasks"

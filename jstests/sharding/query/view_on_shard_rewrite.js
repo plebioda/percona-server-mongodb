@@ -15,6 +15,7 @@
 
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 import {profilerHasSingleMatchingEntryOrThrow} from "jstests/libs/profiler.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({shards: 2, rs: {nodes: 1}});
 
@@ -127,8 +128,10 @@ if (FeatureFlagUtil.isPresentAndEnabled(st.s, 'TrackUnshardedCollectionsUponCrea
         // shard.
         session1.startTransaction({readConcern: {level: 'snapshot'}});
         session2.startTransaction({readConcern: {level: 'majority'}});
-        assertReadOnView(session1.getDatabase(dbName)[viewName], false /* expectKickBackToMongos */)
-        assertReadOnView(session1.getDatabase(dbName)[viewName], false /* expectKickBackToMongos */)
+        assertReadOnView(session1.getDatabase(dbName)[viewName],
+                         false /* expectKickBackToMongos */);
+        assertReadOnView(session1.getDatabase(dbName)[viewName],
+                         false /* expectKickBackToMongos */);
         session1.commitTransaction();
         session2.commitTransaction();
     }

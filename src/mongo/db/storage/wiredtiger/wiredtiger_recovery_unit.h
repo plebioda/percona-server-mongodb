@@ -43,13 +43,10 @@
 #include "mongo/base/checked_cast.h"
 #include "mongo/base/status.h"
 #include "mongo/bson/bsonobj.h"
-#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/record_id.h"
-#include "mongo/db/repl/read_concern_level.h"
 #include "mongo/db/storage/recovery_unit.h"
-#include "mongo/db/storage/storage_stats.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_begin_transaction_block.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_session_cache.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_snapshot_manager.h"
@@ -65,8 +62,6 @@ using RoundUpPreparedTimestamps = WiredTigerBeginTxnBlock::RoundUpPreparedTimest
 using RoundUpReadTimestamp = WiredTigerBeginTxnBlock::RoundUpReadTimestamp;
 
 extern AtomicWord<std::int64_t> snapshotTooOldErrorCount;
-
-class BSONObjBuilder;
 
 class WiredTigerRecoveryUnit final : public RecoveryUnit {
 public:
@@ -206,6 +201,14 @@ public:
 
     boost::optional<int64_t> getOplogVisibilityTs() override;
     void setOplogVisibilityTs(boost::optional<int64_t> oplogVisibilityTs) override;
+
+    static WiredTigerRecoveryUnit& get(RecoveryUnit& ru) {
+        return checked_cast<WiredTigerRecoveryUnit&>(ru);
+    }
+
+    static WiredTigerRecoveryUnit* get(RecoveryUnit* ru) {
+        return checked_cast<WiredTigerRecoveryUnit*>(ru);
+    }
 
     static WiredTigerRecoveryUnit* get(OperationContext* opCtx) {
         return checked_cast<WiredTigerRecoveryUnit*>(shard_role_details::getRecoveryUnit(opCtx));

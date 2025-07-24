@@ -1,9 +1,16 @@
 # -*- mode: python -*-
-Import("env")
+
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "devnull",
         "inmemory",
@@ -12,18 +19,6 @@ env.SConscript(
     ],
     exports=[
         "env",
-    ],
-)
-
-env.Library(
-    target="index_entry_comparison",
-    source=[
-        "index_entry_comparison.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "duplicate_key_error_info",
-        "key_string",
     ],
 )
 
@@ -38,28 +33,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/repl/repl_coordinator_interface",
         "$BUILD_DIR/mongo/db/server_base",
         "recovery_unit_base",
-    ],
-)
-
-env.Library(
-    target="duplicate_key_error_info",
-    source=[
-        "duplicate_key_error_info.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="recovery_unit_base",
-    source=[
-        "recovery_unit.cpp",
-        "recovery_unit_noop.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/util/fail_point",
     ],
 )
 
@@ -82,17 +55,6 @@ env.Library(
     ],
 )
 
-env.Library(
-    target="key_string",
-    source=[
-        "key_string.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/bson/bson_validate",
-    ],
-)
-
 ksdecode = env.Program(
     target="ksdecode",
     source=[
@@ -106,17 +68,6 @@ ksdecode = env.Program(
     AIB_COMPONENT="ksdecode",
     AIB_COMPONENTS_EXTRA=[
         "dist-test",
-    ],
-)
-
-env.Library(
-    target="execution_context",
-    source=[
-        "execution_context.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "key_string",
     ],
 )
 
@@ -204,17 +155,6 @@ env.Library(
 )
 
 env.Library(
-    target="storage_options",
-    source=[
-        "storage_options.cpp",
-        "storage_parameters.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
     target="encryption_hooks",
     source=[
         "encryption_hooks.cpp",
@@ -292,7 +232,7 @@ bmEnv.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/shard_role_api",
-        "$BUILD_DIR/third_party/shim_benchmark",
+        "$BUILD_DIR/third_party/benchmark/benchmark",
         "sorted_data_interface_test_harness",
     ],
 )
@@ -303,7 +243,7 @@ bmEnv.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/shard_role_api",
-        "$BUILD_DIR/third_party/shim_benchmark",
+        "$BUILD_DIR/third_party/benchmark/benchmark",
         "record_store_test_harness",
     ],
 )
@@ -398,54 +338,6 @@ env.Library(
 )
 
 env.Library(
-    target="write_unit_of_work",
-    source=[
-        "write_unit_of_work.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/storage/storage_options",
-        "$BUILD_DIR/mongo/util/fail_point",
-        "recovery_unit_base",
-    ],
-)
-
-env.Library(
-    target="storage_engine_metadata",
-    source=[
-        "storage_engine_metadata.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/bson/bson_validate",
-        "$BUILD_DIR/mongo/db/bson/dotted_path_support",
-        "$BUILD_DIR/mongo/db/encryption/key",
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="storage_file_util",
-    source=[
-        "storage_file_util.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="disk_space_util",
-    source=[
-        "disk_space_util.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/util/fail_point",
-        "storage_options",
-    ],
-)
-
-env.Library(
     target="storage_repair_observer",
     source=[
         "storage_repair_observer.cpp",
@@ -498,7 +390,7 @@ env.Library(
 env.Library(
     target="flow_control_parameters",
     source=[
-        "flow_control_parameters.idl",
+        "flow_control_parameters_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/server_base",
@@ -635,16 +527,6 @@ env.Library(
 )
 
 env.Library(
-    target="two_phase_index_build_knobs_idl",
-    source=[
-        "two_phase_index_build_knobs.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
     target="backup_block",
     source=[
         "backup_block.cpp",
@@ -670,6 +552,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/audit",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/catalog/catalog_helpers",
         "$BUILD_DIR/mongo/db/catalog/collection_options",
         "$BUILD_DIR/mongo/db/catalog/index_catalog",

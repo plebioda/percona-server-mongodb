@@ -474,10 +474,13 @@ bool QueryPlannerIXSelect::_compatible(const BSONElement& keyPatternElt,
             const auto* child = node->getChild(0);
             const MatchExpression::MatchType childtype = child->matchType();
 
-            // Can't index negations of MOD, REGEX, TYPE_OPERATOR, or ELEM_MATCH_VALUE.
+            // Can't index negations of MOD, REGEX, TYPE_OPERATOR, or ELEM_MATCH_VALUE; and, as
+            // above, we can't use a btree-indexed field for geo expressions (or their negations).
             if (MatchExpression::REGEX == childtype || MatchExpression::MOD == childtype ||
                 MatchExpression::TYPE_OPERATOR == childtype ||
-                MatchExpression::ELEM_MATCH_VALUE == childtype) {
+                MatchExpression::ELEM_MATCH_VALUE == childtype ||
+                MatchExpression::GEO == childtype || MatchExpression::GEO_NEAR == childtype ||
+                MatchExpression::INTERNAL_BUCKET_GEO_WITHIN == childtype) {
                 return false;
             }
 
@@ -559,20 +562,19 @@ bool QueryPlannerIXSelect::_compatible(const BSONElement& keyPatternElt,
         }
 
         if (MatchExpression::REGEX == exprtype) {
-            RegexMatchExpression* rme = static_cast<RegexMatchExpression*>(node);
-            auto [_, isPrefixOnlyRegex] = analyze_regex::getRegexPrefixMatch(
-                rme->getString().c_str(), rme->getFlags().c_str());
-
-            // Indexes are only useful if:
-            // 1. have no collator since otherwise it'd be ICU encoded and neither PCRE nor PCRE2
-            // support such encoding and
-            // 2. If applied over prefix only regexes since other regexes would need to do a full
-            // IXScan, which is worst than a COLLSCAN
+            // Indexes are only useful if have no collator since otherwise it's keys are ICU encoded
+            // and neither PCRE nor PCRE2 support such encoding.
             //
-            // However, it may happen that the query must use an indexed plan, in which case we'll
-            // need to use it, even if a COLLSCAN would be better
+            // However we may still want to use the index if:
+            // 1. The query **must** use an indexed plan. (e.g: there are other predicates that
+            // require an index such as $text or geo) OR
+            // 2. The index has no collator OR
+            // 3. internalQueryPlannerIgnoreIndexWithCollationForRegex is set to false. This knob
+            // helps avoiding possible regressions when the index would still be better than
+            // COLLSCAN. See HELP-60129 for details.
             return queryContext.mustUseIndexedPlan ||
-                (isPrefixOnlyRegex && CollatorInterface::isSimpleCollator(index.collator));
+                CollatorInterface::isSimpleCollator(index.collator) ||
+                !internalQueryPlannerIgnoreIndexWithCollationForRegex.load();
         }
 
         // We can only index EQ using text indices.  This is an artificial limitation imposed by
@@ -702,8 +704,8 @@ bool QueryPlannerIXSelect::nodeIsSupportedBySparseIndex(const MatchExpression* q
     // equality-to-null semantics are that only literal nulls match. Sparse indexes contain
     // index keys for literal nulls, but not for missing elements.
     const auto typ = queryExpr->matchType();
-    if (typ == MatchExpression::EQ) {
-        const auto* queryExprEquality = static_cast<const EqualityMatchExpression*>(queryExpr);
+    if (typ == MatchExpression::EQ || typ == MatchExpression::GTE || typ == MatchExpression::LTE) {
+        const auto* queryExprEquality = static_cast<const ComparisonMatchExpression*>(queryExpr);
         // Equality to null inside an $elemMatch implies a match on literal 'null'.
         return isInElemMatch || !queryExprEquality->getData().isNull();
     } else if (queryExpr->matchType() == MatchExpression::MATCH_IN) {

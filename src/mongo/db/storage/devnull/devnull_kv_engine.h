@@ -133,12 +133,6 @@ public:
         return Status::OK();
     }
 
-    Status dropIdentSynchronous(RecoveryUnit* ru,
-                                StringData ident,
-                                const StorageEngine::DropIdentCallback& onDrop) override {
-        return Status::OK();
-    }
-
     void dropIdentForImport(OperationContext* opCtx, StringData ident) override {}
 
     bool supportsDirectoryPerDB() const override {
@@ -204,6 +198,16 @@ public:
 
     void setPinnedOplogTimestamp(const Timestamp& pinnedTimestamp) override {}
 
+    void waitForAllEarlierOplogWritesToBeVisible(OperationContext* opCtx,
+                                                 RecordStore* recordsStore) const override {}
+
+    Status oplogDiskLocRegister(OperationContext* opCtx,
+                                RecordStore* oplogRecordStore,
+                                const Timestamp& opTime,
+                                bool orderedCommit) override {
+        return Status::OK();
+    }
+
     void dump() const override {}
 
     // This sets the results of the backup cursor for unit tests.
@@ -215,5 +219,6 @@ private:
     std::shared_ptr<void> _catalogInfo;
     int _cachePressureForTest;
     std::deque<BackupBlock> _mockBackupBlocks;
+    boost::filesystem::path _engineDbPath;
 };
 }  // namespace mongo

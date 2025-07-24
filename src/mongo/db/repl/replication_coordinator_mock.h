@@ -394,6 +394,8 @@ public:
 
     void createWMajorityWriteAvailabilityDateWaiter(OpTime opTime) override;
 
+    Status waitForPrimaryMajorityReadsAvailable(OperationContext* opCtx) const override;
+
     WriteConcernOptions populateUnsetWriteConcernOptionsSyncMode(WriteConcernOptions wc) override;
 
     Status stepUpIfEligible(bool skipDryRun) override;
@@ -512,6 +514,10 @@ public:
     void setSecondaryDelaySecs(Seconds sec);
 
     void setOplogSyncState(const OplogSyncState& newState);
+
+    void setConsistentDataAvailable(OperationContext* opCtx, bool isDataMajorityCommitted) override;
+    bool isDataConsistent() const override;
+    void clearSyncSource() override;
 
 private:
     void _setMyLastAppliedOpTimeAndWallTime(WithLock lk,

@@ -3,6 +3,7 @@
  * different chunk configurations.
  */
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {chunkBoundsUtil} from "jstests/sharding/libs/chunk_bounds_util.js";
 import {findChunksUtil} from "jstests/sharding/libs/find_chunks_util.js";
 
@@ -32,9 +33,9 @@ assert.commandWorked(admin.runCommand({shardCollection: ns, key: {x: 'hashed'}})
 if (FeatureFlagUtil.isPresentAndEnabled(mongos.getDB(dbName),
                                         "OneChunkPerShardEmptyCollectionWithHashedShardKey")) {
     assert.commandWorked(
-        st.s.adminCommand({split: ns, middle: {x: NumberLong("-4611686018427387902")}}))
+        st.s.adminCommand({split: ns, middle: {x: NumberLong("-4611686018427387902")}}));
     assert.commandWorked(
-        st.s.adminCommand({split: ns, middle: {x: NumberLong("4611686018427387902")}}))
+        st.s.adminCommand({split: ns, middle: {x: NumberLong("4611686018427387902")}}));
 }
 
 assert.commandWorked(admin.runCommand({

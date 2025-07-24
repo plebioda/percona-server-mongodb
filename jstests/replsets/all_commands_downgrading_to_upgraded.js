@@ -14,6 +14,8 @@
 import {AllCommandsTest} from "jstests/libs/all_commands_test.js";
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const name = jsTestName();
 const dbName = "alltestsdb";
@@ -725,16 +727,6 @@ const allCommands = {
         command: {dropUser: "foo"},
     },
     echo: {command: {echo: 1}},
-    emptycapped: {
-        command: {emptycapped: collName},
-        setUp: function(conn) {
-            assert.commandWorked(conn.getDB(dbName).runCommand({create: collName}));
-        },
-        teardown: function(conn) {
-            assert.commandWorked(conn.getDB(dbName).runCommand({drop: collName}));
-        },
-        doesNotRunOnMongos: true,
-    },
     enableSharding: {
         isShardedOnly: true,
         isAdminCommand: true,
@@ -1410,6 +1402,7 @@ const allCommands = {
         }
     },
     rotateCertificates: {skip: "requires additional authentication setup"},
+    rotateFTDC: {isAdminCommand: true, command: {rotateFTDC: 1}},
     saslContinue: {skip: "requires additional authentication setup"},
     saslStart: {skip: "requires additional authentication setup"},
     serverStatus: {

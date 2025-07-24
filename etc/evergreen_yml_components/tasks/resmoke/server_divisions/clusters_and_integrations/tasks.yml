@@ -106,6 +106,7 @@ variables:
   # THIS HAS COPIES IN
   # - etc/evergreen_yml_components/tasks/resmoke/server_divisions/clusters_and_integrations/tasks.yml
   # - etc/evergreen_yml_components/tasks/compile_tasks.yml
+  # - etc/evergreen_yml_components/tasks/compile_tasks_shared.yml
   # ANY MODIFICATIONS HERE SHOULD ALSO BE MADE IN THOSE FILES
   - &compile_task_group_template
     name: compile_task_group_template
@@ -126,6 +127,7 @@ variables:
       - func: "attach local resmoke invocation"
       - func: "attach multiversion download links"
       - func: "kill processes"
+      - func: "save code coverage data"
       - func: "save mongo coredumps"
       - func: "generate hang analyzer tasks"
       - func: "save failed unittests"
@@ -414,7 +416,7 @@ tasks:
     commands:
       - func: "generate resmoke tasks"
         vars:
-          use_large_distro: "true"
+          use_xlarge_distro: "true"
           resmoke_jobs_max: 1
 
   - <<: *gen_task_template
@@ -784,180 +786,11 @@ tasks:
       - func: "run tests"
 
   - <<: *task_template
-    name: serverless_MTM
-    # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-    tags:
-      [
-        "assigned_to_jira_team_server_servicearch",
-        "default",
-        "incompatible_debug_mode",
-        "requires_large_host_debug_mode",
-        "requires_large_host_tsan",
-        "serverless",
-      ]
-    commands:
-      - func: "do setup"
-      - func: "run tests"
-
-  - <<: *task_template
     name: session_jscore_passthrough
     tags: ["assigned_to_jira_team_server_servicearch", "default"]
     commands:
       - func: "do setup"
       - func: "run tests"
-
-  - <<: *gen_task_template
-    name: shard_merge_causally_consistent_jscore_passthrough_gen
-    # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-    tags:
-      [
-        "assigned_to_jira_team_server_servicearch",
-        "default",
-        "incompatible_debug_mode",
-        "serverless",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: shard_merge_jscore_passthrough_gen
-    # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-    tags:
-      [
-        "assigned_to_jira_team_server_servicearch",
-        "default",
-        "incompatible_debug_mode",
-        "serverless",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: shard_merge_multi_stmt_txn_jscore_passthrough_gen
-    # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-    tags:
-      [
-        "assigned_to_jira_team_server_servicearch",
-        "default",
-        "incompatible_debug_mode",
-        "serverless",
-        "txn",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: shard_split_causally_consistent_jscore_passthrough_gen
-    tags: ["assigned_to_jira_team_server_servicearch", "default", "shard_split"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: shard_split_jscore_passthrough_gen
-    tags: ["assigned_to_jira_team_server_servicearch", "default", "shard_split"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: shard_split_kill_primary_jscore_passthrough_gen
-    tags: ["assigned_to_jira_team_server_servicearch", "default", "shard_split"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-          fallback_num_sub_suites: 10
-
-  - <<: *gen_task_template
-    name: shard_split_multi_stmt_txn_jscore_passthrough_gen
-    tags: ["assigned_to_jira_team_server_servicearch", "default", "shard_split"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: shard_split_stepdown_jscore_passthrough_gen
-    tags: ["assigned_to_jira_team_server_servicearch", "default", "shard_split"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: shard_split_terminate_primary_jscore_passthrough_gen
-    tags: ["assigned_to_jira_team_server_servicearch", "default", "shard_split"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-          fallback_num_sub_suites: 10
-
-  # TODO(SERVER-88891): Delete these tenant migration suites
-  # - <<: *gen_task_template
-  #   name: tenant_migration_causally_consistent_jscore_passthrough_gen
-  #   # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-  #   tags: ["assigned_to_jira_team_server_servicearch", "default", "incompatible_debug_mode", "serverless"]
-  #   commands:
-  #   - func: "generate resmoke tasks"
-  #     vars:
-  #       use_large_distro: "true"
-
-  # - <<: *gen_task_template
-  #   name: tenant_migration_jscore_passthrough_gen
-  #   # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-  #   tags: ["assigned_to_jira_team_server_servicearch", "default", "incompatible_debug_mode", "serverless"]
-  #   commands:
-  #   - func: "generate resmoke tasks"
-  #     vars:
-  #       use_large_distro: "true"
-
-  # - <<: *gen_task_template
-  #   name: tenant_migration_kill_primary_jscore_passthrough_gen
-  #   # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-  #   tags: ["assigned_to_jira_team_server_servicearch", "default", "incompatible_debug_mode", "serverless"]
-  #   commands:
-  #   - func: "generate resmoke tasks"
-  #     vars:
-  #       use_large_distro: "true"
-  #       fallback_num_sub_suites: 10
-
-  # - <<: *gen_task_template
-  #   name: tenant_migration_multi_stmt_txn_jscore_passthrough_gen
-  #   # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-  #   tags: ["assigned_to_jira_team_server_servicearch", "default", "incompatible_debug_mode", "serverless", "txn"]
-  #   commands:
-  #   - func: "generate resmoke tasks"
-  #     vars:
-  #       use_large_distro: "true"
-
-  # - <<: *gen_task_template
-  #   name: tenant_migration_stepdown_jscore_passthrough_gen
-  #   # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-  #   tags: ["assigned_to_jira_team_server_servicearch", "default", "incompatible_debug_mode", "serverless"]
-  #   commands:
-  #   - func: "generate resmoke tasks"
-  #     vars:
-  #       use_large_distro: "true"
-
-  # - <<: *gen_task_template
-  #   name: tenant_migration_terminate_primary_jscore_passthrough_gen
-  #   # TODO(SERVER-70015) remove "incompatible_debug_mode" tag
-  #   tags: ["assigned_to_jira_team_server_servicearch", "default", "incompatible_debug_mode", "serverless"]
-  #   commands:
-  #   - func: "generate resmoke tasks"
-  #     vars:
-  #       use_large_distro: "true"
-  #       fallback_num_sub_suites: 10
 
   # This is a separate task because it is only supported on Ubuntu 16.04+ which are not inmemory builders
   - <<: *task_template
@@ -1101,6 +934,7 @@ tasks:
         "incompatible_ppc",
         "incompatible_s390x",
         "incompatible_debian",
+        "incompatible_oscrypto",
       ]
     commands:
       - func: "f_expansions_write"
@@ -1385,8 +1219,8 @@ tasks:
     tags: [
         "assigned_to_jira_team_server_security",
         "release_critical",
-        # TODO SERVER-89541 Remove incompatible_debian tag once oscrypto gets updated
-        "incompatible_debian",
+        # TODO SERVER-89541 Remove incompatible_oscrypto tag once oscrypto gets updated
+        "incompatible_oscrypto",
         "ssl",
         "encrypt",
         "ocsp",
@@ -1397,46 +1231,6 @@ tasks:
       - func: "run tests"
         vars:
           resmoke_jobs_max: 1
-
-  - <<: *gen_task_template
-    name: replica_sets_max_mirroring_large_txns_format_ese_gcm_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_security",
-        "release_critical",
-        "incompatible_community",
-        "incompatible_mac",
-        "incompatible_windows",
-        "incompatible_debug_mode",
-        "replica_sets",
-        "encrypt",
-        "san",
-        "gcm",
-        "multi_oplog",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: replica_sets_max_mirroring_large_txns_format_ese_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_security",
-        "release_critical",
-        "incompatible_community",
-        "incompatible_mac",
-        "incompatible_debug_mode",
-        "replica_sets",
-        "encrypt",
-        "san",
-        "multi_oplog",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
 
   - <<: *task_template
     name: sasl
@@ -1495,44 +1289,6 @@ tasks:
         "incompatible_windows",
         "incompatible_ppc",
         "incompatible_s390x",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: sharding_max_mirroring_opportunistic_secondary_targeting_ese_gcm_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_security",
-        "release_critical",
-        "incompatible_community",
-        "incompatible_mac",
-        "incompatible_windows",
-        "incompatible_debug_mode",
-        "sharding",
-        "common",
-        "encrypt",
-        "gcm",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: sharding_max_mirroring_opportunistic_secondary_targeting_ese_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_security",
-        "release_critical",
-        "incompatible_community",
-        "incompatible_mac",
-        "incompatible_debug_mode",
-        "sharding",
-        "common",
-        "encrypt",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1665,7 +1421,7 @@ tasks:
           num_files: 10
           num_tasks: 5
           npm_command: resharding-fuzzer
-          jstestfuzz_vars: --opType moveCollection --electionMech stepup --electionRole donor --electionRole recipient --useEsModules
+          jstestfuzz_vars: --opType moveCollection --electionMech stepup --electionRole donor --electionRole recipient
           suite: resharding_fuzzer
 
   - <<: *gen_task_template
@@ -1788,7 +1544,7 @@ tasks:
           num_files: 10
           num_tasks: 5
           npm_command: resharding-fuzzer
-          jstestfuzz_vars: --numDonors 3 --numRecipients 3 --inPlace no --useEsModules
+          jstestfuzz_vars: --numDonors 3 --numRecipients 3 --inPlace no
           suite: resharding_fuzzer_idempotency
 
   - <<: *jstestfuzz_template
@@ -1808,7 +1564,7 @@ tasks:
           num_files: 10
           num_tasks: 5
           npm_command: resharding-fuzzer
-          jstestfuzz_vars: --numDonors 2 --numRecipients 2 --inPlace yes --useEsModules
+          jstestfuzz_vars: --numDonors 2 --numRecipients 2 --inPlace yes
           suite: resharding_fuzzer
 
   - <<: *jstestfuzz_template
@@ -1828,7 +1584,7 @@ tasks:
           num_files: 10
           num_tasks: 5
           npm_command: resharding-fuzzer
-          jstestfuzz_vars: --numDonors 2 --numRecipients 1 --inPlace no --useEsModules
+          jstestfuzz_vars: --numDonors 2 --numRecipients 1 --inPlace no
           suite: resharding_fuzzer
 
   - <<: *jstestfuzz_template
@@ -1848,7 +1604,7 @@ tasks:
           num_files: 10
           num_tasks: 5
           npm_command: resharding-fuzzer
-          jstestfuzz_vars: --numDonors 3 --numRecipients 3 --inPlace no --useEsModules
+          jstestfuzz_vars: --numDonors 3 --numRecipients 3 --inPlace no
           suite: resharding_fuzzer
 
   - <<: *jstestfuzz_template
@@ -1868,7 +1624,7 @@ tasks:
           num_files: 10
           num_tasks: 5
           npm_command: resharding-fuzzer
-          jstestfuzz_vars: --numDonors 1 --numRecipients 2 --inPlace no --useEsModules
+          jstestfuzz_vars: --numDonors 1 --numRecipients 2 --inPlace no
           suite: resharding_fuzzer
 
   - <<: *jstestfuzz_template
@@ -1891,7 +1647,6 @@ tasks:
           jstestfuzz_vars: >-
             --numDonors 3 --numRecipients 3 --inPlace yes
             --electionMech stepup --electionRole donor --electionRole recipient
-            --useEsModules
           suite: resharding_fuzzer
 
   - <<: *task_template
@@ -2292,7 +2047,7 @@ tasks:
           num_files: 10
           num_tasks: 5
           npm_command: resharding-fuzzer
-          jstestfuzz_vars: --opType unshardCollection --inPlace yes --numDonors 3 --electionMech stepup --electionRole donor --electionRole recipient --useEsModules
+          jstestfuzz_vars: --opType unshardCollection --inPlace yes --numDonors 3 --electionMech stepup --electionRole donor --electionRole recipient
           suite: resharding_fuzzer
 
   - <<: *jstestfuzz_template
@@ -2301,10 +2056,10 @@ tasks:
       [
         "assigned_to_jira_team_server_cluster_scalability",
         "default",
-        "requires_all_feature_flags",
-        "require_npm",
-        "random_name",
         "feature_flag_guarded",
+        "random_name",
+        "require_npm",
+        "requires_all_feature_flags",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -2316,7 +2071,6 @@ tasks:
           jstestfuzz_vars: >-
             --opType timeseriesReshardCollection --numDonors 3 --numRecipients 3 --inPlace yes
             --electionMech stepup --electionRole donor --electionRole recipient
-            --useEsModules
           suite: resharding_fuzzer_idempotency
 
   ################################################
@@ -2383,8 +2137,8 @@ tasks:
         # The hardcoded timeout is to overrule history-based timeout after test number increases,
         # which could be removed after gaining enough history for the new tests.
         vars:
-          exec_timeout_secs: 4800 # 80min
-          timeout_secs: 4800 # 80min
+          exec_timeout_secs: 7200 # 120min
+          timeout_secs: 7200 # 120min
 
   - <<: *gen_task_template
     name: change_streams_change_collection_replica_sets_stepdown_primary_jscore_passthrough_gen
@@ -2400,8 +2154,8 @@ tasks:
         # The hardcoded timeout is to overrule history-based timeout after test number increases,
         # which could be removed after gaining enough history for the new tests.
         vars:
-          exec_timeout_secs: 4800 # 80min
-          timeout_secs: 4800 # 80min
+          exec_timeout_secs: 7200 # 120min
+          timeout_secs: 7200 # 120min
 
   - <<: *gen_task_template
     name: change_streams_pre_images_replica_sets_stepdown_primary_jscore_passthrough_gen
@@ -2417,6 +2171,26 @@ tasks:
         "default",
         "concurrency",
         "large",
+        "non_live_record",
+        "sharded",
+        "no_debug_mode",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          use_large_distro: "true"
+          resmoke_jobs_max: 1
+
+  - <<: *gen_task_template
+    name: concurrency_sharded_replication_with_balancer_and_config_transitions_and_add_remove_shard_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_catalog_and_routing",
+        "default",
+        "concurrency",
+        "large",
+        "stepdowns",
+        "kill_terminate",
         "non_live_record",
         "sharded",
         "no_debug_mode",
@@ -2781,9 +2555,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "causal",
         "require_npm",
         "random_name",
@@ -2798,32 +2572,6 @@ tasks:
           suite: jstestfuzz_sharded_causal_consistency
           resmoke_args: --numClientsPerFixture=10
 
-  ## jstestfuzz concurrent sharded cluster continuous stepdown with flow control engaged ##
-  - <<: *jstestfuzz_template
-    name: jstestfuzz_concurrent_sharded_continuous_stepdown_flow_control_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_catalog_and_routing",
-        "non_deterministic",
-        "incompatible_debug_mode",
-        "jstestfuzz",
-        "flow_control",
-        "stepdowns",
-        "require_npm",
-        "random_name",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          <<: *jstestfuzz_config_vars
-          num_files: 2
-          num_tasks: 1
-          jstestfuzz_vars: --jsTestsDir ../jstests
-          suite: jstestfuzz_sharded_continuous_stepdown
-          resmoke_args: >-
-            --flowControlTicketOverride=30
-            --numClientsPerFixture=10
-
   ## jstestfuzz concurrent sharded cluster continuous stepdown ##
   - <<: *jstestfuzz_template
     name: jstestfuzz_concurrent_sharded_continuous_stepdown_gen
@@ -2831,9 +2579,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "stepdowns",
         "require_npm",
         "random_name",
@@ -2848,6 +2596,37 @@ tasks:
           suite: jstestfuzz_sharded_continuous_stepdown
           resmoke_args: --numClientsPerFixture=10
 
+  ## config fuzzer jstestfuzz concurrent sharded cluster continuous stepdown ##
+  - <<: *jstestfuzz_template
+    name: config_fuzzer_jstestfuzz_concurrent_sharded_continuous_stepdown_gen
+    # TODO(SERVER-69996) remove "incompatible_debug_mode" tag
+    tags:
+      [
+        "assigned_to_jira_team_server_catalog_and_routing",
+        "config_fuzzer",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
+        "incompatible_inmemory",
+        "incompatible_tsan",
+        "jstestfuzz",
+        "non_deterministic",
+        "require_npm",
+        "random_name",
+        "stepdowns",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          <<: *jstestfuzz_config_vars
+          num_files: ${jstestfuzz_concurrent_num_files|10}
+          num_tasks: 2
+          jstestfuzz_vars: --jsTestsDir ../jstests
+          suite: jstestfuzz_sharded_continuous_stepdown
+          resmoke_args: >-
+            --numClientsPerFixture=10
+            --fuzzMongodConfigs=normal
+            --excludeWithAnyTags=does_not_support_config_fuzzer
+
   ## jstestfuzz concurrent sharded cluster ##
   - <<: *jstestfuzz_template
     name: jstestfuzz_concurrent_sharded_gen
@@ -2855,10 +2634,10 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
-        "release_critical",
         "incompatible_mac",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "common",
         "sharding",
         "require_npm",
@@ -2881,9 +2660,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "session",
         "require_npm",
         "random_name",
@@ -2905,9 +2684,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "causal",
         "require_npm",
         "random_name",
@@ -2920,32 +2699,6 @@ tasks:
           suite: jstestfuzz_sharded_causal_consistency
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
 
-  ## jstestfuzz sharded cluster continuous stepdown with flow control engaged ##
-  - <<: *jstestfuzz_template
-    name: jstestfuzz_sharded_continuous_stepdown_flow_control_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_catalog_and_routing",
-        "non_deterministic",
-        "incompatible_debug_mode",
-        "jstestfuzz",
-        "flow_control",
-        "stepdowns",
-        "require_npm",
-        "random_name",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          <<: *jstestfuzz_config_vars
-          num_files: 2
-          num_tasks: 1
-          jstestfuzz_vars: --jsTestsDir ../jstests
-          suite: jstestfuzz_sharded_continuous_stepdown
-          resmoke_args: >-
-            --flowControlTicketOverride=3
-            --mongodSetParameters="{logComponentVerbosity: {command: 2}}"
-
   ## jstestfuzz sharded cluster continuous stepdown ##
   - <<: *jstestfuzz_template
     name: jstestfuzz_sharded_continuous_stepdown_gen
@@ -2953,9 +2706,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "stepdowns",
         "require_npm",
         "random_name",
@@ -2977,10 +2730,10 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
-        "release_critical",
         "incompatible_mac",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "common",
         "sharding",
         "require_npm",
@@ -3026,9 +2779,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "session",
         "require_npm",
         "random_name",
@@ -3066,9 +2819,9 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
-        "default",
         "incompatible_debug_mode",
         "jstestfuzz",
+        "non_deterministic",
         "sharding",
         "require_npm",
         "random_name",

@@ -1,0 +1,87 @@
+load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    glob([
+        "*.h",
+        "*.cpp",
+    ]),
+)
+
+idl_generator(
+    name = "explain_gen",
+    src = "explain.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+        "//src/mongo/db/query:explain_verbosity_gen",
+        "//src/mongo/idl:generic_argument_gen",
+    ],
+)
+
+idl_generator(
+    name = "bulk_write_gen",
+    src = "bulk_write.idl",
+    deps = [
+        "//src/mongo/client:read_preference_setting_gen",
+        "//src/mongo/db:basic_types_gen",
+        "//src/mongo/db:write_concern_options_gen",
+        "//src/mongo/db/ops:write_ops_gen",
+        "//src/mongo/db/repl:read_concern_args_gen",
+        "//src/mongo/db/repl:replication_types_gen",
+        "//src/mongo/idl:generic_argument_gen",
+        "//src/mongo/s:sharding_types_gen",
+    ],
+)
+
+idl_generator(
+    name = "query_settings_cmds_gen",
+    src = "query_settings_cmds.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+        "//src/mongo/db/auth:access_checks_gen",
+        "//src/mongo/db/auth:action_type_gen",
+        "//src/mongo/db/query/query_settings:query_settings_gen",
+        "//src/mongo/db/query/query_shape:query_shape_hash_gen",
+        "//src/mongo/idl:generic_argument_gen",
+    ],
+)
+
+idl_generator(
+    name = "map_reduce_gen",
+    src = "map_reduce.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+        "//src/mongo/idl:generic_argument_gen",
+    ],
+)
+
+idl_generator(
+    name = "search_index_commands_gen",
+    src = "search_index_commands.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+        "//src/mongo/db/auth:access_checks_gen",
+        "//src/mongo/db/auth:action_type_gen",
+        "//src/mongo/idl:generic_argument_gen",
+    ],
+)
+
+mongo_cc_library(
+    name = "map_reduce_parser",
+    srcs = [
+        "map_reduce_out_options.cpp",
+        ":map_reduce_gen",
+    ],
+    hdrs = [
+        "map_reduce_global_variable_scope.h",
+        "map_reduce_javascript_code.h",
+        "map_reduce_out_options.h",
+    ],
+    header_deps = [
+        "//src/mongo/db/commands:set_user_write_block_mode_idl",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+    ],
+)

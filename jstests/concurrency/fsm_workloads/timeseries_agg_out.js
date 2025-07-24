@@ -20,7 +20,6 @@ import {interruptedQueryErrors} from "jstests/concurrency/fsm_libs/assert.js";
 import {extendWorkload} from "jstests/concurrency/fsm_libs/extend_workload.js";
 import {isMongos} from "jstests/concurrency/fsm_workload_helpers/server_types.js";
 import {$config as $baseConfig} from 'jstests/concurrency/fsm_workloads/agg_out.js';
-import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 
 export const $config = extendWorkload($baseConfig, function($config, $super) {
     const timeFieldName = 'time';
@@ -65,14 +64,22 @@ export const $config = extendWorkload($baseConfig, function($config, $super) {
             ErrorCodes.MovePrimaryInProgress,
             // TODO SERVER-87422 potentially remove this error since there are no concurrent drops
             ErrorCodes.NamespaceNotFound,
+            // This error is returned if output collection doesn't exist when $out first fetches
+            // collection options, but then created by another thread before $out finished
+            // timeseries options validation.
+            7268700
         ];
 
         // TODO (SERVER-88275) a moveCollection can cause the original collection to be dropped and
         // re-created with a different uuid, causing the aggregation to fail with QueryPlannedKilled
         // when the mongos is fetching data from the shard using getMore(). Remove
-        // theinterruptedQueryErrors from allowedErrorCodes once this bug is being addressed
+        // the interruptedQueryErrors from allowedErrorCodes once this bug is being addressed
         if (TestData.runningWithBalancer) {
-            allowedErrorCodes = allowedErrorCodes.concat(interruptedQueryErrors)
+            allowedErrorCodes = allowedErrorCodes.concat(interruptedQueryErrors);
+            // On slow builds with the balancer enabled, it is possible for the router to exhaust
+            // all refresh attempts without converging, causing the StaleConfig error to be returned
+            // to the client.
+            allowedErrorCodes.push(ErrorCodes.StaleConfig);
         }
 
         assert.commandWorkedOrFailedWithCode(res, allowedErrorCodes);
@@ -123,14 +130,36 @@ export const $config = extendWorkload($baseConfig, function($config, $super) {
         if (isMongos(db) && this.tid === 0) {
             jsTestLog(`Running shardCollection: coll=${this.outputCollName} key=${this.shardKey}`);
 
-            assert.commandWorkedOrFailedWithCode(
-                db.adminCommand(
-                    {shardCollection: db[this.outputCollName].getFullName(), key: this.shardKey}),
-                [
-                    ErrorCodes.ConflictingOperationInProgress,
-                    // Can't shard a capped collection.
-                    ErrorCodes.InvalidOptions
-                ]);
+            assert.commandWorkedOrFailedWithCode(db.adminCommand({
+                shardCollection: db[this.outputCollName].getFullName(),
+                key: this.shardKey,
+                timeseries: {timeField: timeFieldName, metaField: metaFieldName}
+            }),
+                                                 [
+                                                     ErrorCodes.ConflictingOperationInProgress,
+                                                     // Can't shard a capped collection.
+                                                     ErrorCodes.InvalidOptions
+                                                 ]);
+        }
+    };
+
+    /**
+     * Ensures all the indexes exist. This will have no affect unless some thread has already
+     * dropped an index.
+     */
+    $config.states.createIndexes = function createIndexes(db, unusedCollName) {
+        // Create timeseries_agg_out as timeseries before running createIndex to prevent the case
+        // the collection is created for the first time by the createIndex itself.
+        assert.commandWorkedOrFailedWithCode(
+            db.createCollection(this.outputCollName,
+                                {timeseries: {timeField: timeFieldName, metaField: metaFieldName}}),
+            [ErrorCodes.NamespaceExists]);
+
+        for (var i = 0; i < this.indexSpecs; ++i) {
+            const indexSpecs = this.indexSpecs[i];
+            jsTestLog(`Running createIndex: coll=${this.outputCollName} indexSpec=${indexSpecs}`);
+            assert.commandWorkedOrFailedWithCode(db[this.outputCollName].createIndex(indexSpecs),
+                                                 ErrorCodes.MovePrimaryInProgress);
         }
     };
 

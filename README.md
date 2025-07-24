@@ -40,16 +40,15 @@ To run a single server database:
 $ sudo mkdir -p /data/db
 $ ./mongod
 $
-$ # The mongo javascript shell connects to localhost and test database by default:
-$ ./mongo
-> help
+$ # The mongosh shell connects to localhost and test database by default:
+$ ./mongosh
+test> help
 ```
 
 ## Drivers
 
 Client drivers for most programming languages are available at
-https://docs.mongodb.com/manual/applications/drivers/. Use the shell
-(`mongo`) for administrative tasks.
+https://docs.mongodb.com/manual/applications/drivers/.
 
 ## Packaging
 

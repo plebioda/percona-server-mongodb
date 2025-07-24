@@ -33,6 +33,7 @@
 #include <utility>
 
 #include <boost/move/utility_core.hpp>
+#include <fmt/format.h>
 
 #include "mongo/base/error_codes.h"
 #include "mongo/base/shim.h"
@@ -49,6 +50,7 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/query/query_settings/query_settings_manager.h"
 #include "mongo/db/service_context.h"
+#include "mongo/db/update/storage_validation.h"
 #include "mongo/rpc/op_msg.h"
 #include "mongo/s/client/shard.h"
 #include "mongo/s/client/shard_registry.h"
@@ -58,8 +60,9 @@
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kSharding
 
-
 namespace mongo {
+
+using namespace fmt::literals;
 namespace {
 
 class SetClusterParameterCmd final : public TypedCommand<SetClusterParameterCmd> {
@@ -86,13 +89,28 @@ public:
             auto service = opCtx->getService();
             invariant(service->role().hasExclusively(ClusterRole::RouterServer),
                       "Attempted to run a router-only command directly from the shard role.");
+
+            uassert(ErrorCodes::NoSuchKey,
+                    "No cluster parameter provided",
+                    request().getCommandParameter().nFields() > 0);
+
+            uassert(ErrorCodes::InvalidOptions,
+                    "{} only supports setting exactly one parameter"_format(Request::kCommandName),
+                    request().getCommandParameter().nFields() == 1);
+
             uassert(
                 ErrorCodes::NoSuchKey,
-                str::stream()
-                    << "Unknown server parameter: "
-                    << query_settings::QuerySettingsManager::kQuerySettingsClusterParameterName,
+                "Unknown server parameter: {}"_format(
+                    query_settings::QuerySettingsManager::kQuerySettingsClusterParameterName),
                 !request().getCommandParameter()
                      [query_settings::QuerySettingsManager::kQuerySettingsClusterParameterName]);
+
+            {
+                bool ignore;
+                mutablebson::Document mutableUpdate(request().getCommandParameter());
+                storage_validation::scanDocument(mutableUpdate, false, true, &ignore);
+            }
+
             static auto impl = getSetClusterParameterImpl(service);
             impl(opCtx,
                  request(),

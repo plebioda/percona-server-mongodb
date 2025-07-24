@@ -6,6 +6,7 @@
  * @tags: [uses_transactions, uses_multi_shard_transaction]
  */
 
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     getCoordinatorFailpoints,
     waitForFailpoint
@@ -104,7 +105,8 @@ const testCommitProtocol = function(shouldCommit, failpointData) {
     // Turn on failpoint to make the coordinator hang at a the specified point.
     assert.commandWorked(coordinator.adminCommand({
         configureFailPoint: failpointData.failpoint,
-        mode: {skip: (failpointData.skip ? failpointData.skip : 0)},
+        mode: "alwaysOn",
+        data: failpointData.data ? failpointData.data : {}
     }));
 
     // Run commitTransaction through a parallel shell.

@@ -1,6 +1,8 @@
 //
 // Tests that we can dump collection metadata via getShardVersion()
 //
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 var st = new ShardingTest({shards: 2});
 
 var coll = st.s.getCollection("foo.bar");
@@ -28,7 +30,7 @@ function getCollMetadataWithRefresh(node, collName) {
 
         shardVersionRes = res;
         return true;
-    })
+    });
 
     return shardVersionRes;
 }

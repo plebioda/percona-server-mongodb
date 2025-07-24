@@ -5,9 +5,12 @@
  * Requires no shards so there can't be a config shard.
  * @tags: [
  *   config_shard_incompatible,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 const st = new ShardingTest({shards: 0});
 
 const adminDB = st.s.getDB("admin");

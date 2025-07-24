@@ -1,10 +1,14 @@
 /**
  * Test that adding a config server replica set as a shard fails.
  * @tags: [
+ *   # TODO (SERVER-88123): Re-enable this test.
  *   # Test doesn't start enough mongods to have num_mongos routers
- *   temp_disabled_embedded_router_num_routers,
+ *   embedded_router_incompatible,
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 var addShardRes;
 
 // Note: this method expects that the failure is *not* that the specified shardName is already

@@ -131,8 +131,9 @@ selector:
     - jstests/concurrency/fsm_workloads/snapshot_read_kill_op_only.js
     - jstests/concurrency/fsm_workloads/snapshot_read_kill_operations.js
 
-    # Time-series collections are not supported on mongos.
-    - jstests/concurrency/fsm_workloads/create_timeseries_collection.js
+    # This test runs a large number of inserts, which can cause moveCollection to take a long time
+    # to finish. This can cause the CheckMetadataConsistency hook to hit LockBusy errors.
+    - jstests/concurrency/fsm_workloads/timeseries_insert_idle_bucket_expiration.js
 
   exclude_with_any_tags:
     - assumes_against_mongod_not_mongos
@@ -204,6 +205,7 @@ executor:
         enableElectionHandoff: 0
         roleGraphInvalidationIsFatal: 1
         queryAnalysisWriterIntervalSecs: 1
+        queryAnalysisSamplerConfigurationRefreshSecs: 1
         defaultConfigCommandTimeoutMS: 90000
         skipDroppingHashedShardKeyIndex: true
         # Delay orphan cleanup to get around SERVER-87673.

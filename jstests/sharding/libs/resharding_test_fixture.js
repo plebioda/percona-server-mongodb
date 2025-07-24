@@ -1,7 +1,9 @@
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {getDBNameAndCollNameFromFullNamespace} from "jstests/libs/namespace_utils.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {extractUUIDFromObject, getUUIDFromListCollections} from "jstests/libs/uuid_util.js";
+import {awaitRSClientHosts} from "jstests/replsets/rslib.js";
 import {CreateShardedCollectionUtil} from "jstests/sharding/libs/create_sharded_collection_util.js";
 
 /**
@@ -148,7 +150,7 @@ export var ReshardingTest = class {
             // cloneTimestamp and tests involving elections do not run operations which would bump
             // the minimum visible timestamp (e.g. creating or dropping indexes).
             rsOptions.setParameter["failpoint.setMinVisibleForAllCollectionsToOldestOnStartup"] =
-                tojson({mode: "alwaysOn"});
+                tojson({mode: {"times": 1}});
         }
 
         if (this._minimumOperationDurationMS !== undefined) {
@@ -1197,6 +1199,9 @@ export var ReshardingTest = class {
             if (res.ok === 1) {
                 replSet.awaitNodesAgreeOnPrimary();
                 assert.eq(newPrimary, replSet.getPrimary());
+                this._st.getAllNodes().forEach((conn) => {
+                    awaitRSClientHosts(conn, {host: newPrimary.host}, {ok: true, ismaster: true});
+                });
                 return;
             }
 
@@ -1212,27 +1217,28 @@ export var ReshardingTest = class {
     }
 
     killAndRestartPrimaryOnShard(shardName) {
-        jsTestLog(`ReshardingTestFixture killing and restarting primary on shard ${shardName}`);
-
+        jsTest.log(`ReshardingTestFixture killing and restarting primary on shard ${shardName}`);
         const replSet = this.getReplSetForShard(shardName);
-        const originalPrimaryConn = replSet.getPrimary();
 
-        const SIGKILL = 9;
-        const opts = {allowedExitCode: MongoRunner.EXIT_SIGKILL};
-        replSet.restart(originalPrimaryConn, opts, SIGKILL);
-        replSet.awaitNodesAgreeOnPrimary();
+        this._st.killAndRestartPrimaryOnShard(shardName, replSet);
+
+        const newPrimaryConn = replSet.getPrimary();
+        this._st.getAllNodes().forEach((conn) => {
+            awaitRSClientHosts(conn, {host: newPrimaryConn.host}, {ok: true, ismaster: true});
+        });
     }
 
     shutdownAndRestartPrimaryOnShard(shardName) {
-        jsTestLog(
+        jsTest.log(
             `ReshardingTestFixture shutting down and restarting primary on shard ${shardName}`);
-
         const replSet = this.getReplSetForShard(shardName);
-        const originalPrimaryConn = replSet.getPrimary();
 
-        const SIGTERM = 15;
-        replSet.restart(originalPrimaryConn, {}, SIGTERM);
-        replSet.awaitNodesAgreeOnPrimary();
+        this._st.shutdownAndRestartPrimaryOnShard(shardName, replSet);
+
+        const newPrimaryConn = replSet.getPrimary();
+        this._st.getAllNodes().forEach((conn) => {
+            awaitRSClientHosts(conn, {host: newPrimaryConn.host}, {ok: true, ismaster: true});
+        });
     }
 
     /**

@@ -17,25 +17,27 @@ export function getCoordinatorFailpoints() {
         {
             // Test targeting remote nodes for prepare
             failpoint: "hangWhileTargetingRemoteHost",
-            numTimesShouldBeHit: 2 /* once per remote participant */
+            numTimesShouldBeHit: 2, /* once per remote participant */
+            data: {twoPhaseCommitStage: "prepare"}
         },
         {
             // Test targeting local node for prepare
             failpoint: "hangWhileTargetingLocalHost",
-            numTimesShouldBeHit: 1
+            numTimesShouldBeHit: 1,
+            data: {twoPhaseCommitStage: "prepare"}
         },
         {failpoint: "hangBeforeWritingDecision", numTimesShouldBeHit: 1},
         {
             // Test targeting remote nodes for decision
             failpoint: "hangWhileTargetingRemoteHost",
             numTimesShouldBeHit: 2, /* once per remote participant */
-            skip: 2                 /* to skip when the failpoint is hit for prepare */
+            data: {twoPhaseCommitStage: "decision"},
         },
         {
             // Test targeting local node for decision
             failpoint: "hangWhileTargetingLocalHost",
             numTimesShouldBeHit: 1,
-            skip: 1 /* to skip when the failpoint is hit for prepare */
+            data: {twoPhaseCommitStage: "decision"},
         },
         {failpoint: "hangBeforeDeletingCoordinatorDoc", numTimesShouldBeHit: 1},
     ];
@@ -44,29 +46,16 @@ export function getCoordinatorFailpoints() {
     return coordinatorFailpointDataArr.map(failpoint => Object.assign({}, failpoint));
 }
 
-export function setFailCommandOnShards(st, mode, commands, code, numShards, ns) {
+export function setFailCommandOnShards(st, mode, data, numShards) {
     for (let i = 0; i < numShards; i++) {
         const shardConn = st["rs" + i].getPrimary();
         // Sharding tests require failInternalCommands: true, since the mongos appears to mongod to
         // be an internal client.
-        if (ns) {
-            assert.commandWorked(shardConn.adminCommand({
-                configureFailPoint: "failCommand",
-                mode: mode,
-                data: {
-                    namespace: ns,
-                    errorCode: code,
-                    failCommands: commands,
-                    failInternalCommands: true
-                }
-            }));
-        } else {
-            assert.commandWorked(shardConn.adminCommand({
-                configureFailPoint: "failCommand",
-                mode: mode,
-                data: {errorCode: code, failCommands: commands, failInternalCommands: true}
-            }));
-        }
+        assert.commandWorked(shardConn.adminCommand({
+            configureFailPoint: "failCommand",
+            mode: mode,
+            data: {...data, failInternalCommands: true}
+        }));
     }
 }
 

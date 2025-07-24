@@ -484,6 +484,25 @@ public:
                                                  const NamespaceStringOrUUID& nsOrUUID) const;
 
     /**
+     * Resolves the given NamespaceStringOrUUID to an actual namespace without acquiring any locks.
+     * Throws NamespaceNotFound if the collection UUID cannot be resolved to a name, or if the UUID
+     * can be resolved, but the resulting collection is in the wrong database.
+     *
+     * Note that this will lookup in commit pending entries and can result in wrong results if not
+     * paired with a CollectionCatalog::establishConsistentCollection call. This is safe to do if it
+     * is intended as a way to perform UUID->NSS mapping stability with the usual mechanism (resolve
+     * -> lock NSS -> resolve again and check if it's still the same NSS) OR if the result will be
+     * used for read source selection as they only require a check on whether the NSS is replicated
+     * or the oplog, both of which are going to be stable since we can't make a collection
+     * non-replicated nor replace the oplog collection. Any other usages are probably not safe.
+     *
+     * TODO SERVER-93555: See if we can remove this method.
+     */
+    NamespaceString resolveNamespaceStringOrUUIDWithCommitPendingEntries_UNSAFE(
+        OperationContext* opCtx, const NamespaceStringOrUUID& nsOrUUID) const;
+
+
+    /**
      * Resolves and validates the namespace from the given DatabaseName and UUID.
      */
     NamespaceString resolveNamespaceStringFromDBNameAndUUID(OperationContext* opCtx,
@@ -545,6 +564,29 @@ public:
      * Only returns tenantIds which are attached to at least one non-empty database.
      */
     std::set<TenantId> getAllTenants() const;
+
+    /**
+     * This function gets all the database names. The result is sorted in alphabetical ascending
+     * order. The returned list is consistent with the storage snapshot.
+     *
+     * Callers of this method must hold an active storage snapshot. This method takes a global lock
+     * in MODE_IS.
+     *
+     * Unlike DatabaseHolder::getNames(), this does not return databases that are empty.
+     */
+    std::vector<DatabaseName> getAllConsistentDbNames(OperationContext* opCtx) const;
+
+    /**
+     * This function gets all the database names associated with tenantId. The result is sorted in
+     * alphabetical ascending order. The returned list is consistent with the storage snapshot.
+     *
+     * Callers of this method must hold an active storage snapshot. This method takes a global lock
+     * in MODE_IS.
+     *
+     * Unlike DatabaseHolder::getNames(), this does not return databases that are empty.
+     */
+    std::vector<DatabaseName> getAllConsistentDbNamesForTenant(
+        OperationContext* opCtx, boost::optional<TenantId> tenantId) const;
 
     /**
      * Updates the profile filter on all databases with non-default settings.
@@ -673,13 +715,39 @@ private:
     class PublishCatalogUpdates;
 
     /**
-     * Gets shared_ptr to Collections by UUID/Namespace.
+     * Returns whether the collection has pending commits.
+     */
+    bool _collectionHasPendingCommits(const NamespaceStringOrUUID& nssOrUUID) const;
+
+    /**
+     * Gets Collections by UUID/Namespace.
      */
     std::shared_ptr<const Collection> _getCollectionByNamespace(OperationContext* opCtx,
                                                                 const NamespaceString& nss) const;
 
     std::shared_ptr<const Collection> _getCollectionByUUID(OperationContext* opCtx,
                                                            const UUID& uuid) const;
+
+    /**
+     * Resolves and validates the namespace from the given DatabaseName and UUID.
+     *
+     * This will also lookup in the commit pending entries if passed true for withCommitPending.
+     */
+    NamespaceString _resolveNamespaceStringFromDBNameAndUUID(OperationContext* opCtx,
+                                                             const DatabaseName& dbName,
+                                                             const UUID& uuid,
+                                                             bool withCommitPending) const;
+
+    /**
+     * This function gets the NamespaceString from the collection catalog entry that
+     * corresponds to UUID uuid. If no collection exists with the uuid, return
+     * boost::none. See onCloseCatalog/onOpenCatalog for more info.
+     *
+     * This will also lookup in the commit pending entries if passed true for withCommitPending.
+     */
+    boost::optional<NamespaceString> _lookupNSSByUUID(OperationContext* opCtx,
+                                                      const UUID& uuid,
+                                                      bool withCommitPending) const;
 
     /**
      * Register the collection.

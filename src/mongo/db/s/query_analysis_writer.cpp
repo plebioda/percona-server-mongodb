@@ -172,6 +172,7 @@ SampledCommandRequest makeSampledUpdateCommandRequest(
 
     write_ops::UpdateCommandRequest sampledCmd(originalCmd.getNamespace(), {std::move(op)});
     sampledCmd.setLet(originalCmd.getLet());
+    sampledCmd.setBypassEmptyTsReplacement(originalCmd.getBypassEmptyTsReplacement());
 
     // "$db" is only included when serializing to OP_MSG, so we manually append it here.
     BSONObjBuilder bob(sampledCmd.toBSON());
@@ -215,6 +216,7 @@ SampledCommandRequest makeSampledDeleteCommandRequest(
 
     write_ops::DeleteCommandRequest sampledCmd(originalCmd.getNamespace(), {std::move(op)});
     sampledCmd.setLet(originalCmd.getLet());
+    sampledCmd.setBypassEmptyTsReplacement(originalCmd.getBypassEmptyTsReplacement());
 
     // "$db" is only included when serializing to OP_MSG, so we manually append it here.
     BSONObjBuilder bob(sampledCmd.toBSON());
@@ -260,6 +262,7 @@ SampledCommandRequest makeSampledFindAndModifyCommandRequest(
     sampledCmd.setSort(originalCmd.getSort());
     sampledCmd.setArrayFilters(originalCmd.getArrayFilters());
     sampledCmd.setLet(originalCmd.getLet());
+    sampledCmd.setBypassEmptyTsReplacement(originalCmd.getBypassEmptyTsReplacement());
 
     // "$db" is only included when serializing to OP_MSG, so we manually append it here.
     BSONObjBuilder bob(sampledCmd.toBSON());
@@ -400,7 +403,7 @@ void QueryAnalysisWriter::onStartup(OperationContext* opCtx) {
                                             opCtx->getService()](const std::string& threadName) {
         Client::initThread(threadName.c_str(), service);
     };
-    _executor = std::make_shared<executor::ThreadPoolTaskExecutor>(
+    _executor = executor::ThreadPoolTaskExecutor::create(
         std::make_unique<ThreadPool>(threadPoolOptions),
         executor::makeNetworkInterface("QueryAnalysisWriterNetwork"));
     _executor->startup();

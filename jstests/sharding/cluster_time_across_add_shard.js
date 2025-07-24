@@ -12,6 +12,8 @@
 import "jstests/multiVersion/libs/multi_rs.js";
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {reconfig} from "jstests/replsets/rslib.js";
 
 function createUser(rst) {
@@ -120,6 +122,9 @@ if (isShardSvrRst) {
     }, tmpTestData);
 }
 
+const isMultiversion =
+    jsTest.options().shardMixedBinVersions || jsTest.options().useRandomBinVersionsWithinReplicaSet;
+
 for (let session of sessions) {
     // Reconnect and re-authenticate after the network connection was closed due to restart.
     const error = assert.throws(() => session.getDatabase("admin").runCommand("hello"));
@@ -128,7 +133,21 @@ for (let session of sessions) {
 
     // Verify that the application is able to use a signed cluster time although the addShard
     // or transitionFromDedicatedConfigServer command has not been run.
-    assert.commandWorked(session.getDatabase("admin").runCommand("hello"));
+    if (isMultiversion) {
+        // Prior to 8.1, if a client runs a command inside a session against a node right after it
+        // restarts, the command can fail clusterTime key validation with KeyNotFound if no
+        // majority committed snapshot was taken before the restart.
+        assert.soon(() => {
+            const res = session.getDatabase("admin").runCommand("hello");
+            if (res.code == ErrorCodes.KeyNotFound) {
+                return false;
+            }
+            assert.commandWorked(res);
+            return true;
+        });
+    } else {
+        assert.commandWorked(session.getDatabase("admin").runCommand("hello"));
+    }
     assert.eq(session.getClusterTime().signature.keyId, lastClusterTime.signature.keyId);
 }
 
@@ -175,7 +194,10 @@ if (isShardSvrRst) {
         setParameter: "featureFlagTransitionToCatalogShard=true",
     });
     authutil.asCluster(mongos, keyFile, () => {
-        assert.commandWorked(mongos.adminCommand({transitionFromDedicatedConfigServer: 1}));
+        assert.soonRetryOnAcceptableErrors(() => {
+            assert.commandWorked(mongos.adminCommand({transitionFromDedicatedConfigServer: 1}));
+            return true;
+        }, ErrorCodes.HostUnreachable);
     });
     // Each client connection may only be authenticated once.
     configRstPrimary = new Mongo(rst.getPrimary().host);

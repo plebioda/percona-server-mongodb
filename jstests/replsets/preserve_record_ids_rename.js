@@ -22,6 +22,7 @@ import {
 import {
     validateShowRecordIdReplicatesAcrossNodes,
 } from "jstests/libs/replicated_record_ids_utils.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 const replSet = new ReplSetTest({nodes: 2});
 replSet.startSet();
@@ -122,7 +123,7 @@ function testRenameReplRidBehavior(
                `Expected $recordId fields to be reassigned after rename. Before rename: ${
                    tojson(docsBeforeWithRids)}, After: ${tojson(docsAfterWithRids)}`);
     }
-    assert(!src.exists())
+    assert(!src.exists());
     validateRidsAcrossNodes(dst);
 }
 

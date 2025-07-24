@@ -486,10 +486,10 @@ public:
     void awaitNoBgOpInProgForDb(OperationContext* opCtx, const DatabaseName& dbName);
 
     /**
-     * Waits until an index build completes. If there are no index builds in progress, returns
-     * immediately.
+     * Waits until an index build completes or the deadline expires. If there are no index builds in
+     * progress, returns immediately.
      */
-    void waitUntilAnIndexBuildFinishes(OperationContext* opCtx);
+    void waitUntilAnIndexBuildFinishes(OperationContext* opCtx, Date_t deadline = Date_t::max());
 
 
     /**
@@ -526,6 +526,9 @@ public:
      * collection. For two phase index builds, writes both startIndexBuild and commitIndexBuild
      * oplog entries on success. No two phase index build oplog entries, including abortIndexBuild,
      * will be written on failure. Throws exception on error.
+     *
+     * This function doesn't apply the default collation because this function is called in
+     * different cases where we want to make an index with a non-default collator.
      */
     static void createIndexesOnEmptyCollection(OperationContext* opCtx,
                                                CollectionWriter& collection,

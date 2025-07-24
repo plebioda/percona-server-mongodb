@@ -23,7 +23,8 @@
  * - behavior: Must be one of "unshardedOnly", "targetsPrimaryUsesConnectionVersioning" or
  * "versioned". Determines what system profiler checks are performed.
  * @tags: [
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {
@@ -31,6 +32,7 @@ import {
     profilerHasSingleMatchingEntryOrThrow,
     profilerHasZeroMatchingEntriesOrThrow,
 } from "jstests/libs/profiler.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     commandsRemovedFromMongosSinceLastLTS
 } from "jstests/sharding/libs/last_lts_mongos_commands.js";
@@ -242,7 +244,6 @@ let testCases = {
     dropSearchIndex: {skip: "does not return user data"},
     dropUser: {skip: "primary only"},
     echo: {skip: "does not return user data"},
-    emptycapped: {skip: "primary only"},
     enableSharding: {skip: "primary only"},
     endSessions: {skip: "does not return user data"},
     explain: {skip: "test case to be added"},
@@ -390,7 +391,6 @@ let testCases = {
     refineCollectionShardKey: {skip: "primary only"},
     refreshLogicalSessionCacheNow: {skip: "does not return user data"},
     refreshSessions: {skip: "does not return user data"},
-    refreshSessionsInternal: {skip: "does not return user data"},
     removeShard: {skip: "primary only"},
     removeShardFromZone: {skip: "primary only"},
     renameCollection: {skip: "primary only"},
@@ -419,6 +419,7 @@ let testCases = {
     revokeRolesFromUser: {skip: "primary only"},
     rolesInfo: {skip: "primary only"},
     rotateCertificates: {skip: "does not return user data"},
+    rotateFTDC: {skip: "does not return user data"},
     saslContinue: {skip: "primary only"},
     saslStart: {skip: "primary only"},
     sbe: {skip: "internal command"},

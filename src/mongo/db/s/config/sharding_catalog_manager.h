@@ -128,7 +128,7 @@ class ShardingCatalogManager {
 
 public:
     ShardingCatalogManager(ServiceContext* serviceContext,
-                           std::unique_ptr<executor::TaskExecutor> addShardExecutor,
+                           std::shared_ptr<executor::TaskExecutor> addShardExecutor,
                            std::shared_ptr<Shard> localConfigShard,
                            std::unique_ptr<ShardingCatalogClient> localCatalogClient);
     ~ShardingCatalogManager();
@@ -144,7 +144,7 @@ public:
      * is starting.
      */
     static void create(ServiceContext* serviceContext,
-                       std::unique_ptr<executor::TaskExecutor> addShardExecutor,
+                       std::shared_ptr<executor::TaskExecutor> addShardExecutor,
                        std::shared_ptr<Shard> localConfigShard,
                        std::unique_ptr<ShardingCatalogClient> localCatalogClient);
 
@@ -281,6 +281,13 @@ public:
     BSONObj findOneConfigDocument(OperationContext* opCtx,
                                   const NamespaceString& nss,
                                   const BSONObj& query);
+
+    /**
+     * Checks if the shard keys are valid for the timeseries collections in the given database.
+     * If dbName is DatabaseName::kEmpty it checks in all database.
+     */
+    Status checkTimeseriesShardKeys(OperationContext* opCtx,
+                                    const DatabaseName& dbName = DatabaseName::kEmpty);
 
     //
     // Chunk Operations
@@ -954,7 +961,7 @@ private:
     // Executor specifically used for sending commands to servers that are in the process of being
     // added as shards. Does not have any connection hook set on it, thus it can be used to talk to
     // servers that are not yet in the ShardRegistry.
-    const std::unique_ptr<executor::TaskExecutor> _executorForAddShard;
+    const std::shared_ptr<executor::TaskExecutor> _executorForAddShard;
 
     // A ShardLocal and ShardingCatalogClient with a ShardLocal used for local connections.
     const std::shared_ptr<Shard> _localConfigShard;

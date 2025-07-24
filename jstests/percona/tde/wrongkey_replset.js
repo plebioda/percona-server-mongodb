@@ -4,6 +4,8 @@
  * encryption key does not corrupt DB (replica set version).
  * @tags: [requires_wiredtiger]
  */
+import { ReplSetTest } from "jstests/libs/replsettest.js";
+
 (function() {
     'use strict';
 	load('jstests/backup/_backup_helpers.js');

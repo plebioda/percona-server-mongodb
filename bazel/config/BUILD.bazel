@@ -1,15 +1,22 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load(
     "//bazel/config:configs.bzl",
     "allocator",
     "asan",
+    "audit",
     "build_enterprise",
     "build_grpc",
     "compiler_type",
     "dbg",
     "detect_odr_violations",
+    "developer_dir",
+    "disable_warnings_as_errors",
     "dwarf_version",
+    "fipsmode",
     "fsan",
+    "full_featured",
+    "gcov",
     "http_client",
     "libunwind",
     "linker",
@@ -18,11 +25,14 @@ load(
     "lsan",
     "msan",
     "opt",
+    "pgo_profile",
     "release",
     "separate_debug",
     "shared_archive",
     "spider_monkey_dbg",
+    "ssl",
     "streams_release_build",
+    "thin_lto",
     "tsan",
     "ubsan",
     "use_diagnostic_latches",
@@ -38,6 +48,11 @@ load(
 )
 
 package(default_visibility = ["//visibility:public"])
+
+# Expose script for external usage through bazel.
+exports_files([
+    "generate_config_header.py",
+])
 
 # --------------------------------------
 # Compiler types
@@ -916,6 +931,21 @@ config_setting(
     },
 )
 
+config_setting(
+    name = "use_disable_ref_track_disabled",
+    flag_values = {
+        "//bazel/config:use_disable_ref_track": "False",
+    },
+)
+
+selects.config_setting_group(
+    name = "selected_disable_ref_track",
+    match_any = [
+        ":use_disable_ref_track_disabled",
+        ":release_enabled",
+    ],
+)
+
 # --------------------------------------
 # wiredtiger options
 # --------------------------------------
@@ -1495,15 +1525,32 @@ selects.config_setting_group(
     ],
 )
 
-# TODO: another conditional check for openssl is required to be ported from -
-#   https://github.com/10gen/mongo/blob/master/SConstruct#L6039
-# Depends on: https://jira.mongodb.org/browse/SERVER-80599
+# The streams_release_build flag is effectively a guard to assure streams are not
+# built on release builds. For non-release builds, it's not required.
 selects.config_setting_group(
-    name = "streams_release_build_required_setting",
+    name = "_streams_for_release_build",
     match_all = [
         ":release_enabled",
         ":streams_release_build_enabled",
         ":platform_for_streaming_build",
+        ":ssl_enabled_linux",
+    ],
+)
+
+selects.config_setting_group(
+    name = "_streams_for_non_release_build",
+    match_all = [
+        ":release_disabled",
+        ":platform_for_streaming_build",
+        ":ssl_enabled_linux",
+    ],
+)
+
+selects.config_setting_group(
+    name = "streams_release_build_required_setting",
+    match_any = [
+        ":_streams_for_release_build",
+        ":_streams_for_non_release_build",
     ],
 )
 
@@ -1617,4 +1664,295 @@ selects.config_setting_group(
         "@platforms//os:linux",
         ":dwarf_version_5",
     ],
+)
+
+# --------------------------------------
+# disable_warnings_as_errors
+# --------------------------------------
+
+disable_warnings_as_errors(
+    name = "disable_warnings_as_errors",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "warnings_as_errors_disabled",
+    flag_values = {
+        "//bazel/config:disable_warnings_as_errors": "True",
+    },
+)
+
+config_setting(
+    name = "warnings_as_errors_enabled",
+    flag_values = {
+        "//bazel/config:disable_warnings_as_errors": "False",
+    },
+)
+
+selects.config_setting_group(
+    name = "disable_warnings_as_errors_linux",
+    match_all = [
+        "@platforms//os:linux",
+        ":warnings_as_errors_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "disable_warnings_as_errors_posix",
+    match_all = [
+        ":not_windows",
+        ":warnings_as_errors_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "disable_warnings_as_errors_macos",
+    match_all = [
+        "@platforms//os:macos",
+        ":warnings_as_errors_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "disable_warnings_as_errors_windows",
+    match_all = [
+        "@platforms//os:windows",
+        ":warnings_as_errors_enabled",
+    ],
+)
+
+# -----------
+# ssl options
+# -----------
+
+ssl(
+    name = "ssl",
+    build_setting_default = True,
+)
+
+config_setting(
+    name = "ssl_enabled",
+    flag_values = {
+        "//bazel/config:ssl": "True",
+    },
+)
+
+config_setting(
+    name = "ssl_disabled",
+    flag_values = {
+        "//bazel/config:ssl": "False",
+    },
+)
+
+selects.config_setting_group(
+    name = "ssl_enabled_windows",
+    match_all = [
+        "@platforms//os:windows",
+        ":ssl_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "ssl_enabled_macos",
+    match_all = [
+        "@platforms//os:macos",
+        ":ssl_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "ssl_enabled_linux",
+    match_all = [
+        "@platforms//os:linux",
+        ":ssl_enabled",
+    ],
+)
+
+selects.config_setting_group(
+    name = "ssl_disabled_linux",
+    match_all = [
+        "@platforms//os:linux",
+        ":ssl_disabled",
+    ],
+)
+
+# --------------------------------------
+# audit
+# --------------------------------------
+
+audit(
+    name = "audit",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "audit_enabled",
+    flag_values = {
+        "//bazel/config:audit": "True",
+    },
+)
+
+config_setting(
+    name = "audit_disabled",
+    flag_values = {
+        "//bazel/config:audit": "False",
+    },
+)
+
+# --------------------------------------
+# full-featured
+# --------------------------------------
+
+full_featured(
+    name = "full-featured",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "full_featured_enabled",
+    flag_values = {
+        "//bazel/config:full-featured": "True",
+    },
+)
+
+config_setting(
+    name = "full_featured_disabled",
+    flag_values = {
+        "//bazel/config:full-featured": "False",
+    },
+)
+
+# --------------------------------------
+# fipsmode
+# --------------------------------------
+
+fipsmode(
+    name = "enable-fipsmode",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "fipsmode_enabled",
+    flag_values = {
+        "//bazel/config:enable-fipsmode": "True",
+    },
+)
+
+config_setting(
+    name = "fipsmode_disabled",
+    flag_values = {
+        "//bazel/config:enable-fipsmode": "False",
+    },
+)
+
+# --------------------------------------
+# thin_lto
+# --------------------------------------
+
+thin_lto(
+    name = "thin_lto",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "thin_lto_enabled",
+    flag_values = {
+        "//bazel/config:thin_lto": "True",
+    },
+)
+
+# --------------------------------------
+# gdbserver options
+# --------------------------------------
+
+gcov(
+    name = "gcov",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "gcov_enabled",
+    flag_values = {
+        "//bazel/config:gcov": "True",
+    },
+)
+
+# --------------------------------------
+# pgo_profile options
+# --------------------------------------
+
+pgo_profile(
+    name = "pgo_profile",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "pgo_profile_enabled",
+    flag_values = {
+        "//bazel/config:pgo_profile": "True",
+    },
+)
+
+bool_flag(
+    name = "scons_query",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "scons_query_enabled",
+    flag_values = {
+        "//bazel/config:scons_query": "True",
+    },
+)
+
+# --------------------------------------
+# crypto options
+# --------------------------------------
+
+# Note: This intentionally matches regardless of SSL setting.
+config_setting(
+    name = "mongo_crypto_windows",
+    constraint_values = ["@platforms//os:windows"],
+)
+
+# Note: This intentionally matches regardless of SSL setting.
+config_setting(
+    name = "mongo_crypto_apple",
+    constraint_values = ["@platforms//os:macos"],
+)
+
+selects.config_setting_group(
+    name = "mongo_crypto_openssl",
+    match_all = [
+        ":ssl_enabled_linux",
+    ],
+)
+
+selects.config_setting_group(
+    name = "mongo_crypto_tom",
+    match_all = [
+        ":ssl_disabled_linux",
+    ],
+)
+
+# --------------------------------------
+# symbol reordering options
+# --------------------------------------
+
+selects.config_setting_group(
+    name = "symbol_ordering_file_enabled",
+    match_all = [
+        "@platforms//os:linux",
+        ":opt_any",
+        ":linker_lld",
+    ],
+)
+
+# --------------------------------------
+# developer dir
+# --------------------------------------
+
+developer_dir(
+    name = "developer_dir",
+    build_setting_default = "/Applications/Xcode.app",
 )

@@ -5,6 +5,7 @@
  */
 
 import {assertArrayEq} from "jstests/aggregation/extras/utils.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 let st = new ShardingTest({shards: 2});
 
@@ -60,10 +61,10 @@ const sessionDB = session.getDatabase(dbName);
 
     // Run a $lookup which will add shard1 as an additional participant. This should throw
     // because shard1 had an incoming migration.
-    let err = assert.throwsWithCode(
-        () => {sessionDB.getCollection(localColl).aggregate(
-            [{$lookup: {from: foreignColl, localField: "x", foreignField: "_id", as: "result"}}])},
-        ErrorCodes.MigrationConflict);
+    let err = assert.throwsWithCode(() => {
+        sessionDB.getCollection(localColl).aggregate(
+            [{$lookup: {from: foreignColl, localField: "x", foreignField: "_id", as: "result"}}]);
+    }, ErrorCodes.MigrationConflict);
     assert.contains("TransientTransactionError", err.errorLabels, tojson(err));
 
     session.abortTransaction();

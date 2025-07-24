@@ -1,10 +1,16 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "document_value",
         "sbe",
@@ -22,20 +28,9 @@ env.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/bson/dotted_path_support",
+        "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
         "$BUILD_DIR/mongo/db/service_context",
         "document_value/document_value",
-    ],
-)
-
-env.Library(
-    target="scoped_timer",
-    source=[
-        "scoped_timer.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/service_context",
-        "$BUILD_DIR/mongo/util/net/network",
     ],
 )
 
@@ -63,6 +58,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/bson/util/bson_column",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/query/bucket_predicate_generator",
     ],
 )
@@ -84,7 +80,7 @@ sortExecutorEnv.Library(
         "$BUILD_DIR/mongo/db/sorter/sorter_base",
         "$BUILD_DIR/mongo/db/storage/encryption_hooks",
         "$BUILD_DIR/mongo/db/storage/storage_options",
-        "$BUILD_DIR/third_party/shim_snappy",
+        "$BUILD_DIR/third_party/snappy/snappy",
     ],
 )
 
@@ -100,6 +96,9 @@ env.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/query_expressions",
+    ],
+    LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
     ],
 )
 
@@ -120,6 +119,7 @@ env.Library(
 env.CppUnitTest(
     target="db_exec_test",
     source=[
+        "distinct_scan_test.cpp",
         "document_value/document_comparator_test.cpp",
         "document_value/document_metadata_fields_test.cpp",
         "document_value/document_value_test.cpp",
@@ -149,6 +149,7 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/db/query/query_test_service_context",
         "$BUILD_DIR/mongo/db/query_exec",
         "$BUILD_DIR/mongo/db/record_id_helpers",
+        "$BUILD_DIR/mongo/db/s/shard_server_test_fixture",
         "$BUILD_DIR/mongo/db/service_context_d_test_fixture",
         "$BUILD_DIR/mongo/db/timeseries/bucket_compression",
         "$BUILD_DIR/mongo/dbtests/mocklib",

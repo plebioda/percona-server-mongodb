@@ -7,21 +7,30 @@ info --config=local
 # This automatically sets a config based on host platform, ex: --config=macos if the host is macos
 build --enable_platform_specific_config=true
 
+# Don't use legacy toolchain resolution.
+build --incompatible_enable_cc_toolchain_resolution
+
 # This makes builds more hermetic by preventing environment variables from leaking into the execution of rules
 build --incompatible_strict_action_env=true
 
 # allows us to use python rules. This is needed because of the bug:
 # https://github.com/bazelbuild/bazel/issues/4327
-build --nobuild_runfile_links
+build --experimental_inprocess_symlink_creation
 
 # cc_library transitively propagates link opts. The build uses cc_shared_library to avoid this when linking
 # dynamically.
 build --experimental_cc_shared_library
 
-# This supports the "crosstool" feature (aka building from our toolchain).
-# Currently the only platform with a custom toolchain config is linux, use the default
-# toolchain_suite elsewhere.
-build:linux --crosstool_top=@mongo_toolchain//:toolchain_suite
+# Reuse sandboxes to save sandbox execution and deletion times.
+build --experimental_reuse_sandbox_directories
+
+# Disable the default compiler flags to avoid certain flags that conflict with flags we setup.
+build:windows --features=-smaller_binary
+build:windows --features=-frame_pointer
+build:windows --features=-opt
+build:windows --features=-dbg
+build:windows --features=-fastbuild
+build:windows --features=-dynamic_link_msvcrt
 
 # Dynamic linking on Windows (DLL generation) is currently not supported.
 build:windows --//bazel/config:linkstatic=True
@@ -38,11 +47,14 @@ build:windows --cxxopt=/std:c++20
 build:windows --cxxopt=-D_WIN32_WINNT=0x0A00
 build:windows --cxxopt=-DBOOST_USE_WINAPI_VERSION=0x0A00
 build:windows --cxxopt=-DNTDDI_VERSION=0x0A000000
+# TODO(SERVER-93585): Remove this and fix s2 to work with Bazel's default which
+#                     sets COMPILER_MSVC on windows.
+build:windows --cxxopt=-UCOMPILER_MSVC
 
 # remote execution is the default, but only mongodb employees will be able to access
 # the engflow cluster. External builders should use the local option below
 # remote execution configs
-build --remote_executor=grpcs://sodalite.cluster.engflow.com
+build:linux --remote_executor=grpcs://sodalite.cluster.engflow.com
 build --remote_cache=grpcs://sodalite.cluster.engflow.com
 build --bes_backend=grpcs://sodalite.cluster.engflow.com
 build --bes_results_url=https://sodalite.cluster.engflow.com/invocation/
@@ -55,6 +67,7 @@ common --remote_upload_local_results=False
 
 # Settings specific for clang-tidy
 --config=clang-tidy
+build:clang-tidy --//bazel/config:compiler_type=clang
 build:clang-tidy --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect
 build:clang-tidy --output_groups=report
 build:clang-tidy --@bazel_clang_tidy//:clang_tidy_config=//:clang_tidy_config
@@ -99,6 +112,9 @@ common --bes_upload_mode=fully_async
 # https://github.com/bazelbuild/bazel/issues/10902
 # Enable Build without the Bytes
 # common --remote_download_outputs=toplevel
+
+# Default Mongo Version if a version is not specified.
+build --define=MONGO_VERSION=8.0.0
 
 # try to import the bazelrc files if available
 try-import %workspace%/.bazelrc.local

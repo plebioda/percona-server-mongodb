@@ -7,10 +7,13 @@
  *   # Slow Windows machines cause this test to be flakey. Further reducing the number of samples we
  *   # take would make the test less useful on Linux variants so we just don't run on Windows.
  *   incompatible_with_windows_tls,
- *   temp_disabled_embedded_router_known_issues,
+ *    # TODO (SERVER-88122): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     AnalyzeShardKeyUtil
 } from "jstests/sharding/analyze_shard_key/libs/analyze_shard_key_util.js";

@@ -8,6 +8,8 @@
  * ]
  */
 import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 // Function to run the test against a test fixture. Accepts an object that contains the following
 // fields:
@@ -106,6 +108,10 @@ function runTest({testFixture, conn, shardLocal, shardOutput}) {
     assert.commandWorked(coll.insertMany(kMoreDocs));
     assert.commandWorked(outColl.insertMany(kMoreDocs));
 
+    if (isReplSet) {
+        testFixture.awaitReplication();
+    }
+
     // The aggregate should not fail.
     assert.commandWorked(aggColl.runCommand("aggregate", aggCommand));
 
@@ -126,6 +132,11 @@ function runTest({testFixture, conn, shardLocal, shardOutput}) {
         [{_id: 2, data: kVeryLargeDataString}, {_id: -2, data: kVeryLargeDataString}];
     assert.commandWorked(coll.insertMany(kLargeDocs));
     assert.commandWorked(outColl.insertMany(kLargeDocs));
+
+    if (isReplSet) {
+        testFixture.awaitReplication();
+    }
+
     assert.commandFailedWithCode(aggColl.runCommand("aggregate", aggCommand),
                                  ErrorCodes.BSONObjectTooLarge);
 }

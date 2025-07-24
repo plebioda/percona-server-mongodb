@@ -63,6 +63,7 @@ class TestSuiteExecutor(object):
             self.fixture_config = fixture
 
         self.hooks_config = utils.default_if_none(hooks, [])
+
         self.test_config = utils.default_if_none(config, {})
 
         self.archival = None

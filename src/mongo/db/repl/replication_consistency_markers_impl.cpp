@@ -193,36 +193,6 @@ void ReplicationConsistencyMarkersImpl::clearInitialSyncFlag(OperationContext* o
     }
 }
 
-OpTime ReplicationConsistencyMarkersImpl::getMinValid(OperationContext* opCtx) const {
-    auto doc = _getMinValidDocument(opCtx);
-    invariant(doc);  // Initialized at startup so it should never be missing.
-
-    auto minValid = OpTime(doc->getMinValidTimestamp(), doc->getMinValidTerm());
-
-    LOGV2_DEBUG(21288,
-                3,
-                "Returning minvalid",
-                "minValidString"_attr = minValid.toString(),
-                "minValidBSON"_attr = minValid.toBSON());
-
-    return minValid;
-}
-
-void ReplicationConsistencyMarkersImpl::setMinValid(OperationContext* opCtx,
-                                                    const OpTime& minValid) {
-    LOGV2_DEBUG(21289,
-                3,
-                "Setting minvalid to exactly",
-                "minValidString"_attr = minValid.toString(),
-                "minValidBSON"_attr = minValid.toBSON());
-    BSONObj update =
-        BSON("$set" << BSON(MinValidDocument::kMinValidTimestampFieldName
-                            << minValid.getTimestamp() << MinValidDocument::kMinValidTermFieldName
-                            << minValid.getTerm()));
-
-    _updateMinValidDocument(opCtx, update);
-}
-
 void ReplicationConsistencyMarkersImpl::setAppliedThrough(OperationContext* opCtx,
                                                           const OpTime& optime) {
     invariant(!optime.isNull());
@@ -282,8 +252,7 @@ void ReplicationConsistencyMarkersImpl::ensureFastCountOnOplogTruncateAfterPoint
     if (result.getStatus() == ErrorCodes::CollectionIsEmpty) {
         // The count is updated before successful commit of a write, so unclean shutdown can leave
         // the value incorrectly set to one.
-        invariant(
-            _storageInterface->setCollectionCount(opCtx, _oplogTruncateAfterPointNss, 0).isOK());
+        invariant(_storageInterface->setCollectionCount(opCtx, _oplogTruncateAfterPointNss, 0));
         return;
     }
 
@@ -300,7 +269,7 @@ void ReplicationConsistencyMarkersImpl::ensureFastCountOnOplogTruncateAfterPoint
 
     // We can safely set a count of one. We know that we only ever write one document, and the
     // success of findSingleton above confirms only one document exists in the collection.
-    invariant(_storageInterface->setCollectionCount(opCtx, _oplogTruncateAfterPointNss, 1).isOK());
+    invariant(_storageInterface->setCollectionCount(opCtx, _oplogTruncateAfterPointNss, 1));
 }
 
 Status ReplicationConsistencyMarkersImpl::_upsertOplogTruncateAfterPointDocument(

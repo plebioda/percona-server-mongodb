@@ -354,6 +354,8 @@ void statsToBSON(const PlanStageStats& stats,
         bob->appendBool("isUnique", spec->isUnique);
         bob->appendBool("isSparse", spec->isSparse);
         bob->appendBool("isPartial", spec->isPartial);
+        bob->appendBool("isShardFiltering", spec->isShardFiltering);
+        bob->appendBool("isFetching", spec->isFetching);
         bob->append("indexVersion", spec->indexVersion);
         bob->append("direction", spec->direction > 0 ? "forward" : "backward");
 
@@ -567,6 +569,10 @@ void statsToBSON(const PlanStageStats& stats,
             bob->appendNumber("spilledUncompressedDataSize",
                               static_cast<long long>(spec->spilledUncompressedDataSize));
         }
+    } else if (STAGE_EOF == stats.stageType) {
+        EofStats* spec = static_cast<EofStats*>(stats.specific.get());
+
+        bob->append("type", eof_node::typeStr(spec->type));
     }
 
     // We're done if there are no children.
@@ -862,10 +868,6 @@ PlanExplainer::PlanStatsDetails PlanExplainerImpl::getWinningPlanStats(
     return {bob.obj(), std::move(summary)};
 }
 
-BSONObj PlanExplainerImpl::getOptimizerDebugInfo() const {
-    return {};
-}
-
 PlanExplainer::PlanStatsDetails PlanExplainerImpl::getWinningPlanTrialStats() const {
     return getWinningPlanStats(ExplainOptions::Verbosity::kExecAllPlans);
 }
@@ -931,7 +933,7 @@ std::vector<PlanExplainer::PlanStatsDetails> getCachedPlanStats(
     std::vector<PlanExplainer::PlanStatsDetails> res;
     auto winningPlanIdx = getWinningPlanIdx(nullptr);
 
-    for (auto&& stats : decision.getStats<PlanStageStats>().candidatePlanStats) {
+    for (auto&& stats : decision.stats.candidatePlanStats) {
         BSONObjBuilder bob;
         statsToBSON(*stats, verbosity, winningPlanIdx, &bob, &bob);
         res.push_back({bob.obj(),

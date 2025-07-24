@@ -48,7 +48,6 @@
 #include "mongo/base/status_with.h"
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonobj.h"
-#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/ordering.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/db/catalog/collection_options.h"
@@ -59,7 +58,6 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/storage/backup_block.h"
 #include "mongo/db/storage/column_store.h"
-#include "mongo/db/storage/durable_catalog.h"
 #include "mongo/db/storage/journal_listener.h"
 #include "mongo/db/storage/key_format.h"
 #include "mongo/db/storage/kv/kv_engine.h"
@@ -93,6 +91,23 @@ class WiredTigerSessionCache;
 class WiredTigerSizeStorer;
 
 class WiredTigerEngineRuntimeConfigParameter;
+
+/**
+ * With the absolute path to an ident and the parent dbpath, return the ident.
+ *
+ * Note that the ident can have 4 different forms depending on the combination
+ * of server parameters present (directoryperdb / wiredTigerDirectoryForIndexes).
+ * With any one of these server parameters enabled, a directory could be included
+ * in the returned ident.
+ * See the unit test WiredTigerKVEngineTest::ExtractIdentFromPath for example usage.
+ *
+ * Note (2) idents use unix-style separators (always, see
+ * durable_catalog.cpp:generateUniqueIdent) but ident paths are platform-dependant.
+ * This method returns the unix-style "/" separators always.
+ */
+std::string extractIdentFromPath(const boost::filesystem::path& dbpath,
+                                 const boost::filesystem::path& identAbsolutePath);
+
 
 Status validateExtraDiagnostics(const std::vector<std::string>& value,
                                 const boost::optional<TenantId>& tenantId);
@@ -315,10 +330,6 @@ public:
                      StringData ident,
                      const StorageEngine::DropIdentCallback& onDrop = nullptr) override;
 
-    Status dropIdentSynchronous(RecoveryUnit* ru,
-                                StringData ident,
-                                const StorageEngine::DropIdentCallback& onDrop = nullptr) override;
-
     void dropIdentForImport(OperationContext* opCtx, StringData ident) override;
 
     void alterIdentMetadata(OperationContext* opCtx,
@@ -413,8 +424,6 @@ public:
 
     bool supportsOplogTruncateMarkers() const final;
 
-    bool supportsReadConcernMajority() const final;
-
     // wiredtiger specific
     // Calls WT_CONNECTION::reconfigure on the underlying WT_CONNECTION
     // held by this class
@@ -456,6 +465,14 @@ public:
     WiredTigerOplogManager* getOplogManager() const {
         return _oplogManager.get();
     }
+
+    Status oplogDiskLocRegister(OperationContext* opCtx,
+                                RecordStore* oplogRecordStore,
+                                const Timestamp& opTime,
+                                bool orderedCommit) override;
+
+    void waitForAllEarlierOplogWritesToBeVisible(OperationContext* opCtx,
+                                                 RecordStore* oplogRecordStore) const override;
 
     Timestamp getStableTimestamp() const override;
     Timestamp getOldestTimestamp() const override;
@@ -729,8 +746,6 @@ private:
     AtomicWord<std::uint64_t> _initialDataTimestamp;
 
     AtomicWord<std::uint64_t> _oplogNeededForCrashRecovery;
-
-    std::unique_ptr<WiredTigerEngineRuntimeConfigParameter> _runTimeConfigParam;
 
     mutable Mutex _oldestTimestampPinRequestsMutex =
         MONGO_MAKE_LATCH("WiredTigerKVEngine::_oldestTimestampPinRequestsMutex");

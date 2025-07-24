@@ -40,7 +40,6 @@
 #include "mongo/db/catalog/import_options.h"
 #include "mongo/db/storage/column_store.h"
 #include "mongo/db/storage/compact_options.h"
-#include "mongo/db/storage/durable_catalog.h"
 #include "mongo/db/storage/engine_extension.h"
 #include "mongo/db/storage/record_store.h"
 #include "mongo/db/storage/sorted_data_interface.h"
@@ -151,6 +150,33 @@ public:
         MONGO_UNREACHABLE;
     }
 
+    /**
+     * When we write to an oplog, we call this so that that the storage engine can manage the
+     * visibility of oplog entries to ensure they are ordered.
+     *
+     * Since this is called inside of a WriteUnitOfWork while holding a std::mutex, it is
+     * illegal to acquire any LockManager locks inside of this function.
+     *
+     * If `orderedCommit` is true, the storage engine can assume the input `opTime` has become
+     * visible in the oplog. Otherwise the storage engine must continue to maintain its own
+     * visibility management. Calls with `orderedCommit` true will not be concurrent with calls of
+     * `orderedCommit` false.
+     */
+    virtual Status oplogDiskLocRegister(OperationContext* opCtx,
+                                        RecordStore* oplogRecordStore,
+                                        const Timestamp& opTime,
+                                        bool orderedCommit) = 0;
+
+    /**
+     * Waits for all writes that completed before this call to be visible to forward scans.
+     * See the comment on RecordCursor for more details about the visibility rules.
+     *
+     * It is only legal to call this on an oplog. It is illegal to call this inside a
+     * WriteUnitOfWork.
+     */
+    virtual void waitForAllEarlierOplogWritesToBeVisible(OperationContext* opCtx,
+                                                         RecordStore* oplogRecordStore) const = 0;
+
     virtual Status createSortedDataInterface(OperationContext* opCtx,
                                              const NamespaceString& nss,
                                              const CollectionOptions& collOptions,
@@ -192,17 +218,6 @@ public:
     virtual Status dropIdent(RecoveryUnit* ru,
                              StringData ident,
                              const StorageEngine::DropIdentCallback& onDrop = nullptr) = 0;
-
-    /**
-     * Removes any knowledge of the ident from the storage engines metadata which includes removing
-     * the underlying files belonging to the ident. Allows the storage engine to perform a blocking
-     * wait if it is unable to process the removal immediately. If a callback is specified, it will
-     * be run upon the drop if this function returns an OK status.
-     */
-    virtual Status dropIdentSynchronous(
-        RecoveryUnit* ru,
-        StringData ident,
-        const StorageEngine::DropIdentCallback& onDrop = nullptr) = 0;
 
     /**
      * Removes any knowledge of the ident from the storage engines metadata without removing the
@@ -423,10 +438,6 @@ public:
      * See `StorageEngine::supportsReadConcernSnapshot`
      */
     virtual bool supportsReadConcernSnapshot() const {
-        return false;
-    }
-
-    virtual bool supportsReadConcernMajority() const {
         return false;
     }
 

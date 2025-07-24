@@ -1,3 +1,5 @@
+import { ReplSetTest } from "jstests/libs/replsettest.js";
+
 (function() {
 "use strict";
 load('jstests/telemetry/_telemetry_helpers.js');

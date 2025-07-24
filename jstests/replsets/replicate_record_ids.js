@@ -14,6 +14,7 @@ import {
     getRidForDoc,
     validateShowRecordIdReplicatesAcrossNodes,
 } from "jstests/libs/replicated_record_ids_utils.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 const replSet = new ReplSetTest({nodes: 2});
 replSet.startSet();
@@ -103,7 +104,7 @@ validateRidInOplogs({ns: `${replRidNs}`, ...docARemoveOpTime}, docAReplRid);
 // Therefore to ensure that recordIdsReplicated:true actually works we need to make sure that
 // the appliers process oplog entries in parallel, and this is done by having a full batch of
 // entries for the appliers to process. We can achieve this by performing an insertMany.
-jsTestLog("Test inserting multiple documents at a time.")
+jsTestLog("Test inserting multiple documents at a time.");
 
 const docs = [];
 for (let i = 0; i < 500; i++) {

@@ -1,20 +1,26 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
-env.SConscript(dirs=["mongotmock"], exports=["env"])
+env.SConscript(must_exist=1, dirs=["mongotmock"], exports=["env"])
 
 env.Library(
     target="mongot_cursor",
     source=[
-        "internal_search_cluster_parameters.idl",
-        "internal_search_mongot_remote_spec.idl",
+        "internal_search_cluster_parameters_gen.cpp",
+        "internal_search_mongot_remote_spec_gen.cpp",
         "mongot_cursor.cpp",
         "mongot_cursor_getmore_strategy.cpp",
     ],
     LIBDEPS=[
+        "$BUILD_DIR/mongo/db/pipeline/docs_needed_bounds",
         "$BUILD_DIR/mongo/db/query/common_query_enums_and_helpers",
         "$BUILD_DIR/mongo/db/query/plan_yield_policy",
         "$BUILD_DIR/mongo/executor/task_executor_cursor",
@@ -34,18 +40,6 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/executor/network_interface_tl",
         "$BUILD_DIR/mongo/executor/thread_pool_task_executor_test_fixture",
         "mongot_cursor",
-    ],
-)
-
-env.Library(
-    target="mongot_options",
-    source=[
-        "mongot_options.cpp",
-        "mongot_options.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/util/net/network",
     ],
 )
 
@@ -95,25 +89,13 @@ env.CppUnitTest(
     ],
 )
 
-env.Library(
-    target="search_index_options",
-    source=[
-        "search_index_options.cpp",
-        "search_index_options.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/util/net/network",
-    ],
-)
-
 # This target holds the shared logic for dispatching search index requests to a mongot,
 # whereas the search_index_process targets below hold the logic for fetching collection
 # metadata, either as a mongos router or mongod shard.
 env.Library(
     target="search_index_common",
     source=[
-        "manage_search_index_request.idl",
+        "manage_search_index_request_gen.cpp",
         "search_index_common.cpp",
     ],
     LIBDEPS=[
@@ -135,6 +117,7 @@ env.Library(
         "search_index_process_interface.cpp",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/service_context",

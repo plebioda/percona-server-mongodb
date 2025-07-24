@@ -3,10 +3,13 @@
  *
  * @tags: [
  *   requires_sharding,
- *   temp_disabled_embedded_router_known_issues,
+ *    # TODO (SERVER-88122): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  *   uses_transactions,
  * ]
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 const dbName = "test";
 const collName = "foo";
 const ns = dbName + '.' + collName;

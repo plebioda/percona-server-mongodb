@@ -3,12 +3,14 @@
  *
  * @tags: [
  *   requires_fcv_70,
+ *   # TODO (SERVER-88123): Re-enable this test.
  *   # Test doesn't start enough mongods to have num_mongos routers
- *   temp_disabled_embedded_router_num_routers,
+ *   embedded_router_incompatible,
  * ]
  */
 import {getFailPointName} from "jstests/libs/fail_point_util.js";
 import {ingressHandshakeMetricsTest} from "jstests/libs/ingress_handshake_metrics_helpers.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 let runTest = (connectionHealthLoggingOn) => {
     let st = new ShardingTest({shards: TestData.configShard ? 1 : 0, other: {auth: ''}});

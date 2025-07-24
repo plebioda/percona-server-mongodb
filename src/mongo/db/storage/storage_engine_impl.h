@@ -181,13 +181,7 @@ public:
 
     bool supportsReadConcernSnapshot() const final;
 
-    bool supportsReadConcernMajority() const final;
-
     bool supportsOplogTruncateMarkers() const final;
-
-    bool supportsResumableIndexBuilds() const final;
-
-    bool supportsPendingDrops() const final;
 
     void clearDropPendingState(OperationContext* opCtx) final;
 
@@ -404,6 +398,14 @@ public:
     void unpinOldestTimestamp(const std::string& requestingServiceName) override;
 
     void setPinnedOplogTimestamp(const Timestamp& pinnedTimestamp) override;
+
+    Status oplogDiskLocRegister(OperationContext* opCtx,
+                                RecordStore* oplogRecordStore,
+                                const Timestamp& opTime,
+                                bool orderedCommit) override;
+
+    void waitForAllEarlierOplogWritesToBeVisible(OperationContext* opCtx,
+                                                 RecordStore* oplogRecordStore) const override;
 
     BSONObj getSanitizedStorageOptionsForSecondaryReplication(
         const BSONObj& options) const override;

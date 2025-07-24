@@ -118,16 +118,11 @@ public:
                   const OplogUpdateEntryArgs& args,
                   OpStateAccumulator* opAccumulator = nullptr) override {}
 
-    void aboutToDelete(OperationContext* opCtx,
-                       const CollectionPtr& coll,
-                       const BSONObj& doc,
-                       OplogDeleteEntryArgs* args,
-                       OpStateAccumulator* opAccumulator = nullptr) override {}
-
     void onDelete(OperationContext* opCtx,
                   const CollectionPtr& coll,
                   StmtId stmtId,
                   const BSONObj& doc,
+                  const DocumentKey& documentKey,
                   const OplogDeleteEntryArgs& args,
                   OpStateAccumulator* opAccumulator = nullptr) override {}
 
@@ -156,7 +151,9 @@ public:
                    const CollectionOptions& oldCollOptions,
                    boost::optional<IndexCollModInfo> indexInfo) override {}
 
-    void onDropDatabase(OperationContext* opCtx, const DatabaseName& dbName) override {}
+    void onDropDatabase(OperationContext* opCtx,
+                        const DatabaseName& dbName,
+                        bool markFromMigrate) override {}
 
     repl::OpTime onDropCollection(OperationContext* opCtx,
                                   const NamespaceString& collectionName,
@@ -208,11 +205,6 @@ public:
                               const UUID& uuid,
                               const boost::optional<UUID>& dropTargetUUID,
                               bool stayTemp) override {}
-
-
-    void onEmptyCapped(OperationContext* opCtx,
-                       const NamespaceString& collectionName,
-                       const UUID& uuid) override {}
 
     void onTransactionStart(OperationContext* opCtx) override {}
 

@@ -7,6 +7,12 @@
  *   featureFlagReshardingForTimeseries,
  *   does_not_support_transactions,
  *   assumes_balancer_off,
+ *   requires_fcv_80,
+ *   # Some in memory variants will error because this test uses too much memory. As such, we do not
+ *   # run this test on in-memory variants.
+ *   requires_persistence,
+ *   # TODO (SERVER-91251): Run this with stepdowns on TSAN.
+ *   tsan_incompatible,
  * ]
  */
 import {ChunkHelper} from "jstests/concurrency/fsm_workload_helpers/chunks.js";
@@ -62,7 +68,18 @@ export const $config = (function() {
                 });
             }
 
-            TimeseriesTest.assertInsertWorked(db[collName].insert(docs));
+            assert.soon(() => {
+                const res = db[collName].insert(docs);
+
+                if (res.code == ErrorCodes.NoProgressMade) {
+                    print(`No progress made while inserting documents. Retrying.`);
+                    return false;
+                }
+
+                TimeseriesTest.assertInsertWorked(res);
+                return true;
+            });
+
             print(`Finished Inserting documents.`);
         },
         reshardTimeseries: function reshardTimeseries(db, collName) {
@@ -70,9 +87,9 @@ export const $config = (function() {
             if (this.tid === 0 && shouldContinueResharding) {
                 let newShardKey;
                 if (bsonWoCompare(this.shardKey, shardKeys[0]) === 0) {
-                    newShardKey = shardKeys[1]
+                    newShardKey = shardKeys[1];
                 } else {
-                    newShardKey = shardKeys[0]
+                    newShardKey = shardKeys[0];
                 }
 
                 executeReshardTimeseries(db, collName, newShardKey);

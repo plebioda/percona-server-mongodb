@@ -5,11 +5,13 @@
  * @tags: [
  *    requires_fcv_60,
  *    uses_transactions,
- *    temp_disabled_embedded_router_known_issues,
+ *    # TODO (SERVER-88122): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {extractUUIDFromObject} from "jstests/libs/uuid_util.js";
 
 // This test runs the reapLogicalSessionCacheNow command. That can lead to direct writes to the
@@ -104,6 +106,8 @@ assertNumEntries({
 // Force the logical session cache to reap, and verify that the config.transactions entry for
 // the internal transaction does not get reaped.
 assert.commandWorked(sessionsColl.remove({"_id.id": parentLsid.id}));
+// Wait for the delete to replicate to guarantee the reap below will see its effect.
+st.awaitReplicationOnShards();
 assert.commandWorked(shard0Primary.adminCommand({reapLogicalSessionCacheNow: 1}));
 assertNumEntries({
     sessionUUID: parentLsid.id,

@@ -53,7 +53,7 @@
 #include "mongo/db/s/collection_sharding_state.h"
 #include "mongo/db/s/collection_sharding_state_factory_shard.h"
 #include "mongo/db/server_options.h"
-#include "mongo/db/service_entry_point_mongod.h"
+#include "mongo/db/service_entry_point_shard_role.h"
 #include "mongo/db/session_manager_mongod.h"
 #include "mongo/db/storage/control/storage_control.h"
 #include "mongo/db/storage/recovery_unit_noop.h"
@@ -95,7 +95,7 @@ OpMsgFuzzerFixture::OpMsgFuzzerFixture(bool skipGlobalInitializers)
     : _dir(kTempDirStem.toString()) {
     if (!skipGlobalInitializers) {
         auto ret = runGlobalInitializers(std::vector<std::string>{});
-        invariant(ret.isOK());
+        invariant(ret);
     }
 
     setGlobalServiceContext(ServiceContext::make());
@@ -104,7 +104,7 @@ OpMsgFuzzerFixture::OpMsgFuzzerFixture(bool skipGlobalInitializers)
     _serviceContext = getGlobalServiceContext();
     _setAuthorizationManager();
     _serviceContext->getService()->setServiceEntryPoint(
-        std::make_unique<ServiceEntryPointMongod>());
+        std::make_unique<ServiceEntryPointShardRole>());
 
     auto observerRegistry = std::make_unique<OpObserverRegistry>();
     _serviceContext->setOpObserver(std::move(observerRegistry));
@@ -118,7 +118,6 @@ OpMsgFuzzerFixture::OpMsgFuzzerFixture(bool skipGlobalInitializers)
     storageGlobalParams.engine = "wiredTiger";
     storageGlobalParams.engineSetByUser = true;
     storageGlobalParams.repair = false;
-    serverGlobalParams.enableMajorityReadConcern = false;
     // (Generic FCV reference): Initialize FCV.
     serverGlobalParams.mutableFCV.setVersion(multiversion::GenericFCV::kLatest);
 

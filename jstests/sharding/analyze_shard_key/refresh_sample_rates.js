@@ -6,10 +6,13 @@
  * @tags: [
  *   requires_fcv_70,
  *   requires_persistence,
+ *   # TODO (SERVER-88123): Re-enable this test.
  *   # Test doesn't start enough mongods to have num_mongos routers
- *   temp_disabled_embedded_router_num_routers,
+ *   embedded_router_incompatible,
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {extractUUIDFromObject} from "jstests/libs/uuid_util.js";
 import {QuerySamplingUtil} from "jstests/sharding/analyze_shard_key/libs/query_sampling_util.js";
 

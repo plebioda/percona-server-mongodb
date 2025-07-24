@@ -71,8 +71,9 @@ void UserWriteBlockModeOpObserver::onInserts(OperationContext* opCtx,
         _checkWriteAllowed(opCtx, nss);
     }
 
+    // TODO (SERVER-91506): Determine if we should change this to check isDataConsistent.
     if (nss == NamespaceString::kUserWritesCriticalSectionsNamespace &&
-        !repl::ReplicationCoordinator::get(opCtx)->isDataRecovering()) {
+        !repl::ReplicationCoordinator::get(opCtx)->isInInitialSyncOrRollback()) {
         for (auto it = first; it != last; ++it) {
             const auto& insertedDoc = it->doc;
 
@@ -111,8 +112,9 @@ void UserWriteBlockModeOpObserver::onUpdate(OperationContext* opCtx,
         _checkWriteAllowed(opCtx, nss);
     }
 
+    // TODO (SERVER-91506): Determine if we should change this to check isDataConsistent.
     if (nss == NamespaceString::kUserWritesCriticalSectionsNamespace &&
-        !repl::ReplicationCoordinator::get(opCtx)->isDataRecovering()) {
+        !repl::ReplicationCoordinator::get(opCtx)->isInInitialSyncOrRollback()) {
         const auto collCSDoc = UserWriteBlockingCriticalSectionDocument::parse(
             IDLParserContext("UserWriteBlockOpObserver"), args.updateArgs->updatedDoc);
 
@@ -148,6 +150,7 @@ void UserWriteBlockModeOpObserver::onDelete(OperationContext* opCtx,
                                             const CollectionPtr& coll,
                                             StmtId stmtId,
                                             const BSONObj& doc,
+                                            const DocumentKey& documentKey,
                                             const OplogDeleteEntryArgs& args,
                                             OpStateAccumulator* opAccumulator) {
     const auto& nss = coll->ns();
@@ -155,8 +158,9 @@ void UserWriteBlockModeOpObserver::onDelete(OperationContext* opCtx,
         _checkWriteAllowed(opCtx, nss);
     }
 
+    // TODO (SERVER-91506): Determine if we should change this to check isDataConsistent.
     if (nss == NamespaceString::kUserWritesCriticalSectionsNamespace &&
-        !repl::ReplicationCoordinator::get(opCtx)->isDataRecovering()) {
+        !repl::ReplicationCoordinator::get(opCtx)->isInInitialSyncOrRollback()) {
         const auto& deletedDoc = doc;
         invariant(!deletedDoc.isEmpty());
         const auto collCSDoc = UserWriteBlockingCriticalSectionDocument::parse(
@@ -229,7 +233,8 @@ void UserWriteBlockModeOpObserver::onCollMod(OperationContext* opCtx,
 }
 
 void UserWriteBlockModeOpObserver::onDropDatabase(OperationContext* opCtx,
-                                                  const DatabaseName& dbName) {
+                                                  const DatabaseName& dbName,
+                                                  bool markFromMigrate) {
     _checkWriteAllowed(opCtx, NamespaceString(dbName));
 }
 

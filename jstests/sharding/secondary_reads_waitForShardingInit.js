@@ -9,7 +9,10 @@
  */
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {forceSyncSource} from "jstests/replsets/libs/sync_source.js";
+import {removeShard} from "jstests/sharding/libs/remove_shard_util.js";
 
 let st = new ShardingTest({shards: 1});
 
@@ -115,12 +118,7 @@ sessionDb.getSession().endSession();
 // TODO SERVER-88362 delete the block below.
 assert.commandWorked(st.getDB(dbName).dropDatabase());
 assert.commandWorked(st.getDB('forceSyncSourceDB').dropDatabase());
-let res = assert.commandWorked(st.s.adminCommand({removeShard: shardName}));
-if (res.state === 'started') {
-    // Issue a second removeShard request to sync on the full removal of the targeted RS.
-    res = assert.commandWorked(st.s.adminCommand({removeShard: shardName}));
-}
-assert.eq('completed', res.state);
+removeShard(st, shardName);
 
 replTest.stopSet();
 st.stop();

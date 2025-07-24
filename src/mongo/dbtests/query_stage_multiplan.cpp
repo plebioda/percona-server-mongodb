@@ -70,7 +70,6 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/query/canonical_query.h"
-#include "mongo/db/query/classic_plan_cache.h"
 #include "mongo/db/query/collection_query_info.h"
 #include "mongo/db/query/explain.h"
 #include "mongo/db/query/explain_options.h"
@@ -78,8 +77,9 @@
 #include "mongo/db/query/get_executor.h"
 #include "mongo/db/query/index_bounds.h"
 #include "mongo/db/query/mock_yield_policies.h"
-#include "mongo/db/query/plan_cache.h"
-#include "mongo/db/query/plan_cache_key_factory.h"
+#include "mongo/db/query/plan_cache/classic_plan_cache.h"
+#include "mongo/db/query/plan_cache/plan_cache.h"
+#include "mongo/db/query/plan_cache/plan_cache_key_factory.h"
 #include "mongo/db/query/plan_executor.h"
 #include "mongo/db/query/plan_executor_factory.h"
 #include "mongo/db/query/plan_executor_impl.h"
@@ -93,7 +93,7 @@
 #include "mongo/db/query/query_planner_test_lib.h"
 #include "mongo/db/query/query_settings/query_settings_gen.h"
 #include "mongo/db/query/query_solution.h"
-#include "mongo/db/query/stage_builder_util.h"
+#include "mongo/db/query/stage_builder/stage_builder_util.h"
 #include "mongo/db/query/stage_types.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/storage/snapshot.h"
@@ -271,7 +271,10 @@ std::unique_ptr<MultiPlanStage> runMultiPlanner(ExpressionContext* expCtx,
     auto cq = makeCanonicalQuery(expCtx->opCtx, nss, BSON("foo" << desiredFooValue));
 
     unique_ptr<MultiPlanStage> mps = std::make_unique<MultiPlanStage>(
-        expCtx, &coll, cq.get(), plan_cache_util::ClassicPlanCacheWriter{expCtx->opCtx, &coll});
+        expCtx,
+        &coll,
+        cq.get(),
+        plan_cache_util::ClassicPlanCacheWriter{expCtx->opCtx, &coll, false /* executeInSbe */});
     mps->addPlan(createQuerySolution(), std::move(ixScanRoot), sharedWs.get());
     mps->addPlan(createQuerySolution(), std::move(collScanRoot), sharedWs.get());
 
@@ -328,7 +331,8 @@ TEST_F(QueryStageMultiPlanTest, MPSCollectionScanVsHighlySelectiveIXScan) {
         _expCtx.get(),
         &ctx.getCollection(),
         cq.get(),
-        plan_cache_util::ClassicPlanCacheWriter{opCtx(), &ctx.getCollection()});
+        plan_cache_util::ClassicPlanCacheWriter{
+            opCtx(), &ctx.getCollection(), false /* executeInSbe */});
     mps->addPlan(createQuerySolution(), std::move(ixScanRoot), sharedWs.get());
     mps->addPlan(createQuerySolution(), std::move(collScanRoot), sharedWs.get());
 
@@ -488,13 +492,13 @@ TEST_F(QueryStageMultiPlanTest, MPSBackupPlan) {
     ASSERT_EQUALS(solutions.size(), 3U);
 
     // Fill out the MultiPlanStage.
-    auto mps = std::make_unique<MultiPlanStage>(_expCtx.get(),
-                                                &collection.getCollection(),
-                                                cq.get(),
-                                                plan_cache_util::ClassicPlanCacheWriter{
-                                                    opCtx(),
-                                                    &collection.getCollection(),
-                                                });
+    auto mps = std::make_unique<MultiPlanStage>(
+        _expCtx.get(),
+        &collection.getCollection(),
+        cq.get(),
+        plan_cache_util::ClassicPlanCacheWriter{
+            opCtx(), &collection.getCollection(), false /* executeInSbe */
+        });
     unique_ptr<WorkingSet> ws(new WorkingSet());
     // Put each solution from the planner into the MPR.
     for (size_t i = 0; i < solutions.size(); ++i) {
@@ -591,8 +595,7 @@ TEST_F(QueryStageMultiPlanTest, MPSExplainAllPlans) {
                                          &ctx.getCollection(),
                                          cq.get(),
                                          plan_cache_util::ClassicPlanCacheWriter{
-                                             opCtx(),
-                                             &ctx.getCollection(),
+                                             opCtx(), &ctx.getCollection(), false /* executeInSbe */
                                          });
 
     // Put each plan into the MultiPlanStage. Takes ownership of 'firstPlan' and 'secondPlan'.

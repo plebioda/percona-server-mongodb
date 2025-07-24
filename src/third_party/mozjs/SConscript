@@ -34,7 +34,6 @@ env.Prepend(CPPDEFINES=[
     ('UCONFIG_NO_TRANSLITERATION', 1),
     ('UCONFIG_NO_REGULAR_EXPRESSIONS', 1),
     ('U_CHARSET_IS_UTF8', 1),
-    ('U_DISABLE_RENAMING', 1),
     ('U_STATIC_IMPLEMENTATION', 1),
     ('U_USING_ICU_NAMESPACE', 0),
 ])
@@ -147,6 +146,9 @@ sources = [
     "extract/js/src/wasm/WasmCode-platform.cpp",
 ]
 
+if get_option('spider-monkey-dbg') == "on":
+    sources.extend(["extract/js/src/util/Utility.cpp"])
+
 if env['TARGET_ARCH'] == 'x86_64' and not env.TargetOSIs('windows'):
     env.Append(CCFLAGS=['-mavx2'])
     sources.extend(["extract/mozglue/misc/SIMD_avx2.cpp", "extract/mozglue/misc/SSE.cpp"])
@@ -258,8 +260,8 @@ env.Library(
         'illegal_cyclic_or_unresolved_dependencies_allowlisted',
     ],
     LIBDEPS=[
-        '$BUILD_DIR/third_party/shim_icu',
-        '$BUILD_DIR/third_party/shim_zlib',
+        '$BUILD_DIR/third_party/icu4c-57.1/source/icu_i18n',
+        '$BUILD_DIR/third_party/zlib/zlib',
     ],
 )
 
@@ -276,7 +278,6 @@ env.Append(
         ('UCONFIG_NO_TRANSLITERATION', 1),
         ('UCONFIG_NO_REGULAR_EXPRESSIONS', 1),
         ('U_CHARSET_IS_UTF8', 1),
-        ('U_DISABLE_RENAMING', 1),
         ('U_STATIC_IMPLEMENTATION', 1),
         ('U_USING_ICU_NAMESPACE', 0),
     ], )

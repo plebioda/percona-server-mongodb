@@ -45,7 +45,6 @@
 #include "mongo/db/s/reshard_collection_coordinator.h"
 #include "mongo/db/s/reshard_collection_coordinator_document_gen.h"
 #include "mongo/db/s/resharding/resharding_util.h"
-#include "mongo/db/s/sharding_cluster_parameters_gen.h"
 #include "mongo/db/s/sharding_ddl_coordinator_gen.h"
 #include "mongo/db/s/sharding_ddl_coordinator_service.h"
 #include "mongo/db/service_context.h"
@@ -53,6 +52,7 @@
 #include "mongo/s/cluster_ddl.h"
 #include "mongo/s/request_types/sharded_ddl_commands_gen.h"
 #include "mongo/s/resharding/resharding_feature_flag_gen.h"
+#include "mongo/s/sharding_cluster_parameters_gen.h"
 #include "mongo/s/sharding_state.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/future.h"
@@ -62,6 +62,8 @@
 
 namespace mongo {
 namespace {
+
+MONGO_FAIL_POINT_DEFINE(shardsvrReshardCollectionJoinedExistingOperation);
 
 class ShardsvrReshardCollectionCommand final
     : public TypedCommand<ShardsvrReshardCollectionCommand> {
@@ -99,6 +101,27 @@ public:
             CommandHelpers::uassertCommandRunWithMajority(Request::kCommandName,
                                                           opCtx->getWriteConcern());
 
+            {
+                FixedFCVRegion fixedFcvRegion{opCtx};
+                bool isReshardingForTimeseriesEnabled =
+                    mongo::resharding::gFeatureFlagReshardingForTimeseries.isEnabled(
+                        fixedFcvRegion->acquireFCVSnapshot());
+
+                AutoGetCollection collOrView{opCtx,
+                                             ns(),
+                                             MODE_IS,
+                                             AutoGetCollection::Options{}.viewMode(
+                                                 auto_get_collection::ViewMode::kViewsPermitted)};
+
+                bool isTimeseries = collOrView.getView()
+                    ? collOrView.getView()->timeseries()
+                    : *collOrView && collOrView->getTimeseriesOptions().has_value();
+
+                uassert(ErrorCodes::IllegalOperation,
+                        "Can't reshard a timeseries collection",
+                        !isTimeseries || isReshardingForTimeseriesEnabled);
+            }
+
             if (resharding::isMoveCollection(request().getProvenance())) {
                 bool clusterHasTwoOrMoreShards = [&]() {
                     auto* clusterParameters = ServerParameterSet::getClusterParameterSet();
@@ -117,14 +140,6 @@ public:
                         "Can't move an internal resharding collection",
                         !ns().isTemporaryReshardingCollection());
 
-                FixedFCVRegion fixedFcvRegion{opCtx};
-                bool isReshardingForTimeseriesEnabled =
-                    mongo::resharding::gFeatureFlagReshardingForTimeseries.isEnabled(
-                        fixedFcvRegion->acquireFCVSnapshot());
-                uassert(ErrorCodes::IllegalOperation,
-                        "Can't move a timeseries collection",
-                        !ns().isTimeseriesBucketsCollection() || isReshardingForTimeseriesEnabled);
-
                 // TODO (SERVER-88623): re-evalutate the need to track the collection before calling
                 // into moveCollection
                 ShardsvrCreateCollectionRequest trackCollectionRequest;
@@ -134,6 +149,18 @@ public:
                 shardsvrCollCommand.setShardsvrCreateCollectionRequest(trackCollectionRequest);
                 try {
                     cluster::createCollectionWithRouterLoop(opCtx, shardsvrCollCommand);
+                } catch (const ExceptionFor<ErrorCodes::LockBusy>& ex) {
+                    // If we encounter a lock timeout while trying to track a collection for a
+                    // resharding operation, it may indicate that resharding is already running for
+                    // this collection. Check if the collection is already tracked and attempt to
+                    // join the resharding command if so.
+                    try {
+                        auto coll = Grid::get(opCtx)->catalogClient()->getCollection(opCtx, ns());
+                    } catch (const ExceptionFor<ErrorCodes::NamespaceNotFound>&) {
+                        // If the collection isn't tracked, then moveCollection cannot possibly be
+                        // ongoing, so we just surface the LockBusy error.
+                        throw ex;
+                    }
                 } catch (const ExceptionFor<ErrorCodes::NamespaceExists>&) {
                     // The registration may throw NamespaceExists when the namespace is a view.
                     // Proceed and let resharding return the proper error in that case.
@@ -155,6 +182,8 @@ public:
                         service->getOrCreateInstance(opCtx, coordinatorDoc.toBSON()));
                 return reshardCollectionCoordinator->getCompletionFuture();
             }();
+
+            shardsvrReshardCollectionJoinedExistingOperation.pauseWhileSet();
 
             reshardCollectionCoordinatorCompletionFuture.get(opCtx);
         }

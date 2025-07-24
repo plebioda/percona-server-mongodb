@@ -11,8 +11,7 @@ import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
  * Find one specific command in current ops, by its comment
  */
 function findCurOpByComment(db, comment) {
-    const res = assert.commandWorked(db.adminCommand({currentOp: 1}));
-    const ops = res["inprog"].filter((op) => op["command"]["comment"] == comment);
+    const ops = db.currentOp({"command.comment": comment}).inprog;
     if (ops.length == 0) {
         return null;
     }
@@ -20,14 +19,10 @@ function findCurOpByComment(db, comment) {
 }
 
 /**
- * Wait until ingress admission control ticket pool is resized to 0
+ * Wait until the operation we're running is blocked by ingress admission control.
  */
 function waitUntilIngressAdmissionIsBlocked(db) {
-    assert.soon(() => {
-        const res = assert.commandWorked(
-            db.adminCommand({getParameter: 1, ingressAdmissionControllerTicketPoolSize: 1}));
-        return res.ingressAdmissionControllerTicketPoolSize == 0;
-    });
+    assert.soon(() => db.serverStatus().queues.ingress.available == 0);
 }
 
 /**
@@ -86,17 +81,16 @@ function testCurrentOp(conn, db, collName) {
 
     // confirm that our operation is no longer waiting for ingress admission
     assert.soon(() => {
-        const op = findCurOpByComment(conn, kComment);
+        const op = findCurOpByComment(db, kComment);
         if (op == null) {
             return false;
         }
 
         const notCurrentlyQueued = op.currentQueue == null;
         if (notCurrentlyQueued) {
-            // while here, validate that the operation was admitted and `currentQueue` is null
+            // while here, validate that the operation was admitted and is holding a ticket
             assert.gte(op.queues.ingress.admissions, 1);
-            assert.gte(op.queues.execution.admissions, 1);
-            assert(op.currentQueue == null, 'expected no current queue');
+            assert(op.queues.ingress.isHoldingTicket);
         }
 
         return notCurrentlyQueued;

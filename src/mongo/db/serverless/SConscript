@@ -1,22 +1,17 @@
 # -*- mode: python -*-
 
-Import("env")
-env = env.Clone()
-
-env.Library(
-    target="serverless_types_idl",
-    source=[
-        "serverless_types.idl",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
+Import(
+    [
+        "env",
+        "has_option",
+    ]
 )
+env = env.Clone()
 
 env.Library(
     target="shard_split_state_machine",
     source=[
-        "shard_split_state_machine.idl",
+        "shard_split_state_machine_gen.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/client/connection_string",
@@ -28,7 +23,7 @@ env.Library(
 env.Library(
     target="shard_split_commands",
     source=[
-        "shard_split_commands.idl",
+        "shard_split_commands_gen.cpp",
         "shard_split_commands.cpp",
     ],
     LIBDEPS=[
@@ -41,6 +36,7 @@ env.Library(
         "shard_split_donor_service",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/commands",
     ],
 )
@@ -114,6 +110,7 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/db/auth/authmocks",
         "$BUILD_DIR/mongo/db/catalog/catalog_helpers",
         "$BUILD_DIR/mongo/db/commands/create_command",
+        "$BUILD_DIR/mongo/db/op_observer/op_observer_util",
         "$BUILD_DIR/mongo/db/repl/primary_only_service_test_fixture",
         "$BUILD_DIR/mongo/db/repl/replmocks",
         "$BUILD_DIR/mongo/db/repl/tenant_migration_access_blocker",

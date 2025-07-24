@@ -1306,18 +1306,21 @@ TenantMigrationRecipientService::Instance::_fetchRetryableWritesOplogBeforeStart
         // the bytes of the documents read off the network.
         std::vector<BSONObj> retryableWritesEntries;
         retryableWritesEntries.reserve(cursor->objsLeftInBatch());
-        auto toApplyDocumentBytes = 0;
+        std::size_t toApplyDocumentBytes = 0;
+        std::size_t toApplyDocumentCount = 0;
 
         while (cursor->moreInCurrentBatch()) {
             // Gather entries from current batch.
             BSONObj doc = cursor->next();
             toApplyDocumentBytes += doc.objsize();
+            toApplyDocumentCount++;
             retryableWritesEntries.push_back(doc);
         }
 
         if (retryableWritesEntries.size() != 0) {
             // Wait for enough space.
-            donorOplogBuffer->waitForSpace(opCtx.get(), toApplyDocumentBytes);
+            donorOplogBuffer->waitForSpace(opCtx.get(),
+                                           {toApplyDocumentBytes, toApplyDocumentCount});
             // Buffer retryable writes entries.
             donorOplogBuffer->preload(
                 opCtx.get(), retryableWritesEntries.begin(), retryableWritesEntries.end());
@@ -1422,8 +1425,6 @@ void TenantMigrationRecipientService::Instance::_startOplogFetcher() {
         ReplSetConfig::parse(BSON("_id"
                                   << "dummy"
                                   << "version" << 1 << "members" << BSONArray(BSONObj()))),
-        // We do not need to check the rollback ID.
-        ReplicationProcess::kUninitializedRollbackId,
         tenantMigrationOplogFetcherBatchSize,
         OplogFetcher::RequireFresherSyncSource::kDontRequireFresherSyncSource,
         true /* forTenantMigration */);
@@ -1448,7 +1449,7 @@ void TenantMigrationRecipientService::Instance::_startOplogFetcher() {
                                           const OplogFetcher::DocumentsInfo& info) {
             return _enqueueDocuments(first, last, info);
         },
-        [this, self = shared_from_this()](const Status& s, int rbid) { _oplogFetcherCallback(s); },
+        [this, self = shared_from_this()](const Status& s) { _oplogFetcherCallback(s); },
         std::move(oplogFetcherConfig));
     _donorOplogFetcher->setConnection(std::move(_oplogFetcherClient));
     uassertStatusOKWithContext(_donorOplogFetcher->startup(),
@@ -1472,7 +1473,8 @@ Status TenantMigrationRecipientService::Instance::_enqueueDocuments(
     auto opCtx = cc().makeOperationContext();
     if (info.toApplyDocumentCount != 0) {
         // Buffer docs for later application.
-        donorOplogBuffer->push(opCtx.get(), begin, end, info.toApplyDocumentBytes);
+        OplogBuffer::Cost cost{info.toApplyDocumentBytes, info.toApplyDocumentCount};
+        donorOplogBuffer->push(opCtx.get(), begin, end, cost);
     }
 
     if (info.resumeToken.isNull()) {
@@ -1503,7 +1505,8 @@ Status TenantMigrationRecipientService::Instance::_enqueueDocuments(
     noopEntry.setWallClockTime({});
 
     OplogBuffer::Batch noopVec = {noopEntry.toBSON()};
-    donorOplogBuffer->push(opCtx.get(), noopVec.cbegin(), noopVec.cend(), boost::none);
+    OplogBuffer::Cost cost{static_cast<std::size_t>(noopVec[0].objsize()), 1};
+    donorOplogBuffer->push(opCtx.get(), noopVec.cbegin(), noopVec.cend(), cost);
     return Status::OK();
 }
 

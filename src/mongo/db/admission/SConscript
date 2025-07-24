@@ -1,6 +1,11 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
@@ -8,13 +13,14 @@ env.Library(
     target="ingress_admission_control",
     source=[
         "ingress_admission_controller.cpp",
-        "ingress_admission_control.idl",
+        "ingress_admission_control_gen.cpp",
     ],
     LIBDEPS=[
         "ingress_admission_context",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/server_feature_flags",
@@ -23,39 +29,15 @@ env.Library(
     ],
 )
 
-env.Library(
-    target="ingress_admission_context",
+env.CppUnitTest(
+    target="ingress_admission_control_test",
     source=[
-        "ingress_admission_context.cpp",
+        "ingress_admission_control_test.cpp",
     ],
     LIBDEPS=[
-        "$BUILD_DIR/mongo/util/concurrency/admission_context",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/service_context",
-    ],
-)
-
-env.Library(
-    target="execution_control_feature_flags",
-    source=[
-        "execution_control_feature_flags.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="execution_admission_context",
-    source=[
-        "execution_admission_context.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/util/concurrency/admission_context",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/service_context",
+        "$BUILD_DIR/mongo/db/service_context_test_fixture",
+        "$BUILD_DIR/mongo/unittest/unittest",
+        "ingress_admission_control",
     ],
 )
 
@@ -79,10 +61,10 @@ env.Library(
     target="execution_control",
     source=[
         "concurrency_adjustment_validator.cpp",
-        "execution_control_parameters.idl",
+        "execution_control_parameters_gen.cpp",
         "execution_control_init.cpp",
         "throughput_probing.cpp",
-        "throughput_probing.idl",
+        "throughput_probing_gen.cpp",
     ],
     LIBDEPS=[
         "ticketholder_manager",

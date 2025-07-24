@@ -11,8 +11,10 @@
  */
 import {
     kAllClusterParameterDefaults,
+    kAllClusterParameterSetInternallyNames,
     runGetClusterParameterSharded
 } from "jstests/libs/cluster_server_parameter_utils.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {TwoPhaseDropCollectionTest} from "jstests/replsets/libs/two_phase_drops.js";
 
 function runTest(st, startupRefreshIntervalMS) {
@@ -51,6 +53,9 @@ function runTest(st, startupRefreshIntervalMS) {
 
                 if (obj.id === kRefreshLogId) {
                     let cpd = obj.attr.clusterParameterDocuments[0].updatedParameters;
+                    // We may observe updates to parameters done by MongoDB itself; exclude them
+                    cpd = cpd.filter(
+                        elem => !kAllClusterParameterSetInternallyNames.includes(elem._id));
                     cpd.sort(bsonWoCompare);
                     if (bsonWoCompare(cpd, expectedLogged) === 0) {
                         return true;

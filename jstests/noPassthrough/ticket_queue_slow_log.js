@@ -3,6 +3,8 @@
  * Induces queueing for ticket by exhausting read tickets.
  */
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 // Set the number of tickets to a small value to force ticket exhaustion.
 const kNumReadTickets = 5;
 const kNumDocs = 1000;
@@ -72,6 +74,9 @@ assert.soon(() => {
     return stats.queues.execution.read.available == 0;
 }, "Expected to have no available read tickets.");
 
+// Force thread to sleep for 1ms to guarantee readers accrue wait time in queue.
+sleep(1);
+
 jsTestLog("Stop readers and clean up");
 assert.commandWorked(db.getSiblingDB(dbName).timing_coordination.insertOne({_id: "stop reading"}));
 
@@ -79,7 +84,8 @@ for (let i = 0; i < queuedReaders.length; i++) {
     queuedReaders[i]();
 }
 
-const predicate = new RegExp(`Slow query.*"${coll}.*"ticketWaitMillis"`);
+const predicate = new RegExp(
+    `Slow query.*"${coll}.*"queues".*"execution":{"admissions":\\d+,"totalTimeQueuedMicros":\\d+}`);
 assert(checkLog.checkContainsOnce(primary, predicate),
        "Could not find log containing " + predicate);
 

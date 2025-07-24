@@ -42,6 +42,7 @@
 #include "mongo/base/status_with.h"
 #include "mongo/crypto/hash_block.h"
 #include "mongo/db/catalog/util/partitioned.h"
+#include "mongo/db/commands/server_status_metric.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/feature_flag.h"
 #include "mongo/db/namespace_string.h"
@@ -68,6 +69,7 @@ namespace mongo::query_stats {
 
 Counter64& queryStatsStoreSizeEstimateBytesMetric =
     *MetricBuilder<Counter64>{"queryStats.queryStatsStoreSizeEstimateBytes"};
+Counter64& queryStatsStoreSizeMetric = *MetricBuilder<Counter64>{"queryStats.numEntries"};
 
 const Decorable<ServiceContext>::Decoration<std::unique_ptr<QueryStatsStoreManager>>
     QueryStatsStoreManager::get =
@@ -81,6 +83,8 @@ const Decorable<ServiceContext>::Decoration<std::unique_ptr<RateLimiting>>
 namespace {
 
 auto& queryStatsEvictedMetric = *MetricBuilder<Counter64>{"queryStats.numEvicted"};
+auto& queryStatsNumParitionsMetric = *MetricBuilder<Atomic64Metric>{"queryStats.numPartitions"};
+auto& queryStatsMaxSizeBytesMetric = *MetricBuilder<Atomic64Metric>{"queryStats.maxSizeBytes"};
 auto& queryStatsRateLimitedRequestsMetric =
     *MetricBuilder<Counter64>{"queryStats.numRateLimitedRequests"};
 auto& queryStatsStoreWriteErrorsMetric =
@@ -140,6 +144,9 @@ public:
         auto& queryStatsStoreManager = QueryStatsStoreManager::get(serviceCtx);
         size_t numEvicted = queryStatsStoreManager->resetSize(cappedSize);
         queryStatsEvictedMetric.increment(numEvicted);
+        queryStatsMaxSizeBytesMetric.set(requestedSize);
+        // Note this does not re-compute the number of partitions. Doing so would be quite
+        // challenging while there is concurrent traffic.
     }
 
     void updateSamplingRate(ServiceContext* serviceCtx, int samplingRate) override {
@@ -175,6 +182,8 @@ ServiceContext::ConstructorActionRegisterer queryStatsStoreManagerRegisterer{
         if (numPartitions < numLogicalCores) {
             numPartitions = numLogicalCores;
         }
+        queryStatsMaxSizeBytesMetric.set(size);
+        queryStatsNumParitionsMetric.set(numPartitions);
 
         globalQueryStatsStoreManager =
             std::make_unique<QueryStatsStoreManager>(size, numPartitions);
@@ -227,7 +236,7 @@ bool shouldCollect(const ServiceContext* serviceCtx) {
 void updateStatistics(const QueryStatsStore::Partition& proofOfLock,
                       QueryStatsEntry& toUpdate,
                       const QueryStatsSnapshot& snapshot,
-                      std::unique_ptr<SupplementalStatsEntry> supplementalStatsEntry) {
+                      std::vector<std::unique_ptr<SupplementalStatsEntry>> supplementalStats) {
     toUpdate.latestSeenTimestamp = Date_t::now();
     toUpdate.lastExecutionMicros = snapshot.queryExecMicros;
     toUpdate.execCount++;
@@ -245,15 +254,18 @@ void updateStatistics(const QueryStatsStore::Partition& proofOfLock,
     toUpdate.fromMultiPlanner.aggregate(snapshot.fromMultiPlanner);
     toUpdate.fromPlanCache.aggregate(snapshot.fromPlanCache);
 
-    toUpdate.addSupplementalStats(std::move(supplementalStatsEntry));
+    for (auto& supplementalStatsEntry : supplementalStats) {
+        toUpdate.addSupplementalStats(std::move(supplementalStatsEntry));
+    }
 }
 
-void insertQueryStatsEntry(QueryStatsStore::Partition& proofOfLock,
-                           QueryStatsStore& queryStatsStore,
-                           boost::optional<size_t> queryStatsKeyHash,
-                           std::unique_ptr<Key> key,
-                           const QueryStatsSnapshot& snapshot,
-                           std::unique_ptr<SupplementalStatsEntry> supplementalMetrics) {
+void insertQueryStatsEntry(
+    QueryStatsStore::Partition& proofOfLock,
+    QueryStatsStore& queryStatsStore,
+    boost::optional<size_t> queryStatsKeyHash,
+    std::unique_ptr<Key> key,
+    const QueryStatsSnapshot& snapshot,
+    std::vector<std::unique_ptr<SupplementalStatsEntry>> supplementalMetrics) {
     tassert(7315200,
             "key cannot be null when writing a new entry to the queryStats store",
             key != nullptr);
@@ -351,9 +363,12 @@ void registerRequest(OperationContext* opCtx,
 }
 
 bool shouldRequestRemoteMetrics(const OpDebug& opDebug) {
-    return feature_flags::gFeatureFlagQueryStatsDataBearingNodes.isEnabled(
-               serverGlobalParams.featureCompatibility.acquireFCVSnapshot()) &&
-        (opDebug.queryStatsInfo.key != nullptr || opDebug.queryStatsInfo.metricsRequested);
+    // metricsRequested should only be set to true when the feature flag is set; we don't need to
+    // re-check the feature flag in that case.
+    return opDebug.queryStatsInfo.metricsRequested ||
+        (feature_flags::gFeatureFlagQueryStatsDataBearingNodes.isEnabled(
+             serverGlobalParams.featureCompatibility.acquireFCVSnapshot()) &&
+         opDebug.queryStatsInfo.key != nullptr);
 }
 
 QueryStatsStore& getQueryStatsStore(OperationContext* opCtx) {
@@ -389,7 +404,7 @@ void writeQueryStats(OperationContext* opCtx,
                      boost::optional<size_t> queryStatsKeyHash,
                      std::unique_ptr<Key> key,
                      const QueryStatsSnapshot& snapshot,
-                     std::unique_ptr<SupplementalStatsEntry> supplementalMetrics,
+                     std::vector<std::unique_ptr<SupplementalStatsEntry>> supplementalMetrics,
                      bool willNeverExhaust) {
 
     // Generally we expect a 'key' to write query stats. However, for a change stream query, we
@@ -474,7 +489,7 @@ void writeQueryStatsOnCursorDisposeOrKill(OperationContext* opCtx,
             opCtx, query_stats::microsecondsToUint64(boost::none), OpDebug::AdditiveMetrics());
 
         query_stats::writeQueryStats(
-            opCtx, queryStatsKeyHash, nullptr, snapshot, nullptr, willNeverExhaust);
+            opCtx, queryStatsKeyHash, nullptr, snapshot, {}, willNeverExhaust);
     }
 }
 

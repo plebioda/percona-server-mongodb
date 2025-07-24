@@ -59,6 +59,20 @@ MONGO_INITIALIZER_GROUP(EndServerParameterRegistration,
 ServerParameter::ServerParameter(StringData name, ServerParameterType spt)
     : _name{name}, _type(spt) {}
 
+ServerParameter::ServerParameter(const ServerParameter& other) {
+    // Since there is a mutex stored as a member variable, we need to explicitly write a copy
+    // constructor because a mutex has it's default copy constructor deleted.
+    stdx::lock_guard lk(other._mutex);
+    this->_name = other._name;
+    this->_type = other._type;
+    this->_testOnly = other._testOnly;
+    this->_redact = other._redact;
+    this->_isOmittedInFTDC = other._isOmittedInFTDC;
+    this->_featureFlag = other._featureFlag;
+    this->_minFCV = other._minFCV;
+    this->_disableState = other._disableState;
+}
+
 Status ServerParameter::set(const BSONElement& newValueElement,
                             const boost::optional<TenantId>& tenantId) {
     auto validateStatus = validate(newValueElement, tenantId);
@@ -75,11 +89,11 @@ Status ServerParameter::set(const BSONElement& newValueElement,
 ServerParameterSet* ServerParameterSet::getNodeParameterSet() {
     static StaticImmortal obj = [] {
         ServerParameterSet sps;
-        sps.setValidate([](ServerParameter* sp) {
+        sps.setValidate([](const ServerParameter& sp) {
             uassert(6225102,
                     "Registering cluster-wide parameter '{}' as node-local server parameter"
-                    ""_format(sp->name()),
-                    sp->isNodeLocal());
+                    ""_format(sp.name()),
+                    sp.isNodeLocal());
         });
         return sps;
     }();
@@ -96,16 +110,22 @@ bool ServerParameter::isEnabled() const {
 
 bool ServerParameter::isEnabledOnVersion(
     const multiversion::FeatureCompatibilityVersion& targetFCV) const {
-    if (_disableState != DisableState::Enabled) {
-        return false;
+    {
+        stdx::lock_guard lk(_mutex);
+        if (_disableState != DisableState::Enabled) {
+            return false;
+        }
     }
     return _isEnabledOnVersion(targetFCV);
 }
 
 bool ServerParameter::canBeEnabledOnVersion(
     const multiversion::FeatureCompatibilityVersion& targetFCV) const {
-    if (_disableState == DisableState::PermanentlyDisabled) {
-        return false;
+    {
+        stdx::lock_guard lk(_mutex);
+        if (_disableState == DisableState::PermanentlyDisabled) {
+            return false;
+        }
     }
     return _isEnabledOnVersion(targetFCV);
 }
@@ -118,28 +138,32 @@ bool ServerParameter::_isEnabledOnVersion(
 
 bool ServerParameter::featureFlagIsDisabledOnVersion(
     const multiversion::FeatureCompatibilityVersion& targetFCV) const {
+    stdx::lock_guard lk(_mutex);
     return _featureFlag && !_featureFlag->isEnabledOnVersion(targetFCV);
 }
 
 ServerParameterSet* ServerParameterSet::getClusterParameterSet() {
     static StaticImmortal obj = [] {
         ServerParameterSet sps;
-        sps.setValidate([](ServerParameter* sp) {
+        sps.setValidate([](const ServerParameter& sp) {
             uassert(6225103,
                     "Registering node-local parameter '{}' as cluster-wide server parameter"
-                    ""_format(sp->name()),
-                    sp->isClusterWide());
+                    ""_format(sp.name()),
+                    sp.isClusterWide());
         });
         return sps;
     }();
     return &*obj;
 }
 
-void ServerParameterSet::add(ServerParameter* sp) {
+void ServerParameterSet::add(std::unique_ptr<ServerParameter> sp) {
     if (_validate)
-        _validate(sp);
-    auto [it, ok] = _map.insert({sp->name(), sp});
-    uassert(23784, "Duplicate server parameter registration for '{}'"_format(sp->name()), ok);
+        _validate(*sp);
+    auto [it, ok] = _map.try_emplace(sp->name(), std::move(sp));
+    uassert(23784,
+            "Duplicate server parameter registration for '{}'"_format(
+                sp->name()),  // NOLINT(bugprone-use-after-move)
+            ok);
 }
 
 StatusWith<std::string> ServerParameter::_coerceToString(const BSONElement& element) {
@@ -225,16 +249,16 @@ Status IDLServerParameterDeprecatedAlias::setFromString(StringData str,
 }
 
 void ServerParameterSet::disableTestParameters() {
-    for (auto& spit : _map) {
-        auto*& sp = spit.second;
+    for (const auto& [name, sp] : _map) {
         if (sp->isTestOnly()) {
             sp->disable(true /* permanent */);
         }
     }
 }
 
-void registerServerParameter(ServerParameter* p) {
-    ServerParameterSet::getParameterSet(p->getServerParameterType())->add(p);
+void registerServerParameter(std::unique_ptr<ServerParameter> p) {
+    auto spt = p->getServerParameterType();
+    ServerParameterSet::getParameterSet(spt)->add(std::move(p));
 }
 
 }  // namespace mongo

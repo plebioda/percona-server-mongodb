@@ -4,6 +4,10 @@
  *
  * @tags: [requires_fcv_60, uses_transactions, requires_persistence]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+import {TransactionsUtil} from "jstests/libs/transactions_util.js";
+import {awaitRSClientHosts} from "jstests/replsets/rslib.js";
 import {makeCommitTransactionCmdObj} from "jstests/sharding/libs/sharded_transactions_helpers.js";
 
 const st = new ShardingTest({shards: 1, rs: {nodes: 2}});
@@ -24,12 +28,18 @@ function setUpTestMode(mode) {
         st.rs0.stopSet(null /* signal */, true /*forRestart */);
         st.rs0.startSet({restart: true});
         const newPrimary = st.rs0.getPrimary();
+        st.getAllNodes().forEach((conn) => {
+            awaitRSClientHosts(conn, {host: newPrimary.host}, {ok: true, ismaster: true});
+        });
     } else if (mode == kTestMode.kFailover) {
         const oldPrimary = st.rs0.getPrimary();
         assert.commandWorked(
             oldPrimary.adminCommand({replSetStepDown: ReplSetTest.kForeverSecs, force: true}));
         assert.commandWorked(oldPrimary.adminCommand({replSetFreeze: 0}));
         const newPrimary = st.rs0.getPrimary();
+        st.getAllNodes().forEach((conn) => {
+            awaitRSClientHosts(conn, {host: newPrimary.host}, {ok: true, ismaster: true});
+        });
     }
 }
 
@@ -51,15 +61,20 @@ let currentParentTxnNumber = NumberLong(35);
 
         assert.commandWorked(testColl.insert([{x: 1, y: 0}, {x: 2, y: 0}]));
 
-        const childLsid1 = {id: parentLsid.id, txnNumber: parentTxnNumber, txnUUID: UUID()};
+        const childLsid1 = {
+            id: parentLsid.id,
+            txnNumber: NumberLong(parentTxnNumber),
+            txnUUID: UUID()
+        };
         const childTxnNumber1 = NumberLong(0);
         jsTest.log(`Running an update inside a retryable internal transaction with lsid ${
             tojson(childLsid1)}`);
+
         assert.commandWorked(testDB.runCommand({
             update: kCollName,
             updates: [{q: {x: 1}, u: {$inc: {y: 1}}}],
             lsid: childLsid1,
-            txnNumber: childTxnNumber1,
+            txnNumber: NumberLong(childTxnNumber1),
             startTransaction: true,
             autocommit: false,
             stmtId: stmtId1,
@@ -68,15 +83,20 @@ let currentParentTxnNumber = NumberLong(35);
             testDB.adminCommand(makeCommitTransactionCmdObj(childLsid1, childTxnNumber1)));
         assert.eq(testColl.find({x: 1, y: 1}).itcount(), 1);
 
-        const childLsid2 = {id: parentLsid.id, txnNumber: parentTxnNumber, txnUUID: UUID()};
+        const childLsid2 = {
+            id: parentLsid.id,
+            txnNumber: NumberLong(parentTxnNumber),
+            txnUUID: UUID()
+        };
         const childTxnNumber2 = NumberLong(0);
         jsTest.log(`Running an update inside a retryable internal transaction with lsid ${
             tojson(childLsid2)}`);
+
         assert.commandWorked(testDB.runCommand({
             update: kCollName,
             updates: [{q: {x: 2}, u: {$inc: {y: 1}}}],
             lsid: childLsid2,
-            txnNumber: childTxnNumber2,
+            txnNumber: NumberLong(childTxnNumber2),
             startTransaction: true,
             autocommit: false,
             stmtId: stmtId2,
@@ -88,13 +108,26 @@ let currentParentTxnNumber = NumberLong(35);
         setUpTestMode(testMode);
 
         jsTest.log(`Retrying both updates as retryable writes with lsid ${tojson(parentLsid)}`);
-        const retryRes = assert.commandWorked(testDB.runCommand({
-            update: kCollName,
-            updates: [{q: {x: 1}, u: {$inc: {y: 1}}}, {q: {x: 2}, u: {$inc: {y: 1}}}],
-            lsid: parentLsid,
-            txnNumber: parentTxnNumber,
-            stmtIds: [stmtId1, stmtId2]
-        }));
+
+        // Retry the transaction if the RSM topology is not up to date and we receive a
+        // TransientTransactionError. Remove after SERVER-60369 is completed.
+        let retryRes;
+        assert.soon(() => {
+            try {
+                retryRes = assert.commandWorked(testDB.runCommand({
+                    update: kCollName,
+                    updates: [{q: {x: 1}, u: {$inc: {y: 1}}}, {q: {x: 2}, u: {$inc: {y: 1}}}],
+                    lsid: parentLsid,
+                    txnNumber: NumberLong(parentTxnNumber),
+                    stmtIds: [stmtId1, stmtId2]
+                }));
+                return true;
+            } catch (e) {
+                assert(ErrorCodes.isRetriableError(e.code) || isNetworkError(e));
+                assert(TransactionsUtil.isTransientTransactionError(e));
+            }
+            return false;
+        });
         assert.eq(retryRes.n, 2);
         assert.eq(testColl.find({x: 1, y: 1}).itcount(), 1);
         assert.eq(testColl.find({x: 2, y: 1}).itcount(), 1);
@@ -119,15 +152,20 @@ let currentParentTxnNumber = NumberLong(35);
 
         assert.commandWorked(testColl.insert([{x: 1, y: 0}]));
 
-        const childLsid1 = {id: parentLsid.id, txnNumber: parentTxnNumber, txnUUID: UUID()};
+        const childLsid1 = {
+            id: parentLsid.id,
+            txnNumber: NumberLong(parentTxnNumber),
+            txnUUID: UUID()
+        };
         const childTxnNumber1 = NumberLong(0);
         jsTest.log(`Running an update in a retryable internal transaction with lsid ${
             tojson(childLsid1)}`);
+
         assert.commandWorked(testDB.runCommand({
             update: kCollName,
             updates: [{q: {x: 1}, u: {$inc: {y: 1}}}],
             lsid: childLsid1,
-            txnNumber: childTxnNumber1,
+            txnNumber: NumberLong(childTxnNumber1),
             startTransaction: true,
             autocommit: false,
             stmtId: stmtId,
@@ -138,21 +176,41 @@ let currentParentTxnNumber = NumberLong(35);
 
         setUpTestMode(testMode);
 
-        const childLsid2 = {id: parentLsid.id, txnNumber: parentTxnNumber, txnUUID: UUID()};
-        const childTxnNumber2 = NumberLong(0);
+        const childLsid2 = {
+            id: parentLsid.id,
+            txnNumber: NumberLong(parentTxnNumber),
+            txnUUID: UUID()
+        };
+        let childTxnNumber2 = NumberLong(0);
         jsTest.log(`Retrying the update in a retryable internal transaction with lsid ${
             tojson(childLsid2)}`);
-        const retryRes = assert.commandWorked(testDB.runCommand({
-            update: kCollName,
-            updates: [{q: {x: 1}, u: {$inc: {y: 1}}}],
-            lsid: childLsid2,
-            txnNumber: childTxnNumber2,
-            startTransaction: true,
-            autocommit: false,
-            stmtId: stmtId,
-        }));
+
+        // Retry the transaction if the RSM topology is not up to date and we receive a
+        // TransientTransactionError. Remove after SERVER-60369 is completed.
+        let retryRes;
+        assert.soon(() => {
+            try {
+                retryRes = assert.commandWorked(testDB.runCommand({
+                    update: kCollName,
+                    updates: [{q: {x: 1}, u: {$inc: {y: 1}}}],
+                    lsid: childLsid2,
+                    txnNumber: NumberLong(childTxnNumber2),
+                    startTransaction: true,
+                    autocommit: false,
+                    stmtId: stmtId,
+                }));
+                return true;
+            } catch (e) {
+                assert(ErrorCodes.isRetriableError(e.code) || isNetworkError(e));
+                assert(TransactionsUtil.isTransientTransactionError(e));
+                childTxnNumber2++;
+            }
+            return false;
+        });
+
         assert.commandWorked(
             testDB.adminCommand(makeCommitTransactionCmdObj(childLsid2, childTxnNumber2)));
+
         assert.eq(retryRes.n, 1);
         assert.eq(testColl.find({x: 1, y: 1}).itcount(), 1);
 
@@ -182,7 +240,7 @@ let currentParentTxnNumber = NumberLong(35);
             update: kCollName,
             updates: [{q: {x: 1}, u: {$inc: {y: 1}}}, {q: {x: 2}, u: {$inc: {y: 1}}}],
             lsid: parentLsid,
-            txnNumber: parentTxnNumber,
+            txnNumber: NumberLong(parentTxnNumber),
             stmtIds: [stmtId1, stmtId2]
         }));
         assert.eq(testColl.find({x: 1, y: 1}).itcount(), 1);
@@ -190,39 +248,65 @@ let currentParentTxnNumber = NumberLong(35);
 
         setUpTestMode(testMode);
 
-        const childLsid1 = {id: parentLsid.id, txnNumber: parentTxnNumber, txnUUID: UUID()};
-        const childTxnNumber1 = NumberLong(0);
+        const childLsid1 = {
+            id: parentLsid.id,
+            txnNumber: NumberLong(parentTxnNumber),
+            txnUUID: UUID()
+        };
+        let childTxnNumber1 = NumberLong(0);
         jsTest.log(`Retrying one of the updates in a retryable internal transaction with lsid ${
             tojson(childLsid1)}`);
-        const retryRes1 = assert.commandWorked(testDB.runCommand({
-            update: kCollName,
-            updates: [{q: {x: 1}, u: {$inc: {y: 1}}}],
-            lsid: childLsid1,
-            txnNumber: childTxnNumber1,
-            startTransaction: true,
-            autocommit: false,
-            stmtId: stmtId1,
-        }));
+
+        // Retry the transaction if the RSM topology is not up to date and we receive a
+        // TransientTransactionError. Remove after SERVER-60369 is completed.
+        let retryRes1;
+        assert.soon(() => {
+            try {
+                retryRes1 = assert.commandWorked(testDB.runCommand({
+                    update: kCollName,
+                    updates: [{q: {x: 1}, u: {$inc: {y: 1}}}],
+                    lsid: childLsid1,
+                    txnNumber: NumberLong(childTxnNumber1),
+                    startTransaction: true,
+                    autocommit: false,
+                    stmtId: stmtId1,
+                }));
+                return true;
+            } catch (e) {
+                assert(ErrorCodes.isRetriableError(e.code) || isNetworkError(e));
+                assert(TransactionsUtil.isTransientTransactionError(e));
+                childTxnNumber1++;
+            }
+            return false;
+        });
+
         assert.commandWorked(
             testDB.adminCommand(makeCommitTransactionCmdObj(childLsid1, childTxnNumber1)));
+
         assert.eq(retryRes1.n, 1);
         assert.eq(testColl.find({x: 1, y: 1}).itcount(), 1);
 
-        const childLsid2 = {id: parentLsid.id, txnNumber: parentTxnNumber, txnUUID: UUID()};
+        const childLsid2 = {
+            id: parentLsid.id,
+            txnNumber: NumberLong(parentTxnNumber),
+            txnUUID: UUID()
+        };
         const childTxnNumber2 = NumberLong(0);
         jsTest.log(`Retrying one of the updates in a retryable internal transaction with lsid ${
             tojson(childLsid2)}`);
+
         const retryRes2 = assert.commandWorked(testDB.runCommand({
             update: kCollName,
             updates: [{q: {x: 2}, u: {$inc: {y: 1}}}],
             lsid: childLsid2,
-            txnNumber: childTxnNumber2,
+            txnNumber: NumberLong(childTxnNumber2),
             startTransaction: true,
             autocommit: false,
             stmtId: stmtId2,
         }));
         assert.commandWorked(
             testDB.adminCommand(makeCommitTransactionCmdObj(childLsid2, childTxnNumber2)));
+
         assert.eq(retryRes2.n, 1);
         assert.eq(testColl.find({x: 2, y: 1}).itcount(), 1);
 

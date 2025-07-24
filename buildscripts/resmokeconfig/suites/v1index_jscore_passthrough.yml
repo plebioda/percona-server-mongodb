@@ -16,6 +16,7 @@ selector:
     - jstests/core/index/wildcard/**/*.js
     # v:1 index does not support collation.
     - jstests/core/collation.js
+    - jstests/core/index/index_creation_on_different_collations.js
     - jstests/core/query/expr/expr_index_use.js
     # Timeseries collections are clustered, which use v:2 indexes.
     - jstests/core/timeseries/**/*.js
@@ -24,7 +25,6 @@ selector:
     - jstests/core/txns/abort_transaction_thread_does_not_block_on_locks.js
     - jstests/core/txns/kill_op_on_txn_expiry.js
     - jstests/core/**/set_param1.js
-    # TODO(SERVER-81158): Enable these tests.
     # These tests fails while DbCheck running in the background:
     - jstests/core/query/awaitdata_getmore_cmd.js
     - jstests/core/administrative/current_op/currentop.js

@@ -3,10 +3,12 @@
  *
  *  @tags: [
  *    multiversion_incompatible,
- *    temp_disabled_embedded_router_health_monitor,
- *    temp_disabled_embedded_router_metrics,
+ *    # TODO (SERVER-88126): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 const kWaitForCompletedChecksCount = 30;
 const kWaitForPassedChecksCount = 10;
 const kMonitoringIntervalMs = 200;

@@ -41,6 +41,17 @@ function _getErrorWithCode(codeOrObj, message) {
         if (codeOrObj.hasOwnProperty("errorLabels")) {
             e.errorLabels = codeOrObj.errorLabels;
         }
+
+        if (codeOrObj.hasOwnProperty("writeConcernError")) {
+            e.writeConcernError = codeOrObj.writeConcernError;
+        } else if (codeOrObj.hasOwnProperty("writeConcernErrors") &&
+                   codeOrObj.writeConcernErrors.length > 0) {
+            e.writeConcernError =
+                codeOrObj.writeConcernErrors[codeOrObj.writeConcernErrors.length - 1];
+        } else if (codeOrObj.hasOwnProperty("hasWriteConcernError") &&
+                   codeOrObj.hasWriteConcernError()) {
+            e.writeConcernError = codeOrObj.getWriteConcernError();
+        }
     } else if (typeof codeOrObj === "number") {
         e.code = codeOrObj;
     }
@@ -364,36 +375,19 @@ if (typeof TestData == "undefined") {
     TestData = undefined;
 }
 
-function _optimizationsEnabled(flags) {
-    const buildInfo = globalThis.db._runCommandWithoutApiStrict({buildInfo: 1});
-    const optimizationsMatch = /(\s|^)-O2(\s|$)/.exec(buildInfo["buildEnvironment"]["ccflags"]);
-    return Boolean(optimizationsMatch);
-}
-
-function __sanitizeMatch(flag) {
-    const buildInfo = globalThis.db._runCommandWithoutApiStrict({buildInfo: 1});
-    const sanitizeMatch = /-fsanitize=([^\s]+) /.exec(buildInfo["buildEnvironment"]["ccflags"]);
-    if (flag && sanitizeMatch && RegExp(flag).exec(sanitizeMatch[1])) {
-        return true;
-    } else {
-        return false;
-    }
-}
-
-function _isAddressSanitizerActive() {
-    return __sanitizeMatch("address");
-}
-
-function _isLeakSanitizerActive() {
-    return __sanitizeMatch("leak");
-}
-
-function _isThreadSanitizerActive() {
-    return __sanitizeMatch("thread");
-}
-
-function _isUndefinedBehaviorSanitizerActive() {
-    return __sanitizeMatch("undefined");
+// Enabling a custom JS_GC_ZEAL value for spidermonkey is a two step process:
+// 1) JS_GC_ZEAL preprocessor directive needs to be defined at compilation (spider-monkey-dbg=on).
+// 2) A valid JS_GC_ZEAL value needs to be provided as an environment variable at runtime.
+// In order to detect whether we are running with JS_GC_ZEAL enabled, ideally we'd like to check for
+// the CPPDEFINE for JS_GC_ZEAL. Unfortunately, this CPPDEFINE only applies to libmozjs, and is not
+// exposed in the BuildInfo response. Instead, we rely on detecting a non-empty environment variable
+// for JS_GC_ZEAL. We could have restricted the RegExp to match a valid input for JS_GC_ZEAL
+// For example: RegExp(/^\w+(;\w+)*(,\d+)?$/), but SpiderMonkey performs the validation for us.
+// As long as a non-whitespace JS_GC_ZEAL value has been detected, we report it as being enabled.
+function _isSpiderMonkeyDebugEnabled() {
+    const jsGcZeal = _getEnv("JS_GC_ZEAL");
+    let regex = RegExp(/^\S+$/);
+    return regex.test(jsGcZeal);
 }
 
 jsTestName = function() {
@@ -476,7 +470,6 @@ jsTestOptions = function() {
             maxPort: TestData.maxPort,
             // Note: does not support the array version
             mongosBinVersion: TestData.mongosBinVersion || "",
-            mongoqBinVersion: TestData.mongoqBinVersion || "",
             shardMixedBinVersions: TestData.shardMixedBinVersions || false,
             mixedBinVersions: TestData.mixedBinVersions || false,
             networkMessageCompressors: TestData.networkMessageCompressors,
@@ -553,6 +546,7 @@ jsTestOptions = function() {
             embeddedRouter: TestData.embeddedRouter || false,
 
             performTimeseriesCompressionIntermediateDataIntegrityCheckOnInsert: true,
+            fuzzMongodConfigs: TestData.fuzzMongodConfigs || false,
         });
     }
     return _jsTestOptions;

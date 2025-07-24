@@ -99,11 +99,13 @@ static const Milliseconds targetBatchTimeMS = Milliseconds(5);
  */
 class ClockAdvancingOpObserver : public OpObserverNoop {
 public:
-    void aboutToDelete(OperationContext* opCtx,
-                       const CollectionPtr& coll,
-                       const BSONObj& doc,
-                       OplogDeleteEntryArgs* args,
-                       OpStateAccumulator* opAccumulator = nullptr) override {
+    void onDelete(OperationContext* opCtx,
+                  const CollectionPtr& coll,
+                  StmtId stmtId,
+                  const BSONObj& doc,
+                  const DocumentKey& documentKey,
+                  const OplogDeleteEntryArgs& args,
+                  OpStateAccumulator* opAccumulator = nullptr) override {
 
         if (docDurationMap.find(doc) != docDurationMap.end()) {
             tickSource->advance(docDurationMap.find(doc)->second);
@@ -200,7 +202,8 @@ public:
         _client.update(nss, query, updateSpec);
     }
 
-    void getRecordIds(const CollectionPtr& collection,
+    void getRecordIds(OperationContext* opCtx,
+                      const CollectionPtr& collection,
                       CollectionScanParams::Direction direction,
                       std::vector<RecordId>* out) {
         WorkingSet ws;
@@ -209,8 +212,10 @@ public:
         params.direction = direction;
         params.tailable = false;
 
+        boost::intrusive_ptr<ExpressionContext> expCtx =
+            make_intrusive<ExpressionContext>(opCtx, nullptr, collection->ns());
         std::unique_ptr<CollectionScan> scan(
-            new CollectionScan(_expCtx.get(), &collection, params, &ws, nullptr));
+            new CollectionScan(expCtx.get(), &collection, params, &ws, nullptr));
         while (!scan->isEOF()) {
             WorkingSetID id = WorkingSet::INVALID_ID;
             PlanStage::StageState state = scan->work(&id);
@@ -339,7 +344,7 @@ TEST_F(QueryStageBatchedDeleteTest, BatchedDeleteStagedDocIsDeleted) {
 
     // Get the RecordIds that would be returned by an in-order scan.
     std::vector<RecordId> recordIds;
-    getRecordIds(coll.getCollectionPtr(), CollectionScanParams::FORWARD, &recordIds);
+    getRecordIds(&_opCtx, coll.getCollectionPtr(), CollectionScanParams::FORWARD, &recordIds);
 
     WorkingSet ws;
     auto deleteStage = makeBatchedDeleteStage(&ws, coll);
@@ -408,7 +413,10 @@ TEST_F(QueryStageBatchedDeleteTest, BatchedDeleteStagedDocIsDeletedWriteConflict
 
     // Get the RecordIds that would be returned by an in-order scan.
     std::vector<RecordId> recordIds;
-    getRecordIds(coll.getCollectionPtr(), CollectionScanParams::FORWARD, &recordIds);
+    getRecordIds(batchedDeleteOpCtx.get(),
+                 coll.getCollectionPtr(),
+                 CollectionScanParams::FORWARD,
+                 &recordIds);
 
 
     WorkingSet ws;

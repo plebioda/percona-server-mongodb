@@ -1598,18 +1598,21 @@ ShardMergeRecipientService::Instance::_fetchRetryableWritesOplogBeforeStartOpTim
         // the bytes of the documents read off the network.
         std::vector<BSONObj> retryableWritesEntries;
         retryableWritesEntries.reserve(cursor->objsLeftInBatch());
-        auto toApplyDocumentBytes = 0;
+        std::size_t toApplyDocumentBytes = 0;
+        std::size_t toApplyDocumentCount = 0;
 
         while (cursor->moreInCurrentBatch()) {
             // Gather entries from current batch.
             BSONObj doc = cursor->next();
             toApplyDocumentBytes += doc.objsize();
+            toApplyDocumentCount++;
             retryableWritesEntries.push_back(doc);
         }
 
         if (retryableWritesEntries.size() != 0) {
             // Wait for enough space.
-            _donorOplogBuffer->waitForSpace(opCtx.get(), toApplyDocumentBytes);
+            _donorOplogBuffer->waitForSpace(opCtx.get(),
+                                            {toApplyDocumentBytes, toApplyDocumentCount});
             // Buffer retryable writes entries.
             _donorOplogBuffer->preload(
                 opCtx.get(), retryableWritesEntries.begin(), retryableWritesEntries.end());
@@ -1706,8 +1709,6 @@ void ShardMergeRecipientService::Instance::_startOplogFetcher() {
         ReplSetConfig::parse(BSON("_id"
                                   << "dummy"
                                   << "version" << 1 << "members" << BSONArray(BSONObj()))),
-        // We do not need to check the rollback ID.
-        ReplicationProcess::kUninitializedRollbackId,
         tenantMigrationOplogFetcherBatchSize,
         OplogFetcher::RequireFresherSyncSource::kDontRequireFresherSyncSource,
         true /* forTenantMigration */);
@@ -1730,7 +1731,7 @@ void ShardMergeRecipientService::Instance::_startOplogFetcher() {
                                           const OplogFetcher::DocumentsInfo& info) {
             return _enqueueDocuments(first, last, info);
         },
-        [this, self = shared_from_this()](const Status& s, int rbid) { _oplogFetcherCallback(s); },
+        [this, self = shared_from_this()](const Status& s) { _oplogFetcherCallback(s); },
         std::move(oplogFetcherConfig));
     _donorOplogFetcher->setConnection(std::move(_oplogFetcherClient));
     uassertStatusOKWithContext(_donorOplogFetcher->startup(),
@@ -1747,7 +1748,8 @@ Status ShardMergeRecipientService::Instance::_enqueueDocuments(
     if (info.toApplyDocumentCount != 0) {
         auto opCtx = cc().makeOperationContext();
         // Buffer docs for later application.
-        _donorOplogBuffer->push(opCtx.get(), begin, end, info.toApplyDocumentBytes);
+        OplogBuffer::Cost cost{info.toApplyDocumentBytes, info.toApplyDocumentCount};
+        _donorOplogBuffer->push(opCtx.get(), begin, end, cost);
     }
 
     return Status::OK();

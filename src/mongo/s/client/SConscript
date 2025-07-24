@@ -1,6 +1,11 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
@@ -12,6 +17,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/client/fetcher",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/executor/hedging_metrics",
@@ -25,7 +31,7 @@ env.Library(
     target="shard_interface",
     source=[
         "shard.cpp",
-        "shard.idl",
+        "shard_gen.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/client/remote_command_retry_scheduler",

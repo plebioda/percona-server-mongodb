@@ -4,6 +4,8 @@
  * @tags: [requires_fcv_70]
  */
 import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const setParameterOpts = {
     analyzeShardKeyNumRanges: 100
@@ -37,8 +39,8 @@ function testExistingUnshardedCollection(writeConn, testCases) {
     const dbName = dbNameBase;
     const collName = "testCollUnsharded";
     const ns = dbName + "." + collName;
-    const coll = writeConn.getCollection(ns);
     const db = writeConn.getDB(dbName);
+    const coll = db.getCollection(collName);
 
     const candidateKey0 = {candidateKey0: 1};
     const candidateKey1 = {candidateKey1: 1};  // does not have a supporting index.
@@ -82,6 +84,7 @@ function testExistingUnshardedCollection(writeConn, testCases) {
     if (!FixtureHelpers.isStandalone(db)) {
         FixtureHelpers.awaitReplication(db);
     }
+
     testCases.forEach(testCase => {
         jsTest.log(`Running analyzeShardKey command against a non-empty unsharded collection: ${
             tojson(testCase)}`);
@@ -109,7 +112,8 @@ function testExistingShardedCollection(st, testCases) {
     const dbName = dbNameBase;
     const collName = "testCollSharded";
     const ns = dbName + "." + collName;
-    const coll = st.s.getCollection(ns);
+    const db = st.s.getDB(dbName);
+    const coll = db.getCollection(collName);
     const primaryShard = st.getPrimaryShard(dbName);
     const nonPrimaryShard = st.getOther(primaryShard);
 
@@ -123,7 +127,7 @@ function testExistingShardedCollection(st, testCases) {
     const candidateKey0 = {candidateKey0: 1};
     const candidateKey1 = {candidateKey1: 1};  // does not have a supporting index
     assert.commandWorked(coll.createIndex(candidateKey0));
-    FixtureHelpers.awaitReplication(st.s.getDB(dbName));
+    FixtureHelpers.awaitReplication(db);
 
     // Analyze shard keys while the collection is empty.
     testCases.forEach(testCase => {
@@ -159,6 +163,7 @@ function testExistingShardedCollection(st, testCases) {
         docs.push({currentKey: -i, candidateKey0: -i, candidateKey1: -i});
     }
     assert.commandWorked(coll.insert(docs));
+    FixtureHelpers.awaitReplication(db);
 
     testCases.forEach(testCase => {
         jsTest.log(`Running analyzeShardKey command against a non-empty sharded collection: ${
@@ -189,11 +194,15 @@ function testNotSupportReadWriteConcern(writeConn, testCases) {
     const dbName = dbNameBase;
     const collName = "testCollReadWriteConcern";
     const ns = dbName + "." + collName;
-    const coll = writeConn.getCollection(ns);
+    const db = writeConn.getDB(dbName);
+    const coll = db.getCollection(collName);
 
     const candidateKey = {candidateKey: 1};
     assert.commandWorked(coll.createIndex(candidateKey));
     assert.commandWorked(coll.insert([{candidateKey: 0}]));
+    if (!FixtureHelpers.isStandalone(db)) {
+        FixtureHelpers.awaitReplication(db);
+    }
 
     testCases.forEach(testCase => {
         assert.commandFailedWithCode(

@@ -35,7 +35,6 @@
 #include "mongo/s/request_types/reshard_collection_gen.h"
 #include "mongo/s/request_types/sharded_ddl_commands_gen.h"
 #include "mongo/s/resharding/resharding_feature_flag_gen.h"
-#include "mongo/s/shard_util.h"
 #include "mongo/util/assert_util.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kNetwork
@@ -60,41 +59,26 @@ public:
                     serverGlobalParams.featureCompatibility.acquireFCVSnapshot()));
 
             const auto& nss = ns();
-            ShardsvrReshardCollection shardsvrReshardCollection(nss);
-            shardsvrReshardCollection.setDbName(request().getDbName());
-
-            ReshardCollectionRequest reshardCollectionRequest;
-            reshardCollectionRequest.setKey(BSON("_id" << 1));
-            reshardCollectionRequest.setProvenance(ProvenanceEnum::kUnshardCollection);
-
-            ShardId toShard;
-            if (request().getToShard().has_value()) {
-                toShard = request().getToShard().get();
-            } else {
-                toShard = shardutil::selectLeastLoadedNonDrainingShard(opCtx);
-            }
-
-            std::vector<mongo::ShardKeyRange> destinationShard = {toShard};
-            reshardCollectionRequest.setShardDistribution(destinationShard);
-            reshardCollectionRequest.setForceRedistribution(true);
-            reshardCollectionRequest.setNumInitialChunks(1);
-
-            shardsvrReshardCollection.setReshardCollectionRequest(
-                std::move(reshardCollectionRequest));
+            auto unshardCollectionRequest = cluster::unsplittable::makeUnshardCollectionRequest(
+                request().getDbName(),
+                nss,
+                request().getToShard(),
+                request().getOplogBatchApplierTaskCount());
 
             LOGV2(8018400,
                   "Running a reshard collection command for the unshard collection request.",
                   "dbName"_attr = request().getDbName(),
-                  "toShard"_attr = toShard);
+                  "toShard"_attr = request().getToShard().has_value() ? request().getToShard().get()
+                                                                      : ShardId());
 
             const auto dbInfo =
                 uassertStatusOK(Grid::get(opCtx)->catalogCache()->getDatabase(opCtx, nss.dbName()));
 
-            auto cmdResponse = executeCommandAgainstDatabasePrimary(
+            auto cmdResponse = executeDDLCoordinatorCommandAgainstDatabasePrimary(
                 opCtx,
                 DatabaseName::kAdmin,
                 dbInfo,
-                CommandHelpers::appendMajorityWriteConcern(shardsvrReshardCollection.toBSON(),
+                CommandHelpers::appendMajorityWriteConcern(unshardCollectionRequest.toBSON(),
                                                            opCtx->getWriteConcern()),
                 ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                 Shard::RetryPolicy::kIdempotent);

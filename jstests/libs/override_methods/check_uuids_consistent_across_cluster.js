@@ -9,6 +9,8 @@
  *
  * TODO (SERVER-33253): extend the hook to add consistency checks for collection indexes and options
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 ShardingTest.prototype.checkUUIDsConsistentAcrossCluster = function() {
     if (jsTest.options().skipCheckingUUIDsConsistentAcrossCluster) {
         // A test may want to skip the consistency checks for a few reasons:
@@ -45,7 +47,7 @@ ShardingTest.prototype.checkUUIDsConsistentAcrossCluster = function() {
             }
             var rs = this._rs[i].test;
 
-            var keyFile = this._otherParams.keyFile;
+            var keyFile = this.keyFile;
             if (keyFile) {
                 authutil.asCluster(rs.nodes, keyFile, function() {
                     rs.awaitLastOpCommitted(timeout);

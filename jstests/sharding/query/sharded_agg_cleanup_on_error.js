@@ -10,11 +10,13 @@
  *   requires_sharding,
  *   # This test uses a new $_internalSplitPipeline syntax introduced in 8.0.
  *   requires_fcv_80,
- *   temp_disabled_embedded_router_metrics,
+ *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {assertMergeFailsForAllModesWithCode} from "jstests/aggregation/extras/merge_helpers.js";
 import {assertErrorCode} from "jstests/aggregation/extras/utils.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const kFailPointName = "waitAfterPinningCursorBeforeGetMoreBatch";
 const kFailpointOptions = {

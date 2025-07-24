@@ -8,6 +8,7 @@
 
 // This will verify the completeness of our map and run all tests.
 import {AllCommandsTest} from "jstests/libs/all_commands_test.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 const name = jsTestName();
 const dbName = "alltestsdb";
@@ -267,7 +268,6 @@ const allCommands = {
     dropSearchIndex: {skip: isNotAUserDataRead},
     dropUser: {skip: isPrimaryOnly},
     echo: {skip: isNotAUserDataRead},
-    emptycapped: {skip: isPrimaryOnly},
     endSessions: {skip: isNotAUserDataRead},
     explain: {
         command: {count: collName},
@@ -406,6 +406,7 @@ const allCommands = {
     revokeRolesFromUser: {skip: isPrimaryOnly},
     rolesInfo: {skip: isPrimaryOnly},
     rotateCertificates: {skip: isNotAUserDataRead},
+    rotateFTDC: {skip: isNotAUserDataRead},
     saslContinue: {skip: isPrimaryOnly},
     saslStart: {skip: isPrimaryOnly},
     serverStatus: {skip: isNotAUserDataRead},

@@ -58,21 +58,21 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/query/canonical_query.h"
-#include "mongo/db/query/classic_plan_cache.h"
 #include "mongo/db/query/collection_query_info.h"
 #include "mongo/db/query/find_command.h"
 #include "mongo/db/query/get_executor.h"
 #include "mongo/db/query/mock_yield_policies.h"
-#include "mongo/db/query/plan_cache.h"
-#include "mongo/db/query/plan_cache_debug_info.h"
-#include "mongo/db/query/plan_cache_key_factory.h"
+#include "mongo/db/query/plan_cache/classic_plan_cache.h"
+#include "mongo/db/query/plan_cache/plan_cache.h"
+#include "mongo/db/query/plan_cache/plan_cache_debug_info.h"
+#include "mongo/db/query/plan_cache/plan_cache_key_factory.h"
 #include "mongo/db/query/plan_ranking_decision.h"
 #include "mongo/db/query/query_knobs_gen.h"
 #include "mongo/db/query/query_planner.h"
 #include "mongo/db/query/query_planner_params.h"
 #include "mongo/db/query/query_planner_test_lib.h"
 #include "mongo/db/query/query_solution.h"
-#include "mongo/db/query/stage_builder_util.h"
+#include "mongo/db/query/stage_builder/stage_builder_util.h"
 #include "mongo/db/service_context.h"
 #include "mongo/dbtests/dbtests.h"  // IWYU pragma: keep
 #include "mongo/platform/atomic_word.h"
@@ -153,13 +153,13 @@ public:
 
         ASSERT_GREATER_THAN_OR_EQUALS(solutions.size(), 1U);
 
-        _mps = std::make_unique<MultiPlanStage>(_expCtx.get(),
-                                                &collection.getCollection(),
-                                                cq,
-                                                plan_cache_util::ClassicPlanCacheWriter{
-                                                    opCtx(),
-                                                    &collection.getCollection(),
-                                                });
+        _mps = std::make_unique<MultiPlanStage>(
+            _expCtx.get(),
+            &collection.getCollection(),
+            cq,
+            plan_cache_util::ClassicPlanCacheWriter{
+                opCtx(), &collection.getCollection(), false /* executeInSbe */
+            });
         std::unique_ptr<WorkingSet> ws(new WorkingSet());
         // Put each solution from the planner into the 'MultiPlanStage'.
         for (size_t i = 0; i < solutions.size(); ++i) {

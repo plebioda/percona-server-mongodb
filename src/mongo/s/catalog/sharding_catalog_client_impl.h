@@ -179,8 +179,10 @@ public:
                                                 const NamespaceString& nss,
                                                 const repl::ReadConcernArgs& readConcern) override;
 
-    StatusWith<std::vector<TagsType>> getTagsForCollection(OperationContext* opCtx,
-                                                           const NamespaceString& nss) override;
+    StatusWith<std::vector<TagsType>> getTagsForCollection(
+        OperationContext* opCtx,
+        const NamespaceString& nss,
+        boost::optional<long long> limit = boost::none) override;
 
     std::vector<NamespaceString> getAllNssThatHaveZonesForDatabase(
         OperationContext* opCtx, const DatabaseName& dbName) override;
@@ -258,6 +260,8 @@ public:
         OperationContext* opCtx,
         const Timestamp& atClusterTime,
         const boost::optional<NamespaceString>& nss) override;
+
+    bool anyShardRemovedSince(OperationContext* opCtx, const Timestamp& clusterTime) override;
 
 private:
     /**

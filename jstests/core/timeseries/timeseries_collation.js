@@ -8,12 +8,13 @@
  *   tenant_migration_incompatible,
  *   # We need a timeseries collection.
  *   requires_timeseries,
- *   # TODO SERVER-89764 a concurrent moveCollection during insertion can cause the bucket
- *   # collection to insert more # documents then expected by the test.
+ *   # This test uses a non-default collation which can cause bucket reopening to be sub-optimal
+ *   # when moveCollection is running in the background.
  *   assumes_balancer_off,
  * ]
  */
 import {TimeseriesTest} from "jstests/core/timeseries/libs/timeseries.js";
+import {IndexCatalogHelpers} from "jstests/libs/index_catalog_helpers.js";
 
 TimeseriesTest.run((insert) => {
     const coll = db.timeseries_collation;
@@ -28,6 +29,12 @@ TimeseriesTest.run((insert) => {
         collation: {locale: 'en', strength: 1, numericOrdering: true}
     }));
     assert.contains(bucketsColl.getName(), db.getCollectionNames());
+
+    // Ensure the default index has the collation.
+    let indexSpec = IndexCatalogHelpers.findByName(coll.getIndexes(),
+                                                   metaFieldName + "_1_" + timeFieldName + "_1");
+    assert.neq(indexSpec, null);
+    assert.eq(indexSpec.collation.locale, "en", tojson(indexSpec));
 
     const docs = [
         {

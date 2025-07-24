@@ -750,7 +750,11 @@ error_codes:
 
   - {code: 405, name: CannotCreateChunkDistribution}
 
-  - {code: 406, name: MigrationBlockingOperationCoordinatorCleaningUp}
+  - {
+      code: 406,
+      name: MigrationBlockingOperationCoordinatorCleaningUp,
+      categories: [RetriableError],
+    }
 
   - {
       code: 407,
@@ -758,13 +762,13 @@ error_codes:
       categories: [ExceededTimeLimitError, RetriableError],
     }
 
+  - {code: 408, name: CannotInsertTimeseriesBucketsWithMixedSchema}
+
   - {
-      code: 408,
+      code: 409,
       name: TimeseriesBucketCompressionFailed,
       extra: "timeseries::BucketCompressionFailure",
     }
-
-  - {code: 409, name: CannotInsertTimeseriesBucketsWithMixedSchema}
 
   - {code: 410, name: TimeseriesBucketFrozen, categories: [InternalOnly]}
 
@@ -801,6 +805,47 @@ error_codes:
       name: StreamProcessorKafkaConnectionError,
       categories: [StreamProcessorUserError, StreamProcessorRetryableError],
     }
+  # The stream processor pipeline was invalid, or some other user specified option
+  # was invalid.
+  - {
+      code: 420,
+      name: StreamProcessorInvalidOptions,
+      categories: [StreamProcessorUserError],
+    }
+  # The stream processor could not connect to the target Atlas cluster.
+  - {
+      code: 421,
+      name: StreamProcessorAtlasConnectionError,
+      categories: [StreamProcessorUserError, StreamProcessorRetryableError],
+    }
+  - {
+      code: 422,
+      name: StreamProcessorAtlasUnauthorizedError,
+      categories: [StreamProcessorUserError, StreamProcessorRetryableError],
+    }
+  # The document from the stream processor's source was too large.
+  - {
+      code: 423,
+      name: StreamProcessorSourceDocTooLarge,
+      categories: [StreamProcessorUserError],
+    }
+  # Too many unique outputs in a dynamic $merge or $emit stage.
+  - {
+      code: 424,
+      name: StreamProcessorTooManyOutputTargets,
+      categories: [StreamProcessorUserError],
+    }
+  # The stream processor cannot resume from its $source.
+  - {
+      code: 425,
+      name: StreamProcessorCannotResumeFromSource,
+      categories: [StreamProcessorUserError],
+    }
+  - {code: 426, name: IndexIsEmpty}
+  - {code: 427, name: DbCheckSecondaryBatchTimeout}
+  - {code: 428, name: DbCheckAttemptOnClusteredCollectionIdIndex}
+  - {code: 429, name: DbCheckInconsistentHash}
+  - {code: 430, name: IndexKeyOrderViolation}
 
   # Error codes 4000-8999 are reserved.
 
@@ -883,4 +928,12 @@ error_codes:
       code: 4662500,
       name: IDLUnknownFieldPossibleMongocryptd,
       categories: [IDLParseError],
+    }
+  # The following is for rewriting errors returned by a remote server while running a retriable
+  # command so that the error is not passed through to other servers in a cluster. See SERVER-91331
+  # for an example of using this error code.
+  - {
+      code: 91331,
+      name: RetriableRemoteCommandFailure,
+      categories: [Interruption, RetriableError],
     }

@@ -369,9 +369,6 @@ public:
                 case PlanExecutor::QueryFramework::kSBEOnly:
                     sbeFindQueryCounter.incrementRelaxed();
                     break;
-                case PlanExecutor::QueryFramework::kCQF:
-                    cqfFindQueryCounter.incrementRelaxed();
-                    break;
                 default:
                     break;
             }
@@ -389,26 +386,22 @@ public:
                 case PlanExecutor::QueryFramework::kSBEHybrid:
                     sbeHybridAggregationCounter.incrementRelaxed();
                     break;
-                case PlanExecutor::QueryFramework::kCQF:
-                    cqfAggregationQueryCounter.incrementRelaxed();
-                    break;
                 case PlanExecutor::QueryFramework::kUnknown:
                     break;
             }
         }
     }
 
-    // Query counters that record whether a find query was fully or partially executed in SBE, fully
-    // executed using the classic engine, or fully executed using the common query framework (CQF).
-    // One of these will always be incremented during a query.
+    // Query counters that record whether a find query was fully or partially executed in SBE, or
+    // fully executed using the classic engine. One of these will always be incremented during a
+    // query.
     Counter64& sbeFindQueryCounter = *MetricBuilder<Counter64>{"query.queryFramework.find.sbe"};
     Counter64& classicFindQueryCounter =
         *MetricBuilder<Counter64>{"query.queryFramework.find.classic"};
-    Counter64& cqfFindQueryCounter = *MetricBuilder<Counter64>{"query.queryFramework.find.cqf"};
 
     // Aggregation query counters that record whether an aggregation was fully or partially executed
-    // in DocumentSource (an sbe/classic hybrid plan), fully pushed down to the sbe/classic layer,
-    // or executed using CQF. These are only incremented during aggregations.
+    // in DocumentSource (an sbe/classic hybrid plan), or fully pushed down to the sbe/classic
+    // layer. These are only incremented during aggregations.
     Counter64& sbeOnlyAggregationCounter =
         *MetricBuilder<Counter64>{"query.queryFramework.aggregate.sbeOnly"};
     Counter64& classicOnlyAggregationCounter =
@@ -417,8 +410,6 @@ public:
         *MetricBuilder<Counter64>{"query.queryFramework.aggregate.sbeHybrid"};
     Counter64& classicHybridAggregationCounter =
         *MetricBuilder<Counter64>{"query.queryFramework.aggregate.classicHybrid"};
-    Counter64& cqfAggregationQueryCounter =
-        *MetricBuilder<Counter64>{"query.queryFramework.aggregate.cqf"};
 };
 extern QueryFrameworkCounters queryFrameworkCounters;
 
@@ -445,34 +436,47 @@ public:
     LookupPushdownCounters(LookupPushdownCounters&) = delete;
     LookupPushdownCounters& operator=(const LookupPushdownCounters&) = delete;
 
-    void incrementLookupCounters(OpDebug& debug) {
-        nestedLoopJoin.incrementRelaxed(debug.nestedLoopJoin);
-        indexedLoopJoin.incrementRelaxed(debug.indexedLoopJoin);
-        hashLookup.incrementRelaxed(debug.hashLookup);
-        hashLookupSpillToDisk.incrementRelaxed(debug.hashLookupSpillToDisk);
+    void incrementLookupCountersPerQuery(int nestedLoopJoin, int indexedLoopJoin, int hashLookup) {
+        nestedLoopJoinCounter.incrementRelaxed(nestedLoopJoin);
+        indexedLoopJoinCounter.incrementRelaxed(indexedLoopJoin);
+        hashLookupCounter.incrementRelaxed(hashLookup);
+    }
+
+    void incrementLookupCountersPerSpilling(int64_t spillToDisk, int64_t spillToDiskBytes) {
+        hashLookupSpillToDisk.incrementRelaxed(spillToDisk);
+        hashLookupSpillToDiskBytes.incrementRelaxed(spillToDiskBytes);
     }
 
     // Counters for lookup join strategies.
-    Counter64& nestedLoopJoin = *MetricBuilder<Counter64>{"query.lookup.nestedLoopJoin"};
-    Counter64& indexedLoopJoin = *MetricBuilder<Counter64>{"query.lookup.indexedLoopJoin"};
-    Counter64& hashLookup = *MetricBuilder<Counter64>{"query.lookup.hashLookup"};
+    Counter64& nestedLoopJoinCounter = *MetricBuilder<Counter64>{"query.lookup.nestedLoopJoin"};
+    Counter64& indexedLoopJoinCounter = *MetricBuilder<Counter64>{"query.lookup.indexedLoopJoin"};
+    Counter64& hashLookupCounter = *MetricBuilder<Counter64>{"query.lookup.hashLookup"};
     // Counter tracking hashLookup spills in lookup stages that get pushed down.
     Counter64& hashLookupSpillToDisk =
         *MetricBuilder<Counter64>{"query.lookup.hashLookupSpillToDisk"};
+    // Counter tracking hashLookup spilled bytes in lookup stages that get pushed down.
+    Counter64& hashLookupSpillToDiskBytes =
+        *MetricBuilder<Counter64>{"query.lookup.hashLookupSpillToDiskBytes"};
 };
 extern LookupPushdownCounters lookupPushdownCounters;
 
 class SortCounters {
 public:
-    void incrementSortCounters(const OpDebug& debug) {
-        sortSpillsCounter.incrementRelaxed(debug.sortSpills);
-        sortTotalBytesCounter.incrementRelaxed(debug.sortTotalDataSizeBytes);
-        sortTotalKeysCounter.incrementRelaxed(debug.keysSorted);
+    void incrementSortCountersPerQuery(int64_t bytesSorted, int64_t keysSorted) {
+        sortTotalBytesCounter.incrementRelaxed(bytesSorted);
+        sortTotalKeysCounter.incrementRelaxed(keysSorted);
+    }
+
+    void incrementSortCountersPerSpilling(int64_t sortSpills, int64_t sortSpillBytes) {
+        sortSpillsCounter.incrementRelaxed(sortSpills);
+        sortSpillBytesCounter.incrementRelaxed(sortSpillBytes);
     }
 
     // Counters tracking sort stats across all engines
-    // The total number of spills to disk from sort stages
+    // The total number of spills from sort stages
     Counter64& sortSpillsCounter = *MetricBuilder<Counter64>{"query.sort.spillToDisk"};
+    // The total bytes spilled. This is the storage size after compression.
+    Counter64& sortSpillBytesCounter = *MetricBuilder<Counter64>{"query.sort.spillToDiskBytes"};
     // The number of keys that we've sorted.
     Counter64& sortTotalKeysCounter = *MetricBuilder<Counter64>{"query.sort.totalKeysSorted"};
     // The amount of data we've sorted in bytes
@@ -487,23 +491,57 @@ public:
     GroupCounters(GroupCounters&) = delete;
     GroupCounters& operator=(const GroupCounters&) = delete;
 
-    void incrementGroupCounters(uint64_t spills,
-                                uint64_t spilledDataStorageSize,
-                                uint64_t spilledRecords) {
+    void incrementGroupCountersPerSpilling(int64_t spills,
+                                           int64_t spilledBytes,
+                                           int64_t spilledRecords) {
         groupSpills.incrementRelaxed(spills);
-        groupSpilledDataStorageSize.incrementRelaxed(spilledDataStorageSize);
+        groupSpilledBytes.incrementRelaxed(spilledBytes);
         groupSpilledRecords.incrementRelaxed(spilledRecords);
     }
 
-    // The total number of spills to disk from group stages.
+    void incrementGroupCountersPerQuery(int64_t spilledDataStorageSize) {
+        groupSpilledDataStorageSize.incrementRelaxed(spilledDataStorageSize);
+    }
+
+    // The total number of spills from group stages.
     Counter64& groupSpills = *MetricBuilder<Counter64>{"query.group.spills"};
-    // The size of the file or RecordStore spilled to disk.
+    // The total number of bytes spilled from group stages. The spilled stroage size after
+    // compression might be different from the bytes spilled.
+    Counter64& groupSpilledBytes = *MetricBuilder<Counter64>{"query.group.spilledBytes"};
+    // The number of records spilled.
+    Counter64& groupSpilledRecords = *MetricBuilder<Counter64>{"query.group.spilledRecords"};
+    // The size of the file or RecordStore spilled to disk, updated after all spilling happened.
     Counter64& groupSpilledDataStorageSize =
         *MetricBuilder<Counter64>{"query.group.spilledDataStorageSize"};
-    // The number of records spilled to disk.
-    Counter64& groupSpilledRecords = *MetricBuilder<Counter64>{"query.group.spilledRecords"};
 };
 extern GroupCounters groupCounters;
+
+/** Counters tracking setWindowFields stats across all execution engines. */
+class SetWindowFieldsCounters {
+public:
+    SetWindowFieldsCounters() = default;
+    SetWindowFieldsCounters(SetWindowFieldsCounters&) = delete;
+    SetWindowFieldsCounters& operator=(const SetWindowFieldsCounters&) = delete;
+
+    void incrementSetWindowFieldsCountersPerSpilling(int64_t spills,
+                                                     int64_t spilledBytes,
+                                                     int64_t spilledRecords) {
+        setWindowFieldsSpills.incrementRelaxed(spills);
+        setWindowFieldsSpilledBytes.incrementRelaxed(spilledBytes);
+        setWindowFieldsSpilledRecords.incrementRelaxed(spilledRecords);
+    }
+
+    // Counter tracking setWindowFields spills.
+    Counter64& setWindowFieldsSpills = *MetricBuilder<Counter64>{"query.setWindowFields.spills"};
+    // Counter tracking setWindowFields spilled bytes. The spilled storage size after compression
+    // might be different from the bytes spilled.
+    Counter64& setWindowFieldsSpilledBytes =
+        *MetricBuilder<Counter64>{"query.setWindowFields.spilledBytes"};
+    // Counter tracking setWindowFields spilled record number.
+    Counter64& setWindowFieldsSpilledRecords =
+        *MetricBuilder<Counter64>{"query.setWindowFields.spilledRecords"};
+};
+extern SetWindowFieldsCounters setWindowFieldsCounters;
 
 /**
  * A common class which holds various counters related to Classic and SBE plan caches.

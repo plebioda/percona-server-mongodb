@@ -17,7 +17,6 @@ selector:
     - jstests/core/**/awaitdata_getmore_cmd.js # capped collections.
     - jstests/core/**/bypass_doc_validation.js # sharded $out output not permitted
     - jstests/core/**/check_shard_index.js # checkShardingIndex.
-    - jstests/core/**/collection_truncate.js # emptycapped.
     - jstests/core/**/compact_keeps_indexes.js # compact.
     - jstests/core/**/currentop.js # uses fsync.
     - jstests/core/**/dbhash.js # dbhash.
@@ -66,16 +65,6 @@ selector:
     # TODO (SERVER-78220): Investigate failing api version tests in the fcv jscore passthrough suite.
     - jstests/core/api/api_version_unstable_indexes.js
 
-    # TODO (SERVER-78202): Investigate failing timeseries tests in the fcv jscore passthrough suite.
-    - jstests/core/timeseries/timeseries_update.js
-    - jstests/core/timeseries/timeseries_update_concurrent.js
-    - jstests/core/timeseries/timeseries_update_one.js
-    - jstests/core/timeseries/timeseries_update_multi.js
-    - jstests/core/timeseries/timeseries_find_and_modify_update.js
-    - jstests/core/timeseries/timeseries_delete_compressed_buckets.js
-    - jstests/core/timeseries/timeseries_bucket_limit_count.js
-    - jstests/core/timeseries/timeseries_insert_after_update.js
-
     # These timeseries tests rely on specific bucketing behaviour that is not guaranteed across FCV
     # upgrade/downgrade
     # TODO SERVER-70605: remove this block.
@@ -87,11 +76,6 @@ selector:
     - jstests/core/timeseries/timeseries_simple.js
     - jstests/core/timeseries/timeseries_collation.js
     - jstests/core/timeseries/bucket_timestamp_rounding.js
-
-    # These use "columnstore indexes are under development and cannot be used without enabling the feature flag"
-    - jstests/core/query/null_query_semantics.js
-    - jstests/core/query/project/projection_semantics.js
-    - jstests/core/index/hidden_index.js
 
     # TODO: Remove after fixing SERVER-78201: the following received command without explicit readConcern.
     - jstests/aggregation/sources/densify/internal_parse.js
@@ -262,15 +246,17 @@ selector:
     - cannot_create_unique_index_when_using_hashed_shard_key
     # system.profile collection doesn't exist on mongos.
     - requires_profiling
-    # columnstore indexes are under development and cannot be used without enabling the feature flag
-    - featureFlagColumnstoreIndexes
     - featureFlagFLE2CleanupCommand
     # TODO SERVER-71537: Remove Feature Flag for PM-412.
     - featureFlagQuerySettings
     # TODO: SERVER-66393 Remove Feature Flag for PM-2919.
     - featureFlagTimeseriesUpdatesSupport
+    - featureFlagTimeseriesUpdatesSupport_incompatible
     # TODO: SERVER-78068 Remove Feature Flag for PM-2983
     - featureFlagRecordIdsReplicated
+    # TODO: SERVER-85426 Remove Feature Flag for SPM-3541
+    - featureFlagSearchHybridScoring
+    - featureFlagSearchHybridScoringPrerequisites
     # Transactions are aborted upon fcv upgrade or downgrade.
     - uses_transactions
     # Exclude tests that require a specific fcv.

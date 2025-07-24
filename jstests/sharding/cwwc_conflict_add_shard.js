@@ -8,6 +8,8 @@
  * ]
  */
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {removeShard} from "jstests/sharding/libs/remove_shard_util.js";
 
 // TODO SERVER-50144 Remove this and allow orphan checking.
@@ -40,14 +42,16 @@ function convertShardToRS() {
         delete node.fullOptions.shardsvr;
     });
 
-    shardServer.restart(shardServer.nodes, {skipValidation: true});
+    shardServer.nodes.forEach(node => shardServer.restart(node, {skipValidation: true}));
     jsTest.log("Coversion shard -> RS took: " + (new Date() - start));
 }
 
 function convertRSToShard() {
     let start = new Date();
     jsTestLog("Converting replicaSet server to shardServer.");
-    shardServer.restart(shardServer.nodes, {shardsvr: "", skipValidation: true});
+    shardServer.nodes.forEach(node =>
+                                  shardServer.restart(node, {shardsvr: "", skipValidation: true}));
+
     jsTest.log("Coversion RS -> Shard took: " + (new Date() - start));
 }
 

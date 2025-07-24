@@ -8,6 +8,7 @@
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {findChunksUtil} from "jstests/sharding/libs/find_chunks_util.js";
 
 const rangeDeleterBatchSize = 50;
@@ -17,7 +18,7 @@ const st = new ShardingTest({
         enableBalancer: false,
         shardOptions: {setParameter: {rangeDeleterBatchSize: rangeDeleterBatchSize}},
     }
-})
+});
 
 // Setup database and collection for test
 const dbName = 'db';

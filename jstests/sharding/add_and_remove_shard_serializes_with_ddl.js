@@ -7,20 +7,20 @@
  *   requires_fcv_80,
  * ]
  */
-
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {waitForCommand} from "jstests/libs/wait_for_command.js";
 
-let st = ShardingTest({shards: 2, enableBalancer: true});
+let st = new ShardingTest({shards: 2, enableBalancer: true});
 
 const dbName = "test";
 
 assert.commandWorked(
     st.s.adminCommand({enableSharding: dbName, primaryShard: st.shard0.shardName}));
 
-const db = st.s.getDB(dbName);
-const coll1 = db["coll1"];
+let db = st.s.getDB(dbName);
+let coll1 = db["coll1"];
 
 // Test removeShard serializes with DDL.
 {
@@ -165,8 +165,12 @@ const coll1 = db["coll1"];
             assert.commandWorked(configPrimary.getDB("admin").killOp(removeShardOpId));
         } else if (testCase === "stopServer") {
             // Restart the configsvr.
-            st.configRS.stopSet(null /* signal */, true /* forRestart */);
-            st.configRS.startSet({restart: true});
+            st.stopAllConfigServers({} /* opts */, true /* forRestart */);
+            st.restartAllConfigServers();
+            // Take again references to db and coll1, since in embedded router suites they may be
+            // invalid after restarting the configsvr.
+            db = st.s.getDB(dbName);
+            coll1 = db["coll1"];
         }
 
         awaitRemoveShard();

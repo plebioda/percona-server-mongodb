@@ -44,7 +44,8 @@
 # 2. If your task does not depend on 'archive_dist_test'/'archive_dist_test_debug' task use the following functions
 # call sequence
 # - command: manifest.load
-# - func: "git get project" (clone the entire mongo and enterprise repos)
+# - func: "git get shallow project" (clone the entire mongo and enterprise repos)
+# - func: "restore git history and tags"
 # - func: "f_expansions_write"
 # - func: "kill processes"
 # - func: "cleanup environment"
@@ -59,6 +60,7 @@ include:
   - filename: etc/evergreen_yml_components/tasks/resmoke/server_divisions/query/tasks.yml
   - filename: etc/evergreen_yml_components/tasks/resmoke/non_server_teams/tasks.yml
   - filename: etc/evergreen_yml_components/tasks/compile_tasks.yml
+  - filename: etc/evergreen_yml_components/tasks/compile_tasks_shared.yml
   - filename: etc/evergreen_yml_components/tasks/misc_tasks.yml
 
   - filename: etc/evergreen_yml_components/variants/misc/task_generation.yml
@@ -69,6 +71,8 @@ include:
   - filename: etc/evergreen_yml_components/variants/amazon/test_dev_master_branch_only.yml
 
   - filename: etc/evergreen_yml_components/variants/macos/test_dev_master_branch_only.yml
+
+  - filename: etc/evergreen_yml_components/variants/mongot/test_dev.yml
 
   - filename: etc/evergreen_yml_components/variants/rhel/test_dev.yml
   - filename: etc/evergreen_yml_components/variants/rhel/test_dev_master_and_lts_branches_only.yml
@@ -85,6 +89,8 @@ include:
   - filename: etc/evergreen_yml_components/variants/windows/test_dev_master_branch_only.yml
 
   - filename: etc/evergreen_yml_components/variants/wiredtiger/test_dev_master_branch_only.yml
+
+  - filename: etc/evergreen_yml_components/variants/codecoverage/test_dev.yml
 
 parameters:
   - key: evergreen_config_file_path
@@ -124,3 +130,7 @@ patch_aliases:
     description: "Runs all $search, $vectorSearch tests"
     variant: ".*"
     task: "^.*search*"
+  - alias: codecoverage
+    description: "Run tests and report code coverage"
+    variant: ".*-coverage"
+    task: ".*"

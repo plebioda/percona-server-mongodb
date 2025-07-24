@@ -32,6 +32,9 @@ selector:
     - jstests/concurrency/fsm_workloads/compact.js
     - jstests/concurrency/fsm_workloads/compact_while_creating_indexes.js
 
+    # test creates too many collections for ContinuousAddRemoveShard
+    - jstests/concurrency/fsm_workloads/create_collection.js
+
     # can cause OOM kills on test hosts
     - jstests/concurrency/fsm_workloads/findAndModify_update_grow.js
 
@@ -59,9 +62,6 @@ selector:
     # Uses the same transaction id across different routers, which is not allowed because when either
     # router tries to commit, it may not know the full participant list.
     - jstests/concurrency/fsm_workloads/multi_statement_transaction_all_commands_same_session.js
-
-    # Time-series collections are not supported on mongos.
-    - jstests/concurrency/fsm_workloads/create_timeseries_collection.js
 
     # The test may spuriously fail when run against sharded clusters, due to limitations of the
     # infrastructure. See SERVER-77039 for full details.
@@ -92,16 +92,20 @@ selector:
     # Denylists from this suite.
     ##
 
-    # Time series collections can be tracked by the config server, but cannot be moved by
-    # moveCollection yet, and this test creates an unsplittable time series collection that if
-    # placed on the config shard, can't be moved off it, timing out the transition hook.
-    #
-    # TODO SERVER-80690: Remove when tracked time series collections can be moved.
-    - jstests/concurrency/fsm_workloads/timeseries_deletes_and_inserts.js
-
     # TODO SERVER-90609: Enable these tests.
     - jstests/concurrency/fsm_workloads/create_index_background_unique.js
     - jstests/concurrency/fsm_workloads/create_index_background_unique_capped.js
+
+    # TODO SERVER-92349: Re-enable this test once completed.
+    - jstests/concurrency/fsm_workloads/indexed_insert_ttl.js
+
+    # This test runs a large number of inserts, which can cause moveCollection to take a long time
+    # to finish. This can cause the CheckMetadataConsistency hook to hit LockBusy errors.
+    - jstests/concurrency/fsm_workloads/timeseries_insert_idle_bucket_expiration.js
+
+    # Exclude tests that run cleanupOrphaned, which can fail running on a config shard if a
+    # concurrent migration fails due to the config shard transitioning to dedicated.
+    - jstests/concurrency/fsm_workloads/cleanupOrphanedWhileMigrating.js
 
   exclude_with_any_tags:
     - assumes_against_mongod_not_mongos
@@ -140,14 +144,14 @@ executor:
   config:
     shell_options:
       eval: >-
-        await import("jstests/libs/override_methods/implicitly_retry_on_config_transition_errors.js");
+        await import("jstests/libs/override_methods/implicitly_retry_on_shard_transition_errors.js");
       global_vars:
         TestData:
           runInsideTransaction: true
           runningWithSessions: true
           traceExceptions: false
           runningWithBalancer: true
-          transitioningConfigShard: true
+          shardsAddedRemoved: true
           shardCollectionProbability: 0.5
           fsmPreOverridesLoadedCallback: import("jstests/libs/override_methods/implicitly_retry_on_migration_in_progress.js");
   hooks:
@@ -161,7 +165,7 @@ executor:
       shell_options:
         global_vars:
           TestData:
-            transitioningConfigShard: true
+            shardsAddedRemoved: true
     - class: CheckOrphansDeleted
     - class: CheckRoutingTableConsistency
     - class: ValidateCollections # Validation can interfere with other operations, so this goes last.
@@ -182,16 +186,11 @@ executor:
         enableTestCommands: 1
         roleGraphInvalidationIsFatal: 1
         queryAnalysisWriterIntervalSecs: 1
+        queryAnalysisSamplerConfigurationRefreshSecs: 1
         defaultConfigCommandTimeoutMS: 90000
         skipDroppingHashedShardKeyIndex: true
         reshardingMinimumOperationDurationMillis: 0
-        # Manually set the random migration fail point so we can set a threshold for skipping
-        # moveCollection to prevent "starving" random chunk migrations.
-        failpoint.balancerShouldReturnRandomMigrations:
-          data:
-            skipMoveCollectionThreshold: 0.5
-          mode: alwaysOn
-        balancerMigrationsThrottlingMs: 100
+        balancerMigrationsThrottlingMs: 250
         featureFlagReshardingForTimeseries: true
         failpoint.movePrimaryFailIfNeedToCloneMovableCollections:
           data:
@@ -202,3 +201,4 @@ executor:
     num_shards: 3
     num_mongos: 2
     enable_balancer: true
+    random_migrations: true

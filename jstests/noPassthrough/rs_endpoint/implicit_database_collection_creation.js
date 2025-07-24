@@ -18,6 +18,8 @@
 
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 import {runCommandWithSecurityToken} from "jstests/libs/multitenancy_utils.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {extractUUIDFromObject} from "jstests/libs/uuid_util.js";
 import {
     assertShardingMetadataForUnshardedCollectionDoesNotExist,
@@ -131,7 +133,7 @@ function runTests(getShard0PrimaryFunc,
     // Currently, sharding isn't supported in serverless.
     const expectShardingMetadata0 = !isMultitenant &&
         FeatureFlagUtil.isPresentAndEnabled(shard0Primary.getDB('admin'),
-                                            "TrackUnshardedCollectionsUponCreation")
+                                            "TrackUnshardedCollectionsUponCreation");
     runTest(shard0Primary, execCtxTypes.kNoSession, expectShardingMetadata0);
     runTest(shard0Primary, execCtxTypes.kNonRetryableWrite, expectShardingMetadata0);
     runTest(shard0Primary, execCtxTypes.kRetryableWrite, expectShardingMetadata0);
@@ -182,7 +184,7 @@ function runTests(getShard0PrimaryFunc,
     // Currently, sharding isn't supported in serverless.
     const expectShardingMetadata2 = !isMultitenant &&
         FeatureFlagUtil.isPresentAndEnabled(getShard0PrimaryFunc().getDB('admin'),
-                                            "TrackUnshardedCollectionsUponCreation")
+                                            "TrackUnshardedCollectionsUponCreation");
     runTest(shard0Primary, execCtxTypes.kNoSession, expectShardingMetadata2);
     runTest(shard0Primary, execCtxTypes.kNonRetryableWrite, expectShardingMetadata2);
     runTest(shard0Primary, execCtxTypes.kRetryableWrite, expectShardingMetadata2);
@@ -228,9 +230,7 @@ function runTests(getShard0PrimaryFunc,
     const {router, mongos} = (() => {
         if (shard0Primary.routerHost) {
             const router = new Mongo(shard0Primary.routerHost);
-            return {
-                router
-            }
+            return {router};
         }
         const shard0URL = getReplicaSetURL(shard0Primary);
         const mongos = MongoRunner.runMongos({configdb: shard0URL});

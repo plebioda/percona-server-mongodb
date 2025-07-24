@@ -1,4 +1,6 @@
-import {ConfigShardUtil} from "jstests/libs/config_shard_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardTransitionUtil} from "jstests/libs/shard_transition_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 var s = new ShardingTest({shards: 2, other: {enableBalancer: true}});
 var config = s.s0.getDB('config');
@@ -38,7 +40,7 @@ s.awaitBalancerRound();
 
 if (TestData.configShard) {
     // A config shard can't be removed until all range deletions have finished.
-    ConfigShardUtil.waitForRangeDeletions(s.s);
+    ShardTransitionUtil.waitForRangeDeletions(s.s);
 }
 
 removeResult = assert.commandWorked(

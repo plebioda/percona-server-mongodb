@@ -69,12 +69,6 @@ public:
                      StringData ident,
                      const StorageEngine::DropIdentCallback& onDrop) override;
 
-    Status dropIdentSynchronous(RecoveryUnit* ru,
-                                StringData ident,
-                                const StorageEngine::DropIdentCallback& onDrop) override {
-        return dropIdent(ru, ident, onDrop);
-    }
-
     void dropIdentForImport(OperationContext* opCtx, StringData ident) override {}
 
     // Unused KVEngine functions below.
@@ -179,6 +173,17 @@ public:
     }
 
     void setPinnedOplogTimestamp(const Timestamp& pinnedTimestamp) override {}
+
+    Status oplogDiskLocRegister(OperationContext* opCtx,
+                                RecordStore* oplogRecordStore,
+                                const Timestamp& opTime,
+                                bool orderedCommit) override {
+        return Status::OK();
+    }
+
+    void waitForAllEarlierOplogWritesToBeVisible(OperationContext* opCtx,
+                                                 RecordStore* oplogRecordStore) const override {}
+
 
     void dump() const override {}
 

@@ -1,3 +1,5 @@
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 const tenant = '636d957b2646ddfaf9b5e13f';
 const kVTSKey = 'secret';
 
@@ -14,7 +16,7 @@ function createnewReplSetTest(param) {
 }
 
 function setupNewReplSetWithParam(param) {
-    let rst = createnewReplSetTest(param)
+    let rst = createnewReplSetTest(param);
     let primary = rst.getPrimary();
     let adminDb = primary.getDB('admin');
     assert.commandWorked(adminDb.runCommand({createUser: 'admin', pwd: 'pwd', roles: ['root']}));

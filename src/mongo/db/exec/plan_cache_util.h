@@ -44,13 +44,17 @@
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/collection_query_info.h"
 #include "mongo/db/query/multiple_collection_accessor.h"
-#include "mongo/db/query/plan_cache.h"
-#include "mongo/db/query/plan_cache_debug_info.h"
+#include "mongo/db/query/plan_cache/plan_cache.h"
+#include "mongo/db/query/plan_cache/plan_cache_debug_info.h"
 #include "mongo/db/query/plan_ranker.h"
 #include "mongo/db/query/plan_ranking_decision.h"
 #include "mongo/db/query/query_solution.h"
 #include "mongo/db/query/sbe_plan_ranker.h"
-#include "mongo/db/query/sbe_stage_builder_plan_data.h"
+#include "mongo/db/query/stage_builder/sbe/builder_data.h"
+
+namespace mongo {
+class MultiPlanStage;
+}
 
 namespace mongo::plan_cache_util {
 
@@ -94,17 +98,6 @@ void updateClassicPlanCacheFromClassicCandidatesForClassicExecution(
 
 /**
  * Caches the best candidate execution plan for 'query' in SBE plan cache, chosen from the given
- * 'candidates' from SBE based on the 'ranking' decision, if the 'query' is of a type that can be
- * cached. Otherwise, does nothing.
- */
-void updateSbePlanCacheFromSbeCandidates(OperationContext* opCtx,
-                                         const MultipleCollectionAccessor& collections,
-                                         const CanonicalQuery& query,
-                                         std::unique_ptr<plan_ranker::PlanRankingDecision> ranking,
-                                         std::vector<sbe::plan_ranker::CandidatePlan>& candidates);
-
-/**
- * Caches the best candidate execution plan for 'query' in SBE plan cache, chosen from the given
  * 'candidates' based on the 'ranking' decision, if the 'query' is of a type that can be cached.
  * Otherwise, does nothing.
  *
@@ -142,6 +135,7 @@ void updateSbePlanCacheWithPinnedEntry(OperationContext* opCtx,
  */
 struct NoopPlanCacheWriter {
     void operator()(const CanonicalQuery&,
+                    MultiPlanStage& mps,
                     std::unique_ptr<plan_ranker::PlanRankingDecision>,
                     std::vector<plan_ranker::CandidatePlan>&) const {}
 };
@@ -154,16 +148,19 @@ struct NoopPlanCacheWriter {
  */
 struct ClassicPlanCacheWriter {
     ClassicPlanCacheWriter(OperationContext* opCtx,
-                           const VariantCollectionPtrOrAcquisition& collection)
-        : _opCtx(opCtx), _collection(collection) {}
+                           const VariantCollectionPtrOrAcquisition& collection,
+                           bool executeInSbe)
+        : _opCtx(opCtx), _collection(collection), _executeInSbe(executeInSbe) {}
 
     void operator()(const CanonicalQuery& cq,
+                    MultiPlanStage& mps,
                     std::unique_ptr<plan_ranker::PlanRankingDecision> ranking,
                     std::vector<plan_ranker::CandidatePlan>& candidates) const;
 
-private:
+protected:
     OperationContext* _opCtx;
     VariantCollectionPtrOrAcquisition _collection;
+    bool _executeInSbe;
 };
 
 /**
@@ -174,7 +171,7 @@ private:
  *  - The 'Mode' configured by the caller. This 'Mode' configuration is what distinguishes this
  *    class from the simpler 'ClassicPlanCacheWriter' above.
  */
-class ConditionalClassicPlanCacheWriter {
+class ConditionalClassicPlanCacheWriter : public ClassicPlanCacheWriter {
 public:
     enum class Mode {
         // Always write a cache entry for the winning plan to the plan cache, overwriting any
@@ -197,10 +194,13 @@ public:
 
     ConditionalClassicPlanCacheWriter(Mode planCachingMode,
                                       OperationContext* opCtx,
-                                      const VariantCollectionPtrOrAcquisition& collection)
-        : _planCachingMode{planCachingMode}, _opCtx{opCtx}, _collection{collection} {}
+                                      const VariantCollectionPtrOrAcquisition& collection,
+                                      bool executeInSbe)
+        : ClassicPlanCacheWriter(opCtx, collection, executeInSbe),
+          _planCachingMode{planCachingMode} {}
 
     void operator()(const CanonicalQuery& cq,
+                    MultiPlanStage& mps,
                     std::unique_ptr<plan_ranker::PlanRankingDecision> ranking,
                     std::vector<plan_ranker::CandidatePlan>& candidates) const;
 
@@ -211,7 +211,8 @@ protected:
         const std::vector<plan_ranker::CandidatePlan>& candidates) const;
 
     const Mode _planCachingMode;
-    OperationContext* _opCtx;
-    VariantCollectionPtrOrAcquisition _collection;
 };
+
+NumReads computeNumReadsFromWorks(const PlanStageStats& stats,
+                                  const plan_ranker::PlanRankingDecision& ranking);
 }  // namespace mongo::plan_cache_util

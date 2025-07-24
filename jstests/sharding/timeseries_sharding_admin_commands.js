@@ -8,6 +8,7 @@
 
 // Cannot run the filtering metadata check on tests that run refineCollectionShardKey.
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 TestData.skipCheckShardFilteringMetadata = true;
 
@@ -146,6 +147,10 @@ function assertRangeMatch(savedRange, paramRange) {
 (function checkShardingStateCommand() {
     createTimeSeriesColl(
         {index: {[metaField]: 1, [timeField]: 1}, shardKey: {[metaField]: 1, [timeField]: 1}});
+    assert.commandWorked(
+        mongo.getPrimaryShard(dbName).adminCommand({_flushRoutingTableCacheUpdates: viewNss}));
+    assert.commandWorked(
+        mongo.getPrimaryShard(dbName).adminCommand({_flushRoutingTableCacheUpdates: bucketNss}));
     const shardingStateRes = mongo.getPrimaryShard(dbName).adminCommand({shardingState: 1});
     const shardingStateColls = shardingStateRes.versions;
     const bucketNssIsSharded =
@@ -166,11 +171,11 @@ function assertRangeMatch(savedRange, paramRange) {
         assert.commandFailedWithCode(
             mongo.s0.adminCommand(
                 {reshardCollection: viewNss, key: {[metaField]: 1, [controlTimeField]: 1}}),
-            [ErrorCodes.NotImplemented]);
+            [ErrorCodes.NotImplemented, ErrorCodes.IllegalOperation]);
         assert.commandFailedWithCode(
             mongo.s0.adminCommand(
                 {reshardCollection: bucketNss, key: {[metaField]: 1, [controlTimeField]: 1}}),
-            ErrorCodes.NotImplemented);
+            [ErrorCodes.NotImplemented, ErrorCodes.IllegalOperation]);
         dropTimeSeriesColl();
     } else {
         jsTestLog(`Skipping resharding for timeseries not implemented test.`);

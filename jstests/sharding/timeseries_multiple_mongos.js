@@ -8,6 +8,7 @@
  */
 
 import {TimeseriesTest} from "jstests/core/timeseries/libs/timeseries.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 Random.setRandomSeed();
 
@@ -60,7 +61,7 @@ function runTest({shardKey, cmdObj}) {
         _waitForDelete: true
     }));
 
-    assert.commandWorked(mongos1.runCommand(cmdObj))
+    assert.commandWorked(mongos1.runCommand(cmdObj));
 
     // Insert dummy data so that the 'mongos1' sees the collection as sharded.
     assert.commandWorked(mongos1.getCollection(collName).insert({[timeField]: ISODate()}));
@@ -70,7 +71,7 @@ function runTest({shardKey, cmdObj}) {
     assert.commandWorked(mongos0.createCollection(
         collName, {timeseries: {timeField: timeField, metaField: metaField}}));
 
-    assert.commandWorked(mongos1.runCommand(cmdObj))
+    assert.commandWorked(mongos1.runCommand(cmdObj));
 }
 
 /**

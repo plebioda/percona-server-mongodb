@@ -6,7 +6,7 @@
 // ]
 //
 
-import {assertDropAndRecreateCollection} from "jstests/libs/collection_drop_recreate.js"
+import {assertDropAndRecreateCollection} from "jstests/libs/collection_drop_recreate.js";
 import {QuerySettingsUtils} from "jstests/libs/query_settings_utils.js";
 
 const collName = jsTestName();
@@ -25,10 +25,6 @@ const nonExistentQueryShapeHash = "0".repeat(64);
     assert.commandFailedWithCode(
         db.adminCommand({setQuerySettings: {notAValid: "query"}, settings: querySettingsA}),
         7746402);
-    assert.commandFailedWithCode(
-        db.adminCommand(
-            {setQuerySettings: qsutils.makeFindQueryInstance(), settings: {notAValid: "settings"}}),
-        ErrorCodes.IDLUnknownField);
     assert.commandFailedWithCode(db.adminCommand({
         setQuerySettings: qsutils.makeFindQueryInstance(),
         settings: {indexHints: {allowedIndexes: ["a_1"]}}

@@ -57,7 +57,7 @@
 #include "mongo/s/catalog/type_shard.h"
 #include "mongo/s/client/shard_registry.h"
 #include "mongo/s/grid.h"
-#include "mongo/s/query/establish_cursors.h"
+#include "mongo/s/query/exec/establish_cursors.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/decorable.h"
 #include "mongo/util/fail_point.h"
@@ -153,7 +153,7 @@ DocumentSourceChangeStreamHandleTopologyChange::create(
 
 DocumentSourceChangeStreamHandleTopologyChange::DocumentSourceChangeStreamHandleTopologyChange(
     const boost::intrusive_ptr<ExpressionContext>& expCtx)
-    : DocumentSource(kStageName, expCtx) {}
+    : DocumentSourceInternalChangeStreamStage(kStageName, expCtx) {}
 
 StageConstraints DocumentSourceChangeStreamHandleTopologyChange::constraints(
     Pipeline::SplitState) const {
@@ -256,7 +256,7 @@ BSONObj DocumentSourceChangeStreamHandleTopologyChange::createUpdatedCommandForN
     pipeline->optimizePipeline();
 
     // Split the full pipeline to get the shard pipeline.
-    auto splitPipelines = sharded_agg_helpers::splitPipeline(std::move(pipeline));
+    auto splitPipelines = sharded_agg_helpers::SplitPipeline::split(std::move(pipeline));
 
     // Create the new command that will run on the shard.
     return sharded_agg_helpers::createCommandForTargetedShards(pExpCtx,
@@ -292,7 +292,7 @@ BSONObj DocumentSourceChangeStreamHandleTopologyChange::replaceResumeTokenInComm
     return newCmd.freeze().toBson();
 }
 
-Value DocumentSourceChangeStreamHandleTopologyChange::serialize(
+Value DocumentSourceChangeStreamHandleTopologyChange::doSerialize(
     const SerializationOptions& opts) const {
     if (opts.verbosity) {
         return Value(DOC(DocumentSourceChangeStream::kStageName

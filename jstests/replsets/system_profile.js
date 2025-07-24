@@ -1,6 +1,8 @@
 // This tests that metadata commands run against the system.profile collection are not replicated
 // to the secondary.
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 var rst = new ReplSetTest({nodes: 2});
 rst.startSet();
 rst.initiate();
@@ -38,8 +40,5 @@ assert.commandWorked(primaryDB.foo.insert({}));
 op = getLatestOp();
 assert.commandWorked(primaryDB.runCommand({profile: 0}));
 
-// emptycapped the collection
-assert.commandWorked(primaryDB.runCommand({emptycapped: "system.profile"}));
-assert.eq(op, getLatestOp(), "oplog entry created when system.profile was emptied via emptycapped");
 assert(primaryDB.system.profile.drop());
 rst.stopSet();

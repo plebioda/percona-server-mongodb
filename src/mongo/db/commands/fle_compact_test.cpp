@@ -565,6 +565,7 @@ QueryTypeConfig generateQueryTypeConfigForTest(const T& min,
         config.setPrecision(precision.get());
     }
     config.setSparsity(sparsity);
+    config.setTrimFactor(0);
 
     return config;
 }
@@ -613,6 +614,8 @@ void FleCompactTest::testCompactValueV2_NoNullAnchors(const Value& value,
     if (isRange) {
         compactOneRangeFieldPad(_queryImpl.get(),
                                 _namespaces.escNss,
+                                "rangeField"_sd,
+                                BSONType::NumberLong,
                                 queryTypeConfig,
                                 0.42,
                                 1,
@@ -642,6 +645,8 @@ void FleCompactTest::testCompactValueV2_NoNullAnchors(const Value& value,
     if (isRange) {
         compactOneRangeFieldPad(_queryImpl.get(),
                                 _namespaces.escNss,
+                                "rangeField"_sd,
+                                BSONType::NumberLong,
                                 queryTypeConfig,
                                 0.42,
                                 1,
@@ -1041,24 +1046,141 @@ TEST_F(FleCompactTest, CleanupValue_NewAnchorsExist) {
     assertESCNullAnchorDocument(testPair, true, numAnchors, edcCount);
 }
 
-TEST_F(FleCompactTest, InjectSomeAnchorPadding) {
+// Tests compactOneRangeFieldPad over 2 values such that the number of unique tokens is maximized
+TEST_F(FleCompactTest, InjectSomeAnchorPadding_MaximizeUniqueTokens) {
     const BSONObj dataDoc = BSON("a.b.c" << 42);
     const auto tokens = getTestESCTokens(dataDoc);
     auto queryTypeConfig = generateQueryTypeConfigForTest(0, 100);
     ECStats escStats;
 
+    // Expect pathLength = domSize (7) + 1 - TF (0) = 8
+    // Assuming two values (which differ in their most significant bit) are inserted,
+    // then uniqueLeaves = 2, uniqueTokens = 8 + 7 = 15
     // Expect numPads := gamma * (pathLength * uniqueLeaves - uniqueTokens)
-    // numPads := 0.42 * (8 * 1 - 5) => 0.42 * 3 => 1.26 => 2 pads {1, 2}
+    // numPads := 0.42 * (8 * 2 - 15) => 0.42 => 1 pad
     compactOneRangeFieldPad(_queryImpl.get(),
                             _namespaces.escNss,
+                            "a.b.c"_sd,
+                            BSONType::NumberInt,
                             queryTypeConfig,
                             0.42,
-                            1,
+                            2,
+                            15,
+                            tokens.anchorPaddingRoot,
+                            &escStats);
+    ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), 1);
+    ASSERT_EQ(escStats.getInserted(), 1);
+
+    // Test with default trim factor (6)
+    // Expect pathLength = domSize (7) + 1 - TF (6) = 2
+    // Assuming two values (which differ in their most significant bit) are inserted,
+    // then uniqueLeaves = 2, uniqueTokens = 4
+    // Expect numPads := 0.42 * (2 * 2 - 4) => 0 pad
+    queryTypeConfig.setTrimFactor(boost::none);
+    escStats = ECStats();
+    compactOneRangeFieldPad(_queryImpl.get(),
+                            _namespaces.escNss,
+                            "a.b.c"_sd,
+                            BSONType::NumberInt,
+                            queryTypeConfig,
+                            0.42,
+                            2,
+                            4,
+                            tokens.anchorPaddingRoot,
+                            &escStats);
+    ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), 1);
+    ASSERT_EQ(escStats.getInserted(), 0);
+}
+
+// Tests compactOneRangeFieldPad over 2 values such that the number of unique tokens is minimized
+TEST_F(FleCompactTest, InjectSomeAnchorPadding_MinimizeUniqueTokens) {
+    const BSONObj dataDoc = BSON("a.b.c" << 42);
+    const auto tokens = getTestESCTokens(dataDoc);
+    auto queryTypeConfig = generateQueryTypeConfigForTest(0, 100);
+    ECStats escStats;
+
+    // Expect pathLength = domSize (7) + 1 - TF (0) = 8
+    // Assuming two values (which differ only in their LSB) are inserted,
+    // then uniqueLeaves = 2, uniqueTokens = 8 + 1 = 9
+    // Expect numPads := gamma * (pathLength * uniqueLeaves - uniqueTokens)
+    // numPads := 0.42 * (8 * 2 - 9) => 0.42 * 7 => 2.94 => 3 pads
+    compactOneRangeFieldPad(_queryImpl.get(),
+                            _namespaces.escNss,
+                            "a.b.c"_sd,
+                            BSONType::NumberInt,
+                            queryTypeConfig,
+                            0.42,
+                            2,
+                            9,
+                            tokens.anchorPaddingRoot,
+                            &escStats);
+    ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), 3);
+    ASSERT_EQ(escStats.getInserted(), 3);
+
+    // Test with default trim factor (6)
+    // Expect pathLength = domSize (7) + 1 - TF (6) = 2
+    // Assuming two values (which differ only in their LSB) are inserted,
+    // then uniqueLeaves = 2, uniqueTokens = 3
+    // Expect numPads := 0.42 * (2 * 2 - 3) => 0.42 => 1 pad
+    queryTypeConfig.setTrimFactor(boost::none);
+    escStats = ECStats();
+    compactOneRangeFieldPad(_queryImpl.get(),
+                            _namespaces.escNss,
+                            "a.b.c"_sd,
+                            BSONType::NumberInt,
+                            queryTypeConfig,
+                            0.42,
+                            2,
+                            3,
+                            tokens.anchorPaddingRoot,
+                            &escStats);
+    ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), 4);
+    ASSERT_EQ(escStats.getInserted(), 1);
+}
+
+TEST_F(FleCompactTest, InjectSomeAnchorPadding_TinyDomainSize) {
+    const BSONObj dataDoc = BSON("a.b.c" << 42);
+    const auto tokens = getTestESCTokens(dataDoc);
+    auto queryTypeConfig = generateQueryTypeConfigForTest(0, 7);
+    ECStats escStats;
+
+    // Expect pathLength = domSize (3) + 1 - TF (0) = 4
+    // Assuming two values (which differ in their MSB) are inserted,
+    // then uniqueLeaves = 2, uniqueTokens = 4 + 1 = 5
+    // Expect numPads := gamma * (pathLength * uniqueLeaves - uniqueTokens)
+    // numPads := 0.42 * (4 * 2 - 5) => 0.42 * 3 => 1.26 => 2 pads
+    compactOneRangeFieldPad(_queryImpl.get(),
+                            _namespaces.escNss,
+                            "a.b.c"_sd,
+                            BSONType::NumberInt,
+                            queryTypeConfig,
+                            0.42,
+                            2,
                             5,
                             tokens.anchorPaddingRoot,
                             &escStats);
     ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), 2);
     ASSERT_EQ(escStats.getInserted(), 2);
+
+    // Test with unspecified trim factor (effective default is domsize - 1)
+    // Expect pathLength = 3 + 1 - (3 - 1) = 2
+    // Assuming two values (which differ in their MSB) are inserted,
+    // uniqueLeaves = 2, uniqueTokens = 4
+    // numPads := 0.42 * (2 * 2 - 4) = 0 pads
+    queryTypeConfig.setTrimFactor(boost::none);
+    escStats = ECStats();
+    compactOneRangeFieldPad(_queryImpl.get(),
+                            _namespaces.escNss,
+                            "a.b.c"_sd,
+                            BSONType::NumberInt,
+                            queryTypeConfig,
+                            0.42,
+                            2,
+                            4,
+                            tokens.anchorPaddingRoot,
+                            &escStats);
+    ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), 2);
+    ASSERT_EQ(escStats.getInserted(), 0);
 }
 
 TEST_F(FleCompactTest, InjectManyAnchorPadding) {
@@ -1071,6 +1193,8 @@ TEST_F(FleCompactTest, InjectManyAnchorPadding) {
     // numPads := 1.0 * (8 * 5 - 25) => 40 - 25 => 15.0 => 15 pads {1..15}
     compactOneRangeFieldPad(_queryImpl.get(),
                             _namespaces.escNss,
+                            "a.b.c"_sd,
+                            BSONType::NumberLong,
                             queryTypeConfig,
                             1,
                             5,
@@ -1079,6 +1203,49 @@ TEST_F(FleCompactTest, InjectManyAnchorPadding) {
                             &escStats);
     ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), 15);
     ASSERT_EQ(escStats.getInserted(), 15);
+}
+
+TEST_F(FleCompactTest, InjectAnchorPaddingOverBatchWriteLimit) {
+    const BSONObj dataDoc = BSON("a.b.c" << 42);
+    const auto tokens = getTestESCTokens(dataDoc);
+    auto queryTypeConfig = generateQueryTypeConfigForTest(0LL, 100LL);
+    ECStats escStats;
+
+    // Test with max batch size of 10
+    // numPads := 1.0 * (8 * 10 - 8) => 72 pads
+    const auto edges = 8;
+    const auto uniqueLeaves = 10;
+    const auto uniqueTokens = 8;
+    auto numPads = edges * uniqueLeaves - uniqueTokens;
+    compactOneRangeFieldPad(_queryImpl.get(),
+                            _namespaces.escNss,
+                            "a.b.c",
+                            BSONType::NumberLong,
+                            queryTypeConfig,
+                            1,
+                            uniqueLeaves,
+                            uniqueTokens,
+                            tokens.anchorPaddingRoot,
+                            &escStats,
+                            10);
+    ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), numPads);
+    ASSERT_EQ(escStats.getInserted(), numPads);
+
+    // Test with max batch size of 0
+    numPads *= 2;
+    compactOneRangeFieldPad(_queryImpl.get(),
+                            _namespaces.escNss,
+                            "a.b.c",
+                            BSONType::NumberLong,
+                            queryTypeConfig,
+                            1,
+                            uniqueLeaves,
+                            uniqueTokens,
+                            tokens.anchorPaddingRoot,
+                            &escStats,
+                            0);
+    ASSERT_EQ(_queryImpl->countDocuments(_namespaces.escNss), numPads);
+    ASSERT_EQ(escStats.getInserted(), numPads);
 }
 
 }  // namespace

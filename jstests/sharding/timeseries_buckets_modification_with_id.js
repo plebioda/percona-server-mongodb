@@ -3,6 +3,7 @@
  */
 
 import {TimeseriesTest} from "jstests/core/timeseries/libs/timeseries.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({shards: 2, rs: {nodes: 2}});
 
@@ -18,7 +19,7 @@ const metaFieldName = "tag";
 //         "version": 1,
 //         "min":
 //             {"_id": ObjectId("64dd4ae9a2c44e75d1151285"), "time":
-//             ISODate("2023-08-16T22:17:00Z")},
+//             ISODate("2023-08-16T00:00:00Z")},
 //         "max": {
 //             "_id": ObjectId("64dd4ae9a2c44e75d1151285"),
 //             "time": ISODate("2023-08-16T22:17:13.749Z")
@@ -35,7 +36,7 @@ const compressedBucketDoc = {
     "control": {
         "version": 2,
         "min":
-            {"_id": ObjectId("64dd4ae9a2c44e75d1151285"), "time": ISODate("2023-08-16T22:17:00Z")},
+            {"_id": ObjectId("64dd4ae9a2c44e75d1151285"), "time": ISODate("2023-08-16T00:00:00Z")},
         "max": {
             "_id": ObjectId("64dd4ae9a2c44e75d1151285"),
             "time": ISODate("2023-08-16T22:17:13.749Z")
@@ -95,6 +96,6 @@ runTest({
         multi: false
     }]
 },
-        updateValidateFn)
+        updateValidateFn);
 
 st.stop();

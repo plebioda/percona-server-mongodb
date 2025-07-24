@@ -267,6 +267,9 @@ bool _mergeObj(allocator_aware::BSONObjBuilder<Allocator>* builder,
                     return false;
 
                 // Recurse deeper
+                if (builder->hasField(name)) {
+                    return false;
+                }
                 auto subBuilder = [&] {
                     if (refIt->type() == Object) {
                         return allocator_aware::BSONObjBuilder<Allocator>{
@@ -284,6 +287,9 @@ bool _mergeObj(allocator_aware::BSONObjBuilder<Allocator>* builder,
             } else {
                 // If name match and neither is Object we can append from reference and increment
                 // both objects.
+                if (builder->hasField(name)) {
+                    return false;
+                }
                 builder->append(*refIt);
             }
 
@@ -1413,6 +1419,13 @@ BSONColumnBuilder<Allocator>& BSONColumnBuilder<Allocator>::_appendObj(Element e
     // Different types on root is not allowed
     if (type != interleaved->referenceSubObjType) {
         _flushSubObjMode();
+
+        if (!containsScalars) {
+            std::get<typename InternalState::Regular>(_is.state).append(
+                elem, _bufBuilder, NoopControlBlockWriter{}, _is.allocator);
+            return *this;
+        }
+
         _startDetermineSubObjReference(obj, type);
         return *this;
     }

@@ -1,7 +1,7 @@
 /**
  * Tests for optimizations applied to trivially false predicates in aggregate pipelines.
  * @tags: [
- *   requires_fcv_73,
+ *   requires_fcv_81,
  *   # Tests run here require explaining plans on aggregate commands that could be incomplete
  *   # during stepdown
  *   does_not_support_stepdowns,
@@ -15,7 +15,7 @@
  * ]
  */
 
-import {getExplainPipelineFromAggregationResult} from "jstests/aggregation/extras/utils.js"
+import {getExplainPipelineFromAggregationResult} from "jstests/aggregation/extras/utils.js";
 import {
     aggPlanHasStage,
     getAggPlanStages,
@@ -23,7 +23,7 @@ import {
     isEofPlan,
     planHasStage
 } from "jstests/libs/analyze_plan.js";
-import {assertDropAndRecreateCollection} from "jstests/libs/collection_drop_recreate.js"
+import {assertDropAndRecreateCollection} from "jstests/libs/collection_drop_recreate.js";
 
 function assertPlanIsEOF(plan) {
     // Explain query output doesn't include planning for the foreign branch hence we use execution
@@ -48,12 +48,12 @@ function assertUnionOfPlans(plan, firstPartStage, secondPartStage) {
 
 const collName = "explain_find_trivially_false_predicates_in_agg_pipelines";
 
-const localCollName = `${collName}-local`
+const localCollName = `${collName}-local`;
 assertDropAndRecreateCollection(db, localCollName);
 const localColl = db[localCollName];
 assert.commandWorked(localColl.insert(Array.from({length: 10}, (_, i) => ({a: i, side: "local"}))));
 
-const foreignCollName = `${collName}-foreign`
+const foreignCollName = `${collName}-foreign`;
 assertDropAndRecreateCollection(db, foreignCollName);
 const foreignColl = db[foreignCollName];
 assert.commandWorked(
@@ -175,3 +175,79 @@ queryResults.forEach(
         outputRecord.side,
         "local",
         `All expected documents should be from ${localCollName} collection (have side = local)`));
+
+jsTestLog(
+    "Testing $nor+$alwaysTrue optimization with $lookup stages. Always false local branch. Inequality lookup condition");
+
+query = [
+    { $match: { $nor: [ { $alwaysTrue: 1 } ] } },
+    { $lookup: {
+        from: foreignCollName,
+        let: { a: "$a" },
+        pipeline: [
+            { $match:
+                { $expr:
+                    { $and:
+                        [ { $eq: [ "$b", "$$a" ] } ]
+                    }
+                }
+            }
+        ],
+        as: "foreignSide"
+    }}
+];
+explain = localColl.explain().aggregate(query);
+assert(isEofPlan(db, getWinningPlanFromExplain(explain)));
+
+queryResults = localColl.aggregate(query).toArray();
+assert.eq(queryResults.length, 0, "Expected empty resultset");
+
+jsTestLog(
+    "Testing $nor+{$nor+$alwaysFalse} optimization with $lookup stages. Always false local branch.Inequality lookup condition ");
+
+query = [
+    { $match: { $nor: [ {$nor: [{$alwaysFalse: 1}]}] }},
+    { $lookup: {
+        from: foreignCollName,
+        let: { a: "$a" },
+        pipeline: [
+            { $match:
+                { $expr:
+                    { $and:
+                        [ { $eq: [ "$b", "$$a" ] } ]
+                    }
+                }
+            }
+        ],
+        as: "foreignSide"
+    }}
+];
+explain = localColl.explain().aggregate(query);
+assert(isEofPlan(db, getWinningPlanFromExplain(explain)));
+
+queryResults = localColl.aggregate(query).toArray();
+assert.eq(queryResults.length, 0, "Expected empty resultset");
+
+jsTestLog("Testing $nor+$alwaysFalse optimization with $lookup stages.");
+
+query = [
+    { $match: { $nor: [ { $alwaysFalse: 1 } ] } },
+    { $lookup: {
+        from: foreignCollName,
+        let: { a: "$a" },
+        pipeline: [
+            { $match:
+                { $expr:
+                    { $and:
+                        [ { $eq: [ "$b", "$$a" ] } ]
+                    }
+                }
+            }
+        ],
+        as: "foreignSide"
+    }}
+];
+explain = localColl.explain().aggregate(query);
+let winningPlan = getWinningPlanFromExplain(explain);
+assert(!isEofPlan(db, winningPlan));
+assert(!winningPlan.filter || bsonWoCompare(winningPlan.filter, {}) == 0);

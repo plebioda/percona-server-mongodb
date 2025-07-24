@@ -37,7 +37,7 @@
 #include "mongo/db/exec/plan_stage.h"
 #include "mongo/db/index/multikey_paths.h"
 #include "mongo/db/query/explain_options.h"
-#include "mongo/db/query/plan_cache_debug_info.h"
+#include "mongo/db/query/plan_cache/plan_cache_debug_info.h"
 #include "mongo/db/query/plan_enumerator/plan_enumerator_explain_info.h"
 #include "mongo/db/query/plan_explainer.h"
 #include "mongo/db/query/plan_summary_stats.h"
@@ -64,7 +64,6 @@ public:
     std::string getPlanSummary() const final;
     void getSummaryStats(PlanSummaryStats* statsOut) const final;
     PlanStatsDetails getWinningPlanStats(ExplainOptions::Verbosity verbosity) const final;
-    BSONObj getOptimizerDebugInfo() const final;
     PlanStatsDetails getWinningPlanTrialStats() const final;
     std::vector<PlanStatsDetails> getRejectedPlansStats(
         ExplainOptions::Verbosity verbosity) const final;

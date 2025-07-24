@@ -37,39 +37,8 @@
 #include <boost/optional/optional.hpp>
 
 #include "mongo/db/pipeline/percentile_algo_discrete.h"
-#include "mongo/db/query/query_knobs_gen.h"
-#include "mongo/platform/atomic_word.h"
 
 namespace mongo {
-using std::vector;
-
-void DiscretePercentile::incorporate(double input) {
-    if (std::isnan(input)) {
-        return;
-    }
-    if (std::isinf(input)) {
-        if (input < 0) {
-            _negInfCount++;
-        } else {
-            _posInfCount++;
-        }
-        return;
-    }
-
-    // Take advantage of already sorted input -- avoid resorting it later.
-    if (!_shouldSort && !_accumulatedValues.empty() && input < _accumulatedValues.back()) {
-        _shouldSort = true;
-    }
-
-    _accumulatedValues.push_back(input);
-}
-
-void DiscretePercentile::incorporate(const std::vector<double>& inputs) {
-    _accumulatedValues.reserve(_accumulatedValues.size() + inputs.size());
-    for (double val : inputs) {
-        incorporate(val);
-    }
-}
 
 boost::optional<double> DiscretePercentile::computePercentile(double p) {
     if (_accumulatedValues.empty() && _negInfCount == 0 && _posInfCount == 0) {
@@ -77,7 +46,7 @@ boost::optional<double> DiscretePercentile::computePercentile(double p) {
     }
 
     const int n = _accumulatedValues.size();
-    int rank = PercentileAlgorithm::computeTrueRank(n + _posInfCount + _negInfCount, p);
+    int rank = computeTrueRank(n + _posInfCount + _negInfCount, p);
     if (_negInfCount > 0 && rank < _negInfCount) {
         return -std::numeric_limits<double>::infinity();
     } else if (_posInfCount > 0 && rank >= n + _negInfCount) {
@@ -95,30 +64,6 @@ boost::optional<double> DiscretePercentile::computePercentile(double p) {
         return *it;
     }
     return _accumulatedValues[rank];
-}
-
-vector<double> DiscretePercentile::computePercentiles(const vector<double>& ps) {
-    if (_accumulatedValues.empty() && _negInfCount == 0 && _posInfCount == 0) {
-        return {};
-    }
-
-    vector<double> pctls;
-    pctls.reserve(ps.size());
-
-    // When sufficiently many percentiles are requested at once, it becomes more efficient to sort
-    // the data rather than compute each percentile separately. The tipping point depends on both
-    // the size of the data and the number of percentiles, but to keep the model simple for the knob
-    // we only consider the latter.
-    if (_shouldSort &&
-        static_cast<int>(ps.size()) > internalQueryPercentileExprSelectToSortThreshold.load()) {
-        std::sort(_accumulatedValues.begin(), _accumulatedValues.end());
-        _shouldSort = false;
-    }
-
-    for (double p : ps) {
-        pctls.push_back(*computePercentile(p));
-    }
-    return pctls;
 }
 
 std::unique_ptr<PercentileAlgorithm> createDiscretePercentile() {

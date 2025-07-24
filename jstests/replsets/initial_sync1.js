@@ -15,6 +15,7 @@
  * This test assumes a 'newlyAdded' removal.
  */
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {reconnect} from "jstests/replsets/rslib.js";
 
 var basename = "jstests_initsync1";
@@ -113,12 +114,6 @@ assert.commandWorked(bulk.execute());
 
 print("11. Everyone happy eventually");
 replTest.awaitReplication();
-
-// SERVER-69001: Assert that the last oplog for initial sync was persisted in the minvalid document.
-let syncingNodeMinvalid = secondary2.getDB("local").replset.minvalid.findOne()["ts"];
-let lastInitialSyncOp =
-    secondary2.adminCommand("replSetGetStatus")["initialSyncStatus"]["initialSyncOplogEnd"];
-assert.eq(lastInitialSyncOp, syncingNodeMinvalid);
 
 MongoRunner.stopMongod(secondary2);
 replTest.stopSet();

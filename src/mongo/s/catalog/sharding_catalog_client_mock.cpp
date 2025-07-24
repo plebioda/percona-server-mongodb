@@ -161,7 +161,7 @@ ShardingCatalogClientMock::getCollectionAndShardingIndexCatalogEntries(
 }
 
 StatusWith<std::vector<TagsType>> ShardingCatalogClientMock::getTagsForCollection(
-    OperationContext* opCtx, const NamespaceString& nss) {
+    OperationContext* opCtx, const NamespaceString& nss, boost::optional<long long> limit) {
     return {ErrorCodes::InternalError, "Method not implemented"};
 }
 
@@ -287,5 +287,10 @@ HistoricalPlacement ShardingCatalogClientMock::getHistoricalPlacement(
     const Timestamp& atClusterTime,
     const boost::optional<NamespaceString>& nss) {
     uasserted(ErrorCodes::InternalError, "Method not implemented");
+}
+
+bool ShardingCatalogClientMock::anyShardRemovedSince(OperationContext* opCtx,
+                                                     const Timestamp& clusterTime) {
+    return false;
 }
 }  // namespace mongo

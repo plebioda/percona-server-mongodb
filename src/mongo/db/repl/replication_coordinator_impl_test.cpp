@@ -379,6 +379,8 @@ TEST_F(ReplCoordTest,
     ASSERT_OK(status);
     ASSERT(getReplCoord()->getSettings().isReplSet());
     ASSERT_TRUE(getExternalState()->threadsStarted());
+    // Test that data is marked consistent after successful replSetInitiate.
+    ASSERT_TRUE(getReplCoord()->isDataConsistent());
 
     // Show that initiate fails after it has already succeeded.
     doReplSetInitiate(getReplCoord(), defaultConfigOneNode, &status);
@@ -1331,7 +1333,6 @@ TEST_F(ReplCoordTest, NodeCalculatesDefaultWriteConcernOnStartupNewConfigNoMajor
     ASSERT_FALSE(rwcDefaults.getImplicitDefaultWriteConcernMajority_forTest());
 }
 
-
 TEST_F(ReplCoordTest, NodeReturnsWriteConcernFailedWhenAWriteConcernTimesOutBeforeBeingSatisified) {
     assertStartSuccess(BSON("_id"
                             << "mySet"
@@ -1358,8 +1359,9 @@ TEST_F(ReplCoordTest, NodeReturnsWriteConcernFailedWhenAWriteConcernTimesOutBefo
     OpTimeWithTermOne time3(100, 3);
 
     WriteConcernOptions writeConcern;
-    writeConcern.wDeadline = getNet()->now() + Milliseconds(50);
+    writeConcern.wTimeout = WriteConcernOptions::kNoWaiting;
     writeConcern.w = 2;
+    Date_t timeoutTime = getNet()->now() + Milliseconds(50);
 
     // 1 waiter waiting for 2 nodes to reach time2 with timeout.
     awaiter.setOpTime(time2);
@@ -1369,19 +1371,12 @@ TEST_F(ReplCoordTest, NodeReturnsWriteConcernFailedWhenAWriteConcernTimesOutBefo
     ASSERT_OK(getReplCoord()->setLastAppliedOptime_forTest(2, 1, time1));
     {
         NetworkInterfaceMock::InNetworkGuard inNet(getNet());
-        getNet()->runUntil(writeConcern.wDeadline);
-        ASSERT_EQUALS(writeConcern.wDeadline, getNet()->now());
+        getNet()->runUntil(timeoutTime);
+        ASSERT_EQUALS(timeoutTime, getNet()->now());
     }
     ReplicationCoordinator::StatusAndDuration statusAndDur = awaiter.getResult();
     ASSERT_EQUALS(ErrorCodes::WriteConcernFailed, statusAndDur.status);
     awaiter.reset();
-
-    // Test that the waiter is still in the waiter list as we only clean up abandoned waiters
-    // lazily.
-    ASSERT_EQ(replicationWaiterListMetric.get(), 1);
-
-    // Advance local node to time3 and this should trigger the lazy cleanup.
-    replCoordSetMyLastWrittenAndAppliedAndDurableOpTime(time3, Date_t() + Seconds(110));
 
     // Test that the waiter list is now empty.
     ASSERT_EQ(replicationWaiterListMetric.get(), 0);
@@ -2100,6 +2095,81 @@ TEST_F(StepDownTest, StepDownFailureRestoresDrainState) {
     ASSERT_TRUE(getReplCoord()->getMemberState().primary());
     Lock::GlobalLock lock(opCtx.get(), MODE_IX);
     ASSERT_TRUE(getReplCoord()->canAcceptWritesForDatabase(opCtx.get(), DatabaseName::kAdmin));
+}
+
+DEATH_TEST_REGEX_F(StepDownTest, StepDownHangsCantGetRSTL, "5675600.*lockRep") {
+    const auto repl = getReplCoord();
+
+    OpTimeWithTermOne opTime1(100, 1);
+
+    replCoordSetMyLastWrittenAndAppliedAndDurableOpTime(opTime1, Date_t() + Seconds(100));
+
+    // Secondaries caught up.
+    ASSERT_OK(repl->setLastAppliedOptime_forTest(1, 1, opTime1));
+    ASSERT_OK(repl->setLastAppliedOptime_forTest(1, 2, opTime1));
+
+    simulateSuccessfulV1Election();
+    // Wait only one simulated second for RSTL.
+    fassertOnLockTimeoutForStepUpDown.store(1);
+
+    // Grab the RSTL
+    const auto opCtx = makeOperationContext();
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get(), MODE_IX);
+
+    // Step down in another thread
+    stdx::thread stepDownThread([&] {
+        Client::setCurrent(getService()->makeClient("StepDownHangsCantGetRSTL"));
+        auto alternativeOpCtx = cc().makeOperationContext();
+        // This should crash.
+        getReplCoord()->updateTerm(alternativeOpCtx.get(), getReplCoord()->getTerm() + 1).ignore();
+    });
+
+    while (1) {
+        // Advance the simulated clock really fast.
+        checked_cast<ClockSourceMock*>(getServiceContext()->getPreciseClockSource())
+            ->advance(Milliseconds(100));
+        sleepFor(Milliseconds(1));
+    }
+}
+
+DEATH_TEST_F(StepDownTest, StepDownHangsCantGetRSTLTooManyLocks, "\"id\":9222300") {
+    const auto repl = getReplCoord();
+
+    OpTimeWithTermOne opTime1(100, 1);
+
+    replCoordSetMyLastWrittenAndAppliedAndDurableOpTime(opTime1, Date_t() + Seconds(100));
+
+    // Secondaries caught up.
+    ASSERT_OK(repl->setLastAppliedOptime_forTest(1, 1, opTime1));
+    ASSERT_OK(repl->setLastAppliedOptime_forTest(1, 2, opTime1));
+
+    simulateSuccessfulV1Election();
+    // Wait only one simulated second for RSTL.
+    fassertOnLockTimeoutForStepUpDown.store(1);
+
+    // Grab the RSTL
+    const auto opCtx = makeOperationContext();
+    ReplicationStateTransitionLockGuard transitionGuard(opCtx.get(), MODE_IX);
+
+    std::vector<Lock::CollectionLock> locks;
+    // Make lock manager dump fail by putting in an obnoxiously large debuginfo string.
+    shard_role_details::getLocker(opCtx.get())
+        ->setDebugInfo(std::string(BSONObjMaxInternalSize - 5, 'a'));
+
+    // Step down in another thread
+    stdx::thread stepDownThread([&] {
+        Client::setCurrent(getService()->makeClient("StepDownHangsCantGetRSTL"));
+        auto alternativeOpCtx = cc().makeOperationContext();
+        // This should crash.
+        getReplCoord()->updateTerm(alternativeOpCtx.get(), getReplCoord()->getTerm() + 1).ignore();
+    });
+
+    while (1) {
+        // Advance the simulated clock really fast.
+        checked_cast<ClockSourceMock*>(getServiceContext()->getPreciseClockSource())
+            ->advance(Milliseconds(100));
+        sleepFor(Milliseconds(1));
+    }
 }
 
 class StepDownTestWithUnelectableNode : public StepDownTest {
@@ -4213,6 +4283,132 @@ TEST_F(ReplCoordTest, AwaitHelloResponseReturnsErrorOnHorizonChange) {
     getHelloThread.join();
 }
 
+TEST_F(ReplCoordTest, ServerUassertAfterStaleHorizonTopology) {
+    init();
+    assertStartSuccess(BSON("_id"
+                            << "mySet"
+                            << "version" << 2 << "members"
+                            << BSON_ARRAY(BSON("host"
+                                               << "node1:12345"
+                                               << "_id" << 0)
+                                          << BSON("host"
+                                                  << "node2:12345"
+                                                  << "_id" << 1))),
+                       HostAndPort("node1", 12345));
+
+    // Become primary.
+    ASSERT_OK(getReplCoord()->setFollowerMode(MemberState::RS_SECONDARY));
+    replCoordSetMyLastWrittenAndAppliedAndDurableOpTime(OpTimeWithTermOne(100, 1),
+                                                        Date_t() + Seconds(100));
+    simulateSuccessfulV1Election();
+    ASSERT(getReplCoord()->getMemberState().primary());
+
+    auto maxAwaitTime = Milliseconds(5000);
+    auto deadline = getNet()->now() + maxAwaitTime;
+    auto opCtx = makeOperationContext();
+
+    auto topologyVersionBeforeReconfig = getTopoCoord().getTopologyVersion();
+    // awaitHelloResponse blocks and waits on a future when the request TopologyVersion equals
+    // the current TopologyVersion of the server.
+    stdx::thread getHelloThread([&] {
+        ASSERT_THROWS_CODE(
+            awaitHelloWithNewOpCtx(getReplCoord(), topologyVersionBeforeReconfig, {}, deadline),
+            AssertionException,
+            ErrorCodes::SplitHorizonChange);
+    });
+
+    auto lastHorizonBeforeReconfig = getReplCoord()->getLastHorizonChange_forTest();
+    ASSERT_EQUALS(lastHorizonBeforeReconfig, -1);
+
+    BSONObjBuilder garbage;
+    ReplSetReconfigArgs args;
+    // Use force to bypass the oplog commitment check, which we're not worried about testing here.
+    args.force = true;
+    // Do a reconfig that changes the SplitHorizon and also adds a third node. This should respond
+    // to all waiting hello requests with an error.
+    args.newConfigObj = BSON("_id"
+                             << "mySet"
+                             << "version" << 3 << "protocolVersion" << 1 << "members"
+                             << BSON_ARRAY(BSON("_id" << 0 << "host"
+                                                      << "node1:12345"
+                                                      << "priority" << 3 << "horizons"
+                                                      << BSON("testhorizon"
+                                                              << "test.monkey.example.com:24"))
+                                           << BSON("_id" << 1 << "host"
+                                                         << "node2:12345"
+                                                         << "horizons"
+                                                         << BSON("testhorizon"
+                                                                 << "test.giraffe.example.com:25"))
+                                           << BSON("_id"
+                                                   << 2 << "host"
+                                                   << "node3:12345"
+                                                   << "horizons"
+                                                   << BSON("testhorizon"
+                                                           << "test.elephant.example.com:26"))));
+    stdx::thread reconfigThread([&] {
+        Status status(ErrorCodes::InternalError, "Not Set");
+        status = getReplCoord()->processReplSetReconfig(opCtx.get(), args, &garbage);
+        ASSERT_OK(status);
+    });
+    replyToReceivedHeartbeatV1();
+    reconfigThread.join();
+    getHelloThread.join();
+
+    // After reconfig, the last horizon change topology counter should come out greater than the
+    // input topology counter , but less than the output topology counter.
+    ASSERT_GREATER_THAN(getReplCoord()->getLastHorizonChange_forTest(),
+                        topologyVersionBeforeReconfig.getCounter());
+    ASSERT_GREATER_THAN(getTopoCoord().getTopologyVersion().getCounter(),
+                        getReplCoord()->getLastHorizonChange_forTest());
+    ASSERT_GREATER_THAN(getReplCoord()->getLastHorizonChange_forTest(), lastHorizonBeforeReconfig);
+
+    // Send hello with a TopologyVersion older than the TopologyVersion of the last horizon change.
+    auto requestTopologyVersion =
+        TopologyVersion(getTopoCoord().getTopologyVersion().getProcessId(),
+                        getReplCoord()->getLastHorizonChange_forTest() - 1);
+
+    // AwaitHelloResponse should throw uassert with SplitHorizonChange if topology version
+    // corresponds to a stale horizon.
+    ASSERT_THROWS_CODE(awaitHelloWithNewOpCtx(getReplCoord(), requestTopologyVersion, {}, deadline),
+                       DBException,
+                       ErrorCodes::SplitHorizonChange);
+
+    // Send hello with a TopologyVersion version equal to the TopologyVersion of the last horizon
+    // change.
+    auto expectedTopologyVersion = getTopoCoord().getTopologyVersion();
+    requestTopologyVersion = TopologyVersion(expectedTopologyVersion.getProcessId(),
+                                             getReplCoord()->getLastHorizonChange_forTest());
+
+    ASSERT_GREATER_THAN(expectedTopologyVersion.getCounter(), requestTopologyVersion.getCounter());
+    // AwaitHelloResponse should return with a helloResponse that matches expectedTopologyVersion.
+    // Since expectedTopologyVersion > requestTopologyVersion, the call is non-blocking and will
+    // return immediately.
+    auto response = awaitHelloWithNewOpCtx(getReplCoord(), requestTopologyVersion, {}, deadline);
+    auto responseTopologyVersion = response->getTopologyVersion();
+    ASSERT_EQUALS(responseTopologyVersion->getCounter(), expectedTopologyVersion.getCounter());
+    ASSERT_EQUALS(responseTopologyVersion->getProcessId(), expectedTopologyVersion.getProcessId());
+
+    // Setup instance where lastHorizonChange topology counter < request topology counter < server
+    // topology counter. For server topology counter to be greater than both request's and horizon,
+    // we must increment server topology.
+    getTopoCoord().incrementTopologyVersion();
+    expectedTopologyVersion = getTopoCoord().getTopologyVersion();
+    // Send hello with a TopologyVersion version greater than the TopologyVersion of the last
+    // horizon change.
+    requestTopologyVersion = TopologyVersion(getTopoCoord().getTopologyVersion().getProcessId(),
+                                             getReplCoord()->getLastHorizonChange_forTest() + 1);
+
+    ASSERT_GREATER_THAN(expectedTopologyVersion.getCounter(), requestTopologyVersion.getCounter());
+    ASSERT_GREATER_THAN(requestTopologyVersion.getCounter(),
+                        getReplCoord()->getLastHorizonChange_forTest());
+
+    // AwaitHelloResponse should return with a helloResponse that matches expectedTopologyVersion.
+    response = awaitHelloWithNewOpCtx(getReplCoord(), requestTopologyVersion, {}, deadline);
+    responseTopologyVersion = response->getTopologyVersion();
+    ASSERT_EQUALS(responseTopologyVersion->getCounter(), expectedTopologyVersion.getCounter());
+    ASSERT_EQUALS(responseTopologyVersion->getProcessId(), expectedTopologyVersion.getProcessId());
+}
+
 TEST_F(ReplCoordTest, NonAwaitableHelloReturnsNoConfigsOnNodeWithUninitializedConfig) {
     start();
     auto opCtx = makeOperationContext();
@@ -4841,6 +5037,9 @@ TEST_F(ReplCoordTest, AwaitHelloRespondsCorrectlyWhenNodeRemovedAndReadded) {
     });
     waitForHelloFailPoint->waitForTimesEntered(timesEnteredFailPoint + 2);
 
+    auto lastHorizonBeforeReconfig = getReplCoord()->getLastHorizonChange_forTest();
+    ASSERT_EQUALS(lastHorizonBeforeReconfig, -1);
+
     const auto newHorizonNodeOne = "newhorizon.com:100";
     const auto newHorizonNodeTwo = "newhorizon.com:200";
 
@@ -4865,9 +5064,21 @@ TEST_F(ReplCoordTest, AwaitHelloRespondsCorrectlyWhenNodeRemovedAndReadded) {
     });
     replyToReceivedHeartbeatV1();
     reconfigThread.join();
+
     ASSERT_OK(
         getReplCoord()->waitForMemberState(opCtx.get(), MemberState::RS_SECONDARY, Seconds(1)));
     getHelloThread.join();
+
+    ASSERT_GREATER_THAN(getReplCoord()->getLastHorizonChange_forTest(), lastHorizonBeforeReconfig);
+    // Send hello with a TopologyVersion older than the TopologyVersion of the last horizon change.
+    auto requestTopologyVersion =
+        TopologyVersion(getTopoCoord().getTopologyVersion().getProcessId(),
+                        getReplCoord()->getLastHorizonChange_forTest() - 1);
+    // AwaitHelloResponse should throw uassert with SplitHorizonChange if topology version
+    // corresponds to a stale horizon.
+    ASSERT_THROWS_CODE(awaitHelloWithNewOpCtx(getReplCoord(), requestTopologyVersion, {}, deadline),
+                       DBException,
+                       ErrorCodes::SplitHorizonChange);
 
     stdx::thread getHelloThreadNewHorizon([&] {
         const auto expectedTopologyVersion = getTopoCoord().getTopologyVersion();

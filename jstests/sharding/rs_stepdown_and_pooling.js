@@ -1,6 +1,7 @@
 //
 // Tests what happens when a replica set primary goes down with pooled connections.
 //
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {awaitRSClientHosts} from "jstests/replsets/rslib.js";
 
 var st = new ShardingTest({shards: {rs0: {nodes: 2}}, mongos: 1});
@@ -13,7 +14,7 @@ var coll = mongos.getCollection("foo.bar");
 var db = coll.getDB();
 
 // Test is not valid for Win32
-var is32Bits = (db.serverBuildInfo().bits == 32);
+var is32Bits = (db.getServerBuildInfo().getBits() == 32);
 if (is32Bits && _isWindows()) {
     // Win32 doesn't provide the polling interface we need to implement the check tested here
     jsTest.log("Test is not valid on Win32 platform.");

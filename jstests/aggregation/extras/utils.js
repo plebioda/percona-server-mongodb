@@ -373,9 +373,10 @@ export function orderedArrayEq(al, ar, verbose = false, fieldsToSkip = []) {
 
 /**
  * Assert that the given aggregation fails with a specific code. Error message is optional. Note
- * that 'code' can be an array of possible codes.
+ * that 'code' can be an array of possible codes. If target is a database instead of a collection
+ * this function will run a collectionless aggregate command.
  */
-export function assertErrorCode(coll, pipe, code, errmsg, options = {}) {
+export function assertErrorCode(target, pipe, code, errmsg, options = {}) {
     if (!Array.isArray(pipe)) {
         pipe = [pipe];
     }
@@ -385,10 +386,14 @@ export function assertErrorCode(coll, pipe, code, errmsg, options = {}) {
         cmd[opt] = options[opt];
     }
 
-    let resultObj = coll.runCommand("aggregate", cmd);
+    let againstDB = target instanceof DB;
+    let targetDB = againstDB ? target : target.getDB();
+    let ns = againstDB ? 1 : target.getName();
+    let cmdWithNS = Object.assign({}, {aggregate: ns}, cmd);
+    let resultObj = targetDB.runCommand(cmdWithNS);
     if (resultObj.ok) {
         let followupBatchSize = 0;  // default
-        let cursor = new DBCommandCursor(coll.getDB(), resultObj, followupBatchSize);
+        let cursor = new DBCommandCursor(targetDB, resultObj, followupBatchSize);
         let assertThrowsMsg = "expected one of the following error codes: " + tojson(code);
         resultObj = assert.throws(() => cursor.itcount(), [], assertThrowsMsg);
     }
@@ -614,4 +619,25 @@ export function getExplainPipelineFromAggregationResult(result, {
             }
         }
     }
+}
+
+/**
+ * Returns a string that represents the provided array of documents / Objects.
+ * Typically used in debugging or assertion messages.
+ */
+export function stringifyArray(ar, arName = null) {
+    let str = "";
+    if (arName != null) {
+        assert(typeof arName == "string", "provided arName is not a string");
+        str += "'" + arName + "' array: ";
+    }
+    str += "[";
+    if (ar.length != 0) {
+        str += "\n";
+        ar.forEach((element) => {
+            str += "    " + tojson(element) + "\n";
+        });
+    }
+    str += "]\n";
+    return str;
 }

@@ -4,11 +4,14 @@
  *
  * @tags: [
  *   requires_persistence,
+ *   # TODO (SERVER-88123): Re-enable this test.
  *   # Test doesn't start enough mongods to have num_mongos routers
- *   temp_disabled_embedded_router_num_routers,
+ *   embedded_router_incompatible,
  * ]
  */
 import "jstests/multiVersion/libs/multi_cluster.js";
+
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({shards: 1, mongos: 2, rs: {nodes: 1}});
 const shard0 = st.rs0;

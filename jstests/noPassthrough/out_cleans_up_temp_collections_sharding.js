@@ -9,6 +9,7 @@
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const dbName = 'test';
 
@@ -38,7 +39,7 @@ function runOut(dbName, sourceCollName, targetCollName, expectCommandWorked, tim
 }
 
 function getTempCollections() {
-    return testDB.getCollectionNames().filter(coll => coll.startsWith('tmp.agg_out'));
+    return testDB.getCollectionNames().filter(coll => coll.includes('tmp.agg_out'));
 }
 
 function failFn_sigkill() {

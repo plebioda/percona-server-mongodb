@@ -28,6 +28,10 @@ executor:
         featureFlagRouterPort: 1
         internalQueryExecYieldIterations: 1000000
         internalQueryExecYieldPeriodMS: 6000
+        logComponentVerbosity:
+          storage:
+            wt:
+              wtCheckpoint: 1
         reshardingMinimumOperationDurationMillis: 0
     num_rs_nodes_per_shard: 1
     num_shards: 2
@@ -50,7 +54,6 @@ selector:
   - jstests/core/query/mr/*.js
   - jstests/core/**/apitest_db.js
   - jstests/core/**/check_shard_index.js
-  - jstests/core/**/collection_truncate.js
   - jstests/core/**/compact_keeps_indexes.js
   - jstests/core/**/currentop.js
   - jstests/core/**/dbhash.js
@@ -69,6 +72,9 @@ selector:
   - jstests/core/**/explain_upsert.js
   - jstests/core/**/bench_test1.js
   - jstests/core/index/index_partial_write_ops.js
+  - jstests/core/index/index_stats.js
+  - jstests/core/timeseries/timeseries_predicates.js
+  - jstests/core/index/geo/geo_update_btree.js
   - jstests/core/**/*[aA]uth*.js
   exclude_with_any_tags:
   - assumes_standalone_mongod

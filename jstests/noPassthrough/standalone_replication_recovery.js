@@ -10,6 +10,7 @@
  * ]
  */
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {restartServerReplication, stopServerReplication} from "jstests/libs/write_concern_util.js";
 import {reconnect} from "jstests/replsets/rslib.js";
 
@@ -128,7 +129,7 @@ if (node.getDB(dbName).getCollectionInfos({name: collName})[0].options.recordIds
             // This happens to be a recordId that doesn't clash.
             rid: NumberLong(6)
         }]
-    }))
+    }));
 } else {
     assert.commandWorked(getColl(node).insert({_id: 6}));
 }

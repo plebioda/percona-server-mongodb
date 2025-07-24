@@ -53,9 +53,9 @@
 #include "mongo/db/query/explain.h"
 #include "mongo/db/query/explain_common.h"
 #include "mongo/db/query/multiple_collection_accessor.h"
-#include "mongo/db/query/plan_cache.h"
-#include "mongo/db/query/plan_cache_debug_info.h"
-#include "mongo/db/query/plan_cache_key_factory.h"
+#include "mongo/db/query/plan_cache/plan_cache.h"
+#include "mongo/db/query/plan_cache/plan_cache_debug_info.h"
+#include "mongo/db/query/plan_cache/plan_cache_key_factory.h"
 #include "mongo/db/query/plan_enumerator/plan_enumerator_explain_info.h"
 #include "mongo/db/query/plan_executor.h"
 #include "mongo/db/query/plan_explainer_impl.h"
@@ -98,8 +98,6 @@ void generatePlannerInfo(PlanExecutor* exec,
     plannerBob.append("namespace",
                       NamespaceStringUtil::serialize(exec->nss(), serializationContext));
 
-    auto framework = exec->getQueryFramework();
-
     boost::optional<uint32_t> queryHash;
     boost::optional<uint32_t> planCacheKeyHash;
     const auto& mainCollection = collections.getMainCollection();
@@ -107,12 +105,10 @@ void generatePlannerInfo(PlanExecutor* exec,
         if (cq->isSbeCompatible() &&
             feature_flags::gFeatureFlagSbeFull.isEnabled(
                 serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
-            const auto planCacheKeyInfo = plan_cache_key_factory::make(
-                *exec->getCanonicalQuery(),
-                collections,
-                framework == PlanExecutor::QueryFramework::kCQF
-                    ? canonical_query_encoder::Optimizer::kBonsai
-                    : canonical_query_encoder::Optimizer::kSbeStageBuilders);
+            const auto planCacheKeyInfo =
+                plan_cache_key_factory::make(*exec->getCanonicalQuery(),
+                                             collections,
+                                             canonical_query_encoder::Optimizer::kSbeStageBuilders);
             planCacheKeyHash = planCacheKeyInfo.planCacheKeyHash();
             queryHash = planCacheKeyInfo.queryHash();
         } else {
@@ -128,21 +124,7 @@ void generatePlannerInfo(PlanExecutor* exec,
     // updates). In these cases, 'query' is NULL.
     auto query = exec->getCanonicalQuery();
 
-    // For CQF explains, we serialize the entire input MQL (via CanonicalQuery or Pipeline) under
-    // "parsedQuery". For classic explains, we serialize just the match expression.
-    if (framework == PlanExecutor::QueryFramework::kCQF) {
-        BSONObjBuilder parsedQueryBob(plannerBob.subobjStart("parsedQuery"));
-
-        // Given the current set of supported language features for CQF, at this point we will
-        // either have a Pipeline or a CanonicalQuery.
-        if (auto pipeline = exec->getPipeline()) {
-            parsedQueryBob.append("pipeline", pipeline->serializeToBson());
-        } else {
-            query->serializeToBson(&parsedQueryBob);
-        }
-
-        parsedQueryBob.doneFast();
-    } else if (query) {
+    if (query) {
         BSONObjBuilder parsedQueryBob(plannerBob.subobjStart("parsedQuery"));
         query->getPrimaryMatchExpression()->serialize(&parsedQueryBob, {});
         parsedQueryBob.doneFast();
@@ -189,22 +171,11 @@ void generatePlannerInfo(PlanExecutor* exec,
     }
 
     auto&& explainer = exec->getPlanExplainer();
-    if (framework == PlanExecutor::QueryFramework::kCQF) {
-        // CQF-only fields.
-        BSONObjBuilder optimizerCountersBob(plannerBob.subobjStart("optimizerCounters"));
-        optimizerCountersBob.append("maxPartialSchemaReqCountReached",
-                                    explainer.getOptExplainInfo().maxPartialSchemaReqCountReached);
-        optimizerCountersBob.doneFast();
-
-        plannerBob.append("queryFramework", "cqf");
-    } else {
-        // Classic optimizer-only fields.
-        auto&& enumeratorInfo = explainer.getEnumeratorInfo();
-        plannerBob.append("maxIndexedOrSolutionsReached", enumeratorInfo.hitIndexedOrLimit);
-        plannerBob.append("maxIndexedAndSolutionsReached", enumeratorInfo.hitIndexedAndLimit);
-        plannerBob.append("maxScansToExplodeReached", enumeratorInfo.hitScanLimit);
-        plannerBob.append("prunedSimilarIndexes", enumeratorInfo.prunedAnyIndexes);
-    }
+    auto&& enumeratorInfo = explainer.getEnumeratorInfo();
+    plannerBob.append("maxIndexedOrSolutionsReached", enumeratorInfo.hitIndexedOrLimit);
+    plannerBob.append("maxIndexedAndSolutionsReached", enumeratorInfo.hitIndexedAndLimit);
+    plannerBob.append("maxScansToExplodeReached", enumeratorInfo.hitScanLimit);
+    plannerBob.append("prunedSimilarIndexes", enumeratorInfo.prunedAnyIndexes);
 
     auto&& [winningStats, _] =
         explainer.getWinningPlanStats(ExplainOptions::Verbosity::kQueryPlanner);
@@ -216,10 +187,6 @@ void generatePlannerInfo(PlanExecutor* exec,
         bab.append(rejectedStats);
     }
     bab.doneFast();
-
-    if (verbosity == ExplainOptions::Verbosity::kQueryPlannerDebug) {
-        plannerBob.appendArray("optimizerPhases", explainer.getOptimizerDebugInfo());
-    }
 
     plannerBob.doneFast();
 }
@@ -373,7 +340,10 @@ void generateExecutionInfo(PlanExecutor* exec,
  * If 'exec' is configured for yielding, then a call to this helper could result in a yield.
  */
 void executePlan(PlanExecutor* exec) {
-    exec->executeExhaustive();
+    // Using 'getNextBatch()' rather than 'getNext()' means we iterate the PlanExecutor in a tighter
+    // loop. We passing a null callback function because explain wishes to simply discard the query
+    // result set.
+    (void)exec->getNextBatch(std::numeric_limits<int64_t>::max(), nullptr);
 }
 
 /**

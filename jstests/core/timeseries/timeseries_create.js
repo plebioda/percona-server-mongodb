@@ -224,18 +224,19 @@ testTimeseriesNamespaceExists((testDB, collName) => {
         testDB.createCollection(coll.getName(), {timeseries: {timeField: "time"}}));
     const bucketsColl = testDB.getCollection('system.buckets.' + coll.getName());
     const oid = ObjectId("65f9972047423af45aeafc67");
-    const timestamp = oid.getTimestamp();
+    const timestamp = ISODate("2024-03-19T13:46:00Z");
     assert.commandWorked(bucketsColl.insert({
         control: {
             version: TimeseriesTest.timeseriesAlwaysUseCompressedBucketsEnabled(db)
                 ? TimeseriesTest.BucketVersion.kCompressedSorted
                 : TimeseriesTest.BucketVersion.kUncompressed,
             min: {time: timestamp, "_id": oid, "a": 1},
-            max: {time: timestamp, "_id": oid, "a": 1}
+            max: {time: timestamp, "_id": oid, "a": 1},
+            count: 1
         },
         data: {
             "time": TimeseriesTest.timeseriesAlwaysUseCompressedBucketsEnabled(db)
-                ? BinData(7, "CQAAVfZWjgEAAAA=")
+                ? BinData(7, "CQDANfZWjgEAAAA=")
                 : {"0": timestamp},
             "_id": TimeseriesTest.timeseriesAlwaysUseCompressedBucketsEnabled(db)
                 ? BinData(7, "BwBl+ZcgR0I69Frq/GcA")

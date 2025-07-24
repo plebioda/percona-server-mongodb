@@ -53,6 +53,12 @@ structs:
         default: 1.064
         validator:
           gte: 1.0
+      batchSizeGrowthFactor:
+        description: Specifies the factor by which the batchSize sent to mongot increases per batch.
+        type: double
+        default: 2.00
+        validator:
+          gte: 1.0
 
 server_parameters:
   internalSearchOptions:
@@ -61,6 +67,6 @@ server_parameters:
     cpp_varname: internalSearchOptions
     cpp_vartype: InternalSearchOptions
     condition:
-      feature_flag: feature_flags::gFeatureFlagSearchBatchSizeTuning
+      min_fcv: 8.1
     redact: false
     omit_in_ftdc: false

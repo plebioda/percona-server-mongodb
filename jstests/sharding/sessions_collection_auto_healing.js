@@ -3,10 +3,13 @@
  * @tags: [
  *   config_shard_incompatible,
  *   requires_fcv_70,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {validateSessionsCollection} from "jstests/libs/sessions_collection.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 // This test makes assertions about the number of sessions, which are not compatible with
 // implicit sessions.

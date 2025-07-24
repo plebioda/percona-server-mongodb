@@ -3,13 +3,15 @@
  * the local participant.
  *
  * @tags: [
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  *   uses_multi_shard_transaction,
  *   uses_prepare_transaction,
  *   uses_transactions,
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     checkWriteConcernTimedOut,
     restartReplicationOnSecondaries,
@@ -193,8 +195,19 @@ const waitForCommitTransactionToComplete = function(coordinatorRs, lsid, txnNumb
     });
 };
 
-let st =
-    new ShardingTest({shards: 2, rs: {nodes: 2}, mongos: 2, other: {mongosOptions: {verbose: 3}}});
+let st = new ShardingTest({
+    shards: 2,
+    rs: {nodes: 2},
+    rsOptions: {
+        setParameter: {
+            // Set this to match the value of transactionLifetimeLimitSeconds to avoid transition
+            // failure due to not being able to acquire the lock quickly enough.
+            maxTransactionLockRequestTimeoutMillis: TestData.transactionLifetimeLimitSeconds * 1000
+        }
+    },
+    mongos: 2,
+    other: {mongosOptions: {verbose: 3}}
+});
 
 // The default WC is majority and this test can't satisfy majority writes.
 assert.commandWorked(st.s.adminCommand(

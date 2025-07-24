@@ -46,12 +46,12 @@
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/query/optimizer/explain_interface.h"
-#include "mongo/db/query/plan_cache_debug_info.h"
+#include "mongo/db/query/plan_cache/plan_cache_debug_info.h"
 #include "mongo/db/query/plan_explainer.h"
 #include "mongo/db/query/plan_summary_stats.h"
 #include "mongo/db/query/query_solution.h"
 #include "mongo/db/query/sbe_plan_ranker.h"
-#include "mongo/db/query/sbe_stage_builder_plan_data.h"
+#include "mongo/db/query/stage_builder/sbe/builder_data.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/duration.h"
 
@@ -62,7 +62,6 @@ public:
     PlanExplainerSBEBase(const sbe::PlanStage* root,
                          const stage_builder::PlanStageData* data,
                          const QuerySolution* solution,
-                         std::unique_ptr<optimizer::AbstractABTPrinter> optimizerData,
                          bool isMultiPlan,
                          bool isCachedPlan,
                          boost::optional<size_t> cachedPlanHash,
@@ -83,7 +82,6 @@ public:
     void getSecondarySummaryStats(const NamespaceString& secondaryColl,
                                   PlanSummaryStats* statsOut) const override;
     PlanStatsDetails getWinningPlanStats(ExplainOptions::Verbosity verbosity) const final;
-    BSONObj getOptimizerDebugInfo() const final;
 
 protected:
     static boost::optional<BSONObj> buildExecPlanDebugInfo(
@@ -96,13 +94,10 @@ protected:
     }
 
     boost::optional<BSONArray> buildRemotePlanInfo() const;
-    boost::optional<BSONObj> buildCascadesPlan() const;
 
     // These fields are are owned elsewhere (e.g. the PlanExecutor or CandidatePlan).
     const sbe::PlanStage* _root{nullptr};
     const stage_builder::PlanStageData* _rootData{nullptr};
-
-    const std::unique_ptr<optimizer::AbstractABTPrinter> _optimizerData;
 
     const bool _isMultiPlan{false};
     const bool _isFromPlanCache{false};
@@ -122,7 +117,6 @@ public:
     PlanExplainerSBE(const sbe::PlanStage* root,
                      const stage_builder::PlanStageData* data,
                      const QuerySolution* solution,
-                     std::unique_ptr<optimizer::AbstractABTPrinter> optimizerData,
                      std::vector<sbe::plan_ranker::CandidatePlan> rejectedCandidates,
                      bool isMultiPlan,
                      bool isCachedPlan,

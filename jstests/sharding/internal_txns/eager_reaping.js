@@ -5,10 +5,13 @@
  * @tags: [
  *    requires_fcv_60,
  *    uses_transactions,
- *    temp_disabled_embedded_router_known_issues,
+ *    # TODO (SERVER-88122): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({shards: 1, config: 1});
 

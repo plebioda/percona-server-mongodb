@@ -1,10 +1,16 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "unicode",
     ],
@@ -64,22 +70,15 @@ baseEnv.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/bson/dotted_path_support",
         "$BUILD_DIR/mongo/db/common",
         "$BUILD_DIR/mongo/db/fts/unicode/unicode",
+        "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
         "$BUILD_DIR/mongo/db/query_expressions",
         "$BUILD_DIR/mongo/util/md5",
-        "$BUILD_DIR/third_party/shim_stemmer",
+        "$BUILD_DIR/third_party/libstemmer_c/stemmer",
     ],
-)
-
-env.Library(
-    target="fts_query_noop",
-    source=[
-        "fts_query_noop.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
+    LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
     ],
 )
 
@@ -115,6 +114,7 @@ env.CppUnitTest(
         "tokenizer_test.cpp",
     ],
     LIBDEPS=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/fts/fts_query_noop",
         "$BUILD_DIR/mongo/db/query_expressions",
         "base_fts",

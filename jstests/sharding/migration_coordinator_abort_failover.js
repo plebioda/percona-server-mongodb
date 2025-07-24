@@ -11,10 +11,13 @@ TestData.skipCheckingUUIDsConsistentAcrossCluster = true;
 import {
     runMoveChunkMakeDonorStepDownAfterFailpoint
 } from "jstests/sharding/migration_coordinator_failover_include.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const dbName = "test";
 
-var st = new ShardingTest({shards: 2, rs: {nodes: 2}});
+// Try and prevent split vote failed elections after freezing / unfreezing by preventing the
+// secondary from being electable.
+var st = new ShardingTest({shards: 2, rs: {nodes: [{rsConfig: {}}, {rsConfig: {priority: 0}}]}});
 
 assert.commandWorked(
     st.s.adminCommand({enableSharding: dbName, primaryShard: st.shard0.shardName}));

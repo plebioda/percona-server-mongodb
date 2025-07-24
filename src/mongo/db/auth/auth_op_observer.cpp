@@ -86,20 +86,14 @@ void AuthOpObserver::onUpdate(OperationContext* opCtx,
         ->logOp(opCtx, "u", args.coll->ns(), args.updateArgs->update, &args.updateArgs->criteria);
 }
 
-void AuthOpObserver::aboutToDelete(OperationContext* opCtx,
-                                   const CollectionPtr& coll,
-                                   BSONObj const& doc,
-                                   OplogDeleteEntryArgs* args,
-                                   OpStateAccumulator* opAccumulator) {
-    audit::logRemoveOperation(opCtx->getClient(), coll->ns(), doc);
-}
-
 void AuthOpObserver::onDelete(OperationContext* opCtx,
                               const CollectionPtr& coll,
                               StmtId stmtId,
                               const BSONObj& doc,
+                              const DocumentKey& documentKey,
                               const OplogDeleteEntryArgs& args,
                               OpStateAccumulator* opAccumulator) {
+    audit::logRemoveOperation(opCtx->getClient(), coll->ns(), doc);
     // Extract the _id field from the document. If it does not have an _id, use the
     // document itself as the _id.
     auto documentId = doc["_id"] ? doc["_id"].wrap() : doc;
@@ -140,7 +134,9 @@ void AuthOpObserver::onCollMod(OperationContext* opCtx,
     AuthorizationManager::get(opCtx->getService())->logOp(opCtx, "c", cmdNss, cmdObj, nullptr);
 }
 
-void AuthOpObserver::onDropDatabase(OperationContext* opCtx, const DatabaseName& dbName) {
+void AuthOpObserver::onDropDatabase(OperationContext* opCtx,
+                                    const DatabaseName& dbName,
+                                    bool markFromMigrate) {
     const NamespaceString cmdNss(NamespaceString::makeCommandNamespace(dbName));
     const auto cmdObj = BSON("dropDatabase" << 1);
 
@@ -220,17 +216,6 @@ void AuthOpObserver::onImportCollection(OperationContext* opCtx,
     dassert(opCtx->getService()->role().has(ClusterRole::ShardServer));
     AuthorizationManager::get(opCtx->getService())
         ->logOp(opCtx, "m", nss, catalogEntry, &storageMetadata);
-}
-
-
-void AuthOpObserver::onEmptyCapped(OperationContext* opCtx,
-                                   const NamespaceString& collectionName,
-                                   const UUID& uuid) {
-    const auto cmdNss = collectionName.getCommandNS();
-    const auto cmdObj = BSON("emptycapped" << collectionName.coll());
-
-    dassert(opCtx->getService()->role().has(ClusterRole::ShardServer));
-    AuthorizationManager::get(opCtx->getService())->logOp(opCtx, "c", cmdNss, cmdObj, nullptr);
 }
 
 void AuthOpObserver::onReplicationRollback(OperationContext* opCtx,

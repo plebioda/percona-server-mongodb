@@ -32,7 +32,7 @@
 #include "mongo/db/exec/trial_period_utils.h"
 #include "mongo/db/query/all_indices_required_checker.h"
 #include "mongo/db/query/bind_input_params.h"
-#include "mongo/db/query/plan_cache_key_factory.h"
+#include "mongo/db/query/plan_cache/plan_cache_key_factory.h"
 #include "mongo/db/query/plan_executor_factory.h"
 #include "mongo/db/query/planner_analysis.h"
 #include "mongo/db/query/sbe_trial_runtime_executor.h"
@@ -102,7 +102,7 @@ sbe::plan_ranker::CandidatePlan collectExecutionStatsForCachedPlan(
     std::unique_ptr<sbe::PlanStage> root,
     stage_builder::PlanStageData data,
     size_t maxTrialPeriodNumReads) {
-    // If we have an aggregation pipeline, we should track results via kNumPlanningResults metric,
+    // If we have an aggregation pipeline, we should track results via kNumResults metric,
     // instead of returned documents, because aggregation stages like $unwind or $group can change
     // the amount of returned documents arbitrarily.
     const size_t maxNumResults = trial_period::getTrialPeriodNumToReturn(*plannerData.cq);
@@ -128,7 +128,7 @@ sbe::plan_ranker::CandidatePlan collectExecutionStatsForCachedPlan(
         switch (metric) {
             case TrialRunTracker::kNumReads:
                 return true;  // terminate the trial run
-            case TrialRunTracker::kNumPlanningResults:
+            case TrialRunTracker::kNumResults:
                 candidate.root->detachFromTrialRunTracker();
                 return false;  // upgrade the trial run into a normal one
             default:
@@ -136,10 +136,7 @@ sbe::plan_ranker::CandidatePlan collectExecutionStatsForCachedPlan(
         }
     };
     candidate.data.tracker = std::make_unique<TrialRunTracker>(
-        std::move(onMetricReached),
-        size_t{0} /*kNumResults - used only in SBE multi-planner*/,
-        maxTrialPeriodNumReads,
-        maxTrialResultsFromPlanningRoot);
+        std::move(onMetricReached), maxTrialResultsFromPlanningRoot, maxTrialPeriodNumReads);
     candidate.root->attachToTrialRunTracker(
         candidate.data.tracker.get(),
         candidate.data.stageData.staticData->runtimePlanningRootNodeId);
@@ -200,7 +197,8 @@ std::unique_ptr<PlannerInterface> attemptToUsePlan(
     boost::optional<size_t> decisionReads,
     std::unique_ptr<sbe::PlanStage> sbePlan,
     stage_builder::PlanStageData planStageData,
-    const AllIndicesRequiredChecker& indexExistenceChecker) {
+    const AllIndicesRequiredChecker& indexExistenceChecker,
+    const std::function<void(const PlannerData&)>& deactivateCb) {
     const bool isPinnedCacheEntry = !decisionReads.has_value();
     if (isPinnedCacheEntry) {
         auto sbePlanAndData = std::make_pair(std::move(sbePlan), std::move(planStageData));
@@ -218,7 +216,6 @@ std::unique_ptr<PlannerInterface> attemptToUsePlan(
     auto explainer = plan_explainer_factory::make(candidate.root.get(),
                                                   &candidate.data.stageData,
                                                   candidate.solution.get(),
-                                                  {},    /* optimizedData */
                                                   {},    /* rejectedCandidates */
                                                   false, /* isMultiPlan */
                                                   true /* isFromPlanCache */,
@@ -257,12 +254,7 @@ std::unique_ptr<PlannerInterface> attemptToUsePlan(
             "query"_attr = redact(plannerData.cq->toStringShort()),
             "planSummary"_attr = explainer->getPlanSummary());
 
-        // Deactivate the current cache entry.
-        auto& sbePlanCache = sbe::getPlanCache(plannerData.opCtx);
-        sbePlanCache.deactivate(
-            plan_cache_key_factory::make(*plannerData.cq,
-                                         plannerData.collections,
-                                         canonical_query_encoder::Optimizer::kSbeStageBuilders));
+        deactivateCb(plannerData);
 
         std::string replanReason = str::stream()
             << "cached plan was less efficient than expected: expected trial execution to take "
@@ -307,11 +299,20 @@ std::unique_ptr<PlannerInterface> PlannerGeneratorFromClassicCacheEntry::makePla
     // Note that planStageData.debugInfo is not set here. This will be set when an explainer is
     // created.
     AllIndicesRequiredChecker indexExistenceChecker{_plannerData.collections};
+    auto deactivateEntry = [](const PlannerData& plannerData) {
+        auto& collection = plannerData.collections.getMainCollection();
+        auto classicCacheKey =
+            plan_cache_key_factory::make<PlanCacheKey>(*plannerData.cq, collection);
+        auto classicPlanCache = CollectionQueryInfo::get(collection).getPlanCache();
+        classicPlanCache->deactivate(classicCacheKey);
+    };
+
     return attemptToUsePlan(std::move(_plannerData),
                             _decisionReads,
                             std::move(_sbePlan),
                             std::move(*_planStageData),
-                            indexExistenceChecker);
+                            indexExistenceChecker,
+                            deactivateEntry);
 }
 
 std::unique_ptr<PlannerInterface> PlannerGeneratorFromSbeCacheEntry::makePlanner() {
@@ -351,11 +352,21 @@ std::unique_ptr<PlannerInterface> PlannerGeneratorFromSbeCacheEntry::makePlanner
         }
     }
 
+    auto deactivateEntry = [](const PlannerData& plannerData) {
+        // Deactivate the current cache entry.
+        auto& sbePlanCache = sbe::getPlanCache(plannerData.opCtx);
+        sbePlanCache.deactivate(
+            plan_cache_key_factory::make(*plannerData.cq,
+                                         plannerData.collections,
+                                         canonical_query_encoder::Optimizer::kSbeStageBuilders));
+    };
+
     return attemptToUsePlan(std::move(_plannerData),
                             decisionReads,
                             std::move(sbePlan),
                             std::move(planStageData),
-                            indexExistenceChecker);
+                            indexExistenceChecker,
+                            deactivateEntry);
 }
 
 std::unique_ptr<PlannerInterface> makePlannerForSbeCacheEntry(

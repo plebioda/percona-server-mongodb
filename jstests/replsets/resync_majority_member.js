@@ -7,11 +7,12 @@
  *
  * @tags: [
  *   multiversion_incompatible,
+ *   incompatible_with_windows_tls,
  * ]
  */
 
 import {configureFailPoint, kDefaultWaitForFailPointTimeout} from "jstests/libs/fail_point_util.js";
-import {storageEngineIsWiredTigerOrInMemory} from "jstests/libs/storage_engine_utils.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {restartServerReplication, stopServerReplication} from "jstests/libs/write_concern_util.js";
 
 TestData.skipCheckDBHashes = true;  // the set is not consistent when we shutdown the test
@@ -95,13 +96,8 @@ assert.commandWorked(syncSource.getDB(dbName).getCollection(collName).insert(
 // commit point, which triggers an invariant. This failpoint is used to verify the invariant
 // will be hit without having to search the logs.
 let rollbackCommittedWritesFailPoint;
-if (storageEngineIsWiredTigerOrInMemory()) {
-    rollbackCommittedWritesFailPoint =
-        configureFailPoint(rollbackNode, "rollbackToTimestampHangCommonPointBeforeReplCommitPoint");
-} else {
-    rollbackCommittedWritesFailPoint =
-        configureFailPoint(rollbackNode, "rollbackViaRefetchHangCommonPointBeforeReplCommitPoint");
-}
+rollbackCommittedWritesFailPoint =
+    configureFailPoint(rollbackNode, "rollbackToTimestampHangCommonPointBeforeReplCommitPoint");
 
 // Node 1 will have to roll back to rejoin the set. It will crash as it will refuse to roll back
 // majority committed data.

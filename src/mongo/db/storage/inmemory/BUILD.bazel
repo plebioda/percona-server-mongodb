@@ -1,0 +1,9 @@
+load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+idl_generator(
+    name = "inmemory_global_options_gen",
+    src = "inmemory_global_options.idl",
+)
+

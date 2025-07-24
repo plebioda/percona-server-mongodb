@@ -1065,6 +1065,12 @@ public:
     virtual void createWMajorityWriteAvailabilityDateWaiter(OpTime opTime) = 0;
 
     /**
+     * Waits until the "new primary" no-op entry written in this node's latest step-up attempt has
+     * been majority committed.
+     */
+    virtual Status waitForPrimaryMajorityReadsAvailable(OperationContext* opCtx) const = 0;
+
+    /**
      * Returns a new WriteConcernOptions based on "wc" but with UNSET syncMode reset to JOURNAL or
      * NONE based on our rsConfig.
      */
@@ -1277,9 +1283,38 @@ public:
     virtual boost::optional<UUID> getInitialSyncId(OperationContext* opCtx) = 0;
 
     /**
+     * Called when a consistent (to a point-in-time) copy of data is available. That's:
+     *   - After replSetInitiate
+     *   - After initial sync completes (for both logical and file-copy based initial sync)
+     *   - After rollback to stable timestamp
+     *   - After storage startup from a stable checkpoint
+     *   - After replication recovery from an unstable checkpoint
+     */
+    virtual void setConsistentDataAvailable(OperationContext* opCtx,
+                                            bool isDataMajorityCommitted) = 0;
+
+    /**
+     * Returns whether data writes are applied against a consistent copy of the data. This should
+     * start to return true after setConsistentDataAvailable is called.
+     */
+    virtual bool isDataConsistent() const = 0;
+
+    /*
+     * Clear this node's sync source.
+     */
+    virtual void clearSyncSource() = 0;
+
+    /**
      * Returns true if the node undergoes initial sync or rollback.
      */
-    bool isDataRecovering() const;
+    bool isInInitialSyncOrRollback() const;
+
+    /**
+     * Returns whether the provided client last committed opTime is older than our view of
+     * last committed. If so, we should attempt to advance the client view of the commit point
+     * using an empty oplog batch rather than waiting on new data to return.
+     */
+    bool shouldUseEmptyOplogBatchToPropagateCommitPoint(OpTime clientOpTime) const;
 
 protected:
     ReplicationCoordinator();

@@ -3,6 +3,7 @@
  * become invalid when a replica set reconfig happens.
  * @tags: [multiversion_incompatible]
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {awaitRSClientHosts, reconfig} from "jstests/replsets/rslib.js";
 
 // Skip the following checks since the removed node has wrong config and is still alive.
@@ -86,4 +87,4 @@ assert.soon(
                 shardDoc.host.split(',').length + " in " + shardDoc.host);
     });
 
-st.stop({parallelSupported: false});
+st.stop({parallelSupported: false, skipValidation: true});

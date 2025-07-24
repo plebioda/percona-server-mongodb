@@ -13,6 +13,8 @@
  * ]
  */
 
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 const dbName = "test";
 const collName = "foo";
 const ns = dbName + "." + collName;
@@ -67,7 +69,7 @@ assert.commandWorked(st.rs1.getPrimary().adminCommand({_flushRoutingTableCacheUp
     }));
 
     session.abortTransaction();
-    jsTest.log("Exiting verifyStartOrContinueTransactionCanSpecifyReadConcern.")
+    jsTest.log("Exiting verifyStartOrContinueTransactionCanSpecifyReadConcern.");
 })();
 
 st.stop();

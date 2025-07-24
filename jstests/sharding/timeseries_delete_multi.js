@@ -6,12 +6,11 @@
  *   # TODO (SERVER-70605): Remove this tag once the time-series always compressed buckets feature
  *   # flag can be removed.
  *   multiversion_incompatible,
- *   # To avoid burn-in tests in in-memory build variants
- *   requires_persistence,
  * ]
  */
 
 import {TimeseriesTest} from "jstests/core/timeseries/libs/timeseries.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 Random.setRandomSeed();
 

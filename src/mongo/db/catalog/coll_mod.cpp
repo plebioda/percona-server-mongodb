@@ -126,8 +126,6 @@ void assertNoMovePrimaryInProgress(OperationContext* opCtx, NamespaceString cons
         auto scopedCss = CollectionShardingState::assertCollectionLockedAndAcquire(opCtx, nss);
 
         auto collDesc = scopedCss->getCollectionDescription(opCtx);
-        collDesc.throwIfReshardingInProgress(nss);
-
         // Only collections that are not registered in the sharding catalog are affected by
         // movePrimary
         if (!collDesc.hasRoutingTable()) {
@@ -635,20 +633,9 @@ StatusWith<std::pair<ParsedCollModRequest, BSONObj>> parseCollModRequest(
     }
 
     if (auto mixedSchema = cmr.getTimeseriesBucketsMayHaveMixedSchemaData()) {
-        if (!gCollModTimeseriesBucketsMayHaveMixedSchemaData.isEnabled(
-                serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
-            return {ErrorCodes::InvalidOptions,
-                    "The timeseriesBucketsMayHaveMixedSchemaData parameter is not enabled"};
-        }
-
         if (!isTimeseries) {
             return getOnlySupportedOnTimeseriesError(
                 CollMod::kTimeseriesBucketsMayHaveMixedSchemaDataFieldName);
-        }
-
-        if (!*mixedSchema) {
-            return {ErrorCodes::InvalidOptions,
-                    "Cannot set timeseriesBucketsMayHaveMixedSchemaData to false"};
         }
 
         parsed.timeseriesBucketsMayHaveMixedSchemaData = mixedSchema;

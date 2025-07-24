@@ -1,4 +1,8 @@
 # Build variant to generate tasks for evergreen versions.
+#
+# Updates to this file may also need to appear in etc/system_perf_yml_components/variants/task_generation.yml,
+# which is the same but excludes resmoke task generation tasks.
+#
 
 buildvariants:
   - name: generate-tasks-for-version
@@ -6,7 +10,7 @@ buildvariants:
     tags: ["required"]
     activate: true
     run_on:
-      - rhel80-medium
+      - rhel8.8-medium
     tasks:
       - name: version_gen
       - name: version_burn_in_gen

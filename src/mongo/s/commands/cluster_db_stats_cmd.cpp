@@ -78,7 +78,7 @@ void aggregateResults(const DBStatsCommand& cmd,
     double indexFreeStorageSize = 0;
 
     for (const auto& response : responses) {
-        invariant(response.swResponse.getStatus().isOK());
+        invariant(response.swResponse.getStatus());
         const BSONObj& b = response.swResponse.getValue().data;
         auto resp = DBStats::parse(IDLParserContext{"dbstats"}, b);
 
@@ -174,12 +174,11 @@ public:
             ReadPreferenceSetting::get(opCtx),
             Shard::RetryPolicy::kIdempotent);
         std::string errmsg;
-        if (!appendRawResponses(opCtx, &errmsg, &output, shardResponses).responseOK) {
-            uasserted(ErrorCodes::OperationFailed, errmsg);
-        }
+        auto appendResult = appendRawResponses(opCtx, &errmsg, &output, shardResponses);
+        uassert(ErrorCodes::OperationFailed, errmsg, appendResult.responseOK);
 
         output.append("db", DatabaseNameUtil::serialize(dbName, cmd.getSerializationContext()));
-        aggregateResults(cmd, shardResponses, output);
+        aggregateResults(cmd, appendResult.successResponses, output);
         return true;
     }
 

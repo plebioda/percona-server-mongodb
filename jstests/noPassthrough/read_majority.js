@@ -11,12 +11,16 @@
  *
  * All of this requires support for committed reads, so this test will be skipped if the storage
  * engine does not support them.
+ * This test requires a persistent storage engine because the makeSnapshot test command accesses
+ * the oplog's record store.
  * @tags: [
  *   requires_majority_read_concern,
+ *   requires_persistence,
  * ]
  */
 
 import {getOptimizer, getWinningPlan, isCollscan, isIxscan} from "jstests/libs/analyze_plan.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 // Tests the functionality for committed reads for the given read concern level.
 function testReadConcernLevel(level) {
@@ -179,7 +183,7 @@ function testReadConcernLevel(level) {
     assert.eq(getCursorForReadConcernLevel().itcount(), 10);
     assert.eq(getAggCursorForReadConcernLevel().itcount(), 10);
 
-    let explain = getExplainPlan({version: 1})
+    let explain = getExplainPlan({version: 1});
     let optimizer = getOptimizer(explain);
     switch (optimizer) {
         case "classic":

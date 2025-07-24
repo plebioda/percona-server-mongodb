@@ -337,6 +337,8 @@ public:
 
     void createWMajorityWriteAvailabilityDateWaiter(OpTime opTime) final;
 
+    Status waitForPrimaryMajorityReadsAvailable(OperationContext* opCtx) const final;
+
     Status stepUpIfEligible(bool skipDryRun) final;
 
     Status abortCatchupIfNeeded(PrimaryCatchUpConclusionReason reason) final;
@@ -406,6 +408,11 @@ public:
     bool isRetryableWrite(OperationContext* opCtx) const override;
 
     boost::optional<UUID> getInitialSyncId(OperationContext* opCtx) override;
+
+    void setConsistentDataAvailable(OperationContext* opCtx,
+                                    bool isDataMajorityCommitted) override {}
+    bool isDataConsistent() const override;
+    void clearSyncSource() override;
 
 private:
     ServiceContext* const _service;

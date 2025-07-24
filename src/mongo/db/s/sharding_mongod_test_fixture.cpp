@@ -81,7 +81,7 @@
 #include "mongo/s/client/shard_registry.h"
 #include "mongo/s/client/shard_remote.h"
 #include "mongo/s/grid.h"
-#include "mongo/s/query/cluster_cursor_manager.h"
+#include "mongo/s/query/exec/cluster_cursor_manager.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/util/assert_util_core.h"
 #include "mongo/util/version/releases.h"
@@ -91,7 +91,6 @@ namespace mongo {
 using executor::NetworkInterfaceMock;
 using executor::NetworkTestEnv;
 using executor::RemoteCommandRequest;
-using repl::ReplicationCoordinator;
 using repl::ReplicationCoordinatorMock;
 using repl::ReplSettings;
 
@@ -120,13 +119,13 @@ std::unique_ptr<executor::TaskExecutorPool> ShardingMongoDTestFixture::_makeTask
     // note that the ThreadPoolMock uses the NetworkInterfaceMock's threads to run tasks, which is
     // again just the (single) thread the unit test is running on. Therefore, all tasks, local and
     // remote, must be carried out synchronously by the test thread.
-    auto fixedTaskExecutor = makeSharedThreadPoolTestExecutor(std::move(netForFixedTaskExecutor));
+    auto fixedTaskExecutor = makeThreadPoolTestExecutor(std::move(netForFixedTaskExecutor));
     _networkTestEnv = std::make_unique<NetworkTestEnv>(fixedTaskExecutor.get(), _mockNetwork);
 
     // Set up (one) TaskExecutor for the set of arbitrary TaskExecutors.
     std::vector<std::shared_ptr<executor::TaskExecutor>> arbitraryExecutorsForExecutorPool;
     arbitraryExecutorsForExecutorPool.emplace_back(
-        makeSharedThreadPoolTestExecutor(std::make_unique<executor::NetworkInterfaceMock>()));
+        makeThreadPoolTestExecutor(std::make_unique<executor::NetworkInterfaceMock>()));
 
     // Set up the TaskExecutorPool with the fixed TaskExecutor and set of arbitrary TaskExecutors.
     auto executorPool = std::make_unique<executor::TaskExecutorPool>();

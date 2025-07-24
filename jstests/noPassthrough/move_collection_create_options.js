@@ -3,6 +3,7 @@
  */
 import {EncryptedClient} from "jstests/fle2/libs/encrypted_client_util.js";
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 function makeDocument(val) {
     return {_id: val, x: new Date(), y: val, z: NumberInt(val)};
@@ -49,7 +50,7 @@ function validateCollection(conn,
     jsTest.log("*** Checking expectedCollOpts " + tojson({listCollectionsDoc, expectedCollOpts}));
     for (let fieldName in expectedCollOpts) {
         const actual = getDottedField(listCollectionsDoc.options, fieldName);
-        const expected = expectedCollOpts[fieldName]
+        const expected = expectedCollOpts[fieldName];
         assert.eq(bsonUnorderedFieldsCompare(actual, expected), 0, {fieldName, actual, expected});
     }
     assert.eq(coll.countDocuments({}), maxCount);
@@ -66,7 +67,7 @@ function validateCollection(conn,
                 found = true;
                 for (let fieldName in expectedIndex) {
                     const actual = getDottedField(actualIndex, fieldName);
-                    const expected = expectedIndex[fieldName]
+                    const expected = expectedIndex[fieldName];
                     assert.eq(bsonUnorderedFieldsCompare(actual, expected),
                               0,
                               {fieldName, actual, expected});
@@ -396,7 +397,6 @@ const testCases = [
     },
     {
         name: "timeseries",
-        // TODO (SERVER-80690): gFeatureFlagReshardingForTimeseries.
         shouldSkip: (conn) => !FeatureFlagUtil.isEnabled(conn, "ReshardingForTimeseries"),
         createCollection: (conn, dbName, collName) => {
             assert.commandWorked(conn.getDB(dbName).runCommand(

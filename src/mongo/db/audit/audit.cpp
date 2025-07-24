@@ -489,11 +489,19 @@ Status initialize() {
         _setGlobalAuditLog(new ConsoleAuditLog(filter));
     else if (auditOptions.destination == "syslog")
         _setGlobalAuditLog(new SyslogAuditLog(filter));
-    // "file" destination
-    else if (auditOptions.format == "BSON")
-        _setGlobalAuditLog(new BSONAuditLog(auditOptions.path, filter));
-    else
-        _setGlobalAuditLog(new JSONAuditLog(auditOptions.path, filter));
+    else {
+        const bool needRotate = boost::filesystem::exists(auditOptions.path);
+        // "file" destination
+        if (auditOptions.format == "BSON")
+            _setGlobalAuditLog(new BSONAuditLog(auditOptions.path, filter));
+        else
+            _setGlobalAuditLog(new JSONAuditLog(auditOptions.path, filter));
+
+        // Rotate the audit log if it already exists.
+        if (needRotate){
+            return logv2::rotateLogs(true, logv2::kAuditLogTag, {});
+        }
+    }
     return Status::OK();
 }
 
@@ -1211,7 +1219,9 @@ public:
                       const std::vector<Status>& errors,
                       const std::string& suffix) const override {}
 
-    void logConfigEvent(Client* client, const AuditConfigDocument& config) const override {}
+    void logConfigEvent(Client* client,
+                        const AuditConfigDocument& config,
+                        AuditConfigFormat formatIfPrevConfigNotSet) const override {}
 };
 
 ServiceContext::ConstructorActionRegisterer registerCreateAuditPercona{

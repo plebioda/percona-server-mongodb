@@ -367,7 +367,7 @@ void PrimaryOnlyService::startup(OperationContext* opCtx) {
         return;
     }
 
-    _executor = std::make_shared<executor::ThreadPoolTaskExecutor>(
+    _executor = executor::ThreadPoolTaskExecutor::create(
         std::make_unique<ThreadPool>(threadPoolOptions),
         executor::makeNetworkInterface(getServiceName() + "Network", nullptr, std::move(hookList)));
     _setHasExecutor(lk);
@@ -683,6 +683,10 @@ std::vector<std::shared_ptr<PrimaryOnlyService::Instance>> PrimaryOnlyService::g
     }
 
     return instances;
+}
+
+std::shared_ptr<executor::ScopedTaskExecutor> PrimaryOnlyService::getInstanceExecutor() const {
+    return _scopedExecutor;
 }
 
 void PrimaryOnlyService::releaseInstance(const InstanceID& id, Status status) {

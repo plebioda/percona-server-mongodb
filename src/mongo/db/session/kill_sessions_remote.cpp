@@ -50,7 +50,7 @@
 #include "mongo/s/client/shard.h"
 #include "mongo/s/client/shard_registry.h"
 #include "mongo/s/grid.h"
-#include "mongo/s/query/cluster_cursor_manager.h"
+#include "mongo/s/query/exec/cluster_cursor_manager.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/net/hostandport.h"
@@ -108,7 +108,8 @@ SessionKiller::Result parallelExec(OperationContext* opCtx,
                                   Milliseconds(gKillSessionsPerHostTimeoutMS));
 
     for (const auto& result : results) {
-        if (!std::get<1>(result).isOK()) {
+        if (!std::get<1>(result).isOK() ||
+            !getStatusFromCommandResult(std::get<1>(result).data).isOK()) {
             failed.push_back(std::get<0>(result));
         }
     }

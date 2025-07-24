@@ -37,6 +37,7 @@
 #include <boost/optional.hpp>
 #include <boost/optional/optional.hpp>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
+#include <fmt/format.h>
 #include <memory>
 #include <string>
 #include <utility>
@@ -468,42 +469,40 @@ Status DatabaseImpl::dropCollectionEvenIfSystem(OperationContext* opCtx,
     // New two-phase drop: Starting in 4.2, pending collection drops will be maintained in the
     // storage engine and will no longer be visible at the catalog layer with 3.6-style
     // <db>.system.drop.* namespaces.
-    if (serviceContext->getStorageEngine()->supportsPendingDrops()) {
-        _dropCollectionIndexes(opCtx, nss, collection.getWritableCollection(opCtx));
+    _dropCollectionIndexes(opCtx, nss, collection.getWritableCollection(opCtx));
 
-        auto commitTimestamp = shard_role_details::getRecoveryUnit(opCtx)->getCommitTimestamp();
-        LOGV2(20314,
-              "dropCollection: storage engine will take ownership of drop-pending "
-              "collection",
-              logAttrs(nss),
-              "uuid"_attr = uuid,
-              "dropOpTime"_attr = dropOpTime,
-              "commitTimestamp"_attr = commitTimestamp);
-        if (dropOpTime.isNull()) {
-            // Log oplog entry for collection drop and remove the UUID.
-            dropOpTime = opObserver->onDropCollection(opCtx,
-                                                      nss,
-                                                      uuid,
-                                                      numRecords,
-                                                      OpObserver::CollectionDropType::kOnePhase,
-                                                      markFromMigrate);
-            invariant(!dropOpTime.isNull());
-        } else {
-            // If we are provided with a valid 'dropOpTime', it means we are dropping this
-            // collection in the context of applying an oplog entry on a secondary.
-            auto opTime = opObserver->onDropCollection(opCtx,
-                                                       nss,
-                                                       uuid,
-                                                       numRecords,
-                                                       OpObserver::CollectionDropType::kOnePhase,
-                                                       markFromMigrate);
-            // OpObserver::onDropCollection should not be writing to the oplog on the secondary.
-            invariant(opTime.isNull(),
-                      str::stream() << "OpTime is not null. OpTime: " << opTime.toString());
-        }
-
-        return _finishDropCollection(opCtx, nss, collection.getWritableCollection(opCtx));
+    auto commitTimestamp = shard_role_details::getRecoveryUnit(opCtx)->getCommitTimestamp();
+    LOGV2(20314,
+          "dropCollection: storage engine will take ownership of drop-pending "
+          "collection",
+          logAttrs(nss),
+          "uuid"_attr = uuid,
+          "dropOpTime"_attr = dropOpTime,
+          "commitTimestamp"_attr = commitTimestamp);
+    if (dropOpTime.isNull()) {
+        // Log oplog entry for collection drop and remove the UUID.
+        dropOpTime = opObserver->onDropCollection(opCtx,
+                                                  nss,
+                                                  uuid,
+                                                  numRecords,
+                                                  OpObserver::CollectionDropType::kOnePhase,
+                                                  markFromMigrate);
+        invariant(!dropOpTime.isNull());
+    } else {
+        // If we are provided with a valid 'dropOpTime', it means we are dropping this
+        // collection in the context of applying an oplog entry on a secondary.
+        auto opTime = opObserver->onDropCollection(opCtx,
+                                                   nss,
+                                                   uuid,
+                                                   numRecords,
+                                                   OpObserver::CollectionDropType::kOnePhase,
+                                                   markFromMigrate);
+        // OpObserver::onDropCollection should not be writing to the oplog on the secondary.
+        invariant(opTime.isNull(),
+                  str::stream() << "OpTime is not null. OpTime: " << opTime.toString());
     }
+
+    return _finishDropCollection(opCtx, nss, collection.getWritableCollection(opCtx));
 
     // Old two-phase drop: Replicated collections will be renamed with a special drop-pending
     // namespace and dropped when the replica set optime reaches the drop optime.
@@ -583,8 +582,7 @@ Status DatabaseImpl::_finishDropCollection(OperationContext* opCtx,
             return status;
     }
 
-    CollectionCatalog::get(opCtx)->dropCollection(
-        opCtx, collection, opCtx->getServiceContext()->getStorageEngine()->supportsPendingDrops());
+    CollectionCatalog::get(opCtx)->dropCollection(opCtx, collection, true /*isDropPending*/);
 
 
     return Status::OK();
@@ -804,6 +802,11 @@ Collection* DatabaseImpl::_createCollection(
         optionsWithUUID.recordIdsReplicated = true;
     }
 
+    uassert(ErrorCodes::CommandNotSupported,
+            fmt::format("Capped collection '{}' can't use recordIdsReplicated:true",
+                        nss.toStringForErrorMsg()),
+            !(optionsWithUUID.recordIdsReplicated && optionsWithUUID.capped));
+
     hangAndFailAfterCreateCollectionReservesOpTime.executeIf(
         [&](const BSONObj&) {
             hangAndFailAfterCreateCollectionReservesOpTime.pauseWhileSet(opCtx);
@@ -921,7 +924,7 @@ Collection* DatabaseImpl::_createCollection(
     return collection;
 }
 
-StatusWith<std::unique_ptr<CollatorInterface>> DatabaseImpl::_validateCollator(
+StatusWith<std::unique_ptr<CollatorInterface>> DatabaseImpl::validateCollator(
     OperationContext* opCtx, CollectionOptions& opts) const {
     std::unique_ptr<CollatorInterface> collator;
     if (!opts.collation.isEmpty()) {
@@ -964,7 +967,7 @@ Status DatabaseImpl::userCreateNS(OperationContext* opCtx,
                       str::stream() << "invalid ns: " << nss.toStringForErrorMsg());
 
     // Validate the collation, if there is one.
-    auto swCollator = _validateCollator(opCtx, collectionOptions);
+    auto swCollator = validateCollator(opCtx, collectionOptions);
     if (!swCollator.isOK()) {
         return swCollator.getStatus();
     }
@@ -1074,7 +1077,7 @@ Status DatabaseImpl::userCreateVirtualNS(OperationContext* opCtx,
                       str::stream() << "invalid ns: " << nss.toStringForErrorMsg());
 
     // Validate the collation, if there is one.
-    if (auto swCollator = _validateCollator(opCtx, opts); !swCollator.isOK()) {
+    if (auto swCollator = validateCollator(opCtx, opts); !swCollator.isOK()) {
         return swCollator.getStatus();
     }
 

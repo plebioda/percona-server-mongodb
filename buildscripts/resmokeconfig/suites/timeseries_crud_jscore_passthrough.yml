@@ -38,8 +38,9 @@ selector:
     - jstests/core/hashed_partial_and_sparse_index.js
     - jstests/core/query/distinct/distinct_with_hashed_index.js
     - jstests/core/query/internal_hash_eq/**/*.js
+    - jstests/core/query/project/projection_with_hashed_index.js
     - jstests/core/single_field_hashed_index.js
-    # Column store indexes.
+    # Indexed measurement field contains an array value
     - jstests/core/query/project/projection_semantics.js
     # findAndModify sort.
     - jstests/core/query/natural_validation.js
@@ -92,7 +93,6 @@ selector:
     - jstests/core/write/delete/batched_multi_deletes_a.js
     - jstests/core/write/delete/batched_multi_deletes_id.js
     - jstests/core/write/bulk/bulk_write_profile.js
-    - jstests/core/query/regex/regex_collations.js
     - jstests/core/write/delete/delete_hint.js
     - jstests/core/write/find_and_modify/find_and_modify_hint.js
     - jstests/core/write/find_and_modify/find_and_modify_pipeline_update.js
@@ -122,6 +122,7 @@ selector:
     - jstests/core/write/update/update_setOnInsert.js
     - jstests/core/write/update/upsert_fields.js
     - jstests/core/write/update/upsert_fields_duplicate_or.js
+    - jstests/core/write/update/upsert_nor.js
     - jstests/core/write/write_error_message_truncation.js
     - jstests/core/write/write_result.js
     # Time-series collections may generate different profiling entries from regular ones.
@@ -141,11 +142,11 @@ selector:
     - jstests/core/long_index_rename.js # rename
     - jstests/core/positional_projection_multiple_array_fields.js # $slice
     - jstests/core/query/elemmatch/**/*.js # $elemMatch
+    - jstests/core/query/plan_cache/elem_match_index_diff_types.js # $elemMatch
     - jstests/core/query/plan_cache/match_or_duplicate_predicate_plan_cache.js # locking
     - jstests/core/query/plan_cache/query_solution_hash.js # locking
     - jstests/core/sbe_plan_cache_autoparameterize_collscan.js # locking
     - jstests/core/slice1.js # $slice
-    - jstests/core/write/collection_truncate.js # emptycapped
     - jstests/core/write/find_and_modify/find_and_modify_server6865.js # $elemMatch
     # Time-series collections are views which don't support map-reduce
     - jstests/core/commands_namespace_parsing.js
@@ -263,9 +264,15 @@ selector:
     - jstests/core/write/update/update_blank1.js
     # For inserts on time-series collections, mongod does _not_ replace empty timestamp values
     # with the current time.
-    - jstests/core/query/empty_ts.js
+    - jstests/core/write/empty_ts.js
+    - jstests/core/write/empty_ts_bulk_write.js
+    - jstests/core/write/bypass_empty_ts_replacement.js
+    - jstests/core/write/bypass_empty_ts_replacement_bulk_write.js
+    - jstests/core/write/bypass_empty_ts_replacement_timeseries.js
     # Assumes collection options do not change
     - jstests/core/rename_system_buckets_collections.js
+    # Inserts documents that are too large for a timeseries collection.
+    - jstests/core/query/bson_size_limit.js
 
   exclude_with_any_tags:
     - requires_sharding

@@ -59,12 +59,15 @@ void ProjectionNode::addProjectionForPath(const FieldPath& path) {
 void ProjectionNode::_addProjectionForPath(const FieldPath& path) {
     makeOptimizationsStale();
     if (path.getPathLength() == 1) {
-        auto it = _projectedFields.insert(_projectedFields.end(), path.fullPath());
-        _projectedFieldsSet.insert(StringData(*it));
-        return;
+        // Add to projection unless we already have `path` as a projection.
+        if (!_projectedFieldsSet.contains(path.fullPath())) {
+            auto it = _projectedFields.insert(_projectedFields.end(), path.fullPath());
+            _projectedFieldsSet.insert(StringData(*it));
+        }
+    } else {
+        // FieldPath can't be empty, so it is safe to obtain the first path component here.
+        addOrGetChild(path.getFieldName(0).toString())->_addProjectionForPath(path.tail());
     }
-    // FieldPath can't be empty, so it is safe to obtain the first path component here.
-    addOrGetChild(path.getFieldName(0).toString())->_addProjectionForPath(path.tail());
 }
 
 void ProjectionNode::addExpressionForPath(const FieldPath& path,
@@ -188,14 +191,21 @@ Value ProjectionNode::applyProjectionsToValue(Value inputValue) const {
         applyProjections(inputValue.getDocument(), &outputSubDoc);
         return outputSubDoc.freezeToValue();
     } else if (inputValue.getType() == BSONType::Array) {
-        std::vector<Value> values = inputValue.getArray();
-        for (auto& value : values) {
+        std::vector<Value> values;
+        values.reserve(inputValue.getArrayLength());
+        for (const auto& input : inputValue.getArray()) {
             // If this is a nested array and our policy is to not recurse, skip the array.
             // Otherwise, descend into the array and project each element individually.
-            const bool shouldSkip = value.isArray() &&
+            const bool shouldSkip = input.isArray() &&
                 _policies.arrayRecursionPolicy == ArrayRecursionPolicy::kDoNotRecurseNestedArrays;
-            value = (shouldSkip ? transformSkippedValueForOutput(value)
-                                : applyProjectionsToValue(value));
+            auto value = (shouldSkip ? transformSkippedValueForOutput(input)
+                                     : applyProjectionsToValue(input));
+            // If subtree contains computed fields, we need to keep missing values to apply
+            // expressions in the next step. They will either become objects or will be cleaned up
+            // after applying the expressions.
+            if (!value.missing() || _subtreeContainsComputedFields) {
+                values.push_back(std::move(value));
+            }
         }
         return Value(std::move(values));
     } else {
@@ -234,9 +244,13 @@ Value ProjectionNode::applyExpressionsToValue(const Document& root, Value inputV
         applyExpressions(root, &outputDoc);
         return outputDoc.freezeToValue();
     } else if (inputValue.getType() == BSONType::Array) {
-        std::vector<Value> values = inputValue.getArray();
-        for (auto& value : values) {
-            value = applyExpressionsToValue(root, value);
+        std::vector<Value> values;
+        values.reserve(inputValue.getArrayLength());
+        for (const auto& input : inputValue.getArray()) {
+            auto value = applyExpressionsToValue(root, input);
+            if (!value.missing()) {
+                values.push_back(std::move(value));
+            }
         }
         return Value(std::move(values));
     } else {

@@ -228,7 +228,7 @@ void OplogWriterImpl::_run() {
         // Update various things that care about our last written optime.
         finalizeOplogBatch(opCtx, lastOpTimeAndWallTime, flushJournal);
 
-        // Push the entries to the applier's buffer, may be blocked if buffer is full.
+        // Push the entries to the applier's buffer, may be blocked if no enough space.
         _applyBuffer->push(opCtx, ops.begin(), ops.end());
     }
 }

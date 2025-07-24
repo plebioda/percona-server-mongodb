@@ -9,7 +9,8 @@
  * @tags: [
  *    uses_transactions,
  *    uses_multi_shard_transaction,
- *    temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 import {
@@ -19,6 +20,8 @@ import {
     unpauseMoveChunkAtStep,
     waitForMoveChunkStep,
 } from "jstests/libs/chunk_manipulation_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     flushRoutersAndRefreshShardMetadata,
     isUpdateDocumentShardKeyUsingTransactionApiEnabled,

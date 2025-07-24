@@ -73,14 +73,15 @@ selector:
   - jstests/concurrency/fsm_workloads/timeseries_agg_out_interrupt_cleanup.js
   - jstests/concurrency/fsm_workloads/multi_statement_transaction_atomicity_isolation_metrics_test.js
   - jstests/concurrency/fsm_workloads/multi_statement_transaction_all_commands_same_session.js
-  - jstests/concurrency/fsm_workloads/create_timeseries_collection.js
   - jstests/concurrency/fsm_workloads/map_reduce_drop.js
+  - jstests/concurrency/fsm_workloads/timeseries_insert_idle_bucket_expiration.js
   exclude_with_any_tags:
   - assumes_against_mongod_not_mongos
   - assumes_balancer_off
   - requires_replication
   - requires_profiling
   - assumes_unsharded_collection
+  - temp_disabled_embedded_router_uncategorized
   roots:
   - jstests/concurrency/fsm_workloads/**/*.js
   - src/mongo/db/modules/*/jstests/concurrency/fsm_workloads/*.js

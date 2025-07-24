@@ -7,6 +7,7 @@
  */
 
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 Random.setRandomSeed();
 
@@ -92,7 +93,7 @@ function metaShardKey(implicit) {
         coll: sDB['system.buckets.ts'],
         expectedKey: expectedKey,
         usingTimeseriesDefaultKey: implicit
-    })
+    });
 
     assert.commandWorked(st.s.adminCommand({split: 'test.system.buckets.ts', middle: {meta: 10}}));
 
@@ -141,7 +142,7 @@ function metaSubFieldShardKey(implicit) {
 
     validateViewCreated("ts");
 
-    validateIndexBackingShardKey({coll: sDB['system.buckets.ts'], expectedKey: {'meta.a': 1}})
+    validateIndexBackingShardKey({coll: sDB['system.buckets.ts'], expectedKey: {'meta.a': 1}});
 
     assert.commandWorked(
         st.s.adminCommand({split: 'test.system.buckets.ts', middle: {'meta.a': 10}}));
@@ -187,7 +188,7 @@ function metaAndTimeShardKey(implicit) {
         coll: sDB['system.buckets.ts'],
         expectedKey: {"meta": 1, "control.min.time": 1, "control.max.time": 1},
         usingTimeseriesDefaultKey: true
-    })
+    });
 
     validateBucketsCollectionSharded({
         collName: 'ts',

@@ -13,6 +13,8 @@
  */
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 function setDefaultReadMaxTimeMS(db, newValue) {
     assert.commandWorked(
@@ -57,7 +59,7 @@ function runTests(conn, directConn) {
     const regularUserDB = regularUserConn.getSiblingDB(dbName);
 
     // Sets the default maxTimeMS for read operations with a small value.
-    setDefaultReadMaxTimeMS(adminDB, 1);
+    setDefaultReadMaxTimeMS(adminDB, 1000);
 
     function assertCommandFailedWithMaxTimeMSExpired(cmd, metricField) {
         const beforeMetrics = connectionsToCheck.map((db) => {
@@ -68,7 +70,7 @@ function runTests(conn, directConn) {
         connectionsToCheck.forEach((db, i) => {
             const serverStatus = assert.commandWorked(db.runCommand({serverStatus: 1}));
             assert.gt(serverStatus.metrics.operation[[metricField]], beforeMetrics[i]);
-        })
+        });
     }
 
     // Times out due to the default value.
@@ -78,12 +80,12 @@ function runTests(conn, directConn) {
 
     // Times out due to the request value.
     assertCommandFailedWithMaxTimeMSExpired(
-        {find: collName, filter: {$where: "sleep(1000); return true;"}, maxTimeMS: 100},
+        {find: collName, filter: {$where: "sleep(1000); return true;"}, maxTimeMS: 2000},
         "killedDueToMaxTimeMSExpired");
 
     // Times out due to the request value that is equal to the default value.
     assertCommandFailedWithMaxTimeMSExpired(
-        {find: collName, filter: {$where: "sleep(1000); return true;"}, maxTimeMS: 1},
+        {find: collName, filter: {$where: "sleep(1000); return true;"}, maxTimeMS: 1000},
         "killedDueToMaxTimeMSExpired");
 
     // Times out due to the default value.

@@ -7,11 +7,15 @@
  *   requires_timeseries,
  *   featureFlagTimeseriesUpdatesSupport,
  *   # Needed to run createUnsplittableCollection
- *   # TODO (SERVER-87625) Remove feature flag dependency.
  *   featureFlagAuthoritativeShardCollection,
  *   requires_fcv_80
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {
+    runTimeseriesRetryDeleteAndUpdateTest
+} from "jstests/libs/timeseries_retry_delete_and_update.js";
+
 const rst = new ReplSetTest({
     nodes: [
         {},
@@ -26,10 +30,6 @@ const rst = new ReplSetTest({
 });
 rst.startSet();
 rst.initiate();
-
-import {
-    runTimeseriesRetryDeleteAndUpdateTest
-} from "jstests/libs/timeseries_retry_delete_and_update.js"
 
 runTimeseriesRetryDeleteAndUpdateTest(
     rst.getPrimary(),

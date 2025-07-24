@@ -59,6 +59,7 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/logical_time.h"
 #include "mongo/db/tenant_id.h"
+#include "mongo/platform/mutex.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/str.h"
 #include "mongo/util/version/releases.h"
@@ -116,9 +117,10 @@ using TenantIdMap = std::map<boost::optional<TenantId>, U>;
 
 class ServerParameter {
 public:
-    using Map = std::map<std::string, ServerParameter*>;
+    using Map = std::map<std::string, std::unique_ptr<ServerParameter>, std::less<>>;
 
     ServerParameter(StringData name, ServerParameterType spt);
+    ServerParameter(const ServerParameter& rhs);
     virtual ~ServerParameter() = default;
 
     std::string name() const {
@@ -221,26 +223,32 @@ public:
     }
 
     bool isTestOnly() const {
+        stdx::lock_guard lk(_mutex);
         return _testOnly;
     }
 
     void setTestOnly() {
+        stdx::lock_guard lk(_mutex);
         _testOnly = true;
     }
 
     bool isRedact() const {
+        stdx::lock_guard lk(_mutex);
         return _redact;
     }
 
     void setRedact() {
+        stdx::lock_guard lk(_mutex);
         _redact = true;
     }
 
     bool isOmittedInFTDC() {
+        stdx::lock_guard lk(_mutex);
         return _isOmittedInFTDC;
     }
 
     void setOmitInFTDC() {
+        stdx::lock_guard lk(_mutex);
         _isOmittedInFTDC = true;
     }
 
@@ -249,6 +257,7 @@ private:
 
 public:
     void disable(bool permanent) {
+        stdx::lock_guard lk(_mutex);
         if (_disableState != DisableState::PermanentlyDisabled) {
             _disableState =
                 permanent ? DisableState::PermanentlyDisabled : DisableState::TemporarilyDisabled;
@@ -256,6 +265,7 @@ public:
     }
 
     void enable() {
+        stdx::lock_guard lk(_mutex);
         if (_disableState == DisableState::TemporarilyDisabled) {
             _disableState = DisableState::Enabled;
         }
@@ -271,10 +281,12 @@ public:
     bool canBeEnabledOnVersion(const multiversion::FeatureCompatibilityVersion& targetFCV) const;
 
     void setFeatureFlag(FeatureFlag* featureFlag) {
+        stdx::lock_guard lk(_mutex);
         _featureFlag = featureFlag;
     }
 
     void setMinFCV(const multiversion::FeatureCompatibilityVersion& minFCV) {
+        stdx::lock_guard lk(_mutex);
         _minFCV = minFCV;
     }
 
@@ -287,6 +299,7 @@ protected:
 
     bool minFCVIsLessThanOrEqualToVersion(
         const multiversion::FeatureCompatibilityVersion& fcv) const {
+        stdx::lock_guard lk(_mutex);
         return !_minFCV || fcv >= *_minFCV;
     }
 
@@ -295,12 +308,15 @@ protected:
 
 private:
     std::string _name;
-    FeatureFlag* _featureFlag = nullptr;
-    boost::optional<multiversion::FeatureCompatibilityVersion> _minFCV = boost::none;
     ServerParameterType _type;
+
+    mutable Mutex _mutex = MONGO_MAKE_LATCH("ServerParameter::_mutex");
+
     bool _testOnly = false;
     bool _redact = false;
     bool _isOmittedInFTDC = false;
+    FeatureFlag* _featureFlag = nullptr;
+    boost::optional<multiversion::FeatureCompatibilityVersion> _minFCV = boost::none;
 
     // Tracks whether a parameter is enabled, temporarily disabled, or permanently disabled. This is
     // used when disabling (permanently) test-only parameters, and when enabling/disabling
@@ -312,7 +328,7 @@ class ServerParameterSet {
 public:
     using Map = ServerParameter::Map;
 
-    void add(ServerParameter* sp);
+    void add(std::unique_ptr<ServerParameter> sp);
     void remove(const std::string& name);
 
     const Map& getMap() const {
@@ -322,16 +338,16 @@ public:
     void disableTestParameters();
 
     template <typename T = ServerParameter>
-    T* getIfExists(StringData name) {
-        const auto& it = _map.find(name.toString());
+    T* getIfExists(StringData name) const {
+        const auto& it = _map.find(name);
         if (it == _map.end()) {
             return nullptr;
         }
-        return checked_cast<T*>(it->second);
+        return checked_cast<T*>(it->second.get());
     }
 
     template <typename T = ServerParameter>
-    T* get(StringData name) {
+    T* get(StringData name) const {
         T* ret = getIfExists<T>(name);
         uassert(ErrorCodes::NoSuchKey, str::stream() << "Unknown server parameter: " << name, ret);
         return ret;
@@ -341,7 +357,7 @@ public:
     // added to it. `func` will be called whenever a `ServerParameter` is added
     // to this set. It will throw to reject that ServerParameter. This can be
     // because of ServerParameterType, or other criteria.
-    void setValidate(std::function<void(ServerParameter*)> func) {
+    void setValidate(std::function<void(const ServerParameter&)> func) {
         _validate = std::move(func);
     }
 
@@ -358,20 +374,11 @@ public:
     }
 
 private:
-    std::function<void(ServerParameter*)> _validate;
+    std::function<void(const ServerParameter&)> _validate;
     Map _map;
 };
 
-void registerServerParameter(ServerParameter* p);
-
-// Create an instance of Param, which must be derived from ServerParameter,
-// and register it with a ServerParameterSet.
-template <typename Param>
-Param* makeServerParameter(StringData name, ServerParameterType spt) {
-    auto p = std::make_unique<Param>(std::string{name}, spt);
-    registerServerParameter(&*p);
-    return p.release();
-}
+void registerServerParameter(std::unique_ptr<ServerParameter>);
 
 /**
  * Proxy instance for deprecated aliases of set parameters.
@@ -392,13 +399,6 @@ private:
     std::once_flag _warnOnce;
     ServerParameter* _sp;
 };
-
-inline IDLServerParameterDeprecatedAlias* makeIDLServerParameterDeprecatedAlias(
-    StringData name, ServerParameter* sp) {
-    auto p = std::make_unique<IDLServerParameterDeprecatedAlias>(name, sp);
-    registerServerParameter(p.get());
-    return p.release();
-}
 
 namespace idl_server_parameter_detail {
 

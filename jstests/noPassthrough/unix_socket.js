@@ -8,6 +8,8 @@
  *    cause the server to exit with an error (socket names with whitespace are now supported)
  * 4) That the default unix socket doesn't get created if --nounixsocket is specified
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 // @tags: [
 //   requires_sharding,
 // ]
@@ -24,7 +26,7 @@ TestData.skipCheckShardFilteringMetadata = true;
 
 // Do not fail if this test leaves unterminated processes because testSockOptions
 // is expected to throw before it calls stopMongod.
-TestData.failIfUnterminatedProcesses = false;
+TestData.ignoreUnterminatedProcesses = true;
 
 // Do not check metadata or UUID consistency as it would require a connection to the mongos and this
 // is bound to a specific socket for testing purposes.

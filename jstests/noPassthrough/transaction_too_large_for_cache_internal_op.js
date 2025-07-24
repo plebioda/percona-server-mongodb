@@ -8,8 +8,12 @@
  *   requires_persistence,
  *   requires_replication,
  *   requires_wiredtiger,
+ *   # TODO(SERVER-90387): remove this JS test after unit test is available.
+ *   __TEMPORARILY_DISABLED__,
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 const replSet = new ReplSetTest({
     nodes: [
         {},

@@ -115,11 +115,52 @@ struct OSTType_Decimal128 {
     boost::multiprecision::uint128_t max;
 };
 
-boost::multiprecision::uint128_t toInt128FromDecimal128(Decimal128 dec);
+boost::multiprecision::uint128_t toUInt128FromDecimal128(Decimal128 dec);
 
 OSTType_Decimal128 getTypeInfoDecimal128(Decimal128 value,
                                          boost::optional<Decimal128> min,
                                          boost::optional<Decimal128> max,
                                          boost::optional<uint32_t> precision);
+
+/**
+ * Determines whether the range of Decimal128 values, between min and max (inclusive),
+ * with the given precision, can be re-encoded in less than 128 bits, in order to reduce
+ * the size of the hypergraph (ie. "precision-mode"). If so, the number of bits needed
+ * to represent the range of values is returned in maxBitsOut.
+ */
+bool canUsePrecisionMode(Decimal128 min,
+                         Decimal128 max,
+                         uint32_t precision,
+                         uint32_t* maxBitsOut = nullptr);
+/**
+ * Determines whether the range of double-precision floating point values, between min and max
+ * (inclusive), with the given precision, can be re-encoded in less than 64 bits, in order to
+ * reduce the size of the hypergraph (ie. "precision-mode"). If so, the number of bits needed to
+ * represent the range of values is returned in maxBitsOut.
+ */
+bool canUsePrecisionMode(double min,
+                         double max,
+                         uint32_t precision,
+                         uint32_t* maxBitsOut = nullptr);
+
+/**
+ * Return the first bit set in a integer. 1 indexed.
+ */
+template <typename T>
+inline int getFirstBitSet(T v) {
+    return 64 - countLeadingZeros64(v);
+}
+
+template <>
+inline int getFirstBitSet<boost::multiprecision::uint128_t>(
+    const boost::multiprecision::uint128_t v) {
+    return boost::multiprecision::msb(v) + 1;
+}
+
+template <>
+inline int getFirstBitSet<boost::multiprecision::int128_t>(
+    const boost::multiprecision::int128_t v) {
+    return boost::multiprecision::msb(v) + 1;
+}
 
 }  // namespace mongo

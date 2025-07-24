@@ -5,6 +5,7 @@
 
 import {isClusteredIxscan, isExpress} from "jstests/libs/analyze_plan.js";
 import {assertDropAndRecreateCollection} from "jstests/libs/collection_drop_recreate.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({
     shards: 2,
@@ -16,7 +17,7 @@ st.s.adminCommand({enableSharding: "test"});
 const db = st.getDB("test");
 // Create the collection as a clustered collection.
 const coll = assertDropAndRecreateCollection(
-    db, jsTestName(), {clusteredIndex: {key: {_id: 1}, unique: true}})
+    db, jsTestName(), {clusteredIndex: {key: {_id: 1}, unique: true}});
 st.shardColl(coll, {a: 1});
 // First of all check that we can execute the query.
 assert.commandWorked(coll.insertMany([...Array(10).keys()].map(i => {

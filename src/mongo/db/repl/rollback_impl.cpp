@@ -258,7 +258,7 @@ Status RollbackImpl::runRollback(OperationContext* opCtx) {
         return status;
     }
     _listener->onTransitionToRollback();
-    ReplicaSetAwareServiceRegistry::get(getGlobalServiceContext()).onRollback();
+    ReplicaSetAwareServiceRegistry::get(opCtx->getServiceContext()).onRollbackBegin();
 
     if (MONGO_unlikely(rollbackHangAfterTransitionToRollback.shouldFail())) {
         LOGV2(21591,
@@ -499,15 +499,6 @@ RollbackImpl::_namespacesAndUUIDsForOp(const OplogEntry& oplogEntry) {
                 break;
             }
             case OplogEntry::CommandType::kDbCheck:
-            case OplogEntry::CommandType::kEmptyCapped: {
-                // These commands do not need to be supported by rollback. 'convertToCapped' should
-                // always be converted to lower level DDL operations, and 'emptycapped' is a
-                // test-only command.
-                std::string message = str::stream()
-                    << "Encountered unsupported command type '" << firstElem.fieldName()
-                    << "' during rollback.";
-                return Status(ErrorCodes::UnrecoverableRollbackError, message);
-            }
             case OplogEntry::CommandType::kModifyCollectionShardingIndexCatalog:
             case OplogEntry::CommandType::kCreateGlobalIndex:
             case OplogEntry::CommandType::kDropGlobalIndex:
@@ -847,7 +838,6 @@ void RollbackImpl::_correctRecordStoreCounts(OperationContext* opCtx) {
 
 Status RollbackImpl::_findRecordStoreCounts(OperationContext* opCtx) {
     auto catalog = CollectionCatalog::get(opCtx);
-    auto storageEngine = opCtx->getServiceContext()->getStorageEngine();
 
     LOGV2(21604, "Finding record store counts");
     for (const auto& uiCount : _countDiffs) {
@@ -861,11 +851,8 @@ Status RollbackImpl::_findRecordStoreCounts(OperationContext* opCtx) {
         StorageInterface::CollectionCount oldCount = 0;
 
         // Drop-pending collections are not visible to rollback via the catalog when they are
-        // managed by the storage engine. See StorageEngine::supportsPendingDrops().
+        // managed by the storage engine.
         if (!nss) {
-            invariant(storageEngine->supportsPendingDrops(),
-                      str::stream() << "The collection with UUID " << uuid
-                                    << " is unexpectedly missing in the CollectionCatalog");
             auto it = _pendingDrops.find(uuid);
             if (it == _pendingDrops.end()) {
                 _newCounts[uuid] = kCollectionScanRequired;
@@ -1236,8 +1223,6 @@ StatusWith<RollBackLocalOperations::RollbackCommonPoint> RollbackImpl::_findComm
     // Rollback common point should be >= the stable timestamp.
     invariant(stableTimestamp);
     if (commonPointOpTime.getTimestamp() < *stableTimestamp) {
-        // This is an fassert rather than an invariant, since it can happen if the server was
-        // recently upgraded to enableMajorityReadConcern=true.
         LOGV2_FATAL_NOTRACE(51121,
                             "Common point must be at least stable timestamp",
                             "commonPoint"_attr = commonPointOpTime.getTimestamp(),
@@ -1321,14 +1306,13 @@ boost::optional<BSONObj> RollbackImpl::_findDocumentById(OperationContext* opCtx
 
 Status RollbackImpl::_writeRollbackFiles(OperationContext* opCtx) {
     auto catalog = CollectionCatalog::get(opCtx);
-    auto storageEngine = opCtx->getServiceContext()->getStorageEngine();
     for (auto&& entry : _observerInfo.rollbackDeletedIdsMap) {
         const auto& uuid = entry.first;
         const auto nss = catalog->lookupNSSByUUID(opCtx, uuid);
 
         // Drop-pending collections are not visible to rollback via the catalog when they are
-        // managed by the storage engine. See StorageEngine::supportsPendingDrops().
-        if (!nss && storageEngine->supportsPendingDrops()) {
+        // managed by the storage engine.
+        if (!nss) {
             LOGV2(21608,
                   "Collection is missing in the CollectionCatalog. This could be due to a dropped "
                   "collection. Not writing rollback file for uuid",

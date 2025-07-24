@@ -5,12 +5,13 @@
  *
  * @tags: [
  *   requires_sharding,
- *   # TODO (SERVER-89634): Enable this test
+ *   # TODO (SERVER-88964, SERVER-90971, SERVER-91702, SERVER-87931): Enable this test
  *   exclude_when_record_ids_replicated,
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({shards: 2});
 const shard0Primary = st.rs0.getPrimary();

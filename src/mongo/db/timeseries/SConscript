@@ -5,6 +5,7 @@ Import("env")
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "bucket_catalog",
     ],
@@ -16,7 +17,7 @@ env.SConscript(
 env.Library(
     target="timeseries_options",
     source=[
-        "timeseries.idl",
+        "timeseries_gen.cpp",
         "timeseries_global_options.cpp",
         "timeseries_options.cpp",
     ],
@@ -25,29 +26,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/storage/storage_options",
         "$BUILD_DIR/mongo/util/processinfo",
-    ],
-)
-
-env.Library(
-    target="bucket_compression",
-    source=[
-        "bucket_compression.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/bson/util/bson_column",
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/storage/storage_options",
-        "$BUILD_DIR/mongo/util/fail_point",
-    ],
-)
-
-env.Library(
-    target="bucket_compression_failure",
-    source=[
-        "bucket_compression_failure.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -141,16 +119,6 @@ env.Library(
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/db/catalog/index_catalog",
         "timeseries_options",
-    ],
-)
-
-env.Library(
-    target="timeseries_metadata",
-    source=[
-        "metadata.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 

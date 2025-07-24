@@ -5,6 +5,16 @@ import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
 
 export var TimeseriesTest = class {
+    static insertManyDocs(coll) {
+        jsTestLog("Inserting documents to a bucket.");
+        coll.insertMany(
+            [...Array(10).keys()].map(i => ({
+                                          "metadata": {"sensorId": 1, "type": "temperature"},
+                                          "timestamp": ISODate(),
+                                          "temp": i
+                                      })),
+            {ordered: false});
+    }
     static getBucketMaxSpanSecondsFromGranularity(granularity) {
         switch (granularity) {
             case 'seconds':
@@ -28,6 +38,20 @@ export var TimeseriesTest = class {
                 return 60 * 60 * 24;
             default:
                 assert(false, 'Invalid granularity: ' + granularity);
+        }
+    }
+
+    static bucketsMayHaveMixedSchemaData(coll) {
+        const catalog = coll.aggregate([{$listCatalog: {}}]).toArray()[0];
+        const tsMixedSchemaOptionNewFormat = catalog.md.options.storageEngine &&
+            catalog.md.options.storageEngine.wiredTiger &&
+            catalog.md.options.storageEngine.wiredTiger.configString;
+        // TODO SERVER-92533 Simplify once SERVER-91195 is backported to all supported branches
+        if (tsMixedSchemaOptionNewFormat !== undefined) {
+            return tsMixedSchemaOptionNewFormat ==
+                "app_metadata=(timeseriesBucketsMayHaveMixedSchemaData=true)";
+        } else {
+            return catalog.md.timeseriesBucketsMayHaveMixedSchemaData;
         }
     }
 

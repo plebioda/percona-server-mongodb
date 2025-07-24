@@ -10,9 +10,14 @@
  * ReplSetTest. We expect the large majority of tests will never use more than this number of nodes,
  * and so we're not particularly worried about scaling beyond that point.
  *
- * @tags: [resource_intensive]
+ * We disable the test on windows because it can cause evergreen timeouts on slow machines in the
+ * debug variant. The test will still run locally so we don't lose test coverage this way.
+ *
+ * @tags: [resource_intensive, incompatible_with_windows_tls]
  *
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 // Add replication-level logging.
 TestData.setParameters = TestData.setParameters || {};
 TestData.setParameters.logComponentVerbosity = TestData.setParameters.logComponentVerbosity || {};

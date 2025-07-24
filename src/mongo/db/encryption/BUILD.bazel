@@ -1,0 +1,26 @@
+load("//bazel:mongo_src_rules.bzl", "mongo_cc_library")
+ 
+package(default_visibility = ["//visibility:public"])
+ 
+exports_files(
+    glob([
+        "*.h",
+        "*.cpp",
+    ]),
+)
+
+mongo_cc_library(
+    name = "key",
+    srcs = [
+        "key.cpp",
+        "key_id.cpp",
+    ],
+    hdrs = [
+        "key.h",
+        "key_id.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/base:secure_allocator",
+    ],
+)

@@ -1,0 +1,113 @@
+load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    glob([
+        "*.h",
+        "*.cpp",
+    ]),
+)
+
+# Headers designed to be used without source code. Split these out
+# into targets if they're meant to be used with source code.
+filegroup(
+    name = "headers",
+    srcs = [
+        "cidr.h",
+        "hostandport.h",
+        "sockaddr.h",
+        "ssl_peer_info.h",
+        "ssl_types.h",
+    ],
+)
+
+idl_generator(
+    name = "hostandport_gen",
+    src = "hostandport.idl",
+)
+
+idl_generator(
+    name = "ssl_options_client_gen",
+    src = "ssl_options_client.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+    ],
+)
+
+idl_generator(
+    name = "ssl_options_server_gen",
+    src = "ssl_options_server.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+    ],
+)
+
+idl_generator(
+    name = "ssl_parameters_gen",
+    src = "ssl_parameters.idl",
+    deps = [
+        "//src/mongo/crypto:sha256_block_gen",
+        "//src/mongo/db/auth:auth_types_gen",
+    ],
+)
+
+idl_generator(
+    name = "ssl_parameters_auth_gen",
+    src = "ssl_parameters_auth.idl",
+)
+
+idl_generator(
+    name = "http_client_options_gen",
+    src = "http_client_options.idl",
+)
+
+mongo_cc_library(
+    name = "http_client",
+    srcs = [
+        "http_client.cpp",
+        "//src/mongo/base:data_builder.h",
+    ],
+    hdrs = [
+        "http_client.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/db/commands:test_commands_enabled",
+    ],
+)
+
+mongo_cc_library(
+    name = "network",
+    srcs = [
+        "cidr.cpp",
+        "hostandport.cpp",
+        "hostname_canonicalization.cpp",
+        "hostname_canonicalization.h",
+        "sockaddr.cpp",
+        "socket_exception.cpp",
+        "socket_exception.h",
+        "socket_utils.cpp",
+        "socket_utils.h",
+        ":hostandport_gen",
+        "//src/mongo/util/concurrency:value.h",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+        "//src/mongo/util:winutil",
+        "//src/mongo/util/concurrency:spin_lock",
+    ],
+)
+
+mongo_cc_library(
+    name = "ssl_util",
+    srcs = [
+        "ssl_util.cpp",
+    ],
+    hdrs = [
+        "ssl_util.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+    ],
+)

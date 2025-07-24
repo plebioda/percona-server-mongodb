@@ -1,5 +1,7 @@
 import {resultsEq} from "jstests/aggregation/extras/utils.js";
 import {FixtureHelpers} from "jstests/libs/fixture_helpers.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 export const kShellApplicationName = "MongoDB Shell";
 export const kDefaultQueryStatsHmacKey = BinData(8, "MjM0NTY3ODkxMDExMTIxMzE0MTUxNjE3MTgxOTIwMjE=");
@@ -229,7 +231,7 @@ export function assertExpectedResults(results,
                                       expectedDocsReturnedMin,
                                       expectedDocsReturnedSumOfSq,
                                       getMores) {
-    const {key, keyHash, metrics, asOf} = results;
+    const {key, keyHash, queryShapeHash, metrics, asOf} = results;
     confirmAllExpectedFieldsPresent(expectedQueryStatsKey, key);
     assert.eq(expectedExecCount, metrics.execCount);
     assert.docEq({
@@ -256,16 +258,17 @@ export function assertExpectedResults(results,
     assert.neq(latestSeenTimestamp.getTime(), 0);
     assert.neq(asOf.getTime(), 0);
     assert.neq(keyHash.length, 0);
+    assert.neq(queryShapeHash.length, 0);
 
     const distributionFields = ['sum', 'max', 'min', 'sumOfSquares'];
     for (const field of distributionFields) {
         assert.neq(totalExecMicros[field], NumberLong(0));
         assert.neq(firstResponseExecMicros[field], NumberLong(0));
-        assert.gte(workingTimeMillis[field], NumberLong(0));
+        assert(bsonWoCompare(workingTimeMillis[field], NumberLong(0)) >= 0);
         if (metrics.execCount > 1) {
             // If there are prior executions of the same query shape, we can't be certain if those
             // runs had getMores or not, so we can only check totalExec >= firstResponse.
-            assert.gte(totalExecMicros[field], firstResponseExecMicros[field]);
+            assert(bsonWoCompare(totalExecMicros[field], firstResponseExecMicros[field]) >= 0);
         } else if (getMores) {
             // If there are getMore calls, totalExecMicros fields should be greater than or equal to
             // firstResponseExecMicros.
@@ -274,7 +277,7 @@ export function assertExpectedResults(results,
                 // possible for the min or max to be equal.
                 assert.gte(totalExecMicros[field], firstResponseExecMicros[field]);
             } else {
-                assert.gt(totalExecMicros[field], firstResponseExecMicros[field]);
+                assert(bsonWoCompare(totalExecMicros[field], firstResponseExecMicros[field]) > 0);
             }
         } else {
             // If there are no getMore calls, totalExecMicros fields should be equal to
@@ -347,7 +350,7 @@ function hasValueAtPath(object, dottedPath) {
     let nestedFields = dottedPath.split(".");
     for (const nestedField of nestedFields) {
         if (!object.hasOwnProperty(nestedField)) {
-            return false
+            return false;
         }
         object = object[nestedField];
     }
@@ -363,7 +366,7 @@ export function getValueAtPath(object, dottedPath) {
     let nestedFields = dottedPath.split(".");
     for (const nestedField of nestedFields) {
         if (!object.hasOwnProperty(nestedField)) {
-            return false
+            return false;
         }
         object = object[nestedField];
     }
@@ -482,23 +485,43 @@ export function runCommandAndValidateQueryStats(
 }
 
 /**
- * Helper function to verify that each of the query stats entries has a unique hash and returns a
- * list of the hashes.
+ * Helper function that verifies each query stats entry has a hash, filters out the unique hashes
+ * and returns a list of them.
+ * @param {list} entries - List of entries returned from $queryStats.
+ * @returns {list} list of unique hashes corresponding to the entries.
+ */
+function getUniqueValuesByName(entries, fieldName) {
+    const hashes = new Set();
+    for (const entry of entries) {
+        assert(entry[fieldName] && entry[fieldName] !== "",
+               `Entry does not have a '${fieldName}' field: ${tojson(entry)}`);
+        hashes.add(entry[fieldName]);
+    }
+    return Array.from(hashes);
+}
+
+/**
+ * Helper function that verifies that we have as many key hashes as query stats entries and
+ * returns a list of said hashes.
  * @param {list} entries - List of entries returned from $queryStats.
  * @returns {list} list of unique hashes corresponding to the entries.
  */
 export function getQueryStatsKeyHashes(entries) {
-    const keyHashes = {};
-    for (const entry of entries) {
-        assert(entry.keyHash && entry.keyHash !== "",
-               `Entry does not have a 'keyHash' field: ${tojson(entry)}`);
-        keyHashes[entry.keyHash] = entry;
-    }
+    const keyHashArray = getUniqueValuesByName(entries, 'keyHash');
     // We expect all keys and hashes to be unique, so assert that we have as many unique hashes as
     // entries.
-    const keyHashArray = Object.keys(keyHashes);
     assert.eq(keyHashArray.length, entries.length, tojson(entries));
     return keyHashArray;
+}
+
+/**
+ * Helper function that filters out the unique query shape hashes from the query stats entries and
+ * returns a list of said hashes.
+ * @param {list} entries - List of entries returned from $queryStats.
+ * @returns {list} list of unique hashes corresponding to the shapes in the entries.
+ */
+export function getQueryStatsShapeHashes(entries) {
+    return getUniqueValuesByName(entries, 'queryShapeHash');
 }
 
 /**
@@ -691,27 +714,38 @@ export function exhaustCursorAndGetQueryStats(conn, coll, cmd, key, expectedDocs
 }
 
 /**
+ * The options passed to server deployments sometimes get modified. Instead of having a single
+ * constant that we pass around (risking modification), we return the defaults from a function.
+ */
+export function getQueryStatsServerParameters() {
+    return {setParameter: {internalQueryStatsRateLimit: -1}};
+}
+
+/**
  * Run the given callback for each of the deployment scenarios we want to test query stats against
  * (standalone, replset, sharded cluster). Callback must accept two arguments: the connection and
  * the test object (ReplSetTest or ShardingTest). For the standalone case, the test is null.
  */
 export function runForEachDeployment(callbackFn) {
-    // The options passed to runMongod sometimes get modified. Instead of having a single constant
-    // that we pass around (risking modification), we return the defaults from a function.
-    function options() {
-        return {setParameter: {internalQueryStatsRateLimit: -1}};
-    }
-
     {
-        const conn = MongoRunner.runMongod(options());
+        const conn = MongoRunner.runMongod(getQueryStatsServerParameters());
 
         callbackFn(conn, null);
 
         MongoRunner.stopMongod(conn);
     }
 
+    runOnReplsetAndShardedCluster(callbackFn);
+}
+
+/**
+ * Run the given callback against replset, sharded cluster deployments. This is especially useful
+ * for tests involving query settings since PQS does not work in standalone. Callback must accept
+ * two arguments: the connection and the test object (ReplSetTest or ShardingTest).
+ */
+export function runOnReplsetAndShardedCluster(callbackFn) {
     {
-        const rst = new ReplSetTest({nodes: 3, nodeOptions: options()});
+        const rst = new ReplSetTest({nodes: 3, nodeOptions: getQueryStatsServerParameters()});
         rst.startSet();
         rst.initiate();
 
@@ -721,7 +755,8 @@ export function runForEachDeployment(callbackFn) {
     }
 
     {
-        const st = new ShardingTest(Object.assign({shards: 2, other: {mongosOptions: options()}}));
+        const st = new ShardingTest(
+            Object.assign({shards: 2, other: {mongosOptions: getQueryStatsServerParameters()}}));
 
         const testDB = st.s.getDB("test");
         // Enable sharding separate from per-test setup to avoid calling enableSharding repeatedly.
@@ -743,8 +778,8 @@ export function checkChangeStreamEntry(
     assert.eq(collectionName, queryStatsEntry.key.queryShape.cmdNs.coll);
 
     // Confirm entry is a change stream request.
-    let stringifiedPipeline = JSON.stringify(queryStatsEntry.key.queryShape.pipeline, null, 0);
-    assert(stringifiedPipeline.includes("_internalChangeStream"));
+    const pipelineShape = queryStatsEntry.key.queryShape.pipeline;
+    assert(pipelineShape[0].hasOwnProperty("$changeStream"), pipelineShape);
 
     // TODO SERVER-76263 Support reporting 'collectionType' on a sharded cluster.
     if (!FixtureHelpers.isMongos(db)) {

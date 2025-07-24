@@ -369,16 +369,24 @@ auto runAndThrowIfTermChanged(OperationContext* opCtx, F&& fn) {
     if constexpr (!std::is_same_v<void, std::invoke_result_t<F, decltype(termBeforeOperation)>>) {
         auto result = fn(termBeforeOperation);
         auto termAtEndOfOperation = repl::ReplicationCoordinator::get(opCtx)->getTerm();
-        uassert(ErrorCodes::InterruptedDueToReplStateChange,
-                "Change of ReplicaSet term detected between start and end of operation",
-                termBeforeOperation == termAtEndOfOperation);
+        uassert(
+            ErrorCodes::InterruptedDueToReplStateChange,
+            fmt::format("Change of ReplicaSet term detected between start and end of operation. "
+                        "Term before operation is {}. Term at end of operation is {}",
+                        termBeforeOperation,
+                        termAtEndOfOperation),
+            termBeforeOperation == termAtEndOfOperation);
         return result;
     } else {
         fn(termBeforeOperation);
         auto termAtEndOfOperation = repl::ReplicationCoordinator::get(opCtx)->getTerm();
-        uassert(ErrorCodes::InterruptedDueToReplStateChange,
-                "Change of ReplicaSet term detected between start and end of operation",
-                termBeforeOperation == termAtEndOfOperation);
+        uassert(
+            ErrorCodes::InterruptedDueToReplStateChange,
+            fmt::format("Change of ReplicaSet term detected between start and end of operation. "
+                        "Term before operation is {}. Term at end of operation is {}",
+                        termBeforeOperation,
+                        termAtEndOfOperation),
+            termBeforeOperation == termAtEndOfOperation);
     }
 }
 
@@ -577,10 +585,9 @@ SemiFuture<CollectionAndChangedChunks> ShardServerCatalogCacheLoader::getChunksS
 }
 
 SemiFuture<DatabaseType> ShardServerCatalogCacheLoader::getDatabase(const DatabaseName& dbName) {
-    // The admin and config database have fixed metadata that does not need to be refreshed.
-    if (dbName.isAdminDB() || dbName.isConfigDB()) {
-        return DatabaseType(dbName, ShardId::kConfigServerId, DatabaseVersion::makeFixed());
-    }
+    tassert(9131801,
+            "Unexpected request for 'admin' or 'config' database, which have fixed metadata",
+            !dbName.isAdminDB() && !dbName.isConfigDB());
 
     const auto [isPrimary, term] = [&] {
         stdx::lock_guard<Latch> lock(_mutex);

@@ -4,10 +4,17 @@ load("//bazel/toolchains:mongo_toolchain.bzl", "toolchain_download")
 
 http_archive(
     name = "bazel_clang_tidy",
-    # Note: strip_prefix is necessary to refer to the `@bazel_clang_tidy` package
-    strip_prefix = "bazel_clang_tidy-1.1",
-    # TODO(80396): Figure out how to get the sha256 of the release tarball
-    url = "https://github.com/mongodb-forks/bazel_clang_tidy/archive/refs/tags/v1.1.tar.gz",
+    sha256 = "2d4a9c91fe6694205c0de0990ef4b276ef4346dc441ee4046faff1947d97a29f",
+    strip_prefix = "bazel_clang_tidy-1.4",
+    urls = [
+        # Implements retry by relisting each url multiple times to be used as a failover.
+        # TODO(SERVER-86719): Re-implement http_archive to allow sleeping between retries
+        "https://github.com/mongodb-forks/bazel_clang_tidy/archive/refs/tags/v1.4.tar.gz",
+        "https://github.com/mongodb-forks/bazel_clang_tidy/archive/refs/tags/v1.4.tar.gz",
+        "https://github.com/mongodb-forks/bazel_clang_tidy/archive/refs/tags/v1.4.tar.gz",
+        "https://github.com/mongodb-forks/bazel_clang_tidy/archive/refs/tags/v1.4.tar.gz",
+        "https://github.com/mongodb-forks/bazel_clang_tidy/archive/refs/tags/v1.4.tar.gz",
+    ],
 )
 
 setup_local_config_platform(name = "local_config_platform")
@@ -30,18 +37,48 @@ load("@rules_coverity//coverity:repositories.bzl", "rules_coverity_toolchains")
 
 rules_coverity_toolchains()
 
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Hedron's Compile Commands Extractor for Bazel
+# https://github.com/hedronvision/bazel-compile-commands-extractor
+http_archive(
+    # TODO SERVER-91979
+    # the compile commands extractor is tied to bazel version and toolchain resolution
+    # so this might need to be update when bazel version is updated.
+    name = "hedron_compile_commands",
+    sha256 = "d699c5e3a82b811d7051e833b1808358256a9c52285a43e6a3abb76c809ab03f",
+    strip_prefix = "bazel-compile-commands-extractor-33658bab23a4858b513d767480b43d3d8fb6a3d1",
+    url = "https://github.com/hedronvision/bazel-compile-commands-extractor/archive/33658bab23a4858b513d767480b43d3d8fb6a3d1.tar.gz",
+)
+
+load("@hedron_compile_commands//:workspace_setup.bzl", "hedron_compile_commands_setup")
+
+hedron_compile_commands_setup()
+
+load("@hedron_compile_commands//:workspace_setup_transitive.bzl", "hedron_compile_commands_setup_transitive")
+
+hedron_compile_commands_setup_transitive()
+
+load("@hedron_compile_commands//:workspace_setup_transitive_transitive.bzl", "hedron_compile_commands_setup_transitive_transitive")
+
+hedron_compile_commands_setup_transitive_transitive()
+
+load("@hedron_compile_commands//:workspace_setup_transitive_transitive_transitive.bzl", "hedron_compile_commands_setup_transitive_transitive_transitive")
+
+hedron_compile_commands_setup_transitive_transitive_transitive()
+
 http_archive(
     name = "rules_python",
-    sha256 = "8c8fe44ef0a9afc256d1e75ad5f448bb59b81aba149b8958f02f7b3a98f5d9b4",
-    strip_prefix = "rules_python-0.13.0",
+    sha256 = "be04b635c7be4604be1ef20542e9870af3c49778ce841ee2d92fcb42f9d9516a",
+    strip_prefix = "rules_python-0.35.0",
     urls = [
         # Implements retry by relisting each url multiple times to be used as a failover.
         # TODO(SERVER-86719): Re-implement http_archive to allow sleeping between retries
-        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.13.0.tar.gz",
-        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.13.0.tar.gz",
-        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.13.0.tar.gz",
-        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.13.0.tar.gz",
-        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.13.0.tar.gz",
+        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.35.0.tar.gz",
+        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.35.0.tar.gz",
+        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.35.0.tar.gz",
+        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.35.0.tar.gz",
+        "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.35.0.tar.gz",
     ],
 )
 
@@ -84,16 +121,16 @@ http_archive(
 # Poetry rules for managing Python dependencies
 http_archive(
     name = "rules_poetry",
-    sha256 = "59b6f654885059465880d641dbf45a1babad512c6ae7347b01ad03eebd615e0a",
-    strip_prefix = "rules_poetry-fc645faf7fb2e7f6c8fce968801e2a63dc1332bb",
+    sha256 = "5db24c0eacb42ef8b25019bd000a9d2905fba71682d1dac51603bfbc0e6fa5c9",
+    strip_prefix = "rules_poetry-29b93f4f2e227834ac8d5b48cb0baef8dbeeecc7",
     urls = [
         # Implements retry by relisting each url multiple times to be used as a failover.
         # TODO(SERVER-86719): Re-implement http_archive to allow sleeping between retries
-        "https://github.com/mongodb-forks/rules_poetry/archive/fc645faf7fb2e7f6c8fce968801e2a63dc1332bb.tar.gz",
-        "https://github.com/mongodb-forks/rules_poetry/archive/fc645faf7fb2e7f6c8fce968801e2a63dc1332bb.tar.gz",
-        "https://github.com/mongodb-forks/rules_poetry/archive/fc645faf7fb2e7f6c8fce968801e2a63dc1332bb.tar.gz",
-        "https://github.com/mongodb-forks/rules_poetry/archive/fc645faf7fb2e7f6c8fce968801e2a63dc1332bb.tar.gz",
-        "https://github.com/mongodb-forks/rules_poetry/archive/fc645faf7fb2e7f6c8fce968801e2a63dc1332bb.tar.gz",
+        "https://github.com/mongodb-forks/rules_poetry/archive/29b93f4f2e227834ac8d5b48cb0baef8dbeeecc7.tar.gz",
+        "https://github.com/mongodb-forks/rules_poetry/archive/29b93f4f2e227834ac8d5b48cb0baef8dbeeecc7.tar.gz",
+        "https://github.com/mongodb-forks/rules_poetry/archive/29b93f4f2e227834ac8d5b48cb0baef8dbeeecc7.tar.gz",
+        "https://github.com/mongodb-forks/rules_poetry/archive/29b93f4f2e227834ac8d5b48cb0baef8dbeeecc7.tar.gz",
+        "https://github.com/mongodb-forks/rules_poetry/archive/29b93f4f2e227834ac8d5b48cb0baef8dbeeecc7.tar.gz",
     ],
 )
 

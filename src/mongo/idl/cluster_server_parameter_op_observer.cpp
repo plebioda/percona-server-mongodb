@@ -102,6 +102,7 @@ void ClusterServerParameterOpObserver::onDelete(OperationContext* opCtx,
                                                 const CollectionPtr& coll,
                                                 StmtId stmtId,
                                                 const BSONObj& doc,
+                                                const DocumentKey& documentKey,
                                                 const OplogDeleteEntryArgs& args,
                                                 OpStateAccumulator* opAccumulator) {
     const auto& nss = coll->ns();
@@ -129,7 +130,8 @@ void ClusterServerParameterOpObserver::onDelete(OperationContext* opCtx,
 }
 
 void ClusterServerParameterOpObserver::onDropDatabase(OperationContext* opCtx,
-                                                      const DatabaseName& dbName) {
+                                                      const DatabaseName& dbName,
+                                                      bool markFromMigrate) {
     if (dbName.isConfigDB()) {
         // Entire config DB deleted, reset to default state.
         shard_role_details::getRecoveryUnit(opCtx)->onCommit(

@@ -2,15 +2,17 @@
  * Tests that additional participants are handled correctly when a transaction is aborted.
  * @tags: [
  *   requires_fcv_80,
- *   temp_disabled_embedded_router_metrics,
+ *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  *   uses_multi_shard_transaction,
  *   uses_transactions]
  */
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
-const customTransactionLifetimeLimitSeconds = 5;
+const customTransactionLifetimeLimitSeconds = 10;
 
 /**
  * Checks that aborted transaction count was incremented for mongos and each participating shard.
@@ -193,7 +195,7 @@ const allParticipants = [st.shard0, st.shard1, st.shard2];
         assert.commandWorked(st.s.adminCommand({serverStatus: 1})).transactions;
     const finalMongodTxnMetrics = allParticipants.map((shard) => {
         return assert.commandWorked(shard.adminCommand({serverStatus: 1})).transactions;
-    })
+    });
     verifyFinalAbortedTransactionMetrics(initialMongosTxnMetrics,
                                          initialMongodTxnMetrics,
                                          finalMongosTxnMetrics,
@@ -251,7 +253,7 @@ const allParticipants = [st.shard0, st.shard1, st.shard2];
         assert.commandWorked(st.s.adminCommand({serverStatus: 1})).transactions;
     const finalMongodTxnMetrics = allParticipants.map((shard) => {
         return assert.commandWorked(shard.adminCommand({serverStatus: 1})).transactions;
-    })
+    });
     verifyFinalAbortedTransactionMetrics(initialMongosTxnMetrics,
                                          initialMongodTxnMetrics,
                                          finalMongosTxnMetrics,
@@ -263,20 +265,20 @@ const allParticipants = [st.shard0, st.shard1, st.shard2];
 /* Test case 3 */
 {
     jsTest.log(
-        "Testing that an additional participant not reported to mongos is not included in abort protocol" +
-        " and the additional participant is reaped after transactionLifetimeLimitSeconds.");
+        "Testing that an additional participant not reported to mongos is not included in abort " +
+        "protocol and the additional participant is reaped after transactionLifetimeLimitSeconds.");
     dropCollections(st);
 
     const numDocs = 500;
 
-    /*
-     * In this test, mongos targets shard0 and shard1 when executing the aggregation pipeline.
-     * - shard0 does not need to add another participant. shard1 adds shard2 as participant.
-     * - shard0 is paused until shard1 adds shard2 as a participant.
-     * - shard1 is paused from responding so that mongos never learns that shard2 was added.
-     * - the transaction is aborted, causing mongos to send abortTransaction to shard0 and shard1.
-     * - shard2 aborts the transaction after transactionLifetimeLimitSeconds.
-     */
+    //
+    // In this test, mongos targets shard0 and shard1 when executing the aggregation pipeline.
+    // - shard0 does not need to add another participant. shard1 adds shard2 as participant.
+    // - shard0 is paused until shard1 adds shard2 as a participant.
+    // - shard1 is paused from responding so that mongos never learns that shard2 was added.
+    // - the transaction is aborted, causing mongos to send abortTransaction to shard0 and shard1.
+    // - shard2 aborts the transaction after transactionLifetimeLimitSeconds.
+    //
     // Create a sharded collection, "foo", with the following chunks:
     // shard0: _id: [-inf, 0)
     // shard1: _id: [0, +inf)
@@ -348,7 +350,7 @@ const allParticipants = [st.shard0, st.shard1, st.shard2];
         configureFailPoint(st.shard1, "hangWhenSubRouterHandlesResponseFromAddedParticipant");
     // Set a failpoint on shard0 so that it does not respond to mongos for the aggregate command
     // until after shard1 has hung.
-    const fpHangShard0 = configureFailPoint(st.shard0, "hangAfterAcquiringCollectionCatalog");
+    const fpHangShard0 = configureFailPoint(st.shard0, "getMoreHangAfterPinCursor");
 
     const waitForAbort = new CountDownLatch(2);
 
@@ -362,7 +364,8 @@ const allParticipants = [st.shard0, st.shard1, st.shard2];
                 pipeline: [
                     {
                         $lookup:
-                            {from: foreignCollName, localField: "_id", foreignField: "x", as: "result"}
+                            {from: foreignCollName, localField: "_id", foreignField: "x", as:
+"result"}
                     },
                     { $limit: NumberInt(200) },
                 ],
@@ -405,14 +408,18 @@ const allParticipants = [st.shard0, st.shard1, st.shard2];
     // Allow shard0 to proceed; aggregation pipeline will finish without results from shard1.
     fpHangShard0.off();
 
-    // Wait until aggregation is complete
-    assert.soon(() => {return waitForAbort.getCount() < 2});
+    // Wait until aggregation is complete without responses from shard1 and shard2.
+    assert.soon(() => {
+        return waitForAbort.getCount() < 2;
+    });
 
-    // allow shard1 to proceed; any response regarding aggergation will be ignored by mongos.
+    // Allow shard1 to proceed; any response for the aggregation will be ignored by mongos.
     fpHangShard1.off();
 
     // Wait until txn is aborted.
-    assert.soon(() => {return waitForAbort.getCount() == 0});
+    assert.soon(() => {
+        return waitForAbort.getCount() == 0;
+    });
 
     aggRequestThread.join();
 
@@ -421,7 +428,7 @@ const allParticipants = [st.shard0, st.shard1, st.shard2];
         assert.commandWorked(st.s.adminCommand({serverStatus: 1})).transactions;
     let finalMongodTxnMetrics = allParticipants.map((shard) => {
         return assert.commandWorked(shard.adminCommand({serverStatus: 1})).transactions;
-    })
+    });
 
     // shard2 should not have participated in the txn abort
     verifyFinalAbortedTransactionMetrics(initialMongosTxnMetrics,
@@ -437,7 +444,7 @@ const allParticipants = [st.shard0, st.shard1, st.shard2];
     // Now shard2 should have aborted due to timeout.
     finalMongodTxnMetrics = allParticipants.map((shard) => {
         return assert.commandWorked(shard.adminCommand({serverStatus: 1})).transactions;
-    })
+    });
     verifyFinalAbortedTransactionMetrics(initialMongosTxnMetrics,
                                          initialMongodTxnMetrics,
                                          finalMongosTxnMetrics,

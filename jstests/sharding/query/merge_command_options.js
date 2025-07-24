@@ -1,6 +1,7 @@
 // Tests that aggregations with a $merge stage respect the options set on the command.
 import {profilerHasNumMatchingEntriesOrThrow} from "jstests/libs/profiler.js";
-import {reconfig} from "jstests/replsets/rslib.js"
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+import {reconfig} from "jstests/replsets/rslib.js";
 
 const st = new ShardingTest({
     shards: 2,

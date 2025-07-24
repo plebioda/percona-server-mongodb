@@ -9,8 +9,11 @@
 //   does_not_support_stepdowns,
 //   requires_majority_read_concern,
 //   uses_change_streams,
-//   temp_disabled_embedded_router_mongo_bridge,
+//   # TODO (SERVER-88129): Re-enable this test or add an explanation why it is incompatible.
+//   embedded_router_incompatible,
 // ]
+
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const st = new ShardingTest({
     shards: 2,

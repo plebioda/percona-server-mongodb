@@ -4,6 +4,7 @@
  */
 
 import {assertErrCodeAndErrMsgContains} from "jstests/aggregation/extras/utils.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {MongotMock} from "jstests/with_mongot/mongotmock/lib/mongotmock.js";
 
 const dbName = jsTestName();
@@ -266,6 +267,7 @@ assert.commandWorked(
 
 // Create an unsharded collection.
 assert.commandWorked(testDBMongos.createCollection(unshardedCollName));
+st.awaitReplicationOnShards();
 
 function testAgainstCollection(collName) {
     // Test that the search index commands fail against a secondary replica set member. However,

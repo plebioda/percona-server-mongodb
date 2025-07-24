@@ -392,11 +392,9 @@ void _initializeGlobalShardingState(OperationContext* opCtx,
     auto initKeysClient =
         [service](ShardingCatalogClient* catalogClient) -> std::unique_ptr<KeysCollectionClient> {
         if (serverGlobalParams.clusterRole.has(ClusterRole::ConfigServer)) {
-            // The direct keys client must use local read concern if the storage engine can't
-            // support majority read concern.
-            bool keysClientMustUseLocalReads =
-                !service->getStorageEngine()->supportsReadConcernMajority();
-            return std::make_unique<KeysCollectionClientDirect>(keysClientMustUseLocalReads);
+            // The direct keys client does not use local read concern since the storage engine
+            // supports majority read concern.
+            return std::make_unique<KeysCollectionClientDirect>(false /*mustUseLocalReads*/);
         }
         return std::make_unique<KeysCollectionClientSharded>(catalogClient);
     };
@@ -644,8 +642,14 @@ void ShardingInitializationMongoD::onSetCurrentConfig(OperationContext* opCtx) {
     }
 }
 
-void ShardingInitializationMongoD::onInitialDataAvailable(OperationContext* opCtx,
-                                                          bool isMajorityDataAvailable) {
+void ShardingInitializationMongoD::onConsistentDataAvailable(OperationContext* opCtx,
+                                                             bool isMajority,
+                                                             bool isRollback) {
+    // TODO (SERVER-91505): Determine if we should reload in-memory states on rollback.
+    if (isRollback) {
+        return;
+    }
+
     if (serverGlobalParams.clusterRole.has(ClusterRole::ConfigServer)) {
         initializeGlobalShardingStateForConfigServer(opCtx);
     }

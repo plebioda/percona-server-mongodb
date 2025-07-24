@@ -125,13 +125,13 @@
 #include "mongo/s/mongos_options.h"
 #include "mongo/s/mongos_server_parameters_gen.h"
 #include "mongo/s/mongos_topology_coordinator.h"
-#include "mongo/s/query/cluster_cursor_cleanup_job.h"
-#include "mongo/s/query/cluster_cursor_manager.h"
+#include "mongo/s/query/exec/cluster_cursor_cleanup_job.h"
+#include "mongo/s/query/exec/cluster_cursor_manager.h"
 #include "mongo/s/query_analysis_sampler.h"
 #include "mongo/s/read_write_concern_defaults_cache_lookup_mongos.h"
 #include "mongo/s/resource_yielders.h"
 #include "mongo/s/router_uptime_reporter.h"
-#include "mongo/s/service_entry_point_mongos.h"
+#include "mongo/s/service_entry_point_router_role.h"
 #include "mongo/s/session_catalog_router.h"
 #include "mongo/s/sessions_collection_sharded.h"
 #include "mongo/s/sharding_initialization.h"
@@ -806,7 +806,7 @@ ExitCode runMongosServer(ServiceContext* serviceContext) {
 #endif
 
     serviceContext->getService(ClusterRole::RouterServer)
-        ->setServiceEntryPoint(std::make_unique<ServiceEntryPointMongos>());
+        ->setServiceEntryPoint(std::make_unique<ServiceEntryPointRouterRole>());
 
     {
         const auto loadBalancerPort = load_balancer_support::getLoadBalancerPort();
@@ -847,7 +847,11 @@ ExitCode runMongosServer(ServiceContext* serviceContext) {
     ReadWriteConcernDefaults::create(serviceContext, readWriteConcernDefaultsCacheLookupMongoS);
     ChangeStreamOptionsManager::create(serviceContext);
     query_settings::QuerySettingsManager::create(serviceContext, [](OperationContext* opCtx) {
-        uassertStatusOK(ClusterServerParameterRefresher::get(opCtx)->refreshParameters(opCtx));
+        // QuerySettingsManager modifies a cluster-wide parameter and thus a refresh of the
+        // parameter after that modification should observe results of preceeding writes.
+        const bool kEnsureReadYourWritesConsistency = true;
+        uassertStatusOK(ClusterServerParameterRefresher::get(opCtx)->refreshParameters(
+            opCtx, kEnsureReadYourWritesConsistency));
     });
 
     auto opCtxHolder = tc->makeOperationContext();

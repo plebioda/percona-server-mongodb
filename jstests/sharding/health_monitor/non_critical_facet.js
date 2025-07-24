@@ -3,10 +3,12 @@
  *
  *  @tags: [
  *    multiversion_incompatible,
- *    temp_disabled_embedded_router_health_monitor,
- *    temp_disabled_embedded_router_metrics,
+ *    # TODO (SERVER-88126): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 const ACTIVE_FAULT_DURATION_SECS = 1;
 
 const params = {

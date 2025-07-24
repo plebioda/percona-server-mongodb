@@ -22,7 +22,7 @@ for (let i = 0; i < numDocs / 2; ++i) {
     bulk.insert({foo: i, bar: i, applyDiscount: false, word: "ghjk"});
 }
 assert.commandWorked(bulk.execute());
-coll.createIndex({foo: 1})
+coll.createIndex({foo: 1});
 
 // Tests that $meta is re-parsed correctly by ensuring the metaDataKeyword is not serialized as
 // string literal.
@@ -124,6 +124,43 @@ function makeAggCmd(pipeline, collName = coll.getName()) {
 
     let queryStats = getQueryStats(conn);
     assert.eq(queryStats.length, 3, `Expected 3 entries but got ${tojson(queryStats)}`);
+}
+
+// Test re-parsing for $expressionN expression types (e.g. $maxN) where the 'n' expression evaluates
+// differently from original shape to representative shape.
+{
+    resetQueryStatsStore(conn, "1MB");
+
+    // Query shape with $maxN.
+    testDB.runCommand(makeAggCmd([{
+        $setWindowFields: {
+            output: {
+                max: {
+                    $maxN: {
+                        n: {$abs: {$ceil: {$strcasecmp: ["Grocery Small", "withdrawal"]}}},
+                        input: "$x"
+                    }
+                }
+            }
+        }
+    }]));
+
+    // Query shape with $minN.
+    testDB.runCommand(makeAggCmd([{
+        $setWindowFields: {
+            output: {
+                max: {
+                    $minN: {
+                        n: {$abs: {$ceil: {$strcasecmp: ["Grocery Small", "withdrawal"]}}},
+                        input: "$x"
+                    }
+                }
+            }
+        }
+    }]));
+
+    const queryStats = getQueryStats(conn);
+    assert.eq(queryStats.length, 2, `Expected 2 entries but got ${tojson(queryStats)}`);
 }
 
 MongoRunner.stopMongod(conn);

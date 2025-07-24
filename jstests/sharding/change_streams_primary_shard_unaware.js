@@ -8,11 +8,13 @@
 //   denylist_from_rhel_67_s390x,
 //   requires_majority_read_concern,
 //   requires_persistence,
+//   # TODO (SERVER-88123): Re-enable this test.
 //   # Test doesn't start enough mongods to have num_mongos routers
-//   temp_disabled_embedded_router_num_routers,
+//   embedded_router_incompatible,
 //   uses_change_streams,
 // ]
 import {ChangeStreamTest} from "jstests/libs/change_stream_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 // Returns true if the shard is aware that the collection is sharded.
 function isShardAware(shard, coll) {

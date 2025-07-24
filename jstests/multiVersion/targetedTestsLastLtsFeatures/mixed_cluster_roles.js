@@ -17,6 +17,9 @@
  * ]
  */
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 function testCRUD(conn) {
     const db = conn.getDB('apple');
     assert.commandWorked(db.foo.insert({x: 1}));
@@ -104,7 +107,7 @@ function ensureShardingCommandsFail(conn) {
     testCRUD(node0);
     ensureShardingCommandsFail(node0);
 
-    jsTestLog('Test with shard server primary before the shard identity document is inserted.')
+    jsTestLog('Test with shard server primary before the shard identity document is inserted.');
     MongoRunner.stopMongod(node0, null, {noCleanData: true});
     node0 = MongoRunner.runMongod({
         noCleanData: true,

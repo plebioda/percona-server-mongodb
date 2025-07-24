@@ -173,8 +173,7 @@ public:
         ThreadPool::Options options;
         auto pool = std::make_unique<ThreadPool>(options);
 
-        _executor =
-            std::make_unique<executor::ThreadPoolTaskExecutor>(std::move(pool), std::move(network));
+        _executor = executor::ThreadPoolTaskExecutor::create(std::move(pool), std::move(network));
     }
 
     void resetManager(std::unique_ptr<FaultManagerConfig> config = nullptr) {
@@ -251,7 +250,7 @@ public:
         tickSource().advance(d);
     }
 
-    static inline const Seconds kWaitTimeout{10};
+    static inline const Seconds kWaitTimeout{35};
     static inline const Milliseconds kSleepTime{1};
 
     static inline const int kActiveFaultDurationSecs = 5;

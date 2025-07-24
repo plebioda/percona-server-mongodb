@@ -4,11 +4,14 @@
  *
  * @tags: [
  *   requires_persistence,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {getLatestOp} from "jstests/replsets/rslib.js";
 import {ShardingStateTest} from "jstests/sharding/libs/sharding_state_test.js";
 

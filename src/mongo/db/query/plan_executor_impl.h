@@ -62,6 +62,7 @@
 #include "mongo/db/storage/snapshot.h"
 #include "mongo/db/transaction_resources.h"
 #include "mongo/db/yieldable.h"
+#include "mongo/s/shard_cannot_refresh_due_to_locks_held_exception.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/duration.h"
 
@@ -111,6 +112,16 @@ MONGO_WARN_UNUSED_RESULT_FUNCTION PlanStage::StageState handlePlanStageYield(
         // necessary.
         yieldHandler();
         return PlanStage::NEED_YIELD;
+    } catch (const ExceptionFor<ErrorCodes::ShardCannotRefreshDueToLocksHeld>& ex) {
+        // An operation may need to obtain the cached routing table (CatalogCache) for some
+        // namespace other than the main nss of the plan. When that cache is not immediately
+        // available, a refresh of the CatalogCache is needed. However, this refresh cannot be done
+        // while locks are being held. We handle this by requesting a yield and then refreshing the
+        // CatalogCache after having released the locks.
+        const auto& extraInfo = ex.extraInfo<ShardCannotRefreshDueToLocksHeldInfo>();
+        planExecutorShardingState(expCtx->opCtx).catalogCacheRefreshRequired = extraInfo->getNss();
+        yieldHandler();
+        return PlanStage::NEED_YIELD;
     }
 }
 
@@ -153,13 +164,10 @@ public:
     ExecState getNextDocument(Document* objOut, RecordId* dlOut) final;
     ExecState getNext(BSONObj* out, RecordId* dlOut) final;
     size_t getNextBatch(size_t batchSize, AppendBSONObjFn append) final;
-    void executeExhaustive() final;
 
     bool isEOF() final;
     long long executeCount() override;
-    UpdateResult executeUpdate() override;
     UpdateResult getUpdateResult() const override;
-    long long executeDelete() override;
     long long getDeleteResult() const override;
     BatchedDeleteStats getBatchedDeleteStats() override;
     void markAsKilled(Status killStatus) final;

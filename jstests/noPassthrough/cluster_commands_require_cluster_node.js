@@ -6,7 +6,9 @@
  *   requires_sharding,
  * ]
  */
-import {ConfigShardUtil} from "jstests/libs/config_shard_util.js";
+
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const kDBName = "foo";
 const kCollName = "bar";

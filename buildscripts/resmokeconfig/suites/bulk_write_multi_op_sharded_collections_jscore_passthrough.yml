@@ -13,7 +13,6 @@ selector:
     - jstests/core/**/awaitdata_getmore_cmd.js # capped collections.
     - jstests/core/**/bypass_doc_validation.js # sharded $out output not permitted
     - jstests/core/**/check_shard_index.js # checkShardingIndex.
-    - jstests/core/**/collection_truncate.js # emptycapped.
     - jstests/core/**/compact_keeps_indexes.js # compact.
     - jstests/core/**/currentop.js # uses fsync.
     - jstests/core/**/dbhash.js # dbhash.
@@ -82,7 +81,11 @@ selector:
     - jstests/core/txns/timeseries/timeseries_reads_in_txns.js
     - jstests/core/txns/timeseries_insert_in_txn.js
     - jstests/core/txns/txn_ops_allowed_on_buckets_coll.js
-    - jstests/core/query/empty_ts.js
+    - jstests/core/write/empty_ts.js
+    - jstests/core/write/empty_ts_bulk_write.js
+    - jstests/core/write/bypass_empty_ts_replacement.js
+    - jstests/core/write/bypass_empty_ts_replacement_bulk_write.js
+    - jstests/core/write/bypass_empty_ts_replacement_timeseries.js
 
     # Multiple cluster override does not support QE
     - jstests/core/queryable_encryption/*.js

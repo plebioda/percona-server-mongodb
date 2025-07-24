@@ -52,7 +52,6 @@
 #include "mongo/bson/bsontypes.h"
 #include "mongo/bson/simple_bsonelement_comparator.h"
 #include "mongo/db/basic_types.h"
-#include "mongo/db/bson/dotted_path_support.h"
 #include "mongo/db/exec/document_value/document_metadata_fields.h"
 #include "mongo/db/index/expression_params.h"
 #include "mongo/db/index/multikey_paths.h"
@@ -62,6 +61,8 @@
 #include "mongo/db/matcher/expression_geo.h"
 #include "mongo/db/pipeline/dependencies.h"
 #include "mongo/db/pipeline/field_path.h"
+#include "mongo/db/query/bson/dotted_path_support.h"
+#include "mongo/db/query/distinct_access.h"
 #include "mongo/db/query/find_command.h"
 #include "mongo/db/query/index_bounds.h"
 #include "mongo/db/query/index_hint.h"
@@ -1283,12 +1284,11 @@ std::unique_ptr<QuerySolutionNode> QueryPlannerAnalysis::analyzeSort(
 
     if (!solnRoot->fetched()) {
         const bool sortIsCovered = std::all_of(sortObj.begin(), sortObj.end(), [&](BSONElement e) {
-            // If the index has the collation that the query is expecting then kCollatedProvided
-            // will be returned hence we can use the index for sorting and grouping (distinct_scan)
-            // but need to add a fetch to retrieve a proper value of the key.
-            auto fieldAvailability = solnRoot->getFieldAvailability(e.fieldName());
-            return fieldAvailability == FieldAvailability::kCollatedProvided ||
-                fieldAvailability == FieldAvailability::kFullyProvided;
+            // Note that hasField() will return 'false' in the case that this field is a string
+            // and there is a non-simple collation on the index. This will lead to encoding of
+            // the field from the document on fetch, despite having read the encoded value from
+            // the index.
+            return solnRoot->hasField(e.fieldName());
         });
 
         if (!sortIsCovered) {
@@ -1346,8 +1346,16 @@ std::unique_ptr<QuerySolution> QueryPlannerAnalysis::analyzeDataAccess(
     // data.
 
     // If we're answering a query on a sharded system, we need to drop documents that aren't
-    // logically part of our shard.
-    if (params.mainCollectionInfo.options & QueryPlannerParams::INCLUDE_SHARD_FILTER) {
+    // logically part of our shard. Inserting the sharding filter stage in a canonical query makes
+    // it ineligible to the DISTINCT_SCAN conversion.
+    //
+    // In case of a distinct query for the fallback find we want to avoid inserting a sharding
+    // filter since it would block any potential transition to DISTINCT_SCAN.
+    //
+    // TODO SERVER-92458: Remove the restriction when the distinct conversion can accept a sharding
+    // filter.
+    if (!query.getDistinct() &&
+        (params.mainCollectionInfo.options & QueryPlannerParams::INCLUDE_SHARD_FILTER)) {
         if (!solnRoot->fetched()) {
             // See if we need to fetch information for our shard key.
             // NOTE: Solution nodes only list ordinary, non-transformed index keys for now
@@ -1355,13 +1363,9 @@ std::unique_ptr<QuerySolution> QueryPlannerAnalysis::analyzeDataAccess(
             bool fetch = false;
             for (auto&& shardKeyField : params.shardKey) {
                 auto fieldAvailability = solnRoot->getFieldAvailability(shardKeyField.fieldName());
-                if (fieldAvailability == FieldAvailability::kNotProvided ||
-                    fieldAvailability == FieldAvailability::kCollatedProvided) {
-                    // One of the shard key fields are not  or only a collated version are provided
-                    // by an index. We need to fetch the full documents prior to shard filtering. In
-                    // the case of kCollatedProvided the fetch is needed to get a non-ICU encoded
-                    // value from the collection. Else the IDXScan would only return non-readable
-                    // ICU encoded values.
+                if (fieldAvailability == FieldAvailability::kNotProvided) {
+                    // One of the shard key fields is not provided by an index. We need to fetch the
+                    // full documents prior to shard filtering.
                     fetch = true;
                     break;
                 }
@@ -1448,6 +1452,21 @@ std::unique_ptr<QuerySolution> QueryPlannerAnalysis::analyzeDataAccess(
     QueryPlannerAnalysis::removeImpreciseInternalExprFilters(params, *solnRoot);
 
     soln->setRoot(std::move(solnRoot));
+
+    // Try to convert the query solution to have a DISTINCT_SCAN.
+    const auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
+    if (feature_flags::gFeatureFlagShardFilteringDistinctScan
+            .isEnabledUseLastLTSFCVWhenUninitialized(fcvSnapshot) &&
+        query.getDistinct()) {
+        const bool strictDistinctOnly =
+            (params.mainCollectionInfo.options & QueryPlannerParams::STRICT_DISTINCT_ONLY);
+        turnIxscanIntoDistinctIxscan(query,
+                                     soln.get(),
+                                     query.getDistinct()->getKey(),
+                                     strictDistinctOnly,
+                                     params.flipDistinctScanDirection);
+    }
+
     return soln;
 }
 

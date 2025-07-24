@@ -40,7 +40,6 @@ src/btree/bt_split.c
 src/btree/bt_stat.c
 src/btree/bt_sync.c
 src/btree/bt_sync_obsolete.c
-src/btree/bt_upgrade.c
 src/btree/bt_vrfy.c
 src/btree/bt_vrfy_dsk.c
 src/btree/bt_walk.c
@@ -59,7 +58,7 @@ src/checksum/software/checksum.c
 src/checksum/x86/crc32-x86-alt.c                X86_HOST
 src/checksum/x86/crc32-x86.c                    X86_HOST
 src/checksum/zseries/crc32-s390x.c              ZSERIES_HOST
-src/checksum/zseries/crc32le-vx.sx              ZSERIES_HOST
+src/checksum/zseries/crc32le-vx.S               ZSERIES_HOST
 src/conf/conf_bind.c
 src/conf/conf_compile.c
 src/conf/conf_get.c
@@ -144,6 +143,9 @@ src/os_common/os_fstream.c
 src/os_common/os_fstream_stdio.c
 src/os_common/os_getopt.c
 src/os_common/os_strtouq.c
+src/os_darwin/os_futex.c         DARWIN_HOST
+src/os_linux/os_futex.c          LINUX_HOST
+src/os_win/os_futex.c            WINDOWS_HOST
 src/os_posix/os_dir.c            POSIX_HOST
 src/os_posix/os_dlopen.c         POSIX_HOST
 src/os_posix/os_fallocate.c      POSIX_HOST
@@ -196,6 +198,7 @@ src/schema/schema_list.c
 src/schema/schema_open.c
 src/schema/schema_plan.c
 src/schema/schema_project.c
+src/schema/schema_rename.c
 src/schema/schema_stat.c
 src/schema/schema_truncate.c
 src/schema/schema_util.c

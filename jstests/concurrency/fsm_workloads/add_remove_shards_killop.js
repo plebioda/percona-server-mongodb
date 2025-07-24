@@ -11,6 +11,9 @@
  *  catches_command_failures,
  *  uses_curop_agg_stage,
  *  antithesis_incompatible,
+ *  # TODO SERVER-91851: Continously transitioning to and from dedicated config server could end up
+ *  # migrating data to a shard that is quickly added and removed. Remove tag once this if fixed.
+ *  config_shard_incompatible,
  * ]
  */
 
@@ -72,13 +75,23 @@ export const $config = extendWorkload($baseConfig, function($config, $super) {
 
     $config.states.interruptAddShard = function(db, collName, connCache) {
         connCache.config.forEach(conn => {
-            interruptConfigsvrAddShard(conn);
+            // Removing a shard will close its ReplicaSetMonitor, which can lead requests targeting
+            // it, like the aggregation this sends to all shards when the RS endpoint is on, to fail
+            // with ShutdownInProgress.
+            RetryableWritesUtil.retryOnRetryableCode(() => {
+                interruptConfigsvrAddShard(conn);
+            }, "Retry interrupt add shard on " + tojson(conn));
         });
     };
 
     $config.states.interruptRemoveShard = function(db, collName, connCache) {
         connCache.config.forEach(conn => {
-            interruptConfigsvrRemoveShard(conn);
+            // Removing a shard will close its ReplicaSetMonitor, which can lead requests targeting
+            // it, like the aggregation this sends to all shards when the RS endpoint is on, to fail
+            // with ShutdownInProgress.
+            RetryableWritesUtil.retryOnRetryableCode(() => {
+                interruptConfigsvrRemoveShard(conn);
+            }, "Retry interrupt remove shard on " + tojson(conn));
         });
     };
 
@@ -91,18 +104,9 @@ export const $config = extendWorkload($baseConfig, function($config, $super) {
         const hasTwoOrMoreShards = shardDocs.length >= 2;
 
         cluster.getReplicaSets().forEach(rst => {
-            while (true) {
-                try {
-                    checkClusterParameter(rst, hasTwoOrMoreShards)
-                    return;
-                } catch (e) {
-                    if (RetryableWritesUtil.isRetryableCode(e.code)) {
-                        print("Retry cluster parameter check after error: " + tojson(e));
-                        continue;
-                    }
-                    throw e;
-                }
-            }
+            RetryableWritesUtil.retryOnRetryableCode(() => {
+                checkClusterParameter(rst, hasTwoOrMoreShards);
+            }, "Retry cluster parameter check");
         });
     };
 

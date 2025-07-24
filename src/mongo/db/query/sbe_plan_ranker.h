@@ -42,7 +42,7 @@
 #include "mongo/db/exec/trial_run_tracker.h"
 #include "mongo/db/query/plan_ranker.h"
 #include "mongo/db/query/query_solution.h"
-#include "mongo/db/query/sbe_stage_builder_plan_data.h"
+#include "mongo/db/query/stage_builder/sbe/builder_data.h"
 #include "mongo/db/record_id.h"
 
 namespace mongo::sbe::plan_ranker {
@@ -63,6 +63,20 @@ using CandidatePlan =
     mongo::plan_ranker::BaseCandidatePlan<std::unique_ptr<mongo::sbe::PlanStage>,
                                           std::pair<BSONObj, boost::optional<RecordId>>,
                                           CandidatePlanData>;
+
+/**
+ * This struct holds a vector with all candidate plans evaluated by this RuntimePlanner, and an
+ * index pointing to the winning plan within this vector.
+ */
+struct CandidatePlans {
+    auto& winner() {
+        invariant(winnerIdx < plans.size());
+        return plans[winnerIdx];
+    }
+
+    std::vector<plan_ranker::CandidatePlan> plans;
+    size_t winnerIdx;
+};
 
 /**
  * A factory function to create a plan ranker for an SBE plan stage stats tree.

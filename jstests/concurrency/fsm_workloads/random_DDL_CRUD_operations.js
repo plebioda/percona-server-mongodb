@@ -239,6 +239,8 @@ export const $config = (function() {
             jsTestLog('CRUD state ' + threadInfos);
             const coll = db[targetThreadColl];
 
+            mutexLock(db, tid, targetThreadColl);
+
             const generation = new Date().getTime();
             // Insert Data
             const numDocs = data.documentsPerChunk * data.numChunks;
@@ -249,7 +251,6 @@ export const $config = (function() {
                     {generation: generation, count: i, [`tid_${tid}_0`]: i, [`tid_${tid}_1`]: i});
             }
 
-            mutexLock(db, tid, targetThreadColl);
             try {
                 jsTestLog('CRUD - Insert ' + threadInfos);
                 // Check if insert succeeded
@@ -261,7 +262,7 @@ export const $config = (function() {
                 // Check guarantees IF NO CONCURRENT DROP is running.
                 // If a concurrent rename came in, then either the full operation succeded (meaning
                 // there will be 0 documents left) or the insert came in first.
-                assert.contains(currentDocs, [0, numDocs], threadInfos)
+                assert.contains(currentDocs, [0, numDocs], threadInfos);
 
                 jsTestLog('CRUD - Update ' + threadInfos);
                 res = coll.update({generation: generation}, {$set: {updated: true}}, {multi: true});

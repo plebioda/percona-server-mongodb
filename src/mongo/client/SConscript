@@ -7,6 +7,7 @@ Import("wiredtiger")
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=["sdam"],
     exports=["env"],
 )
@@ -33,94 +34,33 @@ env.Library(
     ],
 )
 
-env.Library(
-    target=[
-        "read_preference",
-    ],
-    source=[
-        "read_preference_decoration.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/service_context",
-    ],
-)
-
-if get_option("ssl") == "on":
-    env.Library(
-        target=[
-            "sasl_aws_common",
-        ],
-        source=[
-            "sasl_aws_protocol_common.idl",
-        ],
-        LIBDEPS_PRIVATE=[
-            "$BUILD_DIR/mongo/db/server_base",
-        ],
-    )
-
-    kmsEnv = env.Clone()
-
-    kmsEnv.InjectThirdParty(libraries=["libmongocrypt"])
-
-    kmsEnv.Library(
-        target=[
-            "sasl_aws_client",
-        ],
-        source=[
-            "sasl_aws_client_protocol.cpp",
-            "sasl_aws_client_protocol.idl",
-        ],
-        LIBDEPS_PRIVATE=[
-            "$BUILD_DIR/mongo/bson/bson_validate",
-            "$BUILD_DIR/mongo/db/server_base",
-            "$BUILD_DIR/third_party/shim_libmongocrypt",
-            "sasl_aws_common",
-        ],
-    )
-
-saslClientEnv = env.Clone()
-saslLibs = []
-saslClientSource = [
+# Client-side SASL source necessary for native client SASL session.
+# Includes base types and OIDC, PLAIN, SCRAM, and AWS (only if TLS configured)
+# client mechs.
+nativeSaslClientEnv = env.Clone()
+nativeSaslClientSource = [
     "native_sasl_client_session.cpp",
     "sasl_client_authenticate.cpp",
     "sasl_client_authenticate_impl.cpp",
     "sasl_client_conversation.cpp",
     "sasl_client_session.cpp",
     "sasl_oidc_client_conversation.cpp",
-    "sasl_oidc_client_types.idl",
+    "sasl_oidc_client_types_gen.cpp",
     "sasl_plain_client_conversation.cpp",
     "sasl_scram_client_conversation.cpp",
 ]
 
 if get_option("ssl") == "on":
-    saslClientSource.extend(
+    nativeSaslClientSource.extend(
         [
             "sasl_aws_client_conversation.cpp",
-            "sasl_aws_client_options.idl",
+            "sasl_aws_client_options_gen.cpp",
         ]
     )
 
-# Add in actual sasl dependencies if sasl is enabled, otherwise
-# leave library empty so other targets can link to it unconditionally
-# without needing to first test MONGO_BUILD_SASL_CLIENT.
-if env["MONGO_BUILD_SASL_CLIENT"]:
-    saslClientSource.extend(
-        [
-            "cyrus_sasl_client_session.cpp",
-            "sasl_sspi.cpp",
-            "sasl_sspi_options.cpp",
-            "sasl_sspi_options.idl",
-        ]
-    )
-
-    saslLibs.extend(["sasl2"])
-    if env.TargetOSIs("windows"):
-        saslLibs.extend(["secur32"])
-
-saslClientEnv.Library(
-    target="sasl_client",
-    source=saslClientSource,
+nativeSaslClientEnv.Library(
+    target="native_sasl_client",
+    source=nativeSaslClientSource,
     LIBDEPS=[
         "$BUILD_DIR/mongo/base/secure_allocator",
         "$BUILD_DIR/mongo/bson/util/bson_extract",
@@ -141,8 +81,38 @@ saslClientEnv.Library(
         "$BUILD_DIR/mongo/util/net/http_client",
         "connection_string",
     ],
-    SYSLIBDEPS=saslLibs,
 )
+
+if env["MONGO_BUILD_SASL_CLIENT"]:
+    # Client-side SASL source necessary for mongo shell.
+    # Includes Cyrus SASL, OIDC, PLAIN, and AWS (if TLS support is on)
+    # support. Depends on sasl_client_native.
+    cyrusSaslClientEnv = env.Clone()
+
+    saslLibs = ["sasl2"]
+    if env.TargetOSIs("windows"):
+        saslLibs.extend(["secur32"])
+
+    cyrusSaslClientEnv.Library(
+        target="cyrus_sasl_client",
+        source=[
+            "cyrus_sasl_client_session.cpp",
+            "sasl_sspi.cpp",
+            "sasl_sspi_options.cpp",
+            "sasl_sspi_options_gen.cpp",
+        ],
+        LIBDEPS=[
+            "native_sasl_client",
+        ],
+        SYSLIBDEPS=saslLibs,
+        LIBDEPS_DEPENDENTS=[
+            "$BUILD_DIR/mongo/shell/mongo_initializers",
+        ],
+        LIBDEPS_TAGS=[
+            "lint-allow-nonprivate-on-deps-dependents",
+            "lint-allow-bidirectional-edges",
+        ],
+    )
 
 env.Library(
     target="authentication",
@@ -153,7 +123,7 @@ env.Library(
         "$BUILD_DIR/mongo/bson/util/bson_extract",
         "$BUILD_DIR/mongo/executor/remote_command",
         "internal_auth",
-        "sasl_client",
+        "native_sasl_client",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/auth/auth",
@@ -185,7 +155,7 @@ if shouldBuildGRPC(env):
 clientDriverEnv.Library(
     target="clientdriver_minimal",
     source=[
-        "client_api_version_parameters.idl",
+        "client_api_version_parameters_gen.cpp",
         "dbclient_base.cpp",
         "dbclient_cursor.cpp",
         "index_spec.cpp",
@@ -219,7 +189,7 @@ clientDriverEnv.Library(
         "dbclient_rs.cpp",
         "dbclient_session.cpp",
         "global_conn_pool.cpp",
-        "global_conn_pool.idl",
+        "global_conn_pool_gen.cpp",
         "replica_set_change_notifier.cpp",
         "replica_set_monitor.cpp",
         "replica_set_monitor_manager.cpp",
@@ -254,17 +224,6 @@ clientDriverEnv.Library(
         "$BUILD_DIR/mongo/db/server_feature_flags",
         "$BUILD_DIR/mongo/transport/message_compressor",
         "$BUILD_DIR/mongo/util/net/ssl_manager",
-    ],
-)
-
-env.Library(
-    target="replica_set_monitor_server_parameters",
-    source=[
-        "replica_set_monitor_server_parameters.cpp",
-        "replica_set_monitor_server_parameters.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
     ],
 )
 

@@ -17,9 +17,12 @@
 // @tags: [
 //   requires_fcv_51,
 //   requires_sharding,
-//   temp_disabled_embedded_router_metrics,
+//   # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+//   embedded_router_incompatible,
 // ]
 // This test manually simulates a session, which is not compatible with implicit sessions.
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 TestData.disableImplicitSessions = true;
 
 // Cursor timeout on mongod is handled by a single thread/timer that will sleep for

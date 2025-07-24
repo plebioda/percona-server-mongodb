@@ -84,13 +84,6 @@ protected:
         ConfigServerTestFixture::tearDown();
     }
 
-    /**
-     * Forces KeyManager to refresh cache and generate new keys.
-     */
-    void refreshKeyManager() {
-        _keyManager->refreshNow(operationContext());
-    }
-
 private:
     std::shared_ptr<KeysCollectionManager> _keyManager;
 };
@@ -134,7 +127,7 @@ TEST_F(VectorClockConfigServerTest, TickToClusterTime) {
     ASSERT_EQ(LogicalTime(Timestamp(3, 3)), t3.clusterTime());
 }
 
-DEATH_TEST_F(VectorClockConfigServerTest, CannotTickConfigTime, "Hit a MONGO_UNREACHABLE") {
+DEATH_TEST_F(VectorClockConfigServerTest, CannotTickConfigTime, "invariant") {
     auto sc = getServiceContext();
     auto vc = VectorClockMutable::get(sc);
     vc->tickConfigTime(1);
@@ -160,7 +153,7 @@ TEST_F(VectorClockConfigServerTest, TickToConfigTime) {
     ASSERT_EQ(LogicalTime(Timestamp(3, 3)), t3.configTime());
 }
 
-DEATH_TEST_F(VectorClockConfigServerTest, CannotTickTopologyTime, "Hit a MONGO_UNREACHABLE") {
+DEATH_TEST_F(VectorClockConfigServerTest, CannotTickTopologyTime, "invariant") {
     auto sc = getServiceContext();
     auto vc = VectorClockMutable::get(sc);
     vc->tickTopologyTime(1);
@@ -191,7 +184,6 @@ TEST_F(VectorClockConfigServerTest, GossipOutInternal) {
     auto vc = VectorClockMutable::get(sc);
 
     LogicalTimeValidator::get(getServiceContext())->enableKeyGenerator(operationContext(), true);
-    refreshKeyManager();
 
     vc->tickClusterTime(1);                           // (1, 1)
     const auto clusterTime = vc->tickClusterTime(1);  // (1, 2)
@@ -221,7 +213,6 @@ TEST_F(VectorClockConfigServerTest, GossipOutExternal) {
     auto vc = VectorClockMutable::get(sc);
 
     LogicalTimeValidator::get(getServiceContext())->enableKeyGenerator(operationContext(), true);
-    refreshKeyManager();
 
     vc->tickClusterTime(1);                           // (1, 1)
     const auto clusterTime = vc->tickClusterTime(1);  // (1, 2)

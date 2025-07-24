@@ -65,6 +65,7 @@ import json
 import fileinput
 import subprocess
 import time
+import traceback
 
 try:
     import networkx
@@ -234,6 +235,7 @@ class LibdepLinter:
     registered_linting_time = False
 
     dangling_dep_dependents = set()
+    bazel_header_info = dict()
 
     @staticmethod
     def _make_linter_decorator():
@@ -428,12 +430,28 @@ class LibdepLinter:
         ]
         self.__class__.dangling_dep_dependents.update(deps_depends)
 
+        for dep in deps_depends:
+            if dep[0] not in self.__class__.bazel_header_info:
+                self.__class__.bazel_header_info[dep[0]] = []
+            self.__class__.bazel_header_info[dep[0]].append(self.target[0])
+
     @linter_final_check
     def linter_rule_no_dangling_dep_final_check(self):
         # At this point the SConscripts have defined all the build items,
         # and so we can go check any DEPS_DEPENDENTS listed and make sure a builder
         # was instantiated to build them.
         for dep_dependent in self.__class__.dangling_dep_dependents:
+            # This next block is for bazel header generation. We are co-opting
+            # the linter for simplicity to make sure we record the libdeps dependents
+            # which can't be access via a libraries emitter.
+            for target, deps in self.__class__.bazel_header_info.items():
+                try:
+                    with open(str(target.abspath) + ".libdeps", "a") as f:
+                        for dep in deps:
+                            f.write(os.path.relpath(dep.abspath, start=dep.Dir("#").abspath) + "\n")
+                except FileNotFoundError:
+                    pass
+
             if not dep_dependent[0].has_builder():
                 self._raise_libdep_lint_exception(
                     textwrap.dedent(f"""\
@@ -984,30 +1002,37 @@ def _get_node_with_ixes(env, node, node_builder_type):
 _get_node_with_ixes.node_type_ixes = dict()
 
 
-def add_node_from(env, node):
+def add_node_from(env, node, bazel=False):
+    if bazel:
+        builder = "Bazel"
+    elif node.has_builder():
+        builder = node.builder.get_name(env)
+    else:
+        builder = "Unkown"
+
+    node_path = node if bazel else node.abspath
+
     env.GetLibdepsGraph().add_nodes_from(
         [
             (
-                node.abspath,
-                {
-                    NodeProps.bin_type.name: node.builder.get_name(env)
-                    if node.has_builder()
-                    else "Unknown",
-                },
+                node_path,
+                {NodeProps.bin_type.name: builder},
             )
         ]
     )
 
+    return node_path
 
-def add_edge_from(env, from_node, to_node, visibility, direct):
-    add_node_from(env, from_node)
-    add_node_from(env, to_node)
+
+def add_edge_from(env, from_node, to_node, visibility, direct, bazel=False):
+    from_node_path = add_node_from(env, from_node)
+    to_node_path = add_node_from(env, to_node, bazel)
 
     env.GetLibdepsGraph().add_edges_from(
         [
             (
-                from_node.abspath,
-                to_node.abspath,
+                from_node_path,
+                to_node_path,
                 {
                     EdgeProps.direct.name: direct,
                     EdgeProps.visibility.name: int(visibility),
@@ -1192,8 +1217,9 @@ def get_digest(file_path):
 
 
 def handle_bazel_lib_link_flags(env, libext, libs):
+    global EMITTING_SHARED
     if env.TargetOSIs("linux", "freebsd", "openbsd"):
-        if libext == env.subst("$SHLIBSUFFIX"):
+        if libext == env.subst("$SHLIBSUFFIX") and not EMITTING_SHARED == "dynamic-sdk":
             return [env["LINK_AS_NEEDED_LIB_END"]] + libs
         else:
             return (
@@ -1201,10 +1227,14 @@ def handle_bazel_lib_link_flags(env, libext, libs):
             )
 
     elif env.TargetOSIs("darwin"):
-        if libext != env.subst("$SHLIBSUFFIX"):
+        if libext != env.subst("$SHLIBSUFFIX") or EMITTING_SHARED == "dynamic-sdk":
             return env.Flatten([[env["LINK_WHOLE_ARCHIVE_LIB_START"], lib] for lib in libs])
+        else:
+            return env.Flatten([[env["LINK_AS_NEEDED_LIB_START"], lib] for lib in libs])
+
     elif env.TargetOSIs("windows"):
         return [env["LINK_WHOLE_ARCHIVE_LIB_START"] + ":" + lib for lib in libs]
+    return []
 
 
 def add_bazel_libdep(env, libdep, bazel_libdeps):
@@ -1217,6 +1247,7 @@ def add_bazel_libdep(env, libdep, bazel_libdeps):
 
 
 def query_for_results(env, bazel_target, libdeps_ext, bazel_targets_checked):
+    global EMITTING_SHARED
     # first check if the deps query is in the cache
     results = env.CheckBazelDepsCache(bazel_target)
     if results is None:
@@ -1224,7 +1255,12 @@ def query_for_results(env, bazel_target, libdeps_ext, bazel_targets_checked):
         bazel_query = (
             ["cquery"]
             + env["BAZEL_FLAGS_STR"]
-            + [f'kind("extract_debuginfo", deps(@{bazel_target}))', "--output", "files"]
+            + [
+                f'"@{bazel_target}_link_dep"',
+                "--output",
+                "files",
+                "--//bazel/config:scons_query=True",
+            ]
         )
         results = env.RunBazelQuery(bazel_query, "getting bazel libdeps")
         if results.returncode != 0:
@@ -1236,6 +1272,7 @@ def query_for_results(env, bazel_target, libdeps_ext, bazel_targets_checked):
     # now we have some hidden deps to process, if they are the correct
     # ext we want to link with, make scons node, verify its a ThinTarget, and then add
     # to the results
+
     libs_to_cache = []
     for line in results.stdout.splitlines():
         if line.endswith(libdeps_ext):
@@ -1244,6 +1281,9 @@ def query_for_results(env, bazel_target, libdeps_ext, bazel_targets_checked):
             )
             if scons_node.has_builder():
                 if scons_node.get_builder().get_name(env) == "ThinTarget":
+                    if EMITTING_SHARED == "dynamic-sdk":
+                        basefile = os.path.splitext(line)[0]
+                        line = basefile + env.subst("$SHLIBSUFFIX") + env.subst("$LIBSUFFIX")
                     libs_to_cache.append(line)
                     # Since the deps from the query are transitive we can look for other targets that will be
                     # covered by that transitive tree for the given link command. This allow us to skip doing
@@ -1265,7 +1305,8 @@ def process_bazel_libdeps(env, bazel_libdeps_to_add, libdeps_ext, for_sig):
 
     bazel_libs = []
     bazel_targets_checked = set()
-    signature = ""
+    signature = []
+    bazel_libs_to_append = []
     start_time = time.time()
     try:
         # check the cache for any queries we need to run, and add the hidden deps to the list to link
@@ -1283,21 +1324,23 @@ def process_bazel_libdeps(env, bazel_libdeps_to_add, libdeps_ext, for_sig):
         if for_sig:
             for lib in bazel_libs:
                 if str(lib) in BAZEL_SIG_CACHE:
-                    signature += BAZEL_SIG_CACHE[str(lib)]
+                    signature += [BAZEL_SIG_CACHE[str(lib)]]
                 else:
-                    sig = get_digest(str(lib))
+                    sig = [get_digest(str(lib))]
                     BAZEL_SIG_CACHE[str(lib)] = sig
                     signature += sig
-            return signature
+            return signature, bazel_libs
 
         # add any per library link flags (whole archive flags)
-        bazel_libs_to_append = handle_bazel_lib_link_flags(env, libdeps_ext, bazel_libs)
+        if bazel_libs:
+            bazel_libs_to_append = handle_bazel_lib_link_flags(env, libdeps_ext, bazel_libs)
+
     except:
         traceback.print_exc()
     # record time for metrics
     env.AddLibdepsTime(time.time() - start_time)
 
-    return bazel_libs_to_append
+    return bazel_libs_to_append, bazel_libs
 
 
 EMITTING_SHARED = None
@@ -1316,7 +1359,10 @@ def expand_libdeps_for_link(source, target, env, for_signature):
     if EMITTING_SHARED == "dynamic":
         libdeps_ext = env.subst("$SHLIBSUFFIX")
     elif EMITTING_SHARED == "dynamic-sdk":
-        libdeps_ext = env.subst("$SHLIBSUFFIX") + env.subst("$LIBSUFFIX")
+        if env.TargetOSIs("windows"):
+            libdeps_ext = env.subst("$LIBSUFFIX")
+        else:
+            libdeps_ext = env.subst("$SHLIBSUFFIX")
     else:
         libdeps_ext = env.subst("$LIBSUFFIX")
 
@@ -1369,11 +1415,15 @@ def expand_libdeps_for_link(source, target, env, for_signature):
 
     if "conftest" not in str(target[0]):
         # process all the thin targets we gathers to search for hidden deps to link
-        bazel_libdeps = process_bazel_libdeps(env, bazel_libdeps_to_add, libdeps_ext, for_signature)
-    else:
-        bazel_libdeps = []
+        bazel_libdeps_args, bazel_libdeps = process_bazel_libdeps(
+            env, bazel_libdeps_to_add, libdeps_ext, for_signature
+        )
+        setattr(target[0].attributes, "bazel_libdeps", bazel_libdeps)
 
-    return libdeps_with_flags + bazel_libdeps
+    else:
+        bazel_libdeps_args = []
+
+    return libdeps_with_flags + bazel_libdeps_args
 
 
 def generate_libdeps_graph(env):
@@ -1384,6 +1434,7 @@ def generate_libdeps_graph(env):
         symbol_deps = []
         for symbols_file, target_node in env.get("LIBDEPS_SYMBOL_DEP_FILES", []):
             direct_libdeps = []
+            bazel_libdeps = []
             for direct_libdep in _get_sorted_direct_libdeps(target_node):
                 add_node_from(env, direct_libdep.target_node)
                 add_edge_from(
@@ -1394,6 +1445,21 @@ def generate_libdeps_graph(env):
                     direct=True,
                 )
                 direct_libdeps.append(direct_libdep.target_node.abspath)
+                if direct_libdep.target_node.builder.get_name(env) == "ThinTarget":
+                    add_bazel_libdep(env, direct_libdep.target_node, bazel_libdeps)
+            _, bazel_libdeps = process_bazel_libdeps(
+                env, bazel_libdeps, env.subst("$SHLIBSUFFIX"), False
+            )
+            for libdep in bazel_libdeps:
+                add_node_from(env, libdep, bazel=True)
+                add_edge_from(
+                    env,
+                    direct_libdep.target_node,
+                    libdep,
+                    visibility=int(deptype.Private),
+                    direct=False,
+                    bazel=True,
+                )
 
             for libdep in _get_libdeps(target_node):
                 if libdep.abspath not in direct_libdeps:
@@ -1409,9 +1475,14 @@ def generate_libdeps_graph(env):
                 sep = " "
             else:
                 sep = ":"
-            ld_path = sep.join(
-                [os.path.dirname(str(libdep)) for libdep in _get_libdeps(target_node)]
+            ld_path = [os.path.dirname(str(libdep)) for libdep in _get_libdeps(target_node)]
+            ld_path.extend(
+                [
+                    path.replace(env.Dir("$BUILD_DIR").path, f"{env['BAZEL_OUT_DIR']}/src")
+                    for path in ld_path
+                ]
             )
+            ld_path = sep.join(ld_path)
             symbol_deps.append(
                 env.Command(
                     target=symbols_file,

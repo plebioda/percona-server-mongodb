@@ -4,8 +4,11 @@
 //
 // @tags: [
 //   sets_replica_set_matching_strategy,
-//   temp_disabled_embedded_router_uncategorized,
+//   # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+//   embedded_router_incompatible,
 // ]
+
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 // Helper function to check the matching policy of a node, given the output of the connPoolStats
 // command run against the node and the expected policy.

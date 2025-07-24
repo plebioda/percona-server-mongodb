@@ -4,8 +4,9 @@
  * @tags: [requires_fcv_63]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
-import {findMatchingLogLines} from "jstests/libs/log.js";
+import {iterateMatchingLogLines} from "jstests/libs/log.js";
 import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 function hasNonNegativeAttr(entry, attrName) {
     return entry.attr.hasOwnProperty(attrName) && entry.attr[attrName] >= 0;
@@ -37,31 +38,20 @@ function validateSlowConnectionLogEntry(entry) {
     assert.eq(total, entry.attr.totalTimeMillis);
 }
 
-function validateLogAndExtractEntry(st) {
-    const mongosLog = assert.commandWorked(st.s.adminCommand({getLog: "global"}));
-    let queryLogEntry = null;
-    for (const line of findMatchingLogLines(mongosLog.log, {id: 6496400})) {
-        let entry = JSON.parse(line);
-        validateSlowConnectionLogEntry(entry);
-        if (entry.attr.totalTimeMillis >= kConnectionEstablishmentDelayMillis) {
-            queryLogEntry = entry;
-        }
-    }
-    return queryLogEntry;
-}
-
 function validateLogAndExtractCountAndEntry(st) {
     const mongosLog = assert.commandWorked(st.s.adminCommand({getLog: "global"}));
     let queryLogEntry = null;
-    let matchingLines = findMatchingLogLines(mongosLog.log, {id: 6496400});
-    for (const line of matchingLines) {
+
+    let count = 0;
+    for (const line of iterateMatchingLogLines(mongosLog.log, {id: 6496400})) {
+        count++;
         let entry = JSON.parse(line);
         validateSlowConnectionLogEntry(entry);
         if (entry.attr.totalTimeMillis >= kConnectionEstablishmentDelayMillis) {
             queryLogEntry = entry;
         }
     }
-    return {count: matchingLines.length, entry: queryLogEntry};
+    return {count: count, entry: queryLogEntry};
 }
 
 const kConnectionEstablishmentDelayMillis = 250;

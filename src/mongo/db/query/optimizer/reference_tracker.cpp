@@ -224,8 +224,7 @@ private:
 };
 
 struct Collector {
-    explicit Collector(const cascades::MemoGroupBinderInterface* memoInterface)
-        : _memoInterface(memoInterface) {
+    explicit Collector() {
         collectorState.resolvedVariablesMap = std::make_unique<ResolvedVariablesMap>();
     }
 
@@ -326,29 +325,6 @@ struct Collector {
     }
 
     CollectedInfo transport(const ABT& n,
-                            const MemoLogicalDelegatorNode& memoLogicalDelegatorNode) {
-        CollectedInfo result{collectorState};
-
-        tassert(6624029, "Uninitialized memo interface", _memoInterface);
-        const auto& binder =
-            _memoInterface->getBinderForGroup(memoLogicalDelegatorNode.getGroupId());
-
-        auto& projectionNames = binder.names();
-        auto& projections = binder.exprs();
-        for (size_t i = 0; i < projectionNames.size(); i++) {
-            result.defs[projectionNames.at(i)] = Definition{n.ref(), projections[i].ref()};
-        }
-
-        result.nodeDefs[&memoLogicalDelegatorNode] = result.defs;
-
-        return result;
-    }
-
-    CollectedInfo transport(const ABT& n, const MemoPhysicalDelegatorNode& node) {
-        tasserted(7088004, "Should not be seeing memo physical delegator in this context");
-    }
-
-    CollectedInfo transport(const ABT& n,
                             const FilterNode& filterNode,
                             CollectedInfo childResult,
                             CollectedInfo exprResult) {
@@ -377,27 +353,6 @@ struct Collector {
             Definition{n.ref(), evaluationNode.getProjection().ref()};
 
         result.nodeDefs[&evaluationNode] = result.defs;
-
-        return result;
-    }
-
-    CollectedInfo transport(const ABT& n,
-                            const SargableNode& node,
-                            CollectedInfo childResult,
-                            CollectedInfo bindResult,
-                            CollectedInfo /*refResult*/) {
-        CollectedInfo result{collectorState};
-
-        result.merge(std::move(childResult));
-        result.mergeNoDefs(std::move(bindResult));
-
-        const auto& projectionNames = node.binder().names();
-        const auto& projections = node.binder().exprs();
-        for (size_t i = 0; i < projectionNames.size(); i++) {
-            result.defs[projectionNames.at(i)] = Definition{n.ref(), projections[i].ref()};
-        }
-
-        result.nodeDefs[&node] = result.defs;
 
         return result;
     }
@@ -850,9 +805,6 @@ struct Collector {
      * it can update the collectorState.
      */
     CollectorState collectorState;
-
-private:
-    const cascades::MemoGroupBinderInterface* _memoInterface;
 };
 
 /**
@@ -1036,11 +988,8 @@ private:
     LastRefsSet& _lastRefs;
 };
 
-VariableEnvironment VariableEnvironment::build(
-    const ABT& root,
-    const cascades::MemoGroupBinderInterface* memoInterface,
-    bool computeLastRefs) {
-    Collector c(memoInterface);
+VariableEnvironment VariableEnvironment::build(const ABT& root, bool computeLastRefs) {
+    Collector c;
     auto info = std::make_unique<CollectedInfo>(c.collect(root));
 
     boost::optional<LastRefsSet> lastRefs;
@@ -1050,14 +999,12 @@ VariableEnvironment VariableEnvironment::build(
         lrt.collect(root);
     }
 
-    return VariableEnvironment{std::move(info),
-                               std::move(lastRefs),
-                               std::move(c.collectorState.resolvedVariablesMap),
-                               memoInterface};
+    return VariableEnvironment{
+        std::move(info), std::move(lastRefs), std::move(c.collectorState.resolvedVariablesMap)};
 }
 
 void VariableEnvironment::rebuild(const ABT& root) {
-    Collector c(_memoInterface);
+    Collector c;
     _info = std::make_unique<CollectedInfo>(c.collect(root));
 
     if (_lastRefs) {
@@ -1072,12 +1019,10 @@ void VariableEnvironment::rebuild(const ABT& root) {
 
 VariableEnvironment::VariableEnvironment(std::unique_ptr<CollectedInfo> info,
                                          boost::optional<LastRefsSet> lastRefs,
-                                         std::unique_ptr<ResolvedVariablesMap> resVarMap,
-                                         const cascades::MemoGroupBinderInterface* memoInterface)
+                                         std::unique_ptr<ResolvedVariablesMap> resVarMap)
     : _info(std::move(info)),
       _lastRefs(std::move(lastRefs)),
-      _resolvedVariablesMap(std::move(resVarMap)),
-      _memoInterface(memoInterface) {}
+      _resolvedVariablesMap(std::move(resVarMap)) {}
 
 VariableEnvironment::~VariableEnvironment() {}
 

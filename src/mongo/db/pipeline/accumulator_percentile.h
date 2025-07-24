@@ -89,9 +89,16 @@ public:
     static std::pair<std::vector<double> /*ps*/, PercentileMethod> parsePercentileAndMethod(
         ExpressionContext* expCtx, BSONElement elem, VariablesParseState vps);
     static Value formatFinalValue(int nPercentiles, const std::vector<double>& pctls);
+
+    /**
+     * maxMemoryUsageBytes sets the accumulator's memory limit before it will spill to disk. Passing
+     * in boost::none will result in the default query knob value
+     * internalQueryMaxPercentileAccumulatorBytes being used.
+     */
     AccumulatorPercentile(ExpressionContext* expCtx,
                           const std::vector<double>& ps,
-                          PercentileMethod method);
+                          PercentileMethod method,
+                          boost::optional<int> maxMemoryUsageBytes = boost::none);
 
     /**
      * Ingressing values and computing the requested percentiles.
@@ -107,8 +114,11 @@ public:
 
     /**
      * Serializes this accumulator to a valid MQL accumulation statement that would be legal
-     * inside a $group. When executing on a sharded cluster, the result of this function will be
-     * sent to each individual shard.
+     * inside a $group. When executing on a sharded cluster for approximate percentiles,
+     * the result of this function will be sent to each individual shard. When executing on a
+     * sharded cluster for accurate percentiles, the current implementation prevents the $group from
+     * executing on the shards, but allows a $project on the fields specified for $percentile to be
+     * pushed down to the shards.
      *
      * The implementation in 'AccumulatorState' assumes the accumulator has the simple syntax {
      * <name>: <argument> }, such as { $sum: <argument> }. Because $percentile's syntax is more
@@ -128,6 +138,13 @@ public:
                                 std::vector<double> percentiles,
                                 PercentileMethod method,
                                 MutableDocument& md);
+
+    /**
+     * Getter for method
+     */
+    PercentileMethod getMethod() const {
+        return _method;
+    }
 
 protected:
     std::vector<double> _percentiles;
@@ -165,10 +182,15 @@ public:
      * We are matching the signature of the AccumulatorPercentile for the purpose of using
      * ExpressionFromAccumulatorQuantile as a template for both $median and $percentile. This is the
      * reason for passing in `unused` and it will not be referenced.
+     *
+     * maxMemoryUsageBytes sets the accumulator's memory limit before it will spill to disk. Passing
+     * in boost::none will result in the default query knob value
+     * internalQueryMaxPercentileAccumulatorBytes being used.
      */
     AccumulatorMedian(ExpressionContext* expCtx,
                       const std::vector<double>& unused,
-                      PercentileMethod method);
+                      PercentileMethod method,
+                      boost::optional<int> maxMemoryUsageBytes = boost::none);
 
     /**
      * Necessary for supporting $median as window functions and/or as expression.

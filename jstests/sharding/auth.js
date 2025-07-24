@@ -6,10 +6,13 @@
  * of 5MB across all sharding tests in wiredTiger.
  * @tags: [
  *   resource_intensive,
+ *   # TODO (SERVER-88123): Re-enable this test.
  *   # Test doesn't start enough mongods to have num_mongos routers
- *   temp_disabled_embedded_router_num_routers,
+ *   embedded_router_incompatible,
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {traceMissingDoc} from "jstests/libs/trace_missing_docs.js";
 import {awaitRSClientHosts} from "jstests/replsets/rslib.js";
 
@@ -133,7 +136,8 @@ assert.commandWorked(result);
 s.getDB("admin").runCommand({enableSharding: "test"});
 s.getDB("admin").runCommand({shardCollection: "test.foo", key: {x: 1}});
 
-d1.waitForState(d1.getSecondaries(), ReplSetTest.State.SECONDARY, 5 * 60 * 1000);
+d1.getSecondaries().forEach(
+    secondary => d1.waitForState(secondary, ReplSetTest.State.SECONDARY, 5 * 60 * 1000));
 
 s.getDB(testUser.db)
     .createUser({user: testUser.username, pwd: testUser.password, roles: jsTest.basicUserRoles});
@@ -247,8 +251,10 @@ assert.eq(count, 5);
 
 logout(adminUser);
 
-d1.waitForState(d1.getSecondaries(), ReplSetTest.State.SECONDARY, 5 * 60 * 1000);
-d2.waitForState(d2.getSecondaries(), ReplSetTest.State.SECONDARY, 5 * 60 * 1000);
+d1.getSecondaries().forEach(
+    secondary => d1.waitForState(secondary, ReplSetTest.State.SECONDARY, 5 * 60 * 1000));
+d2.getSecondaries().forEach(
+    secondary => d2.waitForState(secondary, ReplSetTest.State.SECONDARY, 5 * 60 * 1000));
 
 authutil.asCluster(d1.nodes, "jstests/libs/key1", function() {
     d1.awaitReplication();

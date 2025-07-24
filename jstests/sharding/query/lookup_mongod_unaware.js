@@ -8,10 +8,13 @@
  *
  * @tags: [
  *   requires_persistence,
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  *
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 // Restarts the primary shard and ensures that it believes both collections are unsharded.
 function restartPrimaryShard(rs, ...expectedCollections) {
     // Returns true if the shard is aware that the collection is sharded.

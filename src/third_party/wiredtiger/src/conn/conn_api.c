@@ -2184,6 +2184,12 @@ __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
     WT_RET(__debug_mode_log_retention_config(session, cfg));
     WT_RET(__debug_mode_background_compact_config(session, cfg));
 
+    WT_RET(__wt_config_gets(session, cfg, "debug_mode.configuration", &cval));
+    if (cval.val)
+        FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CONFIGURATION);
+    else
+        FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_CONFIGURATION);
+
     WT_RET(__wt_config_gets(session, cfg, "debug_mode.corruption_abort", &cval));
     if (cval.val)
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_CORRUPTION_ABORT);
@@ -2252,6 +2258,38 @@ __wti_debug_mode_config(WT_SESSION_IMPL *session, const char *cfg[])
         FLD_SET(conn->debug_flags, WT_CONN_DEBUG_UPDATE_RESTORE_EVICT);
     else
         FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_UPDATE_RESTORE_EVICT);
+
+    WT_RET(__wt_config_gets(session, cfg, "debug_mode.eviction_checkpoint_ts_ordering", &cval));
+    if (cval.val)
+        FLD_SET(conn->debug_flags, WT_CONN_DEBUG_EVICTION_CKPT_TS_ORDERING);
+    else
+        FLD_CLR(conn->debug_flags, WT_CONN_DEBUG_EVICTION_CKPT_TS_ORDERING);
+    return (0);
+}
+
+/*
+ * __wti_heuristic_controls_config --
+ *     Set heuristic_controls configuration.
+ */
+int
+__wti_heuristic_controls_config(WT_SESSION_IMPL *session, const char *cfg[])
+{
+    WT_CONFIG_ITEM cval;
+    WT_CONNECTION_IMPL *conn;
+
+    conn = S2C(session);
+
+    WT_RET(__wt_config_gets(
+      session, cfg, "heuristic_controls.checkpoint_cleanup_obsolete_tw_pages_dirty_max", &cval));
+    conn->heuristic_controls.checkpoint_cleanup_obsolete_tw_pages_dirty_max = (uint32_t)cval.val;
+
+    WT_RET(__wt_config_gets(
+      session, cfg, "heuristic_controls.eviction_obsolete_tw_pages_dirty_max", &cval));
+    conn->heuristic_controls.eviction_obsolete_tw_pages_dirty_max = (uint32_t)cval.val;
+
+    WT_RET(__wt_config_gets(session, cfg, "heuristic_controls.obsolete_tw_btree_max", &cval));
+    conn->heuristic_controls.obsolete_tw_btree_max = (uint32_t)cval.val;
+
     return (0);
 }
 
@@ -2307,11 +2345,12 @@ __wt_verbose_config(WT_SESSION_IMPL *session, const char *cfg[], bool reconfig)
       {"checkpoint_progress", WT_VERB_CHECKPOINT_PROGRESS}, {"chunkcache", WT_VERB_CHUNKCACHE},
       {"compact", WT_VERB_COMPACT}, {"compact_progress", WT_VERB_COMPACT_PROGRESS},
       {"configuration", WT_VERB_CONFIGURATION}, {"error_returns", WT_VERB_ERROR_RETURNS},
-      {"evict", WT_VERB_EVICT}, {"evict_stuck", WT_VERB_EVICT_STUCK},
-      {"evictserver", WT_VERB_EVICTSERVER}, {"fileops", WT_VERB_FILEOPS},
-      {"generation", WT_VERB_GENERATION}, {"handleops", WT_VERB_HANDLEOPS}, {"log", WT_VERB_LOG},
-      {"history_store", WT_VERB_HS}, {"history_store_activity", WT_VERB_HS_ACTIVITY},
-      {"lsm", WT_VERB_LSM}, {"lsm_manager", WT_VERB_LSM_MANAGER}, {"metadata", WT_VERB_METADATA},
+      {"evict", WT_VERB_EVICT}, {"eviction", WT_VERB_EVICTION},
+      {"evict_stuck", WT_VERB_EVICT_STUCK}, {"evictserver", WT_VERB_EVICTSERVER},
+      {"fileops", WT_VERB_FILEOPS}, {"generation", WT_VERB_GENERATION},
+      {"handleops", WT_VERB_HANDLEOPS}, {"log", WT_VERB_LOG}, {"history_store", WT_VERB_HS},
+      {"history_store_activity", WT_VERB_HS_ACTIVITY}, {"lsm", WT_VERB_LSM},
+      {"lsm_manager", WT_VERB_LSM_MANAGER}, {"metadata", WT_VERB_METADATA},
       {"mutex", WT_VERB_MUTEX}, {"prefetch", WT_VERB_PREFETCH},
       {"out_of_order", WT_VERB_OUT_OF_ORDER}, {"overflow", WT_VERB_OVERFLOW},
       {"read", WT_VERB_READ}, {"reconcile", WT_VERB_RECONCILE}, {"recovery", WT_VERB_RECOVERY},
@@ -3133,6 +3172,7 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
     conn->page_size = __wt_get_vm_pagesize();
 
     /* Now that we know if verbose is configured, output the version. */
+    __wt_verbose_info(session, WT_VERB_RECOVERY, "%s", "opening the WiredTiger library");
     __wt_verbose(session, WT_VERB_VERSION, "%s", WIREDTIGER_VERSION_STRING);
 
     /*
@@ -3157,6 +3197,9 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
      * is set up.
      */
     WT_ERR(__wti_debug_mode_config(session, cfg));
+
+    /* Parse the heuristic_controls configuration. */
+    WT_ERR(__wti_heuristic_controls_config(session, cfg));
 
     /*
      * Load the extensions after initialization completes; extensions expect everything else to be
@@ -3201,6 +3244,8 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
      * Configuration completed; optionally write a base configuration file.
      */
     WT_ERR(__conn_write_base_config(session, cfg));
+    __wt_verbose_info(
+      session, WT_VERB_RECOVERY, "%s", "connection configuration string parsing completed");
 
     /*
      * Check on the turtle and metadata files, creating them if necessary (which avoids application
@@ -3216,6 +3261,7 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
 
     /* Verify the metadata file. */
     if (verify_meta) {
+        __wt_verbose_info(session, WT_VERB_RECOVERY, "%s", "performing metadata verify");
         wt_session = &session->iface;
         ret = wt_session->verify(wt_session, WT_METAFILE_URI, NULL);
         WT_ERR(ret);
@@ -3227,6 +3273,7 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
      * overwrite any salvage we did if done before that call.
      */
     if (F_ISSET(conn, WT_CONN_SALVAGE)) {
+        __wt_verbose_info(session, WT_VERB_RECOVERY, "%s", "performing metadata salvage");
         wt_session = &session->iface;
         WT_ERR(__wt_copy_and_sync(wt_session, WT_METAFILE, WT_METAFILE_SLVG));
         WT_ERR(wt_session->salvage(wt_session, WT_METAFILE_URI, NULL));
@@ -3285,6 +3332,8 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
     F_SET(conn, WT_CONN_READY);
     F_CLR(conn, WT_CONN_MINIMAL);
     *connectionp = &conn->iface;
+    __wt_verbose_info(
+      session, WT_VERB_RECOVERY, "%s", "the WiredTiger library has successfully opened");
 
 err:
     /* Discard the scratch buffers. */

@@ -197,6 +197,8 @@ MONGO_FAIL_POINT_DEFINE(hangDuringBatchUpdate);
 MONGO_FAIL_POINT_DEFINE(hangAfterBatchUpdate);
 MONGO_FAIL_POINT_DEFINE(hangDuringBatchRemove);
 MONGO_FAIL_POINT_DEFINE(hangAndFailAfterDocumentInsertsReserveOpTimes);
+MONGO_FAIL_POINT_DEFINE(hangInsertIntoBucketCatalogBeforeCheckingTimeseriesCollection);
+
 // The withLock fail points are for testing interruptability of these operations, so they will not
 // themselves check for interrupt.
 MONGO_FAIL_POINT_DEFINE(hangWithLockDuringBatchInsert);
@@ -607,7 +609,10 @@ bool insertBatchAndHandleErrors(OperationContext* opCtx,
         },
         nss);
 
-    if (MONGO_unlikely(failAllInserts.shouldFail())) {
+    if (auto scoped = failAllInserts.scoped(); MONGO_unlikely(scoped.isActive())) {
+        tassert(9276700,
+                "failAllInserts failpoint active!",
+                !scoped.getData().hasField("tassert") || !scoped.getData().getBoolField("tassert"));
         uasserted(ErrorCodes::InternalError, "failAllInserts failpoint active!");
     }
 
@@ -625,6 +630,12 @@ bool insertBatchAndHandleErrors(OperationContext* opCtx,
 
             if (source == OperationSource::kTimeseriesInsert) {
                 assertTimeseriesBucketsCollectionNotFound(nss);
+            }
+
+            if (source == OperationSource::kFromMigrate) {
+                uasserted(
+                    ErrorCodes::CannotCreateCollection,
+                    "The implicit creation of a collection due to a migration is not allowed.");
             }
 
             collection.reset();  // unlock.
@@ -746,37 +757,6 @@ bool insertBatchAndHandleErrors(OperationContext* opCtx,
     return true;
 }
 
-boost::optional<BSONObj> advanceExecutor(OperationContext* opCtx,
-                                         PlanExecutor* exec,
-                                         bool isRemove,
-                                         StringData operationName) {
-    BSONObj value;
-    PlanExecutor::ExecState state;
-    try {
-        state = exec->getNext(&value, nullptr);
-    } catch (const StorageUnavailableException&) {
-        throw;
-    } catch (DBException& exception) {
-        auto&& explainer = exec->getPlanExplainer();
-        auto&& [stats, _] = explainer.getWinningPlanStats(ExplainOptions::Verbosity::kExecStats);
-        LOGV2_WARNING(7267501,
-                      "Plan executor error",
-                      "operation"_attr = operationName,
-                      "error"_attr = exception.toStatus(),
-                      "stats"_attr = redact(stats));
-
-        exception.addContext("Plan executor error during " + operationName);
-        throw;
-    }
-
-    if (PlanExecutor::ADVANCED == state) {
-        return {std::move(value)};
-    }
-
-    invariant(state == PlanExecutor::IS_EOF);
-    return boost::none;
-}
-
 UpdateResult performUpdate(OperationContext* opCtx,
                            const NamespaceString& nss,
                            CurOp* curOp,
@@ -812,7 +792,10 @@ UpdateResult performUpdate(OperationContext* opCtx,
         },
         nss);
 
-    if (MONGO_unlikely(failAllUpdates.shouldFail())) {
+    if (auto scoped = failAllUpdates.scoped(); MONGO_unlikely(scoped.isActive())) {
+        tassert(9276701,
+                "failAllUpdates failpoint active!",
+                !scoped.getData().hasField("tassert") || !scoped.getData().getBoolField("tassert"));
         uasserted(ErrorCodes::InternalError, "failAllUpdates failpoint active!");
     }
 
@@ -889,13 +872,15 @@ UpdateResult performUpdate(OperationContext* opCtx,
         CurOp::get(opCtx)->setPlanSummary_inlock(exec->getPlanExplainer().getPlanSummary());
     }
 
-    docFound = advanceExecutor(opCtx,
-                               exec.get(),
-                               remove,
-                               updateRequest->shouldReturnAnyDocs() ? "findAndModify" : "update");
-    // Nothing after advancing the plan executor should throw a WriteConflictException,
-    // so the following bookkeeping with execution stats won't end up being done
-    // multiple times.
+    if (updateRequest->shouldReturnAnyDocs()) {
+        docFound = exec->executeFindAndModify();
+    } else {
+        // The 'UpdateResult' object will be obtained later, so discard the return value.
+        (void)exec->executeUpdate();
+    }
+
+    // Nothing after executing the plan executor should throw a WriteConflictException, so the
+    // following bookkeeping with execution stats won't end up being done multiple times.
 
     PlanSummaryStats summaryStats;
     auto&& explainer = exec->getPlanExplainer();
@@ -961,7 +946,10 @@ long long performDelete(OperationContext* opCtx,
                   "Batch remove - hangDuringBatchRemove fail point enabled. Blocking until fail "
                   "point is disabled");
         });
-    if (MONGO_unlikely(failAllRemoves.shouldFail())) {
+    if (auto scoped = failAllRemoves.scoped(); MONGO_unlikely(scoped.isActive())) {
+        tassert(9276703,
+                "failAllRemoves failpoint active!",
+                !scoped.getData().hasField("tassert") || !scoped.getData().getBoolField("tassert"));
         uasserted(ErrorCodes::InternalError, "failAllRemoves failpoint active!");
     }
 
@@ -1003,11 +991,16 @@ long long performDelete(OperationContext* opCtx,
         CurOp::get(opCtx)->setPlanSummary_inlock(exec->getPlanExplainer().getPlanSummary());
     }
 
-    docFound = advanceExecutor(
-        opCtx, exec.get(), true, deleteRequest->getReturnDeleted() ? "findAndModify" : "delete");
-    // Nothing after advancing the plan executor should throw a WriteConflictException,
-    // so the following bookkeeping with execution stats won't end up being done
-    // multiple times.
+    if (deleteRequest->getReturnDeleted()) {
+        docFound = exec->executeFindAndModify();
+    } else {
+        // The number of deleted documents will be obtained from the plan executor later, so discard
+        // the return value.
+        (void)exec->executeDelete();
+    }
+
+    // Nothing after executing the PlanExecutor should throw a WriteConflictException, so the
+    // following bookkeeping with execution stats won't end up being done multiple times.
 
     PlanSummaryStats summaryStats;
     exec->getPlanExplainer().getSummaryStats(&summaryStats);
@@ -1114,7 +1107,6 @@ void logOperationAndProfileIfNeeded(OperationContext* opCtx, CurOp* curOp) {
 WriteResult performInserts(OperationContext* opCtx,
                            const write_ops::InsertCommandRequest& wholeOp,
                            OperationSource source) {
-
     // Insert performs its own retries, so we should only be within a WriteUnitOfWork when run in a
     // transaction.
     auto txnParticipant = TransactionParticipant::get(opCtx);
@@ -1145,7 +1137,8 @@ WriteResult performInserts(OperationContext* opCtx,
         curOp.setNS_inlock(wholeOp.getNamespace());
         curOp.setLogicalOp_inlock(LogicalOp::opInsert);
         curOp.ensureStarted();
-        curOp.debug().additiveMetrics.ninserted = 0;
+        // Initialize 'ninserted' for the operation if is not yet.
+        curOp.debug().additiveMetrics.incrementNinserted(0);
     }
 
     // If we are performing inserts from tenant migrations, skip checking if the user is allowed to
@@ -1178,14 +1171,18 @@ WriteResult performInserts(OperationContext* opCtx,
     const size_t maxBatchBytes = write_ops::insertVectorMaxBytes;
     batch.reserve(std::min(wholeOp.getDocuments().size(), maxBatchSize));
 
+    // If 'wholeOp.getBypassEmptyTsReplacement()' is true or if 'source' is 'kFromMigrate', set
+    // "bypassEmptyTsReplacement=true" for fixDocumentForInsert().
+    const bool bypassEmptyTsReplacement = (source == OperationSource::kFromMigrate) ||
+        static_cast<bool>(wholeOp.getBypassEmptyTsReplacement());
+
     for (auto&& doc : wholeOp.getDocuments()) {
         const auto currentOpIndex = nextOpIndex++;
         const bool isLastDoc = (&doc == &wholeOp.getDocuments().back());
-        const bool preserveEmptyTimestamps = source == OperationSource::kFromMigrate;
         bool containsDotsAndDollarsField = false;
 
-        auto fixedDoc =
-            fixDocumentForInsert(opCtx, doc, preserveEmptyTimestamps, &containsDotsAndDollarsField);
+        auto fixedDoc = fixDocumentForInsert(
+            opCtx, doc, bypassEmptyTsReplacement, &containsDotsAndDollarsField);
 
         const StmtId stmtId = getStmtIdForWriteOp(opCtx, wholeOp, currentOpIndex);
         const bool wasAlreadyExecuted = opCtx->isRetryableWrite() &&
@@ -1343,7 +1340,10 @@ static SingleWriteResult performSingleUpdateOp(OperationContext* opCtx,
         },
         ns);
 
-    if (MONGO_unlikely(failAllUpdates.shouldFail())) {
+    if (auto scoped = failAllUpdates.scoped(); MONGO_unlikely(scoped.isActive())) {
+        tassert(9276702,
+                "failAllUpdates failpoint active!",
+                !scoped.getData().hasField("tassert") || !scoped.getData().getBoolField("tassert"));
         uasserted(ErrorCodes::InternalError, "failAllUpdates failpoint active!");
     }
 
@@ -1368,6 +1368,12 @@ static SingleWriteResult performSingleUpdateOp(OperationContext* opCtx,
                 if (!updateRequest->isUpsert()) {
                     // Inexistent collection.
                     return acquisition;
+                }
+
+                if (source == OperationSource::kFromMigrate) {
+                    uasserted(
+                        ErrorCodes::CannotCreateCollection,
+                        "The implicit creation of a collection due to a migration is not allowed.");
                 }
             }
             makeCollection(opCtx, ns);
@@ -1442,6 +1448,7 @@ static SingleWriteResult performSingleUpdateOpWithDupKeyRetry(
     const write_ops::UpdateOpEntry& op,
     LegacyRuntimeConstants runtimeConstants,
     const boost::optional<BSONObj>& letParams,
+    const OptionalBool& bypassEmptyTsReplacement,
     const boost::optional<UUID>& sampleId,
     OperationSource source,
     bool forgoOpCounterIncrements) {
@@ -1471,6 +1478,7 @@ static SingleWriteResult performSingleUpdateOpWithDupKeyRetry(
     if (letParams) {
         request.setLetParameters(std::move(letParams));
     }
+    request.setBypassEmptyTsReplacement(bypassEmptyTsReplacement);
     request.setStmtIds(stmtIds);
     request.setYieldPolicy(PlanYieldPolicy::YieldPolicy::YIELD_AUTO);
     request.setSource(source);
@@ -1677,6 +1685,9 @@ WriteResult performUpdates(OperationContext* opCtx,
             }
         });
 
+        // Begin query planning timing once we have the nested CurOp.
+        CurOp::get(opCtx)->beginQueryPlanningTimer();
+
         auto sampleId = analyze_shard_key::getOrGenerateSampleId(
             opCtx, ns, analyze_shard_key::SampledCommandNameEnum::kUpdate, singleOp);
         if (sampleId) {
@@ -1707,6 +1718,7 @@ WriteResult performUpdates(OperationContext* opCtx,
                                                      singleOp,
                                                      runtimeConstants,
                                                      wholeOp.getLet(),
+                                                     wholeOp.getBypassEmptyTsReplacement(),
                                                      sampleId,
                                                      source,
                                                      forgoOpCounterIncrements);
@@ -1732,7 +1744,9 @@ WriteResult performUpdates(OperationContext* opCtx,
             } else if (source == OperationSource::kTimeseriesUpdate) {
                 auto& bucketCatalog = timeseries::bucket_catalog::BucketCatalog::get(opCtx);
                 timeseries::bucket_catalog::freeze(
-                    bucketCatalog, ex->collectionUUID(), ex->bucketId());
+                    bucketCatalog,
+                    timeseries::bucket_catalog::BucketId{
+                        ex->collectionUUID(), ex->bucketId(), ex->keySignature()});
                 LOGV2_WARNING(8793901,
                               "Encountered corrupt bucket while performing update",
                               "bucketId"_attr = ex->bucketId());
@@ -1816,7 +1830,10 @@ static SingleWriteResult performSingleDeleteOp(OperationContext* opCtx,
                   "Batch remove - hangDuringBatchRemove fail point enabled. Blocking until fail "
                   "point is disabled");
         });
-    if (MONGO_unlikely(failAllRemoves.shouldFail())) {
+    if (auto scoped = failAllRemoves.scoped(); MONGO_unlikely(scoped.isActive())) {
+        tassert(9276704,
+                "failAllRemoves failpoint active!",
+                !scoped.getData().hasField("tassert") || !scoped.getData().getBoolField("tassert"));
         uasserted(ErrorCodes::InternalError, "failAllRemoves failpoint active!");
     }
 
@@ -1957,6 +1974,9 @@ WriteResult performDeletes(OperationContext* opCtx,
                     &hangBeforeChildRemoveOpIsPopped, opCtx, "hangBeforeChildRemoveOpIsPopped");
             }
         });
+
+        // Begin query planning timing once we have the nested CurOp.
+        CurOp::get(opCtx)->beginQueryPlanningTimer();
 
         if (auto sampleId = analyze_shard_key::getOrGenerateSampleId(
                 opCtx, ns, analyze_shard_key::SampledCommandNameEnum::kDelete, singleOp)) {
@@ -2346,6 +2366,8 @@ write_ops::UpdateCommandRequest makeTimeseriesTransformationOp(
     // operations by end users and is not applicable here.
     base.setBypassDocumentValidation(true);
 
+    base.setBypassEmptyTsReplacement(request.getBypassEmptyTsReplacement());
+
     // Timeseries compression operation is not a user operation and should not use a
     // statement id from any user op. Set to Uninitialized to bypass.
     base.setStmtIds(std::vector<StmtId>{kUninitializedStmtId});
@@ -2394,9 +2416,8 @@ TimeseriesSingleWriteResult performTimeseriesUpdate(
  * Throws if compression fails for any reason.
  */
 void compressUncompressedBucketOnReopen(OperationContext* opCtx,
-                                        const OID& bucketId,
+                                        const timeseries::bucket_catalog::BucketId& bucketId,
                                         const NamespaceString& nss,
-                                        const UUID& uuid,
                                         StringData timeFieldName) {
     bool validateCompression = gValidateTimeseriesCompression.load();
 
@@ -2405,7 +2426,8 @@ void compressUncompressedBucketOnReopen(OperationContext* opCtx,
             timeseries::compressBucket(bucketDoc, timeFieldName, nss, validateCompression);
 
         if (!compressed.compressedBucket) {
-            uassert(timeseries::BucketCompressionFailure(uuid, bucketId),
+            uassert(timeseries::BucketCompressionFailure(
+                        bucketId.collectionUUID, bucketId.oid, bucketId.keySignature),
                     "Time-series compression failed on reopened bucket",
                     compressed.compressedBucket);
         }
@@ -2414,9 +2436,9 @@ void compressUncompressedBucketOnReopen(OperationContext* opCtx,
     };
 
     write_ops::UpdateModification u(std::move(bucketCompressionFunc));
-    write_ops::UpdateOpEntry update(BSON("_id" << bucketId), std::move(u));
-    invariant(!update.getMulti(), bucketId.toString());
-    invariant(!update.getUpsert(), bucketId.toString());
+    write_ops::UpdateOpEntry update(BSON("_id" << bucketId.oid), std::move(u));
+    invariant(!update.getMulti(), bucketId.oid.toString());
+    invariant(!update.getUpsert(), bucketId.oid.toString());
 
     write_ops::UpdateCommandRequest compressionOp(nss, {update});
     write_ops::WriteCommandRequestBase base;
@@ -2527,7 +2549,7 @@ bool commitTimeseriesBucket(OperationContext* opCtx,
                             const write_ops::InsertCommandRequest& request) try {
     auto& bucketCatalog = timeseries::bucket_catalog::BucketCatalog::get(opCtx);
 
-    auto metadata = getMetadata(bucketCatalog, batch->bucketHandle);
+    auto metadata = getMetadata(bucketCatalog, batch->bucketId);
     auto status = prepareCommit(bucketCatalog, request.getNamespace(), batch);
     if (!status.isOK()) {
         invariant(timeseries::bucket_catalog::isWriteBatchFinished(*batch));
@@ -2537,7 +2559,7 @@ bool commitTimeseriesBucket(OperationContext* opCtx,
 
     hangTimeseriesInsertBeforeWrite.pauseWhileSet();
 
-    const auto docId = batch->bucketHandle.bucketId.oid;
+    const auto docId = batch->bucketId.oid;
     const bool performInsert = batch->numPreviouslyCommittedMeasurements == 0;
     if (performInsert) {
         const auto output =
@@ -2641,7 +2663,7 @@ bool commitTimeseriesBucketsAtomically(OperationContext* opCtx,
         std::vector<write_ops::UpdateCommandRequest> updateOps;
 
         for (auto batch : batchesToCommit) {
-            auto metadata = getMetadata(bucketCatalog, batch.get()->bucketHandle);
+            auto metadata = getMetadata(bucketCatalog, batch.get()->bucketId);
             auto prepareCommitStatus = prepareCommit(bucketCatalog, request.getNamespace(), batch);
             if (!prepareCommitStatus.isOK()) {
                 abortStatus = prepareCommitStatus;
@@ -2686,7 +2708,10 @@ bool commitTimeseriesBucketsAtomically(OperationContext* opCtx,
             tryPerformTimeseriesBucketCompression(opCtx, request, *closedBucket);
         }
     } catch (const ExceptionFor<ErrorCodes::TimeseriesBucketCompressionFailed>& ex) {
-        timeseries::bucket_catalog::freeze(bucketCatalog, ex->collectionUUID(), ex->bucketId());
+        timeseries::bucket_catalog::freeze(
+            bucketCatalog,
+            timeseries::bucket_catalog::BucketId{
+                ex->collectionUUID(), ex->bucketId(), ex->keySignature()});
         LOGV2_WARNING(
             8793900,
             "Encountered corrupt bucket while performing insert, will retry on a new bucket",
@@ -2709,7 +2734,6 @@ bool commitTimeseriesBucketsAtomically(OperationContext* opCtx,
 void rebuildOptionsWithGranularityFromConfigServer(OperationContext* opCtx,
                                                    const NamespaceString& bucketsNs,
                                                    TimeseriesOptions& timeSeriesOptions) {
-    AutoGetCollectionForRead coll(opCtx, bucketsNs);
     auto collDesc = CollectionShardingState::assertCollectionLockedAndAcquire(opCtx, bucketsNs)
                         ->getCollectionDescription(opCtx);
     if (collDesc.isSharded()) {
@@ -2871,7 +2895,7 @@ void getTimeseriesBatchResultsNoTenantMigration(
  * existing bucket to put the measurement(s) into as well as closing buckets. Returns info about the
  * write which is needed for committing the write.
  */
-std::tuple<UUID, TimeseriesBatches, TimeseriesStmtIds, size_t /* numInserted */>
+std::tuple<boost::optional<UUID>, TimeseriesBatches, TimeseriesStmtIds, size_t /* numInserted */>
 insertIntoBucketCatalog(OperationContext* opCtx,
                         const write_ops::InsertCommandRequest& request,
                         size_t start,
@@ -2879,27 +2903,40 @@ insertIntoBucketCatalog(OperationContext* opCtx,
                         const std::vector<size_t>& indices,
                         std::vector<write_ops::WriteError>* errors,
                         bool* containsRetry) {
+    hangInsertIntoBucketCatalogBeforeCheckingTimeseriesCollection.pauseWhileSet();
+
     auto& bucketCatalog = timeseries::bucket_catalog::BucketCatalog::get(opCtx);
-
     auto bucketsNs = makeTimeseriesBucketsNamespace(ns(request));
-    // Holding this shared pointer to the collection guarantees that the collator is not
-    // invalidated.
+
+    // Explicitly hold a refrence to the CollectionCatalog, such that the corresponding
+    // Collection instances remain valid, and the collator is not invalidated.
     auto catalog = CollectionCatalog::get(opCtx);
-    auto bucketsColl = catalog->lookupCollectionByNamespace(opCtx, bucketsNs);
-    timeseries::assertTimeseriesBucketsCollection(bucketsColl);
+    const Collection* bucketsColl = nullptr;
 
-    auto timeSeriesOptions = *bucketsColl->getTimeseriesOptions();
+    Status collectionAcquisitionStatus = Status::OK();
+    TimeseriesOptions timeSeriesOptions;
 
-    boost::optional<Status> rebuildOptionsError;
     try {
+        // It must be ensured that the CollectionShardingState remains consistent while rebuilding
+        // the timeseriesOptions. However, the associated collection must be acquired before
+        // we check for the presence of buckets collection. This ensures that a potential
+        // ShardVersion mismatch can be detected, before checking for other errors.
+        const auto coll = acquireCollection(opCtx,
+                                            CollectionAcquisitionRequest::fromOpCtx(
+                                                opCtx, bucketsNs, AcquisitionPrerequisites::kRead),
+                                            MODE_IS);
+        bucketsColl = catalog->lookupCollectionByNamespace(opCtx, bucketsNs);
+        // Check for the presence of the buckets collection
+        timeseries::assertTimeseriesBucketsCollection(bucketsColl);
+        // Process timeSeriesOptions
+        timeSeriesOptions = *bucketsColl->getTimeseriesOptions();
         rebuildOptionsWithGranularityFromConfigServer(opCtx, bucketsNs, timeSeriesOptions);
-    } catch (const ExceptionForCat<ErrorCategory::StaleShardVersionError>& ex) {
-        // This could occur when the shard version attached to the request is for the time
-        // series namespace (unsharded), which is compared to the shard version of the
-        // bucket namespace. Consequently, every single entry fails but the whole operation
-        // succeeds.
+    } catch (const DBException& ex) {
+        if (ex.code() != ErrorCodes::StaleDbVersion && !ErrorCodes::isStaleShardVersionError(ex)) {
+            throw;
+        }
 
-        rebuildOptionsError = ex.toStatus();
+        collectionAcquisitionStatus = ex.toStatus();
 
         auto& oss{OperationShardingState::get(opCtx)};
         oss.setShardingOperationFailedStatus(ex.toStatus());
@@ -2908,15 +2945,17 @@ insertIntoBucketCatalog(OperationContext* opCtx,
     TimeseriesBatches batches;
     TimeseriesStmtIds stmtIds;
 
-    auto insert = [&](size_t index) {
+    std::function<bool(size_t)> attachCollectionAcquisitionError = [&](size_t index) {
         invariant(start + index < request.getDocuments().size());
+        const auto error{write_ops_exec::generateError(
+            opCtx, collectionAcquisitionStatus, start + index, errors->size())};
+        errors->emplace_back(std::move(*error));
+        return false;
+    };
 
-        if (rebuildOptionsError) {
-            const auto error{write_ops_exec::generateError(
-                opCtx, *rebuildOptionsError, start + index, errors->size())};
-            errors->emplace_back(std::move(*error));
-            return false;
-        }
+    std::function<bool(size_t)> insert = [&](size_t index) {
+        invariant(collectionAcquisitionStatus);
+        invariant(start + index < request.getDocuments().size());
 
         auto stmtId = request.getStmtIds() ? request.getStmtIds()->at(start + index)
                                            : request.getStmtId().value_or(0) + start + index;
@@ -2966,7 +3005,7 @@ insertIntoBucketCatalog(OperationContext* opCtx,
         batches.emplace_back(std::move(insertResult->batch), index);
         const auto& batch = batches.back().first;
         if (isTimeseriesWriteRetryable(opCtx)) {
-            stmtIds[batch->bucketHandle.bucketId.oid].push_back(stmtId);
+            stmtIds[batch->bucketId.oid].push_back(stmtId);
         }
 
         // If this insert closed buckets, rewrite to be a compressed column. If we cannot
@@ -2978,13 +3017,18 @@ insertIntoBucketCatalog(OperationContext* opCtx,
         return true;
     };
 
+    auto insertOrErrorFn =
+        collectionAcquisitionStatus.isOK() ? insert : attachCollectionAcquisitionError;
+    boost::optional<UUID> bucketsCollUUID =
+        bucketsColl ? boost::make_optional(bucketsColl->uuid()) : boost::none;
+
     try {
         if (!indices.empty()) {
-            std::for_each(indices.begin(), indices.end(), insert);
+            std::for_each(indices.begin(), indices.end(), insertOrErrorFn);
         } else {
             for (size_t i = 0; i < numDocs; i++) {
-                if (!insert(i) && request.getOrdered()) {
-                    return {bucketsColl->uuid(), std::move(batches), std::move(stmtIds), i};
+                if (!insertOrErrorFn(i) && request.getOrdered()) {
+                    return {bucketsCollUUID, std::move(batches), std::move(stmtIds), i};
                 }
             }
         }
@@ -3006,8 +3050,7 @@ insertIntoBucketCatalog(OperationContext* opCtx,
         throw;
     }
 
-    return {
-        bucketsColl->uuid(), std::move(batches), std::move(stmtIds), request.getDocuments().size()};
+    return {bucketsCollUUID, std::move(batches), std::move(stmtIds), request.getDocuments().size()};
 }
 
 /**
@@ -3055,15 +3098,24 @@ std::vector<size_t> performUnorderedTimeseriesWrites(
     boost::optional<OID>* electionId,
     bool* containsRetry,
     absl::flat_hash_map<int, int>& retryAttemptsForDup) {
-    auto [uuid, batches, bucketStmtIds, _] =
+    auto [optUuid, batches, bucketStmtIds, _] =
         insertIntoBucketCatalog(opCtx, request, start, numDocs, indices, errors, containsRetry);
-    UUID collectionUUID = uuid;
+
+    tassert(9213700,
+            "Timeseries insert did not find bucket collection UUID, but staged inserts in "
+            "the in-memory bucket catalog.",
+            optUuid || batches.empty());
 
     hangTimeseriesInsertBeforeCommit.pauseWhileSet();
+
+    if (batches.empty()) {
+        return {};
+    }
 
     bool canContinue = true;
     std::vector<size_t> docsToRetry;
 
+    UUID collectionUUID = *optUuid;
     stdx::unordered_set<timeseries::bucket_catalog::WriteBatch*> handledHere;
     int64_t handledElsewhere = 0;
     auto reportMeasurementsGuard =
@@ -3081,7 +3133,7 @@ std::vector<size_t> performUnorderedTimeseriesWrites(
         if (timeseries::bucket_catalog::claimWriteBatchCommitRights(*batch)) {
             handledHere.insert(batch.get());
             auto stmtIds = isTimeseriesWriteRetryable(opCtx)
-                ? std::move(bucketStmtIds[batch->bucketHandle.bucketId.oid])
+                ? std::move(bucketStmtIds[batch->bucketId.oid])
                 : std::vector<StmtId>{};
             try {
                 canContinue = commitTimeseriesBucket(opCtx,
@@ -3097,11 +3149,12 @@ std::vector<size_t> performUnorderedTimeseriesWrites(
                                                      request);
             } catch (const ExceptionFor<ErrorCodes::TimeseriesBucketCompressionFailed>& ex) {
                 auto bucketId = ex.extraInfo<timeseries::BucketCompressionFailure>()->bucketId();
+                auto keySignature =
+                    ex.extraInfo<timeseries::BucketCompressionFailure>()->keySignature();
 
                 timeseries::bucket_catalog::freeze(
                     timeseries::bucket_catalog::BucketCatalog::get(opCtx),
-                    collectionUUID,
-                    bucketId);
+                    timeseries::bucket_catalog::BucketId{collectionUUID, bucketId, keySignature});
 
                 LOGV2_WARNING(
                     8607200,
@@ -3223,7 +3276,8 @@ write_ops::InsertCommandReply performTimeseriesWrites(
                                : requestNs);
         curOp.setLogicalOp_inlock(LogicalOp::opInsert);
         curOp.ensureStarted();
-        curOp.debug().additiveMetrics.ninserted = 0;
+        // Initialize 'ninserted' for the operation if is not yet.
+        curOp.debug().additiveMetrics.incrementNinserted(0);
     }
 
     return performTimeseriesWrites(opCtx, request, &curOp);
@@ -3326,8 +3380,6 @@ void explainUpdate(OperationContext* opCtx,
                               isTimeseriesViewRequest);
     uassertStatusOK(parsedUpdate.parseRequest());
 
-    CurOp::get(opCtx)->beginQueryPlanningTimer();
-
     auto exec = uassertStatusOK(
         getExecutorUpdate(&CurOp::get(opCtx)->debug(), collection, &parsedUpdate, verbosity));
     auto bodyBuilder = result->getBodyBuilder();
@@ -3366,8 +3418,6 @@ void explainDelete(OperationContext* opCtx,
     ParsedDelete parsedDelete(
         opCtx, &deleteRequest, collection.getCollectionPtr(), isTimeseriesViewRequest);
     uassertStatusOK(parsedDelete.parseRequest());
-
-    CurOp::get(opCtx)->beginQueryPlanningTimer();
 
     // Explain the plan tree.
     auto exec = uassertStatusOK(

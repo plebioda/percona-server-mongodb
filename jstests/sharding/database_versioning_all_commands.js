@@ -20,6 +20,7 @@
  */
 
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     commandsAddedToMongosSinceLastLTS,
     commandsRemovedFromMongosSinceLastLTS
@@ -699,8 +700,6 @@ let testCases = {
     refineCollectionShardKey: {skip: "not on a user database"},
     refreshLogicalSessionCacheNow: {skip: "goes through the cluster write path"},
     refreshSessions: {skip: "executes locally on mongos (not sent to any remote node)"},
-    refreshSessionsInternal:
-        {skip: "executes locally on mongos (not sent to any remote node)", conditional: true},
     removeShard: {skip: "not on a user database"},
     removeShardFromZone: {skip: "not on a user database"},
     renameCollection: {
@@ -728,6 +727,7 @@ let testCases = {
     revokeRolesFromUser: {skip: "always targets the config server"},
     rolesInfo: {skip: "always targets the config server"},
     rotateCertificates: {skip: "executes locally on mongos (not sent to any remote node)"},
+    rotateFTDC: {skip: "executes locally on mongos (not sent to any remote node)"},
     saslContinue: {skip: "not on a user database"},
     saslStart: {skip: "not on a user database"},
     serverStatus: {skip: "executes locally on mongos (not sent to any remote node)"},

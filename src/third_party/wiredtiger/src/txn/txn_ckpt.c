@@ -1159,6 +1159,7 @@ __txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[])
     __wt_atomic_store64(&cache->evict_max_page_size, 0);
     __wt_atomic_store64(&cache->evict_max_ms, 0);
     cache->reentry_hs_eviction_ms = 0;
+    __wt_atomic_store32(&conn->heuristic_controls.obsolete_tw_btree_count, 0);
     conn->rec_maximum_hs_wrapup_milliseconds = 0;
     conn->rec_maximum_image_build_milliseconds = 0;
     conn->rec_maximum_milliseconds = 0;
@@ -1920,10 +1921,10 @@ __checkpoint_lock_dirty_tree_int(WT_SESSION_IMPL *session, bool is_checkpoint, b
             WT_RET_MSG(session, ret, "checkpoint %s cannot be dropped when in-use", ckpt->name);
         }
     /*
-     * There are special trees: those being bulk-loaded, salvaged, upgraded or verified during the
-     * checkpoint. They should never be part of a checkpoint: we will fail to lock them because the
-     * operations have exclusive access to the handles. Named checkpoints will fail in that case,
-     * ordinary checkpoints skip files that cannot be opened normally.
+     * There are special trees: those being bulk-loaded, salvaged or verified during the checkpoint.
+     * They should never be part of a checkpoint: we will fail to lock them because the operations
+     * have exclusive access to the handles. Named checkpoints will fail in that case, ordinary
+     * checkpoints skip files that cannot be opened normally.
      */
     WT_ASSERT(session, !is_checkpoint || !F_ISSET(btree, WT_BTREE_SPECIAL_FLAGS));
 

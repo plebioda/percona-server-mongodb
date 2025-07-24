@@ -10,6 +10,9 @@
 // sequence), idle (connection is connected but not used before a shard change), and new
 // (connection connected after shard change).
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 // The following checks involve talking to shard primaries, as by the end of this test, one shard
 // does not have a primary.
 TestData.skipCheckingUUIDsConsistentAcrossCluster = true;
@@ -23,7 +26,15 @@ TestData.skipCheckMetadataConsistency = true;
 // removes the replica set primary from a shard.
 TestData.skipCheckRoutingTableConsistency = true;
 
-var st = new ShardingTest({shards: 3, mongos: 1, other: {rs: true, rsOptions: {nodes: 2}}});
+var st = new ShardingTest({
+    shards: 3,
+    other: {
+        rs: true,
+        // Disables elections to avoid secondaries becoming primaries after stepdowns. The test
+        // relies on specific topology changes done explicitly.
+        rsOptions: {nodes: 2, settings: {electionTimeoutMillis: ReplSetTest.kForeverMillis}}
+    },
+});
 
 var mongos = st.s0;
 var admin = mongos.getDB("admin");

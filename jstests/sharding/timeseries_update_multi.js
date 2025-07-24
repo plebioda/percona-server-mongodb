@@ -3,13 +3,12 @@
  * individual measurements by targeting them with their meta and/or time field value.
  *
  * @tags: [
- *   # To avoid burn-in tests in in-memory build variants
- *   requires_persistence,
  *   featureFlagTimeseriesUpdatesSupport,
  * ]
  */
 
 import {TimeseriesTest} from "jstests/core/timeseries/libs/timeseries.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {TimeseriesMultiUpdateUtil} from "jstests/sharding/libs/timeseries_update_multi_util.js";
 
 Random.setRandomSeed();

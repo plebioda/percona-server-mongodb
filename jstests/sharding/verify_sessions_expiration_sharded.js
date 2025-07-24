@@ -14,13 +14,15 @@
 //    replace it in the config.system.sessions collection.
 //
 // @tags: [
-//    temp_disabled_embedded_router_metrics,
+//    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
+//    embedded_router_incompatible,
 // ]
 
 // This test makes assertions about the number of logical session records.
 TestData.disableImplicitSessions = true;
 
 import {withPinnedCursor} from "jstests/libs/pin_getmore_cursor.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const refresh = {
     refreshLogicalSessionCacheNow: 1
@@ -96,7 +98,7 @@ for (let i = 0; i < 10; i++) {
 // generate a new session during the commit phase of the create coordinator
 refreshSessionsAndVerifyExistence(mongosConfig, shardConfig, [], false /* expectToExist */);
 let openedSessionIDs = mongosConfig.system.sessions.find().toArray().map(s => s._id);
-assert.commandWorked(db.runCommand({endSessions: openedSessionIDs}))
+assert.commandWorked(db.runCommand({endSessions: openedSessionIDs}));
 
 let cursors = [];
 sessionIDs = [];

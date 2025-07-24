@@ -3,10 +3,12 @@
  * are behind the majority opTime.
  * @tags: [
  *   config_shard_incompatible,
- *   temp_disabled_embedded_router_known_issues,
+ *    # TODO (SERVER-88122): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {restartServerReplication, stopServerReplication} from "jstests/libs/write_concern_util.js";
 
 // The following checks involve reading from the config server, but this test is designed to make

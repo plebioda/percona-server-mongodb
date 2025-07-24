@@ -2,13 +2,15 @@
  * Test RetryableWriteError label in retryable writes and in transactions.
  *
  * @tags: [
- *   temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  *   uses_transactions,
  * ]
  */
 import {anyEq} from "jstests/aggregation/extras/utils.js";
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const dbName = "test";
 const collName = "retryable_write_error_labels";
@@ -138,6 +140,10 @@ function testMongodError(errorCode, isWCError) {
 function testMongosError() {
     const shard0Primary = st.rs0.getPrimary();
 
+    // Insert initial documents used by the test.
+    const docs = [{k: 0, x: 0}, {k: 1, x: 1}];
+    assert.commandWorked(shard0Primary.getDB(dbName)[collName].insert(docs));
+
     // Test retryable writes.
     jsTestLog("Retryable write should return mongos shutdown error with RetryableWriteError label");
 
@@ -203,28 +209,36 @@ function testMongosError() {
     // Test commitTransaction command.
     jsTestLog(
         "commitTransaction should return mongos shutdown error with RetryableWriteError label");
-    let commitTxnFailPoint = configureFailPoint(shard0Primary, "hangBeforeCommitingTxn");
-    const commitTxnThread = new Thread((mongosHost, dbName, collName) => {
-        const mongos = new Mongo(mongosHost);
-        const session = mongos.startSession();
-        const sessionDb = session.getDatabase(dbName);
-        const sessionColl = sessionDb.getCollection(collName);
-        session.startTransaction();
-        assert.commandWorked(sessionColl.update({}, {$inc: {x: 1}}));
-        return sessionDb.adminCommand({
-            commitTransaction: 1,
-            txnNumber: NumberLong(session.getTxnNumber_forTesting()),
-            autocommit: false
-        });
-    }, st.s.host, dbName, collName);
-    commitTxnThread.start();
+    const mongosConn = new Mongo(st.s.host);
+    const session = mongosConn.startSession();
+    let commitTxnFailPoint = assert.commandWorked(shard0Primary.getDB("admin").runCommand({
+        configureFailPoint: "hangBeforeCommitingTxn",
+        mode: "alwaysOn",
+        data: {uuid: session.getSessionId().id}
+    }));
+    let timesEntered = commitTxnFailPoint.count;
+    const shutdownThread = new Thread((mongos, shard0PrimaryHost, timesEntered) => {
+        var primary = new Mongo(shard0PrimaryHost);
+        const kDefaultWaitForFailPointTimeout = 10 * 60 * 1000;
+        assert.commandWorked(primary.getDB("admin").runCommand({
+            waitForFailPoint: "hangBeforeCommitingTxn",
+            timesEntered: timesEntered + 1,
+            maxTimeMS: kDefaultWaitForFailPointTimeout
+        }));
+        MongoRunner.stopMongos(mongos);
+        assert.commandWorked(primary.getDB("admin").runCommand(
+            {configureFailPoint: "hangBeforeCommitingTxn", mode: "off"}));
+    }, st.s, st.rs0.getPrimary().host, timesEntered);
+    shutdownThread.start();
 
-    commitTxnFailPoint.wait();
-    MongoRunner.stopMongos(st.s);
-    commitTxnFailPoint.off();
+    session.startTransaction();
+    const sessionDb = session.getDatabase(dbName);
+    const sessionColl = sessionDb.getCollection(collName);
+    assert.commandWorked(sessionColl.update({k: 0}, {$inc: {x: 1}}));
+    const commitTxnRes = sessionDb.adminCommand(
+        {commitTransaction: 1, txnNumber: session.getTxnNumber_forTesting(), autocommit: false});
 
     try {
-        const commitTxnRes = commitTxnThread.returnData();
         checkErrorCode(commitTxnRes, acceptableErrorsDuringShutdown, false /* isWCError */);
         assertContainRetryableErrorLabel(commitTxnRes);
     } catch (e) {
@@ -232,6 +246,9 @@ function testMongosError() {
             throw e;
         }
     }
+
+    shutdownThread.join();
+    mongosConn.close();
 
     st.s = MongoRunner.runMongos(st.s);
 
@@ -245,7 +262,7 @@ function testMongosError() {
         const sessionDb = session.getDatabase(dbName);
         const sessionColl = sessionDb.getCollection(collName);
         session.startTransaction();
-        assert.commandWorked(sessionColl.update({}, {$inc: {x: 1}}));
+        assert.commandWorked(sessionColl.update({k: 1}, {$inc: {x: 1}}));
         return sessionDb.adminCommand({
             abortTransaction: 1,
             txnNumber: NumberLong(session.getTxnNumber_forTesting()),

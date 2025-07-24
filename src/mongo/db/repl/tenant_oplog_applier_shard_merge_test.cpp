@@ -147,7 +147,7 @@ public:
         thread_pool_options.onCreateThread = [] {
             Client::initThread("TenantOplogApplier", getGlobalServiceContext()->getService());
         };
-        _executor = makeSharedThreadPoolTestExecutor(std::move(network), thread_pool_options);
+        _executor = makeThreadPoolTestExecutor(std::move(network), thread_pool_options);
         _executor->startup();
         _oplogBuffer.startup(nullptr);
 
@@ -650,7 +650,6 @@ TEST_F(TenantOplogApplierMergeTest, ApplyCRUD_WrongUUID) {
     auto error = opAppliedFuture.getNoThrow().getStatus();
 
     ASSERT_EQ(error, ErrorCodes::NamespaceNotFound);
-    ASSERT_STRING_CONTAINS(error.reason(), "Database name mismatch for");
     ASSERT_FALSE(onInsertsCalled);
 }
 

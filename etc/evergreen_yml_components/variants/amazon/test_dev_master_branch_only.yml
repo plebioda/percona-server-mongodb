@@ -119,11 +119,11 @@ buildvariants:
   # Note that this task is currently optional;
   # This will eventually become suggested, then required.
   - name: &amazon-linux-2023-arm64-bazel-compile amazon-linux-2023-arm64-bazel-compile
-    display_name: "Amazon Linux 2023 Enterprise arm64 Bazel Compile"
+    display_name: "Amazon Linux 2023.3 Enterprise arm64 Bazel Compile"
     tags: ["bazel_check"]
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
-      - amazon2023.0-arm64-small
+      - amazon2023.3-arm64-large
     stepback: false
     expansions:
       compile_variant: *amazon-linux-2023-arm64-bazel-compile
@@ -139,7 +139,7 @@ buildvariants:
     tags: ["bazel_check"]
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
-      - rhel81-power8-small
+      - rhel81-power8-large
     stepback: false
     expansions:
       compile_variant: *rhel81-ppc64le-bazel-compile
@@ -158,7 +158,7 @@ buildvariants:
     tags: ["bazel_check"]
     cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
-      - rhel83-zseries-small
+      - rhel83-zseries-large
     stepback: false
     expansions:
       compile_variant: *rhel83-s390x-bazel-compile
@@ -191,8 +191,6 @@ buildvariants:
       max_sub_suites: 5
       idle_timeout_factor: 1.5
       exec_timeout_factor: 1.5
-      build_mongot: true
-      download_mongot_release: true
       test_flags: >-
         --runAllFeatureFlagTests
         --excludeWithAnyTags=incompatible_with_amazon_linux,requires_ldap_pool,requires_external_data_source,incompatible_with_atlas_environment
@@ -222,13 +220,14 @@ buildvariants:
       - name: .change_stream_fuzzer
       - name: .query_fuzzer
       - name: .updatefuzzer
+      - name: .jstestfuzz
 
   - name: &al2023-arm64-sep-benchmark al2023-arm64-sep-benchmark
-    display_name: "! AL2023 arm64 Enterprise (SEP Benchmark)"
+    display_name: "! AL2023.3 arm64 Enterprise (SEP Benchmark)"
     tags: ["required"]
     cron: "0 */4 * * *"
     run_on:
-      - amazon2023.0-arm64-large
+      - amazon2023.3-arm64-large
     expansions:
       compile_flags: >-
         --ssl
@@ -267,10 +266,8 @@ buildvariants:
       # This builder excludes tests tagged with:
       # 1) exclude_when_record_ids_replicated: indicates that the test is particular about recordIdsReplicated:false
       # 2) disables_test_commands: this builder uses failpoints, and setting disables_test_commands means that the builder can't use failpoints.
-      # TODO (SERVER-89735): Possibly remove requires_capped.
-      # 3) requires_capped: capped collections don't interact well with recordIdsReplicated:true
-      # 4) serverless: Retryable writes on the serverless cause problems with recordIdsReplicated:true
+      # 3) serverless: Retryable writes on the serverless cause problems with recordIdsReplicated:true
       test_flags: >-
         --runAllFeatureFlagTests
-        --excludeWithAnyTags=incompatible_with_amazon_linux,requires_external_data_source,exclude_when_record_ids_replicated,disables_test_commands,requires_capped,incompatible_with_atlas_environment,requires_ldap_pool
+        --excludeWithAnyTags=incompatible_with_amazon_linux,requires_external_data_source,exclude_when_record_ids_replicated,disables_test_commands,incompatible_with_atlas_environment,requires_ldap_pool
         --mongodSetParameters="{'failpoint.overrideRecordIdsReplicatedDefault': {mode: 'alwaysOn'}, 'failpoint.automaticallyCollmodToRecordIdsReplicatedFalse': {mode: 'alwaysOn'}}"

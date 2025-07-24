@@ -84,6 +84,8 @@
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kWiredTiger
 
 // From src/third_party/wiredtiger/src/include/txn.h
+#define WT_TXN_ROLLBACK_REASON_CACHE_OVERFLOW "transaction rolled back because of cache overflow"
+
 #define WT_TXN_ROLLBACK_REASON_OLDEST_FOR_EVICTION \
     "oldest pinned transaction ID rolled back for eviction"
 
@@ -126,48 +128,13 @@ namespace {
 // TODO SERVER-81069: Remove this.
 MONGO_FAIL_POINT_DEFINE(allowEncryptionOptionsInCreationString);
 
-const std::string kTableChecksFileName = "_wt_table_checks";
 const std::string kTableExtension = ".wt";
 const std::string kWiredTigerBackupFile = "WiredTiger.backup";
 const static StaticImmortal<pcre::Regex> encryptionOptsRegex(R"re(encryption=\([^\)]*\),?)re");
 
-/**
- * Removes the 'kTableChecksFileName' file in the dbpath, if it exists.
- */
-void removeTableChecksFile() {
-    auto path = boost::filesystem::path(storageGlobalParams.dbpath) /
-        boost::filesystem::path(kTableChecksFileName);
-
-    if (!boost::filesystem::exists(path)) {
-        return;
-    }
-
-    boost::system::error_code errorCode;
-    boost::filesystem::remove(path, errorCode);
-
-    if (errorCode) {
-        LOGV2_FATAL_NOTRACE(4366403,
-                            "Failed to remove file",
-                            "file"_attr = path.generic_string(),
-                            "error"_attr = errorCode.message());
-    }
-}
-
 }  // namespace
 
 using std::string;
-
-bool wasRollbackReasonCachePressure(WT_SESSION* session) {
-    if (session) {
-        const auto reason = session->get_rollback_reason(session);
-        if (reason) {
-            return strncmp(WT_TXN_ROLLBACK_REASON_OLDEST_FOR_EVICTION,
-                           reason,
-                           sizeof(WT_TXN_ROLLBACK_REASON_OLDEST_FOR_EVICTION)) == 0;
-        }
-    }
-    return false;
-}
 
 /**
  * Configured WT cache is deemed insufficient for a transaction when its dirty bytes in cache
@@ -225,18 +192,25 @@ Status wtRCToStatus_slow(int retCode, WT_SESSION* session, StringData prefix) {
         double cacheThreshold = gTransactionTooLargeForCacheThreshold.load();
         bool txnTooLargeEnabled = cacheThreshold < 1.0;
         bool temporarilyUnavailableEnabled = gEnableTemporarilyUnavailableExceptions.load();
+        const char* reason = session ? session->get_rollback_reason(session) : "";
         bool reasonWasCachePressure = (txnTooLargeEnabled || temporarilyUnavailableEnabled) &&
-            wasRollbackReasonCachePressure(session);
+            reason && session &&
+            (strncmp(WT_TXN_ROLLBACK_REASON_OLDEST_FOR_EVICTION,
+                     reason,
+                     sizeof(WT_TXN_ROLLBACK_REASON_OLDEST_FOR_EVICTION)) == 0 ||
+             strncmp(WT_TXN_ROLLBACK_REASON_CACHE_OVERFLOW,
+                     reason,
+                     sizeof(WT_TXN_ROLLBACK_REASON_CACHE_OVERFLOW)) == 0);
 
         if (reasonWasCachePressure) {
             if (txnTooLargeEnabled && isCacheInsufficientForTransaction(session, cacheThreshold)) {
                 throwTransactionTooLargeForCache(
-                    generateContextStrStream(WT_TXN_ROLLBACK_REASON_TOO_LARGE_FOR_CACHE));
+                    generateContextStrStream(WT_TXN_ROLLBACK_REASON_TOO_LARGE_FOR_CACHE)
+                    << " (" << reason << ")");
             }
 
             if (temporarilyUnavailableEnabled) {
-                throwTemporarilyUnavailableException(
-                    generateContextStrStream(WT_TXN_ROLLBACK_REASON_OLDEST_FOR_EVICTION));
+                throwTemporarilyUnavailableException(generateContextStrStream(reason));
             }
         }
 
@@ -713,7 +687,7 @@ logv2::LogComponent getWTLOGV2Component(const BSONObj& obj) {
         case WT_VERB_COMPACT:
         case WT_VERB_COMPACT_PROGRESS:
             return logv2::LogComponent::kWiredTigerCompact;
-        case WT_VERB_EVICT:
+        case WT_VERB_EVICTION:
             return logv2::LogComponent::kWiredTigerEviction;
         case WT_VERB_HS:
         case WT_VERB_HS_ACTIVITY:
@@ -973,6 +947,14 @@ void WiredTigerUtil::validateTableLogging(WiredTigerRecoveryUnit& ru,
                                           bool& valid,
                                           std::vector<std::string>& errors,
                                           std::vector<std::string>& warnings) {
+    if (gWiredTigerSkipTableLoggingChecksDuringValidation) {
+        LOGV2(9264500,
+              "Skipping validation of table log settings due to usage of "
+              "'wiredTigerSkipTableLoggingChecksDuringValidation'",
+              "ident"_attr = uri);
+        return;
+    }
+
     logv2::DynamicAttributes attrs;
     if (indexName) {
         attrs.add("index", indexName);
@@ -1001,10 +983,6 @@ void WiredTigerUtil::validateTableLogging(WiredTigerRecoveryUnit& ru,
                                                : "collection"));
         valid = false;
     }
-}
-
-void WiredTigerUtil::notifyStorageStartupRecoveryComplete() {
-    removeTableChecksFile();
 }
 
 bool WiredTigerUtil::useTableLogging(const NamespaceString& nss) {
@@ -1129,6 +1107,7 @@ Status WiredTigerUtil::exportTableToBSON(WT_SESSION* session,
                                     << ". reason: " << wiredtiger_strerror(ret));
     }
     bob->append("uri", uri);
+    bob->append("version", wiredtiger_version(NULL, NULL, NULL));
     invariant(cursor);
     ON_BLOCK_EXIT([&] { cursor->close(cursor); });
 
@@ -1323,7 +1302,7 @@ std::string WiredTigerUtil::generateWTVerboseConfiguration() {
         {logv2::LogComponent::kWiredTigerBackup, "backup"},
         {logv2::LogComponent::kWiredTigerCheckpoint, "checkpoint"},
         {logv2::LogComponent::kWiredTigerCompact, "compact"},
-        {logv2::LogComponent::kWiredTigerEviction, "evict"},
+        {logv2::LogComponent::kWiredTigerEviction, "eviction"},
         {logv2::LogComponent::kWiredTigerHS, "history_store"},
         {logv2::LogComponent::kWiredTigerRecovery, "recovery"},
         {logv2::LogComponent::kWiredTigerRTS, "rts"},
@@ -1380,26 +1359,43 @@ std::string WiredTigerUtil::generateWTVerboseConfiguration() {
     return cfg;
 }
 
+// static
+boost::optional<std::string> WiredTigerUtil::getConfigStringFromStorageOptions(
+    const BSONObj& options) {
+    if (auto wtElem = options[kWiredTigerEngineName]) {
+        BSONObj wtObj = wtElem.Obj();
+        if (auto configStringElem = wtObj.getField(kConfigStringField)) {
+            return configStringElem.String();
+        }
+    }
+
+    return boost::none;
+}
+
+// static
+BSONObj WiredTigerUtil::setConfigStringToStorageOptions(const BSONObj& options,
+                                                        const std::string& configString) {
+    // Storage options may contain settings for non-WiredTiger storage engines (e.g. inMemory).
+    // We should leave these settings intact.
+    auto wtElem = options[kWiredTigerEngineName];
+    auto wtObj = wtElem ? wtElem.Obj() : BSONObj();
+    return options.addFields(
+        BSON(kWiredTigerEngineName << wtObj.addFields(BSON(kConfigStringField << configString))));
+}
+
 void WiredTigerUtil::removeEncryptionFromConfigString(std::string* configString) {
     encryptionOptsRegex->substitute("", configString, pcre::SUBSTITUTE_GLOBAL);
 }
 
 // static
 BSONObj WiredTigerUtil::getSanitizedStorageOptionsForSecondaryReplication(const BSONObj& options) {
-    // Storage options may contain settings for non-WiredTiger storage engines (e.g. inMemory).
-    // We should leave these settings intact.
-    if (auto wtElem = options[kWiredTigerEngineName]) {
-        BSONObj wtObj = wtElem.Obj();
-        if (auto configStringElem = wtObj.getField(kConfigStringField)) {
-            auto configString = configStringElem.String();
-            removeEncryptionFromConfigString(&configString);
-            // Return a new BSONObj with the configString field sanitized.
-            return options.addFields(BSON(kWiredTigerEngineName << wtObj.addFields(
-                                              BSON(kConfigStringField << configString))));
-        }
+    auto configString = getConfigStringFromStorageOptions(options);
+    if (!configString) {
+        return options;
     }
 
-    return options;
+    removeEncryptionFromConfigString(configString.get_ptr());
+    return setConfigStringToStorageOptions(options, *configString);
 }
 
 Status WiredTigerUtil::canRunAutoCompact(OperationContext* opCtx, bool isEphemeral) {

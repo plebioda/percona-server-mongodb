@@ -40,10 +40,10 @@
 #include "mongo/bson/mutable/document.h"
 #include "mongo/bson/mutable/element.h"
 #include "mongo/bson/timestamp.h"
-#include "mongo/db/bson/dotted_path_support.h"
 #include "mongo/db/field_ref.h"
 #include "mongo/db/field_ref_set.h"
 #include "mongo/db/logical_time.h"
+#include "mongo/db/query/bson/dotted_path_support.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/update/object_replace_executor.h"
 #include "mongo/db/update/storage_validation.h"
@@ -58,10 +58,10 @@ namespace {
 constexpr StringData kIdFieldName = "_id"_sd;
 }  // namespace
 
-ObjectReplaceExecutor::ObjectReplaceExecutor(BSONObj replacement, bool preserveEmptyTimestamps)
+ObjectReplaceExecutor::ObjectReplaceExecutor(BSONObj replacement, bool bypassEmptyTsReplacement)
     : _replacementDoc(replacement.getOwned()),
       _containsId(false),
-      _preserveEmptyTimestamps(preserveEmptyTimestamps) {
+      _bypassEmptyTsReplacement(bypassEmptyTsReplacement) {
     // Check for the existence of the "_id" field, and if approrpriate replace all zero-valued
     // timestamps with the current time.
     for (auto&& elem : _replacementDoc) {
@@ -71,11 +71,11 @@ ObjectReplaceExecutor::ObjectReplaceExecutor(BSONObj replacement, bool preserveE
             continue;
         }
 
-        // For updates that originated from the oplog, we're required to apply the update exactly
-        // as it was recorded (even if it contains zero-valued timestamps). Therefore, we should
-        // only replace zero-valued timestamps with the current time when '_preserveEmptyTimestamps'
-        // is false.
-        if (!_preserveEmptyTimestamps && elem.type() == BSONType::bsonTimestamp) {
+        // For updates that originated from the oplog, we're required to apply the update
+        // exactly as it was recorded (even if it contains zero-valued timestamps). Therefore,
+        // we should only replace zero-valued timestamps with the current time when
+        // '_bypassEmptyTsReplacement' is false.
+        if (!_bypassEmptyTsReplacement && elem.type() == BSONType::bsonTimestamp) {
             auto timestampView = DataView(const_cast<char*>(elem.value()));
 
             // We don't need to do an endian-safe read here, because 0 is 0 either way.

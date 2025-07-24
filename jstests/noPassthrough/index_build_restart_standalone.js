@@ -7,6 +7,7 @@
  *   requires_replication,
  * ]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {IndexBuildTest} from "jstests/noPassthrough/libs/index_build.js";
 
 const rst = new ReplSetTest({
@@ -49,11 +50,10 @@ const createIndexCmd = IndexBuildTest.startIndexBuild(primary,
                                                       [ErrorCodes.InterruptedDueToReplStateChange]);
 IndexBuildTest.waitForIndexBuildToStart(secondaryDB, collName, indexName);
 
-jsTest.log("Force checkpoints to move the durable timestamps forward.");
-rst.awaitReplication();
-assert.commandWorked(primary.adminCommand({fsync: 1}));
-assert.commandWorked(secondary.adminCommand({fsync: 1}));
-jsTest.log("Checkpoints taken. Stopping replica set to restart individual nodes in standalone.");
+// Wait for the stable timestamps on each node to advance, so that the  write is included in the
+// stable checkpoint taken on shutdown.
+jsTest.log("Wait for stable timestamps to advance.");
+rst.awaitLastStableRecoveryTimestamp();
 
 TestData.skipCheckDBHashes = true;
 rst.stopSet(/*signal=*/ null, /*forRestart=*/ true);

@@ -35,7 +35,7 @@ namespace mongo {
 class OperationContext;
 
 /**
- * Stores state and statistics related to execution control for a given transactional context.
+ * Stores state and statistics related to ingress admission for a given transactional context.
  */
 class IngressAdmissionContext : public AdmissionContext {
 public:

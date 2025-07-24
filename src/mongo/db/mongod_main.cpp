@@ -205,7 +205,8 @@
 #include "mongo/db/serverless/shard_split_donor_op_observer.h"
 #include "mongo/db/serverless/shard_split_donor_service.h"
 #include "mongo/db/service_context.h"
-#include "mongo/db/service_entry_point_mongod.h"
+#include "mongo/db/service_entry_point_rs_endpoint.h"
+#include "mongo/db/service_entry_point_shard_role.h"
 #include "mongo/db/session/kill_sessions_local.h"
 #include "mongo/db/session/kill_sessions_remote.h"
 #include "mongo/db/session/logical_session_cache.h"
@@ -270,7 +271,7 @@
 #include "mongo/s/query_analysis_sampler.h"
 #include "mongo/s/resource_yielders.h"
 #include "mongo/s/routing_information_cache.h"
-#include "mongo/s/service_entry_point_mongos.h"
+#include "mongo/s/service_entry_point_router_role.h"
 #include "mongo/s/sharding_state.h"
 #include "mongo/scripting/dbdirectclient_factory.h"
 #include "mongo/scripting/engine.h"
@@ -490,7 +491,7 @@ void logMongodStartupTimeElapsedStatistics(ServiceContext* serviceContext,
 // File Copy Based Initial Sync will restart the storage subsystem and may need to repeat some
 // of the initialization steps within.  If you add or change any of these steps, make sure
 // any necessary changes are also made to File Copy Based Initial Sync.
-ExitCode _initAndListen(ServiceContext* serviceContext, int listenPort) {
+ExitCode _initAndListen(ServiceContext* serviceContext) {
     Client::initThread("initandlisten", serviceContext->getService(ClusterRole::ShardServer));
 
     // TODO(SERVER-74659): Please revisit if this thread could be made killable.
@@ -534,8 +535,20 @@ ExitCode _initAndListen(ServiceContext* serviceContext, int listenPort) {
 
     initializeCommandHooks(serviceContext);
 
-    serviceContext->getService(ClusterRole::ShardServer)
-        ->setServiceEntryPoint(std::make_unique<ServiceEntryPointMongod>());
+    {
+        // (Ignore FCV check): The ReplicaSetEndpoint service entry point needs to be set even
+        // before the FCV is fully upgraded.
+        const bool useRSEndpoint =
+            feature_flags::gFeatureFlagReplicaSetEndpoint.isEnabledAndIgnoreFCVUnsafe();
+        auto shardRoleSEP = std::make_unique<ServiceEntryPointShardRole>();
+        auto shardService = serviceContext->getService(ClusterRole::ShardServer);
+        if (useRSEndpoint) {
+            shardService->setServiceEntryPoint(
+                std::make_unique<ServiceEntryPointRSEndpoint>(std::move(shardRoleSEP)));
+        } else {
+            shardService->setServiceEntryPoint(std::move(shardRoleSEP));
+        }
+    }
 
     {
         // Set up the periodic runner for background job execution. This is required to be running
@@ -959,7 +972,7 @@ ExitCode _initAndListen(ServiceContext* serviceContext, int listenPort) {
         if (serverGlobalParams.clusterRole.has(ClusterRole::RouterServer)) {
             // Router role should use SEPMongos
             serviceContext->getService(ClusterRole::RouterServer)
-                ->setServiceEntryPoint(std::make_unique<ServiceEntryPointMongos>());
+                ->setServiceEntryPoint(std::make_unique<ServiceEntryPointRouterRole>());
         }
 
         if (replSettings.isReplSet() &&
@@ -976,8 +989,7 @@ ExitCode _initAndListen(ServiceContext* serviceContext, int listenPort) {
                 serviceContext->getFastClockSource(),
                 "Start up cluster time keys manager with a local/direct keys client",
                 &startupTimeElapsedBuilder);
-            auto keysClientMustUseLocalReads =
-                !serviceContext->getStorageEngine()->supportsReadConcernMajority();
+            auto keysClientMustUseLocalReads = false;
             auto keysCollectionClient =
                 std::make_unique<KeysCollectionClientDirect>(keysClientMustUseLocalReads);
             auto keyManager = std::make_shared<KeysCollectionManager>(
@@ -1253,9 +1265,9 @@ ExitCode _initAndListen(ServiceContext* serviceContext, int listenPort) {
     return waitForShutdown();
 }
 
-ExitCode initAndListen(ServiceContext* service, int listenPort) {
+ExitCode initAndListen(ServiceContext* service) {
     try {
-        return _initAndListen(service, listenPort);
+        return _initAndListen(service);
     } catch (DBException& e) {
         LOGV2_ERROR(
             20557, "DBException in initAndListen, terminating", "error"_attr = e.toString());
@@ -1274,7 +1286,7 @@ ExitCode initAndListen(ServiceContext* service, int listenPort) {
 
 #if defined(_WIN32)
 ExitCode initService() {
-    return initAndListen(getGlobalServiceContext(), serverGlobalParams.port);
+    return initAndListen(getGlobalServiceContext());
 }
 #endif
 
@@ -1419,7 +1431,7 @@ auto makeReplicaSetNodeExecutor(ServiceContext* serviceContext) {
         stdx::lock_guard<Client> lk(cc());
         cc().setSystemOperationUnkillableByStepdown(lk);
     };
-    return std::make_unique<executor::ThreadPoolTaskExecutor>(
+    return executor::ThreadPoolTaskExecutor::create(
         std::make_unique<ThreadPool>(tpOptions),
         executor::makeNetworkInterface(
             "ReplNodeDbWorkerNetwork", nullptr, makeShardingEgressHooksList(serviceContext)));
@@ -1439,7 +1451,7 @@ auto makeReplicationExecutor(ServiceContext* serviceContext) {
     };
     auto hookList = std::make_unique<rpc::EgressMetadataHookList>();
     hookList->addHook(std::make_unique<rpc::VectorClockMetadataHook>(serviceContext));
-    return std::make_unique<executor::ThreadPoolTaskExecutor>(
+    return executor::ThreadPoolTaskExecutor::create(
         std::make_unique<ThreadPool>(tpOptions),
         executor::makeNetworkInterface("ReplNetwork", nullptr, std::move(hookList)));
 }
@@ -2261,7 +2273,7 @@ int mongod_main(int argc, char* argv[]) {
         7091600, {LogComponent::kTenantMigration}, "Starting TenantMigrationAccessBlockerRegistry");
     TenantMigrationAccessBlockerRegistry::get(service).startup();
 
-    ExitCode exitCode = initAndListen(service, serverGlobalParams.port);
+    ExitCode exitCode = initAndListen(service);
     exitCleanly(exitCode);
     return 0;
 }

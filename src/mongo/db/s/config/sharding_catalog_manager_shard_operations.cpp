@@ -66,6 +66,7 @@
 #include "mongo/client/remote_command_targeter.h"
 #include "mongo/client/replica_set_monitor.h"
 #include "mongo/db/audit.h"
+#include "mongo/db/catalog/drop_database.h"
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/cluster_server_parameter_cmds_gen.h"
@@ -102,7 +103,6 @@
 #include "mongo/db/s/config/sharding_catalog_manager.h"
 #include "mongo/db/s/range_deletion_task_gen.h"
 #include "mongo/db/s/replica_set_endpoint_feature_flag.h"
-#include "mongo/db/s/sharding_cluster_parameters_gen.h"
 #include "mongo/db/s/sharding_config_server_parameters_gen.h"
 #include "mongo/db/s/sharding_ddl_util.h"
 #include "mongo/db/s/sharding_logging.h"
@@ -136,6 +136,7 @@
 #include "mongo/s/catalog/type_chunk.h"
 #include "mongo/s/catalog/type_database_gen.h"
 #include "mongo/s/catalog/type_namespace_placement_gen.h"
+#include "mongo/s/catalog/type_remove_shard_event_gen.h"
 #include "mongo/s/catalog/type_shard.h"
 #include "mongo/s/client/shard.h"
 #include "mongo/s/client/shard_registry.h"
@@ -144,6 +145,7 @@
 #include "mongo/s/request_types/sharded_ddl_commands_gen.h"
 #include "mongo/s/request_types/shardsvr_join_ddl_coordinators_request_gen.h"
 #include "mongo/s/request_types/shardsvr_join_migrations_request_gen.h"
+#include "mongo/s/sharding_cluster_parameters_gen.h"
 #include "mongo/s/sharding_feature_flags_gen.h"
 #include "mongo/s/sharding_state.h"
 #include "mongo/s/write_ops/batched_command_response.h"
@@ -669,7 +671,10 @@ StatusWith<ShardType> ShardingCatalogManager::_validateHostAsShard(
                    "using the setDefaultRWConcern command and try again."};
     }
 
-    if (resHello.hasField(HelloCommandReply::kCwwcFieldName)) {
+    // If a config shard is being added, then we can skip comparing the CWWC on the shard and on the
+    // config server. Doing this check can introduce a race condition where the CWWC on the config
+    // server changes while it transitions to a config shard, causing an operation failure.
+    if (!isConfigShard && resHello.hasField(HelloCommandReply::kCwwcFieldName)) {
         auto cwwcOnShard =
             WriteConcernOptions::parse(resHello.getObjectField(HelloCommandReply::kCwwcFieldName))
                 .getValue()
@@ -955,14 +960,30 @@ Status ShardingCatalogManager::_updateClusterCardinalityParameter(const Lock::Ex
     configsvrSetClusterParameter.setDbName(DatabaseName::kAdmin);
 
     const auto shardRegistry = Grid::get(opCtx)->shardRegistry();
-    const auto cmdResponse = shardRegistry->getConfigShard()->runCommandWithFixedRetryAttempts(
-        opCtx,
-        ReadPreferenceSetting(ReadPreference::PrimaryOnly),
-        DatabaseName::kAdmin,
-        configsvrSetClusterParameter.toBSON(),
-        Shard::RetryPolicy::kIdempotent);
 
-    return Shard::CommandResponse::getEffectiveStatus(cmdResponse);
+    while (true) {
+        const auto cmdResponse = shardRegistry->getConfigShard()->runCommandWithFixedRetryAttempts(
+            opCtx,
+            ReadPreferenceSetting(ReadPreference::PrimaryOnly),
+            DatabaseName::kAdmin,
+            configsvrSetClusterParameter.toBSON(),
+            Shard::RetryPolicy::kIdempotent);
+
+        auto status = Shard::CommandResponse::getEffectiveStatus(cmdResponse);
+
+        if (status != ErrorCodes::ConflictingOperationInProgress) {
+            return status;
+        }
+
+        // Retry on ErrorCodes::ConflictingOperationInProgress errors, which can be caused by
+        // another ConfigsvrCoordinator runnning concurrently.
+        LOGV2_DEBUG(9314400,
+                    2,
+                    "Failed to update the cluster parameter. Retrying again after 500ms.",
+                    "error"_attr = status);
+
+        opCtx->sleepFor(Milliseconds(500));
+    }
 }
 
 Status ShardingCatalogManager::_updateClusterCardinalityParameterAfterAddShardIfNeeded(
@@ -1544,17 +1565,15 @@ RemoveShardProgress ShardingCatalogManager::removeShard(OperationContext* opCtx,
             }
         }
 
-        // Now actually drop the databases.
+        // Now actually drop the databases; each request must either succeed or resolve into a
+        // no-op.
         LOGV2(7509600, "Locally dropping drained databases", "shardId"_attr = name);
 
         for (auto&& db : trackedDBs) {
-            DBDirectClient client(opCtx);
-            BSONObj result;
-            if (!client.dropDatabase(
-                    db.getDbName(), ShardingCatalogClient::kLocalWriteConcern, &result)) {
-                uassertStatusOK(getStatusFromCommandResult(result));
+            const auto dropStatus = dropDatabase(opCtx, db.getDbName(), true /*markFromMigrate*/);
+            if (dropStatus != ErrorCodes::NamespaceNotFound) {
+                uassertStatusOK(dropStatus);
             }
-
             hangAfterDroppingDatabaseInTransitionToDedicatedConfigServer.pauseWhileSet(opCtx);
         }
 
@@ -2314,8 +2333,28 @@ void ShardingCatalogManager::_removeShardInTransaction(OperationContext* opCtx,
                 return txnClient.runCRUDOp(updateOp, {});
             })
             .thenRunOn(txnExec)
-            .then([removedShardName](auto updateResponse) {
+            .then([&txnClient, newTopologyTime](auto updateResponse) {
                 uassertStatusOK(updateResponse.toStatus());
+                // Log the topology time associated to this commit in a dedicated document (and
+                // delete information about a previous commit if present).
+                write_ops::UpdateCommandRequest upsertOp(
+                    NamespaceString::kConfigsvrShardRemovalLogNamespace);
+                upsertOp.setUpdates({[&]() {
+                    write_ops::UpdateOpEntry entry;
+                    entry.setUpsert(true);
+                    entry.setMulti(false);
+                    entry.setQ(BSON("_id" << ShardingCatalogClient::kLatestShardRemovalLogId));
+                    entry.setU(write_ops::UpdateModification::parseFromClassicUpdate(
+                        BSON("$set" << BSON(RemoveShardEventType::kTimestampFieldName
+                                            << newTopologyTime))));
+                    return entry;
+                }()});
+
+                return txnClient.runCRUDOp(upsertOp, {});
+            })
+            .thenRunOn(txnExec)
+            .then([removedShardName](auto upsertResponse) {
+                uassertStatusOK(upsertResponse.toStatus());
                 LOGV2_DEBUG(
                     6583701, 1, "Finished removing shard ", "shard"_attr = removedShardName);
             })

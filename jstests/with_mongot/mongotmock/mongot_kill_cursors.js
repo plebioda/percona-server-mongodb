@@ -40,7 +40,7 @@ function runTest(pipeline, expectedCommand) {
             expectedCommand,
             response: {
                 ok: 1,
-                cursor: {firstBatch: [{_id: 0}, {_id: 1}], id: cursorId, ns: coll.getFullName()}
+                cursor: {firstBatch: [{_id: 1}, {_id: 2}], id: cursorId, ns: coll.getFullName()}
             }
         },
         {
@@ -95,7 +95,8 @@ const searchQuery = {
     path: "title"
 };
 runTest([{$search: searchQuery}],
-        mongotCommandForQuery(searchQuery, collName, dbName, collectionUUID));
+        mongotCommandForQuery(
+            {query: searchQuery, collName: collName, db: dbName, collectionUUID: collectionUUID}));
 
 mongotMock.stop();
 MongoRunner.stopMongod(conn);

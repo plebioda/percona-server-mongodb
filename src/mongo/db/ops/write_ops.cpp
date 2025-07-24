@@ -49,7 +49,7 @@
 #include "mongo/bson/util/builder.h"
 #include "mongo/crypto/fle_field_schema_gen.h"
 #include "mongo/db/basic_types.h"
-#include "mongo/db/commands/bulk_write_gen.h"
+#include "mongo/db/commands/query_cmd/bulk_write_gen.h"
 #include "mongo/db/dbmessage.h"
 #include "mongo/db/generic_argument_util.h"
 #include "mongo/db/namespace_string.h"
@@ -173,6 +173,12 @@ int getWriteCommandRequestBaseSize(const WriteCommandRequestBase& base,
     if (auto encryptionInfo = base.getEncryptionInformation(); encryptionInfo) {
         estSize += write_ops::WriteCommandRequestBase::kEncryptionInformationFieldName.size() +
             encryptionInfo->toBSON().objsize() + kPerElementOverhead;
+    }
+
+    if (auto bypassEmptyTsReplacement = base.getBypassEmptyTsReplacement();
+        bypassEmptyTsReplacement.has_value()) {
+        estSize += write_ops::WriteCommandRequestBase::kBypassEmptyTsReplacementFieldName.size() +
+            kBoolSize + kPerElementOverhead;
     }
 
     if (auto query = base.getOriginalQuery(); query) {
@@ -684,7 +690,7 @@ UpdateModification UpdateModification::parseFromOplogEntry(const BSONObj& oField
             str::stream() << "Expected _id field or $v:2, but got: " << vField,
             idField.ok() ||
                 (vField.ok() &&
-                 vField.numberInt() == static_cast<int>(UpdateOplogEntryVersion::kDeltaV2)));
+                 vField.safeNumberInt() == static_cast<int>(UpdateOplogEntryVersion::kDeltaV2)));
 
     // It is important to check for '_id' field first, because a replacement style update can still
     // have a '$v' field in the object.

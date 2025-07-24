@@ -28,6 +28,7 @@
  */
 
 
+#include "variables.h"
 #include <absl/container/flat_hash_map.h>
 #include <iterator>
 
@@ -103,7 +104,9 @@ std::unique_ptr<Pipeline, PipelineDeleter> buildPipelineFromViewDefinition(
 DocumentSourceUnionWith::DocumentSourceUnionWith(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     std::unique_ptr<Pipeline, PipelineDeleter> pipeline)
-    : DocumentSource(kStageName, expCtx), _pipeline(std::move(pipeline)) {
+    : DocumentSource(kStageName, expCtx),
+      _pipeline(std::move(pipeline)),
+      _variablesParseState(_variables.useIdGenerator()) {
     if (!_pipeline->getContext()->ns.isOnInternalDb()) {
         globalOpCounters.gotNestedAggregate();
     }
@@ -260,6 +263,15 @@ DocumentSource::GetNextResult DocumentSourceUnionWith::doGetNext() {
     }
 
     if (_executionState == ExecutionProgress::kStartingSubPipeline) {
+        // Since the subpipeline will be executed again for explain, we store the starting
+        // state of the variables to reset them later.
+        if (pExpCtx->explain) {
+            auto expCtx = _pipeline->getContext();
+            _variables = expCtx->variables;
+            _variablesParseState =
+                expCtx->variablesParseState.copyWith(_variables.useIdGenerator());
+        }
+
         auto serializedPipe = _pipeline->serializeToBson();
         logStartingSubPipeline(serializedPipe);
         try {
@@ -308,7 +320,7 @@ MONGO_COMPILER_NOINLINE void DocumentSourceUnionWith::logStartingSubPipeline(
 }
 
 MONGO_COMPILER_NOINLINE void DocumentSourceUnionWith::logShardedViewFound(
-    const ExceptionFor<ErrorCodes::CommandOnShardedViewNotSupportedOnMongod>& e) {
+    const ExceptionFor<ErrorCodes::CommandOnShardedViewNotSupportedOnMongod>& e) const {
     LOGV2_DEBUG(4556300,
                 3,
                 "$unionWith found view definition. ns: {namespace}, pipeline: {pipeline}. New "
@@ -408,18 +420,39 @@ Value DocumentSourceUnionWith::serialize(const SerializationOptions& opts) const
 
         invariant(pipeCopy);
 
-        // Query settings are looked up after parsing and therefore are not populated in the
-        // context of the unionWith '_pipeline' as part of DocumentSourceUnionWith constructor.
-        // Attach query settings to the '_pipeline->getContext()' by copying them from the parent
-        // query ExpressionContext.
-        //
-        // NOTE: this is done here, as opposed to at the beginning of the serialize() method because
-        // serialize() is called when generating query shape, however, at that moment no query
-        // settings are present in the parent context.
-        _pipeline->getContext()->setQuerySettingsIfNotPresent(pExpCtx->getQuerySettings());
+        auto preparePipelineAndExplain = [&](Pipeline* ownedPipeline) {
+            if (*opts.verbosity >= ExplainOptions::Verbosity::kExecStats) {
+                // We reset the variables to their inital state for another execution.
+                _variables.copyToExpCtx(_variablesParseState, _pipeline->getContext().get());
+            }
+            // Query settings are looked up after parsing and therefore are not populated in the
+            // context of the unionWith '_pipeline' as part of DocumentSourceUnionWith
+            // constructor. Attach query settings to the '_pipeline->getContext()' by copying
+            // them from the parent query ExpressionContext.
+            //
+            // NOTE: this is done here, as opposed to at the beginning of the serialize() method
+            // because serialize() is called when generating query shape, however, at that
+            // moment no query settings are present in the parent context.
+            _pipeline->getContext()->setQuerySettingsIfNotPresent(pExpCtx->getQuerySettings());
 
-        BSONObj explainLocal =
-            pExpCtx->mongoProcessInterface->preparePipelineAndExplain(pipeCopy, *opts.verbosity);
+            return pExpCtx->mongoProcessInterface->preparePipelineAndExplain(ownedPipeline,
+                                                                             *opts.verbosity);
+        };
+
+        BSONObj explainLocal = [&] {
+            auto serializedPipe = pipeCopy->serializeToBson();
+            try {
+                return preparePipelineAndExplain(pipeCopy);
+            } catch (const ExceptionFor<ErrorCodes::CommandOnShardedViewNotSupportedOnMongod>& e) {
+                logShardedViewFound(e);
+                auto resolvedPipeline = buildPipelineFromViewDefinition(
+                    pExpCtx,
+                    ExpressionContext::ResolvedNamespace{e->getNamespace(), e->getPipeline()},
+                    std::move(serializedPipe));
+                return preparePipelineAndExplain(resolvedPipeline.release());
+            }
+        }();
+
         LOGV2_DEBUG(4553501, 3, "$unionWith attached cursor to pipeline for explain");
         // We expect this to be an explanation of a pipeline -- there should only be one field.
         invariant(explainLocal.nFields() == 1);

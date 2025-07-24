@@ -31,8 +31,15 @@
 
 #include <variant>
 
-namespace mongo {
-namespace docs_needed_bounds {
+#include "mongo/base/status.h"
+#include "mongo/bson/bsonelement.h"
+#include "mongo/bson/bsonobjbuilder.h"
+#include "mongo/util/overloaded_visitor.h"
+
+namespace mongo::docs_needed_bounds {
+static constexpr auto kNeedAllName = "NeedAll"_sd;
+static constexpr auto kUnknownName = "Unknown"_sd;
+
 struct NeedAll {
     // Nothing
 };
@@ -41,12 +48,26 @@ struct Unknown {
     // Nothing
 };
 
-using Bounds = std::variant<long long, NeedAll, Unknown>;
+using DocsNeededConstraint = std::variant<long long, NeedAll, Unknown>;
 
-// TODO SERVER-89448 add parsing and serialization functions so Bounds can be used in the
-// IDL.
+DocsNeededConstraint parseDocsNeededConstraintFromBSON(const BSONElement& elem);
+void serializeDocsNeededConstraint(const DocsNeededConstraint& bounds,
+                                   StringData fieldName,
+                                   BSONObjBuilder* builder);
 
-}  // namespace docs_needed_bounds
+/**
+ * Given two DocsNeededConstraints, returns the one that is the stronger constraint, to denote
+ * either a minimum or maximum constraint.
+ *
+ * The strength of a constraint is different for min and max constraints. For example, if you're
+ * trying to determine the most restrictive constraints from two pipelines on the same collection,
+ * one that produces min and max constraints Unknown and one that produces min and max constraints
+ * 100, we can infer that we will need at least 100 (min = 100) but the upper limit is unclear (max
+ * = Unknown).
+ */
+DocsNeededConstraint chooseStrongerMinConstraint(DocsNeededConstraint constraintA,
+                                                 DocsNeededConstraint constraintB);
+DocsNeededConstraint chooseStrongerMaxConstraint(DocsNeededConstraint constraintA,
+                                                 DocsNeededConstraint constraintB);
 
-using DocsNeededBounds = docs_needed_bounds::Bounds;
-}  // namespace mongo
+}  // namespace mongo::docs_needed_bounds

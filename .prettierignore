@@ -12,6 +12,9 @@
 !*.yml
 !*.yaml
 
+# Ignore all golden test output files
+jstests/*golden*/expected_output/*
+
 # Ignore all template files
 # When we eventually enable prettier on javascript these files are invalid and should be ignored
 **/*.tpl.*
@@ -30,3 +33,7 @@ version_expansions.yml
 
 # Ignore all formatting in third_party/*
 src/third_party
+
+# Ignore anything in the build output directories
+build
+bazel-*

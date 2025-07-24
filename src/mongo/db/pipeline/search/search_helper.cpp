@@ -49,7 +49,7 @@
 #include "mongo/db/pipeline/variables.h"
 #include "mongo/db/query/search/mongot_cursor.h"
 #include "mongo/db/query/search/search_task_executors.h"
-#include "mongo/s/query/document_source_merge_cursors.h"
+#include "mongo/s/query/exec/document_source_merge_cursors.h"
 #include "mongo/util/assert_util.h"
 
 namespace mongo {
@@ -319,23 +319,27 @@ void assertSearchMetaAccessValid(const Pipeline::SourceContainer& shardsPipeline
 std::unique_ptr<Pipeline, PipelineDeleter> prepareSearchForTopLevelPipelineLegacyExecutor(
     boost::intrusive_ptr<ExpressionContext> expCtx,
     Pipeline* origPipeline,
-    DocsNeededBounds minBounds,
-    DocsNeededBounds maxBounds,
+    DocsNeededBounds bounds,
     boost::optional<int64_t> userBatchSize) {
     // First, desuguar $search, and inject shard filterer.
     prepareSearchPipelineLegacyExecutor(origPipeline, true);
 
-    if (expCtx->explain || !isSearchPipeline(origPipeline)) {
-        // $search doesn't return documents or metadata from explain regardless of the verbosity.
-        // $searchMeta or $vectorSearch pipelines won't need an additional pipeline since they
-        // only need one cursor.
+    if ((expCtx->explain &&
+         !feature_flags::gFeatureFlagSearchExplainExecutionStats.isEnabled(
+             serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) ||
+        expCtx->explain == ExplainOptions::Verbosity::kQueryPlanner ||
+        !isSearchPipeline(origPipeline)) {
+        // This path is for scenarios where we know we only need one cursor. For $search in
+        // queryPlanner verbosity, we don't need both the results and metadata cursors. $searchMeta
+        // or $vectorSearch pipelines also won't need an additional pipeline since they only need
+        // one cursor.
         return nullptr;
     }
 
     auto origSearchStage =
         dynamic_cast<DocumentSourceInternalSearchMongotRemote*>(origPipeline->peekFront());
     tassert(6253727, "Expected search stage", origSearchStage);
-    origSearchStage->setDocsNeededBounds(minBounds, maxBounds);
+    origSearchStage->setDocsNeededBounds(bounds);
 
     // We expect to receive unmerged metadata documents from mongot if we are not in mongos and have
     // a metadata merge protocol version. However, we can ignore the meta cursor if the pipeline
@@ -360,17 +364,13 @@ std::unique_ptr<Pipeline, PipelineDeleter> prepareSearchForTopLevelPipelineLegac
     }
 
     // The search stage has not yet established its cursor on mongoT. Establish the cursor for it.
-    auto cursors = mongot_cursor::establishCursorsForSearchStage(
-        expCtx,
-        origSearchStage->getSearchQuery(),
-        origSearchStage->getTaskExecutor(),
-        origSearchStage->getMongotDocsRequested(),
-        minBounds,
-        maxBounds,
-        userBatchSize,
-        [origSearchStage] { return origSearchStage->calcDocsNeeded(); },
-        origSearchStage->getIntermediateResultsProtocolVersion(),
-        origSearchStage->getPaginationFlag());
+    auto cursors =
+        mongot_cursor::establishCursorsForSearchStage(expCtx,
+                                                      origSearchStage->getMongotRemoteSpec(),
+                                                      origSearchStage->getTaskExecutor(),
+                                                      userBatchSize,
+                                                      nullptr,
+                                                      origSearchStage->getSearchIdLookupMetrics());
 
     // mongot can return zero cursors for an empty collection, one without metadata, or two for
     // results and metadata.
@@ -445,18 +445,9 @@ void establishSearchCursorsSBE(boost::intrusive_ptr<ExpressionContext> expCtx,
     }
     auto searchStage = dynamic_cast<mongo::DocumentSourceSearch*>(stage);
     auto executor = executor::getMongotTaskExecutor(expCtx->opCtx->getServiceContext());
+
     auto cursors = mongot_cursor::establishCursorsForSearchStage(
-        expCtx,
-        searchStage->getSearchQuery(),
-        executor,
-        searchStage->getLimit(),
-        boost::none,
-        boost::none,
-        boost::none,
-        nullptr,
-        searchStage->getIntermediateResultsProtocolVersion(),
-        searchStage->getSearchPaginationFlag(),
-        std::move(yieldPolicy));
+        expCtx, searchStage->getMongotRemoteSpec(), executor, boost::none, std::move(yieldPolicy));
 
     auto [documentCursor, metaCursor] = parseMongotResponseCursors(std::move(cursors));
 

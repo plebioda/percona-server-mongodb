@@ -48,7 +48,6 @@
 #include "mongo/base/exact_cast.h"
 #include "mongo/bson/bsontypes.h"
 #include "mongo/bson/util/builder_fwd.h"
-#include "mongo/db/bson/dotted_path_support.h"
 #include "mongo/db/exec/document_value/document.h"
 #include "mongo/db/exec/plan_stats.h"
 #include "mongo/db/matcher/expression_algo.h"
@@ -67,6 +66,7 @@
 #include "mongo/db/pipeline/search/search_helper.h"
 #include "mongo/db/pipeline/stage_constraints.h"
 #include "mongo/db/pipeline/transformer_interface.h"
+#include "mongo/db/query/bson/dotted_path_support.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/query/query_knobs_gen.h"
 #include "mongo/platform/atomic_word.h"
@@ -877,6 +877,8 @@ std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::makePipeline(
     MakePipelineOptions opts) {
     auto pipeline = Pipeline::parse(rawPipeline, expCtx, opts.validator);
 
+    expCtx->initializeReferencedSystemVariables();
+
     bool alreadyOptimized = opts.alreadyOptimized;
 
     if (opts.optimize) {
@@ -890,8 +892,6 @@ std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::makePipeline(
         pipeline = expCtx->mongoProcessInterface->preparePipelineForExecution(
             pipeline.release(), opts.shardTargetingPolicy, std::move(opts.readConcern));
     }
-
-    expCtx->initializeReferencedSystemVariables();
 
     return pipeline;
 }

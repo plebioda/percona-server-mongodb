@@ -1,19 +1,13 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
-
-env.Library(
-    target="op_observer",
-    source=[
-        "op_observer.cpp",
-        "op_observer_registry.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
 
 env.Benchmark(
     target="op_observer_bm",
@@ -39,6 +33,7 @@ env.Benchmark(
         "find_and_modify_images_op_observer",
         "op_observer",
         "op_observer_impl",
+        "op_observer_util",
         "operation_logger_impl",
         "operation_logger_transaction_proxy",
         "user_write_block_mode_op_observer",
@@ -53,8 +48,8 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/bson/dotted_path_support",
         "$BUILD_DIR/mongo/db/catalog/collection_options",
+        "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
         "$BUILD_DIR/mongo/db/shard_role_api",
         "$BUILD_DIR/mongo/db/transaction/transaction_operations",
     ],
@@ -72,21 +67,12 @@ env.Library(
 )
 
 env.Library(
-    target="operation_logger_transaction_proxy",
-    source=[
-        "operation_logger_transaction_proxy.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
     target="op_observer_impl",
     source=[
         "op_observer_impl.cpp",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/catalog/catalog_helpers",
         "$BUILD_DIR/mongo/db/catalog/collection_catalog",
         "$BUILD_DIR/mongo/db/catalog/collection_options",
         "$BUILD_DIR/mongo/db/catalog/commit_quorum_options",
@@ -135,6 +121,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/catalog/document_validation",
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/concurrency/lock_manager",

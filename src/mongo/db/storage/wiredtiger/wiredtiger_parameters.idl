@@ -93,17 +93,6 @@ server_parameters:
         default: -100
         redact: false
 
-    wiredTigerMaxCacheOverflowSizeGB:
-      description: >-
-        Maximum amount of disk space to use for cache overflow;
-        Defaults to 0 (unbounded)
-        Deprecated.
-      set_at: runtime
-      cpp_vartype: 'AtomicWord<double>'
-      cpp_varname: gWiredTigerMaxCacheOverflowSizeGBDeprecated
-      default: 0
-      redact: false
-
     wiredTigerEvictionDirtyTargetGB:
       description: >-
          Absolute dirty cache eviction target. Once eviction begins,
@@ -206,6 +195,14 @@ server_parameters:
       set_at: startup
       cpp_vartype: 'bool'
       cpp_varname: gWiredTigerSkipTableLoggingChecksOnStartup
+      default: false
+      redact: false
+
+    wiredTigerSkipTableLoggingChecksDuringValidation:
+      description: Skips table logging setting checks during validation
+      set_at: startup
+      cpp_vartype: 'bool'
+      cpp_varname: gWiredTigerSkipTableLoggingChecksDuringValidation
       default: false
       redact: false
 

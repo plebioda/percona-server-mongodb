@@ -79,8 +79,8 @@
 #include "mongo/db/query/collection_query_info.h"
 #include "mongo/db/query/explain.h"
 #include "mongo/db/query/multiple_collection_accessor.h"
-#include "mongo/db/query/plan_cache.h"
-#include "mongo/db/query/sbe_plan_cache.h"
+#include "mongo/db/query/plan_cache/plan_cache.h"
+#include "mongo/db/query/plan_cache/sbe_plan_cache.h"
 #include "mongo/db/repl/primary_only_service.h"
 #include "mongo/db/s/query_analysis_writer.h"
 #include "mongo/db/s/transaction_coordinator_curop.h"
@@ -453,19 +453,54 @@ Status CommonMongodProcessInterface::appendQueryExecStats(OperationContext* opCt
 
 BSONObj CommonMongodProcessInterface::getCollectionOptionsLocally(OperationContext* opCtx,
                                                                   const NamespaceString& nss) {
-    AutoGetCollectionForReadCommand collection(opCtx, nss);
-    BSONObj collectionOptions = {};
-    if (!collection) {
-        return collectionOptions;
+    auto acquisition =
+        acquireCollectionOrViewMaybeLockFree(opCtx,
+                                             CollectionOrViewAcquisitionRequest::fromOpCtx(
+                                                 opCtx,
+                                                 nss,
+                                                 AcquisitionPrerequisites::OperationType::kRead,
+                                                 AcquisitionPrerequisites::ViewMode::kCanBeView));
+
+    if (auto& collectionPtr = acquisition.getCollectionPtr(); collectionPtr) {
+        return collectionPtr->getCollectionOptions().toBSON();
     }
 
-    collectionOptions = collection->getCollectionOptions().toBSON();
-    return collectionOptions;
+    if (acquisition.isView()) {
+        const auto view = acquisition.getView().getViewDefinition();
+        if (view.timeseries()) {
+            return getCollectionOptionsLocally(opCtx, nss.makeTimeseriesBucketsNamespace());
+        }
+        BSONObjBuilder bob;
+        bob.append("viewOn", view.viewOn().coll());
+        bob.append("pipeline", view.pipeline());
+        if (view.defaultCollator()) {
+            bob.append("collation", view.defaultCollator()->getSpec().toBSON());
+        }
+        return bob.obj();
+    }
+
+    return {};
 }
 
 BSONObj CommonMongodProcessInterface::getCollectionOptions(OperationContext* opCtx,
                                                            const NamespaceString& nss) {
     return getCollectionOptionsLocally(opCtx, nss);
+}
+
+query_shape::CollectionType CommonMongodProcessInterface::getCollectionTypeLocally(
+    OperationContext* opCtx, const NamespaceString& nss) {
+    return acquireCollectionOrViewMaybeLockFree(opCtx,
+                                                CollectionOrViewAcquisitionRequest::fromOpCtx(
+                                                    opCtx,
+                                                    nss,
+                                                    AcquisitionPrerequisites::OperationType::kRead,
+                                                    AcquisitionPrerequisites::ViewMode::kCanBeView))
+        .getCollectionType();
+}
+
+query_shape::CollectionType CommonMongodProcessInterface::getCollectionType(
+    OperationContext* opCtx, const NamespaceString& nss) {
+    return getCollectionTypeLocally(opCtx, nss);
 }
 
 std::unique_ptr<Pipeline, PipelineDeleter>

@@ -2,6 +2,8 @@
 // When the chunks of this collection get migrated to the other shard,
 // the other shard should create the collection with the same options.
 
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 var st = new ShardingTest({shards: 2});
 
 var db = st.s.getDB("test");
@@ -10,7 +12,7 @@ var coll = db.sharding_system_namespaces;
 // This test relies on the wiredTiger storage engine being compiled
 // into the server. Must check shard member for WT as it is not built into mongos.
 
-var storageEngines = st.shard0.getDB("local").serverBuildInfo().storageEngines;
+var storageEngines = st.shard0.getDB("local").getServerBuildInfo().rawData().storageEngines;
 
 print("Supported storage engines: " + storageEngines);
 

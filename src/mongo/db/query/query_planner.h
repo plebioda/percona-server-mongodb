@@ -43,9 +43,9 @@
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/query/canonical_query.h"
-#include "mongo/db/query/classic_plan_cache.h"
 #include "mongo/db/query/index_entry.h"
 #include "mongo/db/query/multiple_collection_accessor.h"
+#include "mongo/db/query/plan_cache/classic_plan_cache.h"
 #include "mongo/db/query/query_planner_params.h"
 #include "mongo/db/query/query_solution.h"
 
@@ -105,6 +105,22 @@ public:
     };
 
     /**
+     * Holds the result of plan enumeration from cost-based ranking.
+     */
+    struct CostBasedRankerResult {
+        // Query solutions resulting from plan enumeration. This set contains the best plan as
+        // determined by the cost-based ranker and plans for which we were unable to estimate a
+        // cost, likely due to the lack of cardinality estimates. These plans are intended to be
+        // passed along to the multi-planner to pick the best one using runtime planning.
+        std::vector<std::unique_ptr<QuerySolution>> solutions;
+
+        // Query solutions which the cost-based ranker rejects from consideration because their cost
+        // estimate is higher than another plan. Useful for the implementation of explain to expose
+        // why certain plans were not chosen.
+        std::vector<std::unique_ptr<QuerySolution>> rejectedPlans;
+    };
+
+    /**
      * Given a CanonicalQuery and a QSN tree, creates QSN nodes for each pipeline stage in 'query'
      * and grafts them on top of the existing QSN tree. If 'query' has an empty pipeline, this
      * function is a noop.
@@ -119,6 +135,15 @@ public:
      * Uses the indices and other data in 'params' to determine the set of available plans.
      */
     static StatusWith<std::vector<std::unique_ptr<QuerySolution>>> plan(
+        const CanonicalQuery& query, const QueryPlannerParams& params);
+
+    /**
+     * Invokes 'QueryPlanner::plan()' to enumerate the set of possible plans. Then estimate each
+     * plan's cost using the cardinality estimation (CE) and costing modules. The return value
+     * contains a list of plans that were rejected on the basis of cost, as well as any non-rejected
+     * plans from which the caller can select a winner.
+     */
+    static StatusWith<CostBasedRankerResult> planWithCostBasedRanking(
         const CanonicalQuery& query, const QueryPlannerParams& params);
 
     /**

@@ -474,3 +474,123 @@ dwarf_version = rule(
     implementation = dwarf_version_impl,
     build_setting = config.string(flag = True),
 )
+
+# =========
+# disable-warnings-as-errors
+# =========
+
+disable_warnings_as_errors_provider = provider(
+    doc = """Don't add a warnings-as-errors flag to compiler command lines""",
+    fields = ["enabled"],
+)
+
+disable_warnings_as_errors = rule(
+    implementation = lambda ctx: disable_warnings_as_errors_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# =========
+# ssl
+# =========
+
+ssl_provider = provider(doc = "Enable or Disable SSL", fields = ["enabled"])
+
+ssl = rule(
+    implementation = lambda ctx: ssl_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# =========
+# audit
+# =========
+
+audit_provider = provider(doc = "Enable audit logging", fields = ["enabled"])
+
+audit = rule(
+    implementation = lambda ctx: audit_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# --------------------------------------
+# full-featured
+# --------------------------------------
+
+full_featured_provider = provider(
+    doc = """Enable all optional features""",
+    fields = ["enabled"],
+)
+
+full_featured = rule(
+    implementation = lambda ctx: full_featured_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# --------------------------------------
+# fipsmode
+# --------------------------------------
+
+fipsmode_provider = provider(
+    doc = """Enable tls.FIPSMode configuration option""",
+    fields = ["enabled"],
+)
+
+fipsmode = rule(
+    implementation = lambda ctx: fipsmode_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# =========
+# thin_lto
+# =========
+
+thin_lto_provider = provider(
+    doc = """Enable thin link time optimization (LTO) (experimental)""",
+    fields = ["enabled"],
+)
+
+thin_lto = rule(
+    implementation = lambda ctx: thin_lto_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# =========
+# gcov
+# =========
+
+gcov_provider = provider(
+    doc = "Choose if gcov should be used",
+    fields = ["enabled"],
+)
+
+gcov = rule(
+    implementation = lambda ctx: gcov_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# =========
+# pgo_profile
+# =========
+
+pgo_profile_provider = provider(
+    doc = "Choose if pgo profiling should be generated",
+    fields = ["enabled"],
+)
+
+pgo_profile = rule(
+    implementation = lambda ctx: pgo_profile_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# =============
+# xcode developer dir
+# =============
+
+developer_dir_provider = provider(
+    doc = "The path for which xcode sdk to use, e.g. DEVELOPER_DIR=/Applications/Xcode13.app",
+    fields = {"path": "Path to developer dir.]"},
+)
+
+developer_dir = rule(
+    implementation = lambda ctx: developer_dir_provider(path = ctx.build_setting_value),
+    build_setting = config.string(flag = True),
+)

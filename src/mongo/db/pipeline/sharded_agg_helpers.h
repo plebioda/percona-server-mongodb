@@ -51,37 +51,16 @@
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/pipeline/pipeline.h"
 #include "mongo/db/pipeline/sharded_agg_helpers_targeting_policy.h"
+#include "mongo/db/pipeline/split_pipeline.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/shard_id.h"
 #include "mongo/s/async_requests_sender.h"
 #include "mongo/s/catalog_cache.h"
 #include "mongo/s/client/shard.h"
-#include "mongo/s/query/owned_remote_cursor.h"
-#include "mongo/s/stale_shard_version_helpers.h"
+#include "mongo/s/query/exec/owned_remote_cursor.h"
 
 namespace mongo {
 namespace sharded_agg_helpers {
-
-/**
- * Represents the two halves of a pipeline that will execute in a sharded cluster. 'shardsPipeline'
- * will execute in parallel on each shard, and 'mergePipeline' will execute on the merge host -
- * either one of the shards or a mongos.
- */
-struct SplitPipeline {
-    SplitPipeline(std::unique_ptr<Pipeline, PipelineDeleter> shardsPipeline,
-                  std::unique_ptr<Pipeline, PipelineDeleter> mergePipeline,
-                  boost::optional<BSONObj> shardCursorsSortSpec)
-        : shardsPipeline(std::move(shardsPipeline)),
-          mergePipeline(std::move(mergePipeline)),
-          shardCursorsSortSpec(std::move(shardCursorsSortSpec)) {}
-
-    std::unique_ptr<Pipeline, PipelineDeleter> shardsPipeline;
-    std::unique_ptr<Pipeline, PipelineDeleter> mergePipeline;
-
-    // If set, the cursors from the shards are expected to be sorted according to this spec, and to
-    // have populated a "$sortKey" metadata field which can be used to compare the results.
-    boost::optional<BSONObj> shardCursorsSortSpec;
-};
 
 struct ShardedExchangePolicy {
     // The exchange specification that will be sent to shards as part of the aggregate command.
@@ -129,17 +108,6 @@ boost::optional<ShardedExchangePolicy> checkIfEligibleForExchange(OperationConte
                                                                   const Pipeline* mergePipeline);
 
 /**
- * Split the current Pipeline into a Pipeline for each shard, and a Pipeline that combines the
- * results within a merging process. This call also performs optimizations with the aim of reducing
- * computing time and network traffic when a pipeline has been split into two pieces.
- *
- * The 'mergePipeline' returned as part of the SplitPipeline here is not ready to execute until the
- * 'shardsPipeline' has been sent to the shards and cursors have been established. Once cursors have
- * been established, the merge pipeline can be made executable by calling 'addMergeCursorsSource()'
- */
-SplitPipeline splitPipeline(std::unique_ptr<Pipeline, PipelineDeleter> pipeline);
-
-/**
  * Used to indicate if a pipeline contains any data source requiring extra handling for targeting
  * shards.
  */
@@ -176,6 +144,7 @@ DispatchShardPipelineResults dispatchShardPipeline(
     bool eligibleForSampling,
     std::unique_ptr<Pipeline, PipelineDeleter> pipeline,
     boost::optional<ExplainOptions::Verbosity> explain,
+    bool requestQueryStatsFromRemotes = false,
     boost::optional<CollectionRoutingInfo> cri = boost::none,
     ShardTargetingPolicy shardTargetingPolicy = ShardTargetingPolicy::kAllowed,
     boost::optional<BSONObj> readConcern = boost::none,
@@ -189,7 +158,8 @@ BSONObj createPassthroughCommandForShard(
     boost::optional<ExplainOptions::Verbosity> explainVerbosity,
     Pipeline* pipeline,
     boost::optional<BSONObj> readConcern,
-    boost::optional<int> overrideBatchSize);
+    boost::optional<int> overrideBatchSize,
+    bool requestQueryStatsFromRemotes);
 
 BSONObj createCommandForTargetedShards(const boost::intrusive_ptr<ExpressionContext>& expCtx,
                                        Document serializedCommand,
@@ -197,7 +167,8 @@ BSONObj createCommandForTargetedShards(const boost::intrusive_ptr<ExpressionCont
                                        boost::optional<ShardedExchangePolicy> exchangeSpec,
                                        bool needsMerge,
                                        boost::optional<ExplainOptions::Verbosity> explain,
-                                       boost::optional<BSONObj> readConcern = boost::none);
+                                       boost::optional<BSONObj> readConcern = boost::none,
+                                       bool requestQueryStatsFromRemotes = false);
 
 /**
  * Convenience method for callers that want to do 'partitionCursors', 'injectMetaCursors', and
@@ -205,7 +176,8 @@ BSONObj createCommandForTargetedShards(const boost::intrusive_ptr<ExpressionCont
  */
 void partitionAndAddMergeCursorsSource(Pipeline* pipeline,
                                        std::vector<OwnedRemoteCursor> cursors,
-                                       boost::optional<BSONObj> shardCursorsSortSpec);
+                                       boost::optional<BSONObj> shardCursorsSortSpec,
+                                       bool requestQueryStatsFromRemotes);
 
 /**
  * Targets the shards with an aggregation command built from `ownedPipeline` and explain set to
@@ -303,7 +275,8 @@ std::unique_ptr<Pipeline, PipelineDeleter> targetShardsAndAddMergeCursors(
 std::unique_ptr<Pipeline, PipelineDeleter> runPipelineDirectlyOnSingleShard(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     AggregateCommandRequest request,
-    ShardId shardId);
+    ShardId shardId,
+    bool requestQueryStatsFromRemotes);
 
 }  // namespace sharded_agg_helpers
 }  // namespace mongo

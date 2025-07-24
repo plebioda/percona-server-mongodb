@@ -2,6 +2,8 @@
  * @tags: [requires_replication, requires_persistence]
  */
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 const keyfile = 'jstests/libs/key1';
 const keyfileContents = cat(keyfile).replace(/[\011-\015\040]/g, '');
 
@@ -100,7 +102,7 @@ runTest('ReplSet', {primary: replset.getPrimary(), replset: replset, wc: replset
     // Only __system is guaranteed to be available, especially during 2nd restart.
     replset.nodes.forEach((node) => assert(node.getDB('admin').auth('__system', keyfileContents)));
     replset.awaitNodesAgreeOnAppliedOpTime(kAppliedOpTimeTimeoutMS, replset.nodes);
-    replset.restart(replset.nodes);
+    replset.nodes.forEach(node => replset.restart(node));
     replset.awaitSecondaryNodes();
     return {primary: replset.getPrimary(), replset: replset, wc: replsetWC};
 });

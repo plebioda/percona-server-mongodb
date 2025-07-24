@@ -29,12 +29,13 @@ if (TestData && TestData.inEvergreen) {
     }, undefined, undefined, undefined, {runHangAnalyzer: false});
 
     const lines = rawMongoProgramOutput().split('\n');
-    if (_isAddressSanitizerActive() || _isThreadSanitizerActive()) {
+    const buildInfo = globalThis.db.getServerBuildInfo();
+    if (buildInfo.isAddressSanitizerActive() || buildInfo.isThreadSanitizerActive()) {
         assert.soon(() => {
             // On ASAN/TSAN builds, the processes have a lot of shadow memory that gdb
-            // likes to include in the core dumps. We send a SIGQUIT to the processes
+            // likes to include in the core dumps. We send a SIGABRT to the processes
             // on these builds because the kernel knows how to get rid of the shadow memory.
-            return anyLineMatches(lines, /Sending SIGQUIT/);
+            return anyLineMatches(lines, /Attempting to send SIGABRT from resmoke/);
         });
     } else {
         assert.soon(() => {

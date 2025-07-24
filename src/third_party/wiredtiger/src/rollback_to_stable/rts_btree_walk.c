@@ -32,8 +32,7 @@ __rts_btree_walk_page_skip(
 {
     WT_PAGE_DELETED *page_del;
     wt_timestamp_t rollback_timestamp;
-    char time_string[WT_TIME_STRING_SIZE];
-    bool reconciled;
+    char time_string[3][WT_TIME_STRING_SIZE];
 
     rollback_timestamp = *(wt_timestamp_t *)context;
     WT_UNUSED(visible_all);
@@ -71,7 +70,7 @@ __rts_btree_walk_page_skip(
                   WT_RTS_VERB_TAG_SKIP_DEL "ref=%p: deleted page walk skipped page_del %s",
                   (void *)ref,
                   __wt_time_point_to_string(page_del->timestamp, page_del->durable_timestamp,
-                    page_del->txnid, time_string));
+                    page_del->txnid, time_string[0]));
             }
             WT_STAT_CONN_INCR(session, txn_rts_tree_walk_skip_pages);
             *skipp = true;
@@ -83,9 +82,9 @@ __rts_btree_walk_page_skip(
               WT_RTS_VERB_TAG_PAGE_DELETE
               "deleted page with commit_timestamp=%s, durable_timestamp=%s > "
               "rollback_timestamp=%s, txnid=%" PRIu64,
-              __wt_timestamp_to_string(page_del->timestamp, time_string),
-              __wt_timestamp_to_string(page_del->durable_timestamp, time_string),
-              __wt_timestamp_to_string(rollback_timestamp, time_string), page_del->txnid);
+              __wt_timestamp_to_string(page_del->timestamp, time_string[0]),
+              __wt_timestamp_to_string(page_del->durable_timestamp, time_string[1]),
+              __wt_timestamp_to_string(rollback_timestamp, time_string[2]), page_del->txnid);
         return (0);
     }
 
@@ -104,13 +103,10 @@ __rts_btree_walk_page_skip(
         __wt_verbose_multi(session, WT_VERB_RECOVERY_RTS(session),
           WT_RTS_VERB_TAG_STABLE_PG_WALK_SKIP "ref=%p: stable page walk skipped", (void *)ref);
         WT_STAT_CONN_INCR(session, txn_rts_tree_walk_skip_pages);
-    }
+    } else
+        __wt_verbose_level_multi(session, WT_VERB_RECOVERY_RTS(session), WT_VERBOSE_DEBUG_3,
+          WT_RTS_VERB_TAG_PAGE_UNSKIPPED "ref=%p page not skipped", (void *)ref);
 
-    reconciled = ref->page && ref->page->modify ? true : false;
-
-    __wt_verbose_level_multi(session, WT_VERB_RECOVERY_RTS(session), WT_VERBOSE_DEBUG_3,
-      WT_RTS_VERB_TAG_PAGE_UNSKIPPED "ref=%p page not skipped, reconciled info=%d", (void *)ref,
-      reconciled ? ref->page->modify->rec_result : 0);
     return (0);
 }
 
@@ -125,22 +121,26 @@ __rts_btree_walk(WT_SESSION_IMPL *session, wt_timestamp_t rollback_timestamp)
     WT_REF *ref;
     WT_TIMER timer;
     uint64_t msg_count;
+    uint32_t flags;
 
     __wt_timer_start(session, &timer);
+    flags = WT_READ_NO_EVICT | WT_READ_VISIBLE_ALL | WT_READ_WONT_NEED | WT_READ_SEE_DELETED;
     msg_count = 0;
 
     /* Walk the tree, marking commits aborted where appropriate. */
     ref = NULL;
-    while (
-      (ret = __wt_tree_walk_custom_skip(session, &ref, __rts_btree_walk_page_skip,
-         &rollback_timestamp,
-         WT_READ_NO_EVICT | WT_READ_VISIBLE_ALL | WT_READ_WONT_NEED | WT_READ_SEE_DELETED)) == 0 &&
+    while ((ret = __wt_tree_walk_custom_skip(
+              session, &ref, __rts_btree_walk_page_skip, &rollback_timestamp, flags)) == 0 &&
       ref != NULL) {
         __wti_rts_progress_msg(session, &timer, 0, 0, &msg_count, true);
 
         if (F_ISSET(ref, WT_REF_FLAG_LEAF))
-            WT_RET(__wti_rts_btree_abort_updates(session, ref, rollback_timestamp));
+            WT_ERR(__wti_rts_btree_abort_updates(session, ref, rollback_timestamp));
     }
+
+err:
+    /* On error, clear any left-over tree walk. */
+    WT_TRET(__wt_page_release(session, ref, flags));
     return (ret);
 }
 
@@ -286,6 +286,8 @@ __wti_rts_btree_walk_btree_apply(
     char ts_string[2][WT_TS_INT_STRING_SIZE];
     bool file_skipped, has_txn_updates_gt_than_ckpt_snap, modified, prepared_updates;
 
+    WT_ASSERT(session, rollback_timestamp != WT_TS_NONE);
+
     /* Ignore non-btree objects as well as the metadata and history store files. */
     if (!WT_BTREE_PREFIX(uri) || strcmp(uri, WT_HS_URI) == 0 || strcmp(uri, WT_METAFILE_URI) == 0)
         return (0);
@@ -354,17 +356,12 @@ __wti_rts_btree_walk_btree_apply(
         WT_STAT_CONN_DSRC_INCR(session, txn_rts_inconsistent_ckpt);
     }
 
-    /*
-     * During recovery, a table is skipped by RTS if one of the conditions is met:
-     * 1. The table is empty or newly-created.
-     * 2. The table has timestamped updates without a stable timestamp.
-     */
-    if (F_ISSET(S2C(session), WT_CONN_RECOVERING) &&
-      (addr_size == 0 || (rollback_timestamp == WT_TS_NONE && max_durable_ts != WT_TS_NONE))) {
+    /* Skip empty and newly-created tables during recovery. */
+    if (F_ISSET(S2C(session), WT_CONN_RECOVERING) && addr_size == 0) {
         __wt_verbose_multi(session, WT_VERB_RECOVERY_RTS(session),
-          WT_RTS_VERB_TAG_FILE_SKIP "skipping rollback to stable on file=%s because %s ", uri,
-          addr_size == 0 ? "has never been checkpointed" :
-                           "has timestamped updates and the stable timestamp is 0");
+          WT_RTS_VERB_TAG_FILE_SKIP
+          "skipping rollback to stable on file=%s because has never been checkpointed",
+          uri);
         return (0);
     }
 

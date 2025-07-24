@@ -71,6 +71,11 @@ public:
     using Batch = std::vector<Value>;
 
     /**
+     * Cost of items in this oplog buffer.
+     */
+    struct Cost;
+
+    /**
      * Counters for this oplog buffer.
      */
     class Counters;
@@ -100,25 +105,17 @@ public:
     virtual void push(OperationContext* opCtx,
                       Batch::const_iterator begin,
                       Batch::const_iterator end,
-                      boost::optional<std::size_t> bytes = boost::none) = 0;
+                      boost::optional<const Cost&> cost = boost::none) = 0;
 
     /**
      * Returns when enough space is available.
      */
-    virtual void waitForSpace(OperationContext* opCtx, std::size_t size) = 0;
+    virtual void waitForSpace(OperationContext* opCtx, const Cost& cost) = 0;
 
     /**
      * Returns true if oplog buffer is empty.
      */
     virtual bool isEmpty() const = 0;
-
-    /**
-     * Maximum size of all oplog entries that can be stored in this oplog buffer as measured by the
-     * BSONObj::objsize() function.
-     *
-     * Returns 0 if this oplog buffer has no size constraints.
-     */
-    virtual std::size_t getMaxSize() const = 0;
 
     /**
      * Total size of all oplog entries in this oplog buffer as measured by the BSONObj::objsize()
@@ -207,6 +204,11 @@ public:
     }
 };
 
+struct OplogBuffer::Cost {
+    std::size_t size = 0;
+    std::size_t count = 0;
+};
+
 class OplogBuffer::Counters {
 public:
     // Number of operations in this OplogBuffer.
@@ -215,8 +217,19 @@ public:
     // Total size of operations in this OplogBuffer. Measured in bytes.
     Counter64 size;
 
+    // Maximum number of operations in this OplogBuffer.
+    Counter64 maxCount;
+
     // Maximum size of operations in this OplogBuffer. Measured in bytes.
     Counter64 maxSize;
+
+    /**
+     * Sets maximum number of operations for this OplogBuffer.
+     * This function should only be called by a single thread.
+     */
+    void setMaxCount(std::size_t newMaxCount) {
+        maxCount.increment(newMaxCount - maxCount.get());
+    }
 
     /**
      * Sets maximum size of operations for this OplogBuffer.
@@ -279,7 +292,10 @@ public:
             writerSubBuilder.append("sizeBytes", _writeBufferCounter.size.get());
             writerSubBuilder.append("maxSizeBytes", _writeBufferCounter.maxSize.get());
             builder.append("write", writerSubBuilder.obj());
+
+            applierSubBuilder.append("maxCount", _applyBufferCounter.maxCount.get());
             builder.append("apply", applierSubBuilder.obj());
+
             return builder.obj();
         }
         return applierSubBuilder.obj();

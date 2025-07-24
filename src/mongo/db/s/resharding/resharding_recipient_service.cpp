@@ -302,6 +302,7 @@ ReshardingRecipientService::RecipientStateMachine::RecipientStateMachine(
       _metrics{ReshardingMetrics::initializeFrom(recipientDoc, _serviceContext)},
       _metadata{recipientDoc.getCommonReshardingMetadata()},
       _minimumOperationDuration{Milliseconds{recipientDoc.getMinimumOperationDurationMillis()}},
+      _oplogBatchTaskCount{recipientDoc.getOplogBatchTaskCount()},
       _recipientCtx{recipientDoc.getMutableState()},
       _donorShards{recipientDoc.getDonorShards()},
       _cloneTimestamp{recipientDoc.getCloneTimestamp()},
@@ -500,16 +501,16 @@ ExecutorFuture<void> ReshardingRecipientService::RecipientStateMachine::_finishR
                     if (!_isAlsoDonor) {
                         auto opCtx = factory.makeOperationContext(&cc());
 
-                        _externalState->clearFilteringMetadata(opCtx.get(),
-                                                               _metadata.getSourceNss(),
-                                                               _metadata.getTempReshardingNss());
+                        _externalState->clearFilteringMetadataOnTempReshardingCollection(
+                            opCtx.get(), _metadata.getTempReshardingNss());
 
                         ShardingRecoveryService::get(opCtx.get())
                             ->releaseRecoverableCriticalSection(
                                 opCtx.get(),
                                 _metadata.getSourceNss(),
                                 _critSecReason,
-                                ShardingCatalogClient::kLocalWriteConcern);
+                                ShardingCatalogClient::kLocalWriteConcern,
+                                ShardingRecoveryService::FilteringMetadataClearer());
                     }
                 })
                 .then([this, executor, &factory] {
@@ -773,10 +774,8 @@ void ReshardingRecipientService::RecipientStateMachine::
                         _metadata.getTempReshardingNss(),
                         ShardKeyPattern(_metadata.getReshardingKey()));
 
-                    // Do not need to pass in time-series options because we cannot reshard a
-                    // time-series collection.
-                    // TODO SERVER-84741 pass in time-series options and ensure the shard key is
-                    // partially rewritten.
+                    // Only the resharding improvements code path above supports resharding
+                    // timeseries collections, so we do not pass in timeseries options here.
                     shardkeyutil::validateShardKeyIndexExistsOrCreateIfPossible(
                         opCtx.get(),
                         _metadata.getTempReshardingNss(),
@@ -835,9 +834,13 @@ ReshardingRecipientService::RecipientStateMachine::_makeDataReplication(Operatio
                                 << " != donor shards count: " << _donorShards.size());
     }
 
+    auto oplogBatchTaskCount = _oplogBatchTaskCount.value_or(
+        static_cast<std::size_t>(resharding::gReshardingOplogBatchTaskCount.load()));
+
     return _dataReplicationFactory(opCtx,
                                    _metrics.get(),
                                    &_applierMetricsMap,
+                                   oplogBatchTaskCount,
                                    _metadata,
                                    _donorShards,
                                    *_cloneTimestamp,
@@ -975,6 +978,18 @@ ReshardingRecipientService::RecipientStateMachine::_buildIndexThenTransitionToAp
                    if (shardKeyIndexSpec) {
                        indexSpecs.push_back(*shardKeyIndexSpec);
                    }
+                   if (resharding::gFeatureFlagReshardingSpuriousDuplicateKeyErrors.isEnabled(
+                           serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
+                       // Store the names of all indexes with {unique: true}.
+                       std::vector<std::string> uniqueIndexes;
+                       for (auto& i : indexSpecs) {
+                           if (i.getBoolField("unique")) {
+                               uniqueIndexes.push_back(i.getStringField("name").toString());
+                           }
+                       }
+                       // Add the list of {unique: true} indexes into the RecipientShardContext.
+                       _recipientCtx.setNamesOfUniqueIndexes(uniqueIndexes);
+                   }
                    // Build all the indexes.
                    auto buildUUID = UUID::gen();
                    IndexBuildsCoordinator::IndexBuildOptions indexBuildOptions{
@@ -982,8 +997,8 @@ ReshardingRecipientService::RecipientStateMachine::_buildIndexThenTransitionToAp
                    auto indexBuildFuture = indexBuildsCoordinator->startIndexBuild(
                        opCtx.get(),
                        _metadata.getTempReshardingNss().dbName(),
-                       // When we create the collection we use the metadata resharding UUID as the
-                       // collection UUID.
+                       // When we create the collection we use the metadata resharding UUID as
+                       // the collection UUID.
                        _metadata.getReshardingUUID(),
                        indexSpecs,
                        buildUUID,

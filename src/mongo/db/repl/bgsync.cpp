@@ -65,7 +65,6 @@
 #include "mongo/db/repl/replication_coordinator_external_state.h"
 #include "mongo/db/repl/replication_process.h"
 #include "mongo/db/repl/rollback_source_impl.h"
-#include "mongo/db/repl/rs_rollback.h"
 #include "mongo/db/repl/storage_interface.h"
 #include "mongo/db/repl/sync_source_selector.h"
 #include "mongo/db/service_context.h"
@@ -99,7 +98,7 @@ namespace repl {
 namespace {
 const int kSleepToAllowBatchingMillis = 2;
 const int kSmallBatchLimitBytes = 40000;
-const Milliseconds kRollbackOplogSocketTimeout(10 * 60 * 1000);
+const Milliseconds kRollbackOplogSocketTimeout(5 * 60 * 1000);
 
 // The number of times a node attempted to choose a node to sync from among the available sync
 // source options. This occurs if we re-evaluate our sync source, receive an error from the source,
@@ -359,7 +358,6 @@ void BackgroundSync::_produce() {
             _replicationCoordinatorExternalState->getTaskExecutor(),
             _replCoord,
             lastOpTimeFetched,
-            OpTime(),
             [&syncSourceResp](const SyncSourceResolverResponse& resp) { syncSourceResp = resp; });
         // It is possible for _syncSourceSelectionDataChanged to become true between when we release
         // the lock at the end of this block and when the syncSourceResolver retrieves the relevant
@@ -469,6 +467,10 @@ void BackgroundSync::_produce() {
             LOGV2(21089,
                   "Failed to find sync source",
                   "error"_attr = syncSourceResp.syncSourceStatus.getStatus());
+            // The code above makes the ReplicationCoordinator set its sync source, we clear it
+            // again here. Not doing this would give the impression that this node has a sync
+            // source, delaying other nodes switching away from it.
+            _replCoord->clearSyncSource();
         }
 
         long long sleepMS = _getRetrySleepMS();
@@ -508,20 +510,13 @@ void BackgroundSync::_produce() {
 
     // "lastFetched" not used. Already set in _enqueueDocuments.
     Status fetcherReturnStatus = Status::OK();
-    int syncSourceRBID = syncSourceResp.rbid;
 
     DataReplicatorExternalStateBackgroundSync dataReplicatorExternalState(
         _replCoord, _replicationCoordinatorExternalState, this);
     OplogFetcher* oplogFetcher;
     try {
-        auto onOplogFetcherShutdownCallbackFn = [&fetcherReturnStatus,
-                                                 &syncSourceRBID](const Status& status, int rbid) {
+        auto onOplogFetcherShutdownCallbackFn = [&fetcherReturnStatus](const Status& status) {
             fetcherReturnStatus = status;
-            // If the syncSourceResp rbid is uninitialized, syncSourceRBID will be set to the
-            // rbid obtained in the oplog fetcher.
-            if (syncSourceRBID == ReplicationProcess::kUninitializedRollbackId) {
-                syncSourceRBID = rbid;
-            }
         };
         // The construction of OplogFetcher has to be outside bgsync mutex, because it calls
         // replication coordinator.
@@ -535,11 +530,8 @@ void BackgroundSync::_produce() {
                 return this->_enqueueDocuments(a1, a2, a3);
             },
             onOplogFetcherShutdownCallbackFn,
-            OplogFetcher::Config(lastOpTimeFetched,
-                                 source,
-                                 _replCoord->getConfig(),
-                                 syncSourceResp.rbid,
-                                 bgSyncOplogFetcherBatchSize));
+            OplogFetcher::Config(
+                lastOpTimeFetched, source, _replCoord->getConfig(), bgSyncOplogFetcherBatchSize));
         stdx::lock_guard<Latch> lock(_mutex);
         if (_state != ProducerState::Running) {
             return;
@@ -591,7 +583,7 @@ void BackgroundSync::_produce() {
     } else if (fetcherReturnStatus.code() == ErrorCodes::OplogStartMissing) {
         auto opCtx = cc().makeOperationContext();
         auto storageInterface = StorageInterface::get(opCtx.get());
-        _runRollback(opCtx.get(), fetcherReturnStatus, source, syncSourceRBID, storageInterface);
+        _runRollback(opCtx.get(), fetcherReturnStatus, source, storageInterface);
 
         if (bgSyncHangAfterRunRollback.shouldFail()) {
             LOGV2(21095, "bgSyncHangAfterRunRollback failpoint is set");
@@ -643,13 +635,14 @@ Status BackgroundSync::_enqueueDocuments(OplogFetcher::Documents::const_iterator
     }
 
     auto opCtx = cc().makeOperationContext();
+    OplogBuffer::Cost cost{info.toApplyDocumentBytes, info.toApplyDocumentCount};
 
     // Wait for enough space.
     // This should be called outside of the mutex to avoid deadlocks.
     if (_oplogWriter) {
-        _oplogWriter->waitForSpace(opCtx.get(), info.toApplyDocumentBytes);
+        _oplogWriter->waitForSpace(opCtx.get(), cost);
     } else {
-        _oplogApplier->waitForSpace(opCtx.get(), info.toApplyDocumentBytes);
+        _oplogApplier->waitForSpace(opCtx.get(), cost);
     }
 
     {
@@ -663,9 +656,9 @@ Status BackgroundSync::_enqueueDocuments(OplogFetcher::Documents::const_iterator
         // Buffer docs for later application.
         // When _oplogWriter is not null, featureFlagReduceMajorityWriteLatency is enabled.
         if (_oplogWriter) {
-            _oplogWriter->enqueue(opCtx.get(), begin, end, info.toApplyDocumentBytes);
+            _oplogWriter->enqueue(opCtx.get(), begin, end, cost);
         } else {
-            _oplogApplier->enqueue(opCtx.get(), begin, end, info.toApplyDocumentBytes);
+            _oplogApplier->enqueue(opCtx.get(), begin, end, cost);
         }
 
         // Update last fetched info.
@@ -694,7 +687,6 @@ Status BackgroundSync::_enqueueDocuments(OplogFetcher::Documents::const_iterator
 void BackgroundSync::_runRollback(OperationContext* opCtx,
                                   const Status& fetcherReturnStatus,
                                   const HostAndPort& source,
-                                  int requiredRBID,
                                   StorageInterface* storageInterface) {
     if (_replCoord->getMemberState().primary()) {
         LOGV2_WARNING(21123,
@@ -775,13 +767,10 @@ void BackgroundSync::_runRollback(OperationContext* opCtx,
     storageInterface->waitForAllEarlierOplogWritesToBeVisible(opCtx);
 
     auto storageEngine = opCtx->getServiceContext()->getStorageEngine();
-    if (!forceRollbackViaRefetch.load() && storageEngine->supportsRecoverToStableTimestamp()) {
+    if (storageEngine->supportsRecoverToStableTimestamp()) {
         LOGV2(21102, "Rollback using 'recoverToStableTimestamp' method");
         _runRollbackViaRecoverToCheckpoint(
             opCtx, source, &localOplog, storageInterface, getConnection);
-    } else {
-        LOGV2(21103, "Rollback using the 'rollbackViaRefetch' method");
-        _fallBackOnRollbackViaRefetch(opCtx, source, requiredRBID, &localOplog, getConnection);
     }
 
     {
@@ -827,19 +816,6 @@ void BackgroundSync::_runRollbackViaRecoverToCheckpoint(
     } else {
         LOGV2_WARNING(21124, "Rollback failed with retryable error", "error"_attr = status);
     }
-}
-
-void BackgroundSync::_fallBackOnRollbackViaRefetch(
-    OperationContext* opCtx,
-    const HostAndPort& source,
-    int requiredRBID,
-    OplogInterface* localOplog,
-    OplogInterfaceRemote::GetConnectionFn getConnection) {
-
-    RollbackSourceImpl rollbackSource(
-        getConnection, source, rollbackRemoteOplogQueryBatchSize.load());
-
-    rollback(opCtx, *localOplog, rollbackSource, requiredRBID, _replCoord, _replicationProcess);
 }
 
 void BackgroundSync::notifySyncSourceSelectionDataChanged() {

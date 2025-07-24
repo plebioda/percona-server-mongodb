@@ -105,9 +105,8 @@ void TimeSeriesOpObserver::onInserts(OperationContext* opCtx,
 void TimeSeriesOpObserver::onUpdate(OperationContext* opCtx,
                                     const OplogUpdateEntryArgs& args,
                                     OpStateAccumulator* opAccumulator) {
-    const auto& nss = args.coll->ns();
-
-    if (!nss.isTimeseriesBucketsCollection()) {
+    auto options = args.coll->getTimeseriesOptions();
+    if (!options.has_value()) {
         return;
     }
 
@@ -125,24 +124,34 @@ void TimeSeriesOpObserver::onUpdate(OperationContext* opCtx,
                     args.coll->getTimeseriesBucketsMayHaveMixedSchemaData().value_or(false) ||
                     !mixedSchema());
 
-        OID bucketId = args.updateArgs->updatedDoc["_id"].OID();
-        timeseries::bucket_catalog::handleDirectWrite(opCtx, args.coll->uuid(), bucketId);
+        timeseries::bucket_catalog::handleDirectWrite(opCtx,
+                                                      options.value(),
+                                                      args.coll->getDefaultCollator(),
+                                                      args.coll->uuid(),
+                                                      args.updateArgs->preImageDoc);
+        timeseries::bucket_catalog::handleDirectWrite(opCtx,
+                                                      options.value(),
+                                                      args.coll->getDefaultCollator(),
+                                                      args.coll->uuid(),
+                                                      args.updateArgs->updatedDoc);
     }
 }
 
-void TimeSeriesOpObserver::aboutToDelete(OperationContext* opCtx,
-                                         const CollectionPtr& coll,
-                                         const BSONObj& doc,
-                                         OplogDeleteEntryArgs* args,
-                                         OpStateAccumulator* opAccumulator) {
-    const auto& nss = coll->ns();
+void TimeSeriesOpObserver::onDelete(OperationContext* opCtx,
+                                    const CollectionPtr& coll,
+                                    StmtId stmtId,
+                                    const BSONObj& doc,
+                                    const DocumentKey& documentKey,
+                                    const OplogDeleteEntryArgs& args,
+                                    OpStateAccumulator* opAccumulator) {
 
-    if (!nss.isTimeseriesBucketsCollection()) {
+    auto options = coll->getTimeseriesOptions();
+    if (!options.has_value()) {
         return;
     }
 
-    OID bucketId = doc["_id"].OID();
-    timeseries::bucket_catalog::handleDirectWrite(opCtx, coll->uuid(), bucketId);
+    timeseries::bucket_catalog::handleDirectWrite(
+        opCtx, options.value(), coll->getDefaultCollator(), coll->uuid(), doc);
 }
 
 repl::OpTime TimeSeriesOpObserver::onDropCollection(OperationContext* opCtx,

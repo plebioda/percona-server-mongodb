@@ -35,6 +35,7 @@
 #include "mongo/db/pipeline/document_source_single_document_transformation.h"
 #include "mongo/db/pipeline/document_source_skip.h"
 #include "mongo/db/pipeline/document_source_sort.h"
+#include "mongo/db/pipeline/document_source_tee_consumer.h"
 #include "mongo/db/pipeline/document_source_union_with.h"
 #include "mongo/db/pipeline/document_source_unwind.h"
 #include "mongo/db/pipeline/visitors/document_source_visitor_registry.h"
@@ -49,6 +50,21 @@ namespace mongo {
 using NeedAll = docs_needed_bounds::NeedAll;
 using Unknown = docs_needed_bounds::Unknown;
 
+namespace {
+void extractDocsNeededBoundsHelper(const Pipeline& pipeline, DocsNeededBoundsContext* ctx) {
+    ServiceContext* serviceCtx = pipeline.getContext()->opCtx->getServiceContext();
+    auto& reg = getDocumentSourceVisitorRegistry(serviceCtx);
+    DocumentSourceWalker walker(reg, ctx);
+
+    walker.reverseWalk(pipeline);
+
+    tassert(8673200,
+            "If one of min/max docs needed bounds is NeedAll, they must both be NeedAll.",
+            std::holds_alternative<NeedAll>(ctx->minBounds) ==
+                std::holds_alternative<NeedAll>(ctx->maxBounds));
+}
+}  // namespace
+
 void DocsNeededBoundsContext::applyPossibleDecreaseStage() {
     // If we have existing discrete maxBounds, this stage may reduce the number of documents in the
     // result stream before applying that limit, so we may need to scan more documents than the
@@ -57,9 +73,9 @@ void DocsNeededBoundsContext::applyPossibleDecreaseStage() {
     // For example, in the sequence of a $match before a $limit, without knowing the selectivity of
     // the $match, we must reset the maxBounds to Unknown.
     maxBounds = visit(OverloadedVisitor{
-                          [](long long) -> DocsNeededBounds { return Unknown(); },
-                          [](NeedAll all) -> DocsNeededBounds { return all; },
-                          [](Unknown unknown) -> DocsNeededBounds { return unknown; },
+                          [](long long) -> DocsNeededConstraint { return Unknown(); },
+                          [](NeedAll all) -> DocsNeededConstraint { return all; },
+                          [](Unknown unknown) -> DocsNeededConstraint { return unknown; },
                       },
                       maxBounds);
 }
@@ -72,9 +88,9 @@ void DocsNeededBoundsContext::applyPossibleIncreaseStage() {
     // For example, in the sequence of a $densify before a limit, we must reset the minBounds to
     // Unknown since we don't know the rate at which $densify will add documents to the stream.
     minBounds = visit(OverloadedVisitor{
-                          [](long long) -> DocsNeededBounds { return Unknown(); },
-                          [](NeedAll all) -> DocsNeededBounds { return all; },
-                          [](Unknown unknown) -> DocsNeededBounds { return unknown; },
+                          [](long long) -> DocsNeededConstraint { return Unknown(); },
+                          [](NeedAll all) -> DocsNeededConstraint { return all; },
+                          [](Unknown unknown) -> DocsNeededConstraint { return unknown; },
                       },
                       minBounds);
 }
@@ -82,9 +98,9 @@ void DocsNeededBoundsContext::applyPossibleIncreaseStage() {
 void DocsNeededBoundsContext::applySkip(long long newSkip) {
     // We apply $skip identically to maxBounds and minBounds, by adding the skip value if it's a
     // discretely $limit-ed bounds, or ignoring it otherwise.
-    auto applySkip = [newSkip](DocsNeededBounds currBounds) -> DocsNeededBounds {
+    auto applySkip = [newSkip](DocsNeededConstraint currBounds) -> DocsNeededConstraint {
         return visit(OverloadedVisitor{
-                         [newSkip](long long discreteBounds) -> DocsNeededBounds {
+                         [newSkip](long long discreteBounds) -> DocsNeededConstraint {
                              long long safeSum = 0;
                              if (overflow::add(discreteBounds, newSkip, &safeSum)) {
                                  // If we're skipping so many that it overflows 64
@@ -94,8 +110,8 @@ void DocsNeededBoundsContext::applySkip(long long newSkip) {
                              }
                              return safeSum;
                          },
-                         [](NeedAll all) -> DocsNeededBounds { return all; },
-                         [](Unknown unknown) -> DocsNeededBounds { return unknown; },
+                         [](NeedAll all) -> DocsNeededConstraint { return all; },
+                         [](Unknown unknown) -> DocsNeededConstraint { return unknown; },
                      },
                      currBounds);
     };
@@ -109,7 +125,7 @@ void DocsNeededBoundsContext::applyLimit(long long limit) {
     bool overridesMaxBounds = true;
     maxBounds =
         visit(OverloadedVisitor{
-                  [&overridesMaxBounds, limit](long long discreteBounds) -> DocsNeededBounds {
+                  [&overridesMaxBounds, limit](long long discreteBounds) -> DocsNeededConstraint {
                       if (limit <= discreteBounds) {
                           return limit;
                       } else {
@@ -117,8 +133,8 @@ void DocsNeededBoundsContext::applyLimit(long long limit) {
                           return discreteBounds;
                       }
                   },
-                  [limit](NeedAll) -> DocsNeededBounds { return limit; },
-                  [limit](Unknown) -> DocsNeededBounds { return limit; },
+                  [limit](NeedAll) -> DocsNeededConstraint { return limit; },
+                  [limit](Unknown) -> DocsNeededConstraint { return limit; },
               },
               maxBounds);
 
@@ -131,11 +147,11 @@ void DocsNeededBoundsContext::applyLimit(long long limit) {
     // 10 documents). We need to avoid miscomputing minBounds as 20 after $densify sets minBounds
     // to Unknown.
     minBounds = visit(OverloadedVisitor{
-                          [limit](long long discreteBounds) -> DocsNeededBounds {
+                          [limit](long long discreteBounds) -> DocsNeededConstraint {
                               return std::min(discreteBounds, limit);
                           },
-                          [limit](NeedAll) -> DocsNeededBounds { return limit; },
-                          [overridesMaxBounds, limit](Unknown unknown) -> DocsNeededBounds {
+                          [limit](NeedAll) -> DocsNeededConstraint { return limit; },
+                          [overridesMaxBounds, limit](Unknown unknown) -> DocsNeededConstraint {
                               // If minBounds is unknown, we don't want to set it if the limit
                               // didn't override the maxBounds. See comment above.
                               if (overridesMaxBounds) {
@@ -242,12 +258,44 @@ void visit(DocsNeededBoundsContext* ctx, const DocumentSourceInternalDensify& so
     ctx->applyPossibleIncreaseStage();
 }
 
+void visit(DocsNeededBoundsContext* ctx, const DocumentSourceTeeConsumer& source) {
+    // DocumentSourceTeeConsumer is an internal proxy stage between a pipeline within a $facet stage
+    // and the buffer of incoming documents. Because a DocumentSourceTeeConsumer stage is uniquely
+    // positioned after each $facet subpipeline, we should do nothing. Otherwise, the visit will not
+    // recognize the document source and override the $facet bounds by applying unknown bounds.
+}
+
 void visit(DocsNeededBoundsContext* ctx, const DocumentSourceFacet& source) {
-    // $facet is completely unknown since the subpipelines are treated as blackboxes. We have no
-    // idea if the pipelines all have a limit that could be applied, or if one may require all
-    // documents.
-    // TODO SERVER-88371 Scrutinize the subpipelines to infer min/max constraints of $facet.
-    ctx->applyUnknownStage();
+    // Computes the DocsNeededBounds of each $facet subpipeline applied to the constraints of the
+    // pipeline seen so far, and compares the constraints of each subpipeline to find the most
+    // restrictive constraints of all the pipelines. After traversing all subpipelines, applies the
+    // most restrictive constraints.
+
+    auto& subpipelines = source.getFacetPipelines();
+    if (subpipelines.empty()) {
+        return;
+    }
+
+    // Initialize min/max bounds that are guaranteed to be overriden by the first subpipeline.
+    // They're different values because of the different semantics of min vs max constraints for
+    // determining constrait strength.
+    DocsNeededConstraint mostRestrictiveMinBounds = Unknown();
+    DocsNeededConstraint mostRestrictiveMaxBounds = 0;
+
+    for (const auto& facetPipeline : subpipelines) {
+        // Compute this subpipeline's constraints applied to the constraints-so-far.
+        DocsNeededBoundsContext subpipelineCtx(ctx->minBounds, ctx->maxBounds);
+        extractDocsNeededBoundsHelper(*facetPipeline.pipeline.get(), &subpipelineCtx);
+
+        mostRestrictiveMinBounds = docs_needed_bounds::chooseStrongerMinConstraint(
+            mostRestrictiveMinBounds, subpipelineCtx.minBounds);
+        mostRestrictiveMaxBounds = docs_needed_bounds::chooseStrongerMaxConstraint(
+            mostRestrictiveMaxBounds, subpipelineCtx.maxBounds);
+    }
+
+    // Apply the most restrictive bounds.
+    ctx->minBounds = mostRestrictiveMinBounds;
+    ctx->maxBounds = mostRestrictiveMaxBounds;
 }
 
 void visit(DocsNeededBoundsContext* ctx, const DocumentSourceSearch& source) {
@@ -302,8 +350,10 @@ void visit(DocsNeededBoundsContext* ctx, const DocumentSourceSetVariableFromSubP
 }
 
 void visit(DocsNeededBoundsContext* ctx, const DocumentSourceSequentialDocumentCache& source) {
-    // TODO SERVER-88525 Investigate if this stage can be no change.
-    ctx->applyUnknownStage();
+    // No change. If the cache is in the "building" state, it acts as a no-op stage where it saves
+    // each document to the cache (no change to result stream). If the cache is in the "abandoned"
+    // state, it acts as a pure no-op. If the cache is in the "serving" state, this stage must be
+    // the first in the pipeline, where it populates the result stream.
 }
 
 const ServiceContext::ConstructorActionRegisterer docsNeededBoundsRegisterer{
@@ -312,20 +362,9 @@ const ServiceContext::ConstructorActionRegisterer docsNeededBoundsRegisterer{
     }};
 
 
-std::pair<DocsNeededBounds, DocsNeededBounds> extractDocsNeededBounds(const Pipeline& pipeline) {
+DocsNeededBounds extractDocsNeededBounds(const Pipeline& pipeline) {
     DocsNeededBoundsContext ctx;
-
-    ServiceContext* serviceCtx = pipeline.getContext()->opCtx->getServiceContext();
-    auto& reg = getDocumentSourceVisitorRegistry(serviceCtx);
-    DocumentSourceWalker walker(reg, &ctx);
-
-    walker.reverseWalk(pipeline);
-
-    tassert(8673200,
-            "If one of min/max docs needed bounds is NeedAll, they must both be NeedAll.",
-            std::holds_alternative<NeedAll>(ctx.minBounds) ==
-                std::holds_alternative<NeedAll>(ctx.maxBounds));
-
-    return {ctx.minBounds, ctx.maxBounds};
+    extractDocsNeededBoundsHelper(pipeline, &ctx);
+    return DocsNeededBounds(ctx.minBounds, ctx.maxBounds);
 }
 }  // namespace mongo

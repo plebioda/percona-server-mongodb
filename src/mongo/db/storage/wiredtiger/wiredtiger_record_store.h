@@ -61,7 +61,6 @@
 #include "mongo/db/storage/record_store.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_cursor.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_kv_engine.h"
-#include "mongo/db/storage/wiredtiger/wiredtiger_recovery_unit.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_size_storer.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_util.h"
 #include "mongo/platform/atomic_word.h"
@@ -91,8 +90,6 @@ namespace mongo {
 class RecoveryUnit;
 class WiredTigerSessionCache;
 class WiredTigerSizeStorer;
-
-inline constexpr auto kWiredTigerEngineName = "wiredTiger"_sd;
 
 class WiredTigerRecordStore : public RecordStore {
 public:
@@ -290,13 +287,6 @@ public:
 
     typedef std::variant<int64_t, WiredTigerItem> CursorKey;
 
-protected:
-    Status oplogDiskLocRegisterImpl(OperationContext* opCtx,
-                                    const Timestamp& opTime,
-                                    bool orderedCommit) override;
-
-    void waitForAllEarlierOplogWritesToBeVisibleImpl(OperationContext* opCtx) const override;
-
 private:
     class RandomCursor;
 
@@ -450,8 +440,11 @@ protected:
      * Perform a bounded seek on the cursor, and return the next matching RecordId, if one exists.
      *
      * If countSeekMetric is false, does not record this seek towards metrics collection.
+     * If restoring is true, this seek is part of a restore operation.
      */
-    RecordId seekIdCommon(const RecordId& id, BoundInclusion boundInclusion);
+    RecordId seekIdCommon(const RecordId& id,
+                          BoundInclusion boundInclusion,
+                          bool restoring = false);
 
     /**
      * Perform an exact seek on the cursor, and return the Record, if one exists.

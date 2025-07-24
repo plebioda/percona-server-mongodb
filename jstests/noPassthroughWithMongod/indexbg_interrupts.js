@@ -1,11 +1,13 @@
 /**
- * TODO SERVER-13204: This  tests inserts a huge number of documents, initiates a background index
+ * TODO SERVER-13204: This test inserts a huge number of documents, initiates a background index
  * build and tries to perform another task in parallel while the background index task is
  * active. The problem is that this is timing dependent and the current test setup
  * tries to achieve this by inserting insane amount of documents.
  *
  * @tags: [requires_replication]
  */
+
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 /**
  * Starts a replica set with arbiter, builds an index in background,
@@ -38,7 +40,7 @@ var nodes = replTest.nodeList();
 
 // We need an arbiter to ensure that the primary doesn't step down when we restart the secondary
 replTest.startSet();
-replTest.initiate({
+replTest.initiateWithHighElectionTimeout({
     "_id": "bgIndex",
     "members": [
         {"_id": 0, "host": nodes[0]},

@@ -102,6 +102,7 @@ selector:
     - jstests/concurrency/fsm_workloads/view_catalog.js
     - jstests/concurrency/fsm_workloads/view_catalog_cycle_with_drop.js
     - jstests/concurrency/fsm_workloads/random_moveChunk_timeseries_deletes.js
+    - jstests/concurrency/fsm_workloads/timeseries_crud_operations_respect_control_closed.js
     - jstests/concurrency/fsm_workloads/timeseries_deletes_and_inserts.js
     - jstests/concurrency/fsm_workloads/timeseries_findAndModify_remove_and_inserts.js
     - jstests/concurrency/fsm_workloads/timeseries_updates_and_inserts.js
@@ -126,9 +127,6 @@ selector:
     - jstests/concurrency/fsm_workloads/indexed_insert_where.js
     - jstests/concurrency/fsm_workloads/remove_where.js
     - jstests/concurrency/fsm_workloads/update_where.js
-
-    # Time-series collections are not supported on mongos.
-    - jstests/concurrency/fsm_workloads/create_timeseries_collection.js
 
   exclude_with_any_tags:
     - assumes_against_mongod_not_mongos
@@ -217,6 +215,7 @@ executor:
         enableElectionHandoff: 0
         roleGraphInvalidationIsFatal: 1
         queryAnalysisWriterIntervalSecs: 1
+        queryAnalysisSamplerConfigurationRefreshSecs: 1
         defaultConfigCommandTimeoutMS: 90000
     num_rs_nodes_per_shard: 3
     num_shards: 2

@@ -1,6 +1,11 @@
 # -*- mode: python -*-
 
-Import("env")
+Import(
+    [
+        "env",
+        "has_option",
+    ]
+)
 
 env = env.Clone()
 
@@ -11,7 +16,7 @@ env.Library(
         "insert.cpp",
         "update.cpp",
         "write_ops_retryability.cpp",
-        "single_write_result.idl",
+        "single_write_result_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
@@ -91,7 +96,7 @@ env.Library(
     target="write_ops_parsers",
     source=[
         "write_ops.cpp",
-        "write_ops.idl",
+        "write_ops_gen.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/base",
@@ -136,19 +141,9 @@ env.Library(
         "$BUILD_DIR/mongo/db/update/update_driver",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/storage/storage_options",
-    ],
-)
-
-env.Library(
-    target="delete_request_idl",
-    source="delete_request.idl",
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/pipeline/runtime_constants_idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
     ],
 )
 

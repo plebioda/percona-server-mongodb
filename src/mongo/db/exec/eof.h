@@ -35,6 +35,7 @@
 #include "mongo/db/exec/plan_stats.h"
 #include "mongo/db/exec/working_set.h"
 #include "mongo/db/pipeline/expression_context.h"
+#include "mongo/db/query/eof_node_type.h"
 #include "mongo/db/query/stage_types.h"
 #include "mongo/db/record_id.h"
 
@@ -45,7 +46,7 @@ namespace mongo {
  */
 class EOFStage final : public PlanStage {
 public:
-    EOFStage(ExpressionContext* expCtx);
+    EOFStage(ExpressionContext* expCtx, eof_node::EOFType type);
 
     ~EOFStage() override;
 
@@ -62,6 +63,9 @@ public:
     const SpecificStats* getSpecificStats() const final;
 
     static const char* kStageType;
+
+private:
+    EofStats _specificStats;
 };
 
 }  // namespace mongo

@@ -6,6 +6,7 @@
  * ]
  */
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {IndexBuildTest} from "jstests/noPassthrough/libs/index_build.js";
 
 // This test triggers an unclean shutdown (an fassert), which may cause inaccurate fast counts.
@@ -87,9 +88,6 @@ rst.start(secondary.nodeId, undefined, true /* restart */);
 secondary = rst.getSecondary();
 secondaryDB = secondary.getDB(testDB.getName());
 
-// Wait for the restarted secondary node to reach SECONDARY state again.
-rst.waitForState(secondary, ReplSetTest.State.SECONDARY);
-
 // Wait for the index build to complete on all nodes.
 rst.awaitReplication();
 
@@ -98,6 +96,9 @@ rst.awaitReplication();
 createIdx();
 
 IndexBuildTest.assertIndexes(coll, 2, ['_id_', 'a_1']);
+
+// Wait for the secondary node to complete its recovery.
+rst.awaitSecondaryNodes();
 
 // Check that index was created on the secondary despite the attempted killOp().
 const secondaryColl = secondaryDB.getCollection(coll.getName());

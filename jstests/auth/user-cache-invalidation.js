@@ -3,6 +3,7 @@
 
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 const testUser = "user1";
 const testDB = "user_cache_invalidation";
@@ -91,7 +92,7 @@ function assertLacksLog(conn, cond, start, end) {
  * Create a user with read permission and simply
  * auth and read in a parallel shell.
  *
- * We use FailPoint 'authLocalGetUser.resolveRolesDelayMS' to
+ * We use FailPoint 'authLocalGetUser.resolveUserDelayMS' to
  * give us time to invalidate the user mid-acquisition.
  *
  * We also use pauseBatchApplicationBeforeCompletion with replsets
@@ -137,11 +138,11 @@ function runTest(writeNode, readNode, awaitReplication, lock, unlock) {
         readNode, 'waitForUserCacheInvalidation', {userName: {db: testDB, user: testUser}});
 
     // We need some time to mutate the auth state before the acquisition completes.
-    const kResolveRolesDelayMS = 5 * 1000;
+    const kResolveUserDelayMS = 5 * 1000;
     assert.commandWorked(readAdmin.runCommand({
         configureFailPoint: 'authLocalGetUser',
         mode: 'alwaysOn',
-        data: {resolveRolesDelayMS: NumberInt(kResolveRolesDelayMS)}
+        data: {resolveUserDelayMS: NumberInt(kResolveUserDelayMS)}
     }));
 
     const thread = new Thread(function(port, testUser, testDB) {
@@ -184,8 +185,10 @@ function runTest(writeNode, readNode, awaitReplication, lock, unlock) {
     jsTest.log('Looking for invalidation');
     assertHasLogAndAdvance(readNode, invalidateUserEvent);
 
-    jsTest.log('Looking for new acquisiiton');
+    jsTest.log('Looking for new acquisition');
     assertHasLogAndAdvance(readNode, acquireUserEvent);
+
+    jsTest.log('Unlocking batch application');
     unlock();
 
     jsTest.log('Waiting for second resolve roles');

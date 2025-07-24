@@ -163,14 +163,11 @@ void FallbackOpObserver::onDelete(OperationContext* opCtx,
                                   const CollectionPtr& coll,
                                   StmtId stmtId,
                                   const BSONObj& doc,
+                                  const DocumentKey& documentKey,
                                   const OplogDeleteEntryArgs& args,
                                   OpStateAccumulator* opAccumulator) {
     const auto& nss = coll->ns();
     const bool inBatchedWrite = BatchedWriteContext::get(opCtx).writesAreBatched();
-
-    auto optDocKey = documentKeyDecoration(args);
-    invariant(optDocKey, nss.toStringForErrorMsg());
-    auto& documentKey = optDocKey.value();
 
     if (nss.isSystemDotJavascript()) {
         Scope::storedFuncMod(opCtx);
@@ -186,7 +183,9 @@ void FallbackOpObserver::onDelete(OperationContext* opCtx,
     }
 }
 
-void FallbackOpObserver::onDropDatabase(OperationContext* opCtx, const DatabaseName& dbName) {
+void FallbackOpObserver::onDropDatabase(OperationContext* opCtx,
+                                        const DatabaseName& dbName,
+                                        bool markFromMigrate) {
     if (dbName == NamespaceString::kSessionTransactionsTableNamespace.dbName()) {
         auto mongoDSessionCatalog = MongoDSessionCatalog::get(opCtx);
         mongoDSessionCatalog->invalidateAllSessions(opCtx);

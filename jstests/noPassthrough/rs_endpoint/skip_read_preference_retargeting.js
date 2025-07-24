@@ -8,6 +8,7 @@
  * ]
  */
 
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {extractUUIDFromObject} from "jstests/libs/uuid_util.js";
 import {restartServerReplication, stopServerReplication} from "jstests/libs/write_concern_util.js";
 import {waitForAutoBootstrap} from "jstests/noPassthrough/rs_endpoint/lib/util.js";
@@ -31,7 +32,7 @@ const rst = new ReplSetTest({
     // Disallow chaining to force both secondaries to sync from the primary. This test later
     // pauses replication on one of the secondaries, with chaining that would effectively pause
     // replication on both secondaries and cause the test to to hang since writeConcern
-    // {w: "majority"} would be unsatsifiable.
+    // {w: 2} would be unsatsifiable.
     settings: {chainingAllowed: false},
     useAutoBootstrapProcedure: true,
 });
@@ -52,7 +53,7 @@ assert.commandWorked(primary.adminCommand({balancerStop: 1}));
 assert.soon(() => {
     const res = assert.commandWorked(primary.adminCommand({balancerStatus: 1}));
     return !res.inBalancerRound;
-})
+});
 
 const dbName = "testDb";
 const collName = "testColl";
@@ -94,8 +95,10 @@ assert.commandWorked(secondary1TestDB.setProfilingLevel(2));
 
     // Stop replication on secondary1.
     stopServerReplication(secondaries[1]);
-    // Perform a write and wait for it to replicate to secondary0.
-    assert.commandWorked(primaryTestColl.insert({x: 2}, {writeConcern: {w: "majority"}}));
+    // Perform a write and wait for it to replicate to secondary0. Use {w: 2} instead of
+    // {w: majority} since the latter only waits for the write to become durable on the secondary,
+    // whereas the former also waits for the write to be applied.
+    assert.commandWorked(primaryTestColl.insert({x: 2}, {writeConcern: {w: 2}}));
     jsTest.log("Primary's clusterTime after insert " + tojson(primary.getClusterTime()));
 
     for (let readPreference of readPreferences) {

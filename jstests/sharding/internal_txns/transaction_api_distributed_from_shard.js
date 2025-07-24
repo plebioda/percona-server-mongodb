@@ -3,9 +3,12 @@
  *
  * @tags: [
  *   requires_fcv_60,
- *   temp_disabled_embedded_router_known_issues,
+ *    # TODO (SERVER-88122): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 // The test command is meant to test the "no session" transaction API case.
 TestData.disableImplicitSessions = true;
 

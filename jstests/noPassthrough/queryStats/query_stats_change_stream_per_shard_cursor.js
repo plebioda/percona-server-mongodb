@@ -10,6 +10,7 @@ import {
     getLatestQueryStatsEntry,
     getNumberOfGetMoresUntilNextDocForChangeStream,
 } from "jstests/libs/query_stats_utils.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 const dbName = jsTestName();
 
@@ -55,7 +56,7 @@ function testCollectionChangeStream(sdb, shardId) {
         collectionName: "coll",
         numExecs: numExecs,
         numDocsReturned: numDocsReturned
-    })
+    });
     assert(queryStatsEntry.key.hasOwnProperty("$_passthroughToShard"));
     assert(queryStatsEntry.key.$_passthroughToShard.hasOwnProperty("shard"));
 
@@ -86,7 +87,7 @@ function testCollectionChangeStream(sdb, shardId) {
         collectionName: "coll",
         numExecs: numExecs,
         numDocsReturned: numDocsReturned
-    })
+    });
     assert(queryStatsEntry.key.hasOwnProperty("$_passthroughToShard"));
     assert(queryStatsEntry.key.$_passthroughToShard.hasOwnProperty("shard"));
 
@@ -120,7 +121,7 @@ function testDatabaseChangeStream(sdb, shardId) {
         collectionName: "$cmd.aggregate",
         numExecs: numExecs,
         numDocsReturned: numDocsReturned
-    })
+    });
 
     assert(queryStatsEntry.key.hasOwnProperty("$_passthroughToShard"));
     assert(queryStatsEntry.key.$_passthroughToShard.hasOwnProperty("shard"));

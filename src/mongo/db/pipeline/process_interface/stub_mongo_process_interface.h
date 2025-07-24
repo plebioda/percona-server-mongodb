@@ -182,6 +182,11 @@ public:
         MONGO_UNREACHABLE;
     }
 
+    query_shape::CollectionType getCollectionType(OperationContext* opCtx,
+                                                  const NamespaceString& nss) final {
+        MONGO_UNREACHABLE;
+    }
+
     void renameIfOptionsAndIndexesHaveNotChanged(
         OperationContext* opCtx,
         const NamespaceString& sourceNs,
@@ -328,6 +333,12 @@ public:
     boost::optional<ShardVersion> refreshAndGetCollectionVersion(
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         const NamespaceString& nss) const override {
+        return boost::none;
+    }
+
+    boost::optional<mongo::DatabaseVersion> refreshAndGetDatabaseVersion(
+        const boost::intrusive_ptr<ExpressionContext>& expCtx,
+        const DatabaseName& dbName) const override {
         return boost::none;
     }
 

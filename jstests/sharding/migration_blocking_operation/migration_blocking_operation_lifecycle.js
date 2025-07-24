@@ -6,6 +6,8 @@
  */
 
 import {migrationsAreAllowed} from "jstests/libs/chunk_manipulation_util.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {CreateShardedCollectionUtil} from "jstests/sharding/libs/create_sharded_collection_util.js";
 import {ShardVersioningUtil} from "jstests/sharding/libs/shard_versioning_util.js";
 
@@ -33,7 +35,7 @@ function assertCommandReturns(connection, command, uuid, code) {
     if (code === ErrorCodes.OK) {
         assert.commandWorked(response);
     } else {
-        assert.commandFailedWithCode(response, code)
+        assert.commandFailedWithCode(response, code);
     }
 }
 

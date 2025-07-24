@@ -384,6 +384,8 @@ TypeCollectionRecipientFields constructRecipientFields(
     resharding::emplaceCloneTimestampIfExists(recipientFields, coordinatorDoc.getCloneTimestamp());
     resharding::emplaceApproxBytesToCopyIfExists(
         recipientFields, coordinatorDoc.getReshardingApproxCopySizeStruct());
+    resharding::emplaceOplogBatchTaskCountIfExists(
+        recipientFields, coordinatorDoc.getRecipientOplogBatchTaskCount());
 
     return recipientFields;
 }
@@ -1837,6 +1839,7 @@ ExecutorFuture<void> ReshardingCoordinator::_commitAndFinishReshardOperation(
 
 SemiFuture<void> ReshardingCoordinator::run(std::shared_ptr<executor::ScopedTaskExecutor> executor,
                                             const CancellationToken& stepdownToken) noexcept {
+    getObserver()->reshardingCoordinatorRunCalled();
     pauseBeforeCTHolderInitialization.pauseWhileSet();
 
     auto abortCalled = [&] {

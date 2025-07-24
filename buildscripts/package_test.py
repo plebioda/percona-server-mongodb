@@ -114,28 +114,34 @@ OS_DOCKER_LOOKUP = {
     "rhel57": None,
     "rhel62": None,
     "rhel70": (
-        "centos:7",
+        "registry.access.redhat.com/ubi7/ubi",
         "yum",
         frozenset(["rh-python38.x86_64", "wget", "pkgconfig", "systemd", "procps", "file"]),
         "/opt/rh/rh-python38/root/usr/bin/python3",
     ),
     "rhel71": (
-        "centos:7",
+        "registry.access.redhat.com/ubi7/ubi",
         "yum",
         frozenset(["rh-python38.x86_64", "wget", "pkgconfig", "systemd", "procps", "file"]),
         "/opt/rh/rh-python38/root/usr/bin/python3",
     ),
     "rhel72": (
-        "centos:7",
+        "registry.access.redhat.com/ubi7/ubi",
         "yum",
         frozenset(["rh-python38.x86_64", "wget", "pkgconfig", "systemd", "procps", "file"]),
         "/opt/rh/rh-python38/root/usr/bin/python3",
     ),
     "rhel79": (
-        "centos:7",
+        "registry.access.redhat.com/ubi7/ubi",
         "yum",
         frozenset(["rh-python38.x86_64", "wget", "pkgconfig", "systemd", "procps", "file"]),
         "/opt/rh/rh-python38/root/usr/bin/python3",
+    ),
+    "rhel8": (
+        "almalinux:8",
+        "yum",
+        frozenset(["python3", "wget", "pkgconfig", "systemd", "procps", "file"]),
+        "python3",
     ),
     "rhel80": (
         "almalinux:8",
@@ -183,7 +189,7 @@ OS_DOCKER_LOOKUP = {
     "suse11": None,
     "suse12": None,
     "suse15": (
-        "registry.suse.com/suse/sle15:latest",
+        "registry.suse.com/suse/sle15:15.5",
         "zypper",
         frozenset(["python3", "wget", "pkg-config", "systemd", "procps", "file"]),
         "python3",
@@ -339,12 +345,6 @@ def run_test(test: Test, client: DockerClient) -> Result:
     commands: List[str] = ["export PYTHONIOENCODING=UTF-8"]
 
     if test.os_name.startswith("rhel"):
-        if test.os_name.startswith("rhel7"):
-            # RHEL 7 needs the SCL installed for Python 3
-            commands += [
-                "yum -y install centos-release-scl",
-                "yum-config-manager --enable centos-sclo-rh",
-            ]
         # RHEL distros need EPEL for Compass dependencies
         commands += [
             "yum -y install yum-utils epel-release",
@@ -387,7 +387,13 @@ def run_test(test: Test, client: DockerClient) -> Result:
             command=f'bash -c "{join_commands(commands)}"',
             auto_remove=True,
             detach=True,
-            volumes=[f"{test_external_root}:{test_docker_root}"],
+            volumes=[
+                f"{test_external_root}:{test_docker_root}",
+                "/etc/pki/entitlement/:/run/secrets/etc-pki-entitlement",
+                "/etc/rhsm:/run/secrets/rhsm",
+                "/etc/yum.repos.d/redhat.repo:/run/secrets/redhat.repo",
+                "/etc/yum.repos.d/redhat-rhsm.repo:/run/secrets/redhat-rhsm.repo",
+            ],
         )
         for log in container.logs(stream=True):
             result["log_raw"] += log.decode("UTF-8")
@@ -451,8 +457,21 @@ def get_tools_package(arch_name: str, os_name: str) -> Optional[str]:
         and not os_name.startswith("rhel")
     ):
         arch_name = "arm64"
+
+    # Tools packages are only published to the latest RHEL version supported on master, but
+    # the tools binaries are cross compatible with other RHEL versions
+    # (see https://jira.mongodb.org/browse/SERVER-92939)
+    def major_version_matches(download_name: str) -> bool:
+        if (
+            os_name.startswith("rhel")
+            and download_name.startswith("rhel")
+            and os_name[4] == download_name[4]
+        ):
+            return True
+        return download_name == os_name
+
     for download in current_tools_releases["versions"][0]["downloads"]:
-        if download["name"] == os_name and download["arch"] == arch_name:
+        if major_version_matches(download["name"]) and download["arch"] == arch_name:
             return download["package"]["url"]
     return None
 

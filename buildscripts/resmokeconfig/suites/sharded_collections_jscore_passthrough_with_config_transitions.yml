@@ -14,7 +14,6 @@ selector:
     - jstests/core/**/awaitdata_getmore_cmd.js # capped collections.
     - jstests/core/**/bypass_doc_validation.js # sharded $out output not permitted
     - jstests/core/**/check_shard_index.js # checkShardingIndex.
-    - jstests/core/**/collection_truncate.js # emptycapped.
     - jstests/core/**/compact_keeps_indexes.js # compact.
     - jstests/core/**/currentop.js # uses fsync.
     - jstests/core/**/dbhash.js # dbhash.
@@ -171,6 +170,14 @@ selector:
     - jstests/core/timeseries/timeseries_update_one.js
     - jstests/core/timeseries/timeseries_user_system_buckets.js
     - jstests/core/timeseries/top_k_sort_optimization.js
+    # moveChunk can be blocked by multi updates causing these tests to not be able to transition to dedicated.
+    - jstests/core/index/geo/geo_update_btree.js
+    - jstests/core/write/delete/removec.js
+    # Exclude tests that run cleanupOrphaned, which can fail running on a config shard if a
+    # concurrent migration fails due to the config shard transitioning to dedicated.
+    - jstests/core/administrative/cleanup_orphaned.js
+    - jstests/core/views/views_all_commands.js
+    - jstests/core/commands_namespace_parsing.js
 
   exclude_with_any_tags:
     - assumes_standalone_mongod
@@ -208,10 +215,10 @@ executor:
     shell_options:
       eval: >-
         await import("jstests/libs/override_methods/implicitly_shard_accessed_collections.js");
-        await import("jstests/libs/override_methods/implicitly_retry_on_config_transition_errors.js");
+        await import("jstests/libs/override_methods/implicitly_retry_on_shard_transition_errors.js");
       global_vars:
         TestData:
-          transitioningConfigShard: true
+          shardsAddedRemoved: true
   hooks:
     - class: ContinuousAddRemoveShard
       random_balancer_on: false
@@ -221,7 +228,7 @@ executor:
       shell_options:
         global_vars:
           TestData:
-            transitioningConfigShard: true
+            shardsAddedRemoved: true
     - class: ValidateCollections
     - class: CheckOrphansDeleted
     - class: CleanEveryN
@@ -239,6 +246,7 @@ executor:
         orphanCleanupDelaySecs: 1
         skipDroppingHashedShardKeyIndex: true
         featureFlagReshardingForTimeseries: true
+        reshardingMinimumOperationDurationMillis: 0
     set_cluster_parameter:
       parameter: pauseMigrationsDuringMultiUpdates
       value:

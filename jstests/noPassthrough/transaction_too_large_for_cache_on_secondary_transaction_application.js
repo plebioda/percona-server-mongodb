@@ -8,10 +8,13 @@
  *   requires_non_retryable_writes,
  *   requires_wiredtiger,
  *   uses_transactions,
+ *   # TODO(SERVER-90387): remove this JS test after unit test is available.
+ *   __TEMPORARILY_DISABLED__,
  * ]
  */
 
-import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js"
+import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 
 // jsTestName exceeds 64 characters.
 const shortName = "transaction_too_large_for_cache_on_secondary";

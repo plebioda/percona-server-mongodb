@@ -4,6 +4,8 @@
 // @tags: [
 //   requires_replication,
 // ]
+import {ShardingTest} from "jstests/libs/shardingtest.js";
+
 var st = new ShardingTest({
     mongos: 1,
     config: 1,
@@ -130,16 +132,14 @@ configureMaxTimeNeverTimeOut("off");
 // maxTimeAlwaysTimeOut to ensure mongod throws if it receives a max time.
 //
 
-let assertCommandFailedWithMaxTimeMSExpired =
-    (commandName, failMessage) => {
-        const maxTimeMSCounter = admin.serverStatus().metrics.operation.killedDueToMaxTimeMSExpired;
-        assert.commandFailedWithCode(coll.runCommand(commandName, {maxTimeMS: defaultMaxTimeMS}),
-                                     ErrorCodes.MaxTimeMSExpired,
-                                     failMessage);
+let assertCommandFailedWithMaxTimeMSExpired = (commandName, failMessage) => {
+    const maxTimeMSCounter = admin.serverStatus().metrics.operation.killedDueToMaxTimeMSExpired;
+    assert.commandFailedWithCode(coll.runCommand(commandName, {maxTimeMS: defaultMaxTimeMS}),
+                                 ErrorCodes.MaxTimeMSExpired,
+                                 failMessage);
 
-        assert.gt(admin.serverStatus().metrics.operation.killedDueToMaxTimeMSExpired,
-                  maxTimeMSCounter);
-    }
+    assert.gt(admin.serverStatus().metrics.operation.killedDueToMaxTimeMSExpired, maxTimeMSCounter);
+};
 
 // Positive test for "validate".
 configureMaxTimeAlwaysTimeOut("alwaysOn");

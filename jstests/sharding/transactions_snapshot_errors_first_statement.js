@@ -7,6 +7,7 @@
 // sharded collection with one chunk on both shards.
 //
 // @tags: [requires_sharding, uses_transactions, uses_multi_shard_transaction]
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {findChunksUtil} from "jstests/sharding/libs/find_chunks_util.js";
 import {
     assertNoSuchTransactionOnAllShards,
@@ -54,6 +55,7 @@ function runTest(st, collName, numShardsToError, errorCode, isSharded) {
     for (let commandTestCase of kCommandTestCases) {
         const commandName = commandTestCase.name;
         const commandBody = commandTestCase.command;
+        const failCommandOptions = {namespace: ns, errorCode, failCommands: [commandName]};
 
         if (isSharded && commandName === "distinct") {
             // Distinct isn't allowed on sharded collections in a multi-document transaction.
@@ -65,7 +67,7 @@ function runTest(st, collName, numShardsToError, errorCode, isSharded) {
         // Retry on a single error.
         //
 
-        setFailCommandOnShards(st, {times: 1}, [commandName], errorCode, numShardsToError);
+        setFailCommandOnShards(st, {times: 1}, failCommandOptions, numShardsToError);
 
         session.startTransaction({readConcern: {level: "snapshot"}});
         assert.commandWorked(sessionDB.runCommand(commandBody));
@@ -83,7 +85,7 @@ function runTest(st, collName, numShardsToError, errorCode, isSharded) {
         // Retry on multiple errors.
         //
 
-        setFailCommandOnShards(st, {times: 3}, [commandName], errorCode, numShardsToError);
+        setFailCommandOnShards(st, {times: 3}, failCommandOptions, numShardsToError);
 
         session.startTransaction({readConcern: {level: "snapshot"}});
         assert.commandWorked(sessionDB.runCommand(commandBody));
@@ -101,7 +103,7 @@ function runTest(st, collName, numShardsToError, errorCode, isSharded) {
         // Exhaust retry attempts.
         //
 
-        setFailCommandOnShards(st, "alwaysOn", [commandName], errorCode, numShardsToError);
+        setFailCommandOnShards(st, "alwaysOn", failCommandOptions, numShardsToError);
 
         session.startTransaction({readConcern: {level: "snapshot"}});
         const res = assert.commandFailedWithCode(sessionDB.runCommand(commandBody), errorCode);

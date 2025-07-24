@@ -55,6 +55,8 @@
 
 namespace mongo {
 
+inline constexpr auto kWiredTigerEngineName = "wiredTiger"_sd;
+
 class BSONObjBuilder;
 class OperationContext;
 class WiredTigerConfigParser;
@@ -398,8 +400,6 @@ public:
                                      std::vector<std::string>& errors,
                                      std::vector<std::string>& warnings);
 
-    static void notifyStorageStartupRecoveryComplete();
-
     static bool useTableLogging(const NamespaceString& nss);
 
     static Status setTableLogging(WiredTigerRecoveryUnit&, const std::string& uri, bool on);
@@ -416,6 +416,17 @@ public:
      */
     template <typename T>
     static T castStatisticsValue(uint64_t statisticsValue);
+
+    /**
+     * Gets the WiredTiger configuration string from storage engine collection options.
+     */
+    static boost::optional<std::string> getConfigStringFromStorageOptions(const BSONObj& options);
+
+    /**
+     * Sets the WiredTiger configuration string to storage engine collection options.
+     */
+    static BSONObj setConfigStringToStorageOptions(const BSONObj& options,
+                                                   const std::string& configString);
 
     /**
      * Removes encryption configuration from a config string. Should only be applied on custom

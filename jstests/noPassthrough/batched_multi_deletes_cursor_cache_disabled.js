@@ -9,13 +9,14 @@
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 var st =
     new ShardingTest({shards: 1, rs: {nodes: 1, setParameter: {wiredTigerCursorCacheSize: 0}}});
 
 const primary = st.s0;
 const buildInfo = assert.commandWorked(st.s0.adminCommand({"buildInfo": 1}));
-const isSanitizerEnabled = buildInfo.buildEnvironment.ccflags.includes('-fsanitize')
+const isSanitizerEnabled = buildInfo.buildEnvironment.ccflags.includes('-fsanitize');
 
 if (!isSanitizerEnabled) {
     jsTestLog("Skipping " + jsTestName() + " because address sanitizer is not active.");

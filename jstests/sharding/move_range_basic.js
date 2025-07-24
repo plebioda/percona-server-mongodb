@@ -6,6 +6,7 @@
  * ]
  */
 import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {chunkBoundsUtil} from "jstests/sharding/libs/chunk_bounds_util.js";
 import {findChunksUtil} from "jstests/sharding/libs/find_chunks_util.js";
 
@@ -149,7 +150,7 @@ function test(collName, skPattern) {
 
 // Test running running moveRange on an unsplittable collection will fail
 if (FeatureFlagUtil.isPresentAndEnabled(mongos, "TrackUnshardedCollectionsUponCreation")) {
-    const collName = "unsplittable_collection"
+    const collName = "unsplittable_collection";
     const ns = kDbName + '.' + collName;
 
     jsTest.log("Testing on unsplittable namespace");

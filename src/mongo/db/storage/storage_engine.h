@@ -212,6 +212,8 @@ public:
 
     /**
      * List the databases stored in this storage engine.
+     * This function doesn't return databases whose creation has committed durably but hasn't been
+     * published yet in the CollectionCatalog.
      */
     virtual std::vector<DatabaseName> listDatabases(
         boost::optional<TenantId> tenantId = boost::none) const = 0;
@@ -437,23 +439,12 @@ public:
      */
     virtual bool supportsReadConcernSnapshot() const = 0;
 
-    virtual bool supportsReadConcernMajority() const = 0;
-
     /**
      * Returns true if the storage engine uses oplog truncate markers to more finely control
      * deletion of oplog history, instead of the standard capped collection controls on
      * the oplog collection size.
      */
     virtual bool supportsOplogTruncateMarkers() const = 0;
-
-    virtual bool supportsResumableIndexBuilds() const = 0;
-
-    /**
-     * Returns true if the storage engine supports deferring collection drops until the the storage
-     * engine determines that the storage layer artifacts for the pending drops are no longer needed
-     * based on the stable and oldest timestamps.
-     */
-    virtual bool supportsPendingDrops() const = 0;
 
     /**
      * Returns a set of drop pending idents inside the storage engine.
@@ -731,6 +722,33 @@ public:
      * it.
      */
     virtual void setPinnedOplogTimestamp(const Timestamp& pinnedTimestamp) = 0;
+
+    /**
+     * When we write to an oplog, we call this so that that the storage engine can manage the
+     * visibility of oplog entries to ensure they are ordered.
+     *
+     * Since this is called inside of a WriteUnitOfWork while holding a std::mutex, it is
+     * illegal to acquire any LockManager locks inside of this function.
+     *
+     * If `orderedCommit` is true, the storage engine can assume the input `opTime` has become
+     * visible in the oplog. Otherwise the storage engine must continue to maintain its own
+     * visibility management. Calls with `orderedCommit` true will not be concurrent with calls of
+     * `orderedCommit` false.
+     */
+    virtual Status oplogDiskLocRegister(OperationContext* opCtx,
+                                        RecordStore* oplogRecordStore,
+                                        const Timestamp& opTime,
+                                        bool orderedCommit) = 0;
+
+    /**
+     * Waits for all writes that completed before this call to be visible to forward scans.
+     * See the comment on RecordCursor for more details about the visibility rules.
+     *
+     * It is only legal to call this on an oplog. It is illegal to call this inside a
+     * WriteUnitOfWork.
+     */
+    virtual void waitForAllEarlierOplogWritesToBeVisible(OperationContext* opCtx,
+                                                         RecordStore* oplogRecordStore) const = 0;
 
     /**
      * Returns the input storage engine options, sanitized to remove options that may not apply to

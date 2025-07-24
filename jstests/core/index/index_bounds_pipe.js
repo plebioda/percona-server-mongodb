@@ -7,6 +7,7 @@
  * ]
  */
 import {getPlanStages, getWinningPlan} from "jstests/libs/analyze_plan.js";
+import {exhaustFindCursorAndReturnResults} from "jstests/libs/find_cmd_util.js";
 
 const collName = jsTestName();
 const coll = db.getCollection(collName);
@@ -44,12 +45,9 @@ function assertIndexBoundsAndResult(params) {
                       tojson(ixscan.indexBounds._id)}. i=${i}, all output: ${tojson(explain)}`);
     }
 
-    // Check that the query regex matches expected strings.
-    const results = db.runCommand(command);
-    assert.commandWorked(results);
-    assert.eq(results.cursor.firstBatch,
-              params.results,
-              'Regex query ' + tojson(query) + ' returned incorrect results');
+    const results = exhaustFindCursorAndReturnResults(db, command);
+    assert.eq(
+        results, params.results, 'Regex query ' + tojson(query) + ' returned incorrect results');
 
     // Check that the query regex will exactly match identical regular expression objects.
     const collRegexValue = db.getCollection(collName + params.regex);
@@ -73,8 +71,11 @@ assertIndexBoundsAndResult(
     {regex: /^\\/, bounds: ['["\\", "]")', '[/^\\\\/, /^\\\\/]'], results: [{_id: '\\|'}]});
 
 // An anchored regex using the alternation operator cannot use tight index bounds.
-assertIndexBoundsAndResult(
-    {regex: /^a|b/, bounds: ['[MinKey, MaxKey]'], results: [{_id: 'a'}, {_id: 'a|b'}, {_id: 'b'}]});
+assertIndexBoundsAndResult({
+    regex: /^a|b/,
+    bounds: ['["", {})', '[/^a|b/, /^a|b/]'],
+    results: [{_id: 'a'}, {_id: 'a|b'}, {_id: 'b'}]
+});
 
 // An anchored regex that uses an escaped pipe character can use tight index bounds.
 assertIndexBoundsAndResult(
@@ -86,17 +87,22 @@ assertIndexBoundsAndResult(
 // alternation operator and cannot use tight index bounds.
 assertIndexBoundsAndResult({
     regex: /^\\|b/,
-    bounds: ['[MinKey, MaxKey]'],
+    bounds: ['["", {})', '[/^\\\\|b/, /^\\\\|b/]'],
     results: [{_id: '\\|'}, {_id: 'a|b'}, {_id: 'b'}]
 });
-assertIndexBoundsAndResult(
-    {regex: /^\\|^b/, bounds: ['[MinKey, MaxKey]'], results: [{_id: '\\|'}, {_id: 'b'}]});
+assertIndexBoundsAndResult({
+    regex: /^\\|^b/,
+    bounds: ['["", {})', '[/^\\\\|^b/, /^\\\\|^b/]'],
+    results: [{_id: '\\|'}, {_id: 'b'}]
+});
 
 // An escaped backslash immediately followed by an escaped pipe does not use tight index bounds.
-assertIndexBoundsAndResult({regex: /^\\\|/, bounds: ['[MinKey, MaxKey]'], results: [{_id: '\\|'}]});
+assertIndexBoundsAndResult(
+    {regex: /^\\\|/, bounds: ['["", {})', '[/^\\\\\\|/, /^\\\\\\|/]'], results: [{_id: '\\|'}]});
 
 // A pipe escaped with the \Q...\E escape sequence does not use tight index bounds.
-assertIndexBoundsAndResult({regex: /^\Q|\E/, bounds: ['[MinKey, MaxKey]'], results: [{_id: '|'}]});
+assertIndexBoundsAndResult(
+    {regex: /^\Q|\E/, bounds: ['["", {})', '[/^\\Q|\\E/, /^\\Q|\\E/]'], results: [{_id: '|'}]});
 
 // An escaped pipe within \Q...\E can use tight index bounds.
 assertIndexBoundsAndResult({

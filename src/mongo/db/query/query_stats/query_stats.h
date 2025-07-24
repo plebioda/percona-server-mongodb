@@ -48,7 +48,6 @@
 #include "mongo/db/curop.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/query/cursor_response_gen.h"
 #include "mongo/db/query/partitioned_cache.h"
 #include "mongo/db/query/plan_explainer.h"
@@ -61,6 +60,7 @@
 namespace mongo::query_stats {
 
 extern Counter64& queryStatsStoreSizeEstimateBytesMetric;
+extern Counter64& queryStatsStoreSizeMetric;
 
 struct QueryStatsPartitioner {
     // The partitioning function for use with the 'Partitioned' utility.
@@ -77,19 +77,23 @@ struct QueryStatsStoreEntryBudgetor {
 
 /*
  * 'QueryStatsStore insertion and eviction listener implementation. This class adjusts the
- * 'queryStatsStoreSize' serverStatus metric when entries are inserted or evicted.
+ * 'queryStatsStoreSizeEstimateBytes' and 'numEntries' serverStatus metrics when entries are
+ * inserted or evicted.
  */
 struct QueryStatsStoreInsertionEvictionListener {
     void onInsert(const std::size_t&, const QueryStatsEntry&, size_t estimatedSize) {
         queryStatsStoreSizeEstimateBytesMetric.increment(estimatedSize);
+        queryStatsStoreSizeMetric.increment();
     }
 
     void onEvict(const std::size_t&, const QueryStatsEntry&, size_t estimatedSize) {
         queryStatsStoreSizeEstimateBytesMetric.decrement(estimatedSize);
+        queryStatsStoreSizeMetric.decrement();
     }
 
     void onClear(size_t estimatedSize) {
         queryStatsStoreSizeEstimateBytesMetric.decrement(estimatedSize);
+        queryStatsStoreSizeMetric.setToZero();
     }
 };
 using QueryStatsStore = PartitionedCache<std::size_t,
@@ -249,7 +253,7 @@ void writeQueryStats(OperationContext* opCtx,
                      boost::optional<size_t> queryStatsKeyHash,
                      std::unique_ptr<Key> key,
                      const QueryStatsSnapshot& snapshot,
-                     std::unique_ptr<SupplementalStatsEntry> supplementalMetrics = nullptr,
+                     std::vector<std::unique_ptr<SupplementalStatsEntry>> supplementalMetrics = {},
                      bool willNeverExhaust = false);
 
 /**

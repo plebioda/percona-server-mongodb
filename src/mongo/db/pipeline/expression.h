@@ -75,14 +75,13 @@
 #include "mongo/db/pipeline/expression_visitor.h"
 #include "mongo/db/pipeline/field_path.h"
 #include "mongo/db/pipeline/monotonic_expression.h"
-#include "mongo/db/pipeline/percentile_algo.h"
-#include "mongo/db/pipeline/percentile_algo_discrete.h"
 #include "mongo/db/pipeline/variables.h"
 #include "mongo/db/query/allowed_contexts.h"
 #include "mongo/db/query/datetime/date_time_support.h"
 #include "mongo/db/query/query_feature_flags_gen.h"
 #include "mongo/db/query/query_shape/serialization_options.h"
 #include "mongo/db/query/sort_pattern.h"
+#include "mongo/db/query/util/named_enum.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/update/pattern_cmp.h"
 #include "mongo/platform/basic.h"
@@ -754,84 +753,6 @@ private:
     boost::intrusive_ptr<Expression> _output;
 };
 
-template <typename TAccumulator>
-class ExpressionFromAccumulatorQuantile : public Expression {
-public:
-    explicit ExpressionFromAccumulatorQuantile(ExpressionContext* const expCtx,
-                                               std::vector<double>& ps,
-                                               boost::intrusive_ptr<Expression> input,
-                                               PercentileMethod method)
-        : Expression(expCtx, {input}), _ps(ps), _input(input), _method(method) {
-        expCtx->sbeCompatibility = SbeCompatibility::notCompatible;
-    }
-
-    const char* getOpName() const {
-        return TAccumulator::kName.rawData();
-    }
-
-    Value serialize(const SerializationOptions& options = {}) const final {
-        MutableDocument md;
-        TAccumulator::serializeHelper(_input, options, _ps, _method, md);
-        return Value(DOC(getOpName() << md.freeze()));
-    }
-
-    Value evaluate(const Document& root, Variables* variables) const final {
-        auto input = _input->evaluate(root, variables);
-        if (input.numeric()) {
-            // On a scalar value, all percentiles are the same for all methods.
-            return TAccumulator::formatFinalValue(
-                _ps.size(), std::vector<double>(_ps.size(), input.coerceToDouble()));
-        }
-
-        if (input.isArray() && input.getArrayLength() > 0) {
-            if (_method != PercentileMethod::Continuous) {
-                // On small datasets, which are likely to be the inputs for the expression, creating
-                // t-digests is inefficient, so instead we use DiscretePercentile algo directly for
-                // both "discrete" and "approximate" methods.
-                std::vector<double> samples;
-                samples.reserve(input.getArrayLength());
-                for (const auto& item : input.getArray()) {
-                    if (item.numeric()) {
-                        samples.push_back(item.coerceToDouble());
-                    }
-                }
-                DiscretePercentile dp;
-                dp.incorporate(samples);
-                return TAccumulator::formatFinalValue(_ps.size(), dp.computePercentiles(_ps));
-            } else {
-                // Delegate to the accumulator. Note: it would be more efficient to use the
-                // percentile algorithms directly rather than an accumulator, as it would reduce
-                // heap alloc, virtual calls and avoid unnecessary for expressions memory tracking.
-                // This path currently cannot be executed as we only support continuous percentiles.
-                TAccumulator accum(this->getExpressionContext(), _ps, _method);
-                for (const auto& item : input.getArray()) {
-                    accum.process(item, false /* merging */);
-                }
-                return accum.getValue(false /* toBeMerged */);
-            }
-        }
-
-        // No numeric values have been found for the expression to process.
-        return TAccumulator::formatFinalValue(_ps.size(), {});
-    }
-
-    void acceptVisitor(ExpressionMutableVisitor* visitor) final {
-        return visitor->visit(this);
-    }
-
-    void acceptVisitor(ExpressionConstVisitor* visitor) const final {
-        return visitor->visit(this);
-    }
-
-
-private:
-    std::vector<double> _ps;
-    boost::intrusive_ptr<Expression> _input;
-    PercentileMethod _method;
-
-    template <typename H>
-    friend class ExpressionHashVisitor;
-};
 
 /**
  * Inherit from this class if your expression takes exactly one numeric argument.
@@ -3928,6 +3849,16 @@ static StringData toStringData(BinDataFormat type) {
     }
 }
 
+/**
+ * Used in $convert when converting between BinData and numeric types. Represents the endianness in
+ * which we interpret or write the BinData.
+ */
+#define CONVERT_BYTE_ORDER_TYPE(F) \
+    F(little)                      \
+    F(big)
+QUERY_UTIL_NAMED_ENUM_DEFINE(ConvertByteOrderType, CONVERT_BYTE_ORDER_TYPE);
+#undef CONVERT_BYTE_ORDER_TYPE
+
 class ExpressionConvert final : public Expression {
 public:
     struct ConvertTargetTypeInfo {
@@ -3943,7 +3874,9 @@ public:
                       boost::intrusive_ptr<Expression> format,
                       boost::intrusive_ptr<Expression> onError,
                       boost::intrusive_ptr<Expression> onNull,
-                      bool allowBinDataConvert);
+                      boost::intrusive_ptr<Expression> byteOrder,
+                      bool allowBinDataConvert,
+                      bool allowBinDataConvertNumeric);
     /**
      * Creates a $convert expression converting from 'input' to the type given by 'toType'. Leaves
      * 'onNull' and 'onError' unspecified.
@@ -3953,7 +3886,8 @@ public:
         boost::intrusive_ptr<Expression> input,
         BSONType toType,
         boost::optional<BinDataFormat> format = boost::none,
-        boost::optional<BinDataType> toSubtype = boost::none);
+        boost::optional<BinDataType> toSubtype = boost::none,
+        boost::optional<ConvertByteOrderType> byteOrder = boost::none);
 
     static boost::intrusive_ptr<Expression> parse(ExpressionContext* expCtx,
                                                   BSONElement expr,
@@ -3972,22 +3906,29 @@ public:
     }
 
     static bool checkBinDataConvertAllowed();
+    static bool checkBinDataConvertNumericAllowed();
+
+    bool requestingConvertBinDataNumeric(ConvertTargetTypeInfo targetTypeInfo,
+                                         BSONType inputType) const;
 
 private:
     static BSONType computeTargetType(Value typeName);
     Value performConversion(ConvertTargetTypeInfo targetTypeInfo,
                             Value inputValue,
-                            boost::optional<BinDataFormat> format) const;
+                            boost::optional<BinDataFormat> format,
+                            boost::optional<ConvertByteOrderType> byteOrder) const;
 
-    // Support for BinData $convert is FCV gated. The feature flag is checked once during
+    // Support for BinData $convert is FCV gated. These feature flags are checked once during
     // parsing to avoid having to acquire FCV snapshot for every document during evaluation.
     const bool _allowBinDataConvert;
+    const bool _allowBinDataConvertNumeric;
 
     static constexpr size_t _kInput = 0;
     static constexpr size_t _kTo = 1;
     static constexpr size_t _kFormat = 2;
     static constexpr size_t _kOnError = 3;
     static constexpr size_t _kOnNull = 4;
+    static constexpr size_t _kByteOrder = 5;
 };
 
 class ExpressionRegex : public Expression {

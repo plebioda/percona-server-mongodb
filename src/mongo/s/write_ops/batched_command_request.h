@@ -41,8 +41,8 @@
 
 #include "mongo/bson/bsonobj.h"
 #include "mongo/bson/bsonobjbuilder.h"
-#include "mongo/db/commands/bulk_write_crud_op.h"
-#include "mongo/db/commands/bulk_write_gen.h"
+#include "mongo/db/commands/query_cmd/bulk_write_crud_op.h"
+#include "mongo/db/commands/query_cmd/bulk_write_gen.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/ops/write_ops.h"
 #include "mongo/db/ops/write_ops_gen.h"
@@ -154,6 +154,7 @@ public:
 
     const boost::optional<LegacyRuntimeConstants>& getLegacyRuntimeConstants() const;
     const boost::optional<BSONObj>& getLet() const;
+    const OptionalBool& getBypassEmptyTsReplacement() const;
 
     /**
      * Utility which handles evaluating and storing any let parameters based on the request type.

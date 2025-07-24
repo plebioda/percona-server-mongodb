@@ -51,8 +51,8 @@
 #include "mongo/db/pipeline/variables.h"
 #include "mongo/db/query/query_shape/serialization_options.h"
 #include "mongo/db/shard_id.h"
-#include "mongo/s/query/async_results_merger_params_gen.h"
-#include "mongo/s/query/document_source_merge_cursors.h"
+#include "mongo/s/query/exec/async_results_merger_params_gen.h"
+#include "mongo/s/query/exec/document_source_merge_cursors.h"
 #include "mongo/util/intrusive_counter.h"
 
 namespace mongo {
@@ -64,9 +64,11 @@ namespace mongo {
  * the first time. When this event is detected, this stage will establish a new cursor on that
  * shard and add it to the cursors being merged.
  */
-class DocumentSourceChangeStreamHandleTopologyChange final : public DocumentSource {
+class DocumentSourceChangeStreamHandleTopologyChange final
+    : public DocumentSourceInternalChangeStreamStage {
 public:
-    static constexpr StringData kStageName = "$_internalChangeStreamHandleTopologyChange"_sd;
+    static constexpr StringData kStageName =
+        change_stream_constants::stage_names::kHandleTopologyChange;
 
     static boost::intrusive_ptr<DocumentSourceChangeStreamHandleTopologyChange> createFromBson(
         BSONElement elem, const boost::intrusive_ptr<ExpressionContext>& expCtx);
@@ -81,7 +83,7 @@ public:
         return kStageName.rawData();
     }
 
-    Value serialize(const SerializationOptions& opts = SerializationOptions{}) const final;
+    Value doSerialize(const SerializationOptions& opts = SerializationOptions{}) const final;
 
     StageConstraints constraints(Pipeline::SplitState) const final;
 

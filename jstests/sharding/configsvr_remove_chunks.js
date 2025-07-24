@@ -5,6 +5,7 @@
  */
 
 import {RetryableWritesUtil} from "jstests/libs/retryable_writes_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {findChunksUtil} from "jstests/sharding/libs/find_chunks_util.js";
 
 function runConfigsvrRemoveChunksWithRetries(conn, uuid, lsid, txnNumber) {
@@ -46,7 +47,9 @@ function insertLeftoverChunks(configDB, uuid) {
 
 let st = new ShardingTest({mongos: 1, shards: 1});
 
-const configDB = st.s.getDB('config');
+// Use retriable writes when writing to the config server since these are not automatically retried
+const mongosSession = st.s.startSession({retryWrites: true});
+const configDB = mongosSession.getDatabase("config");
 
 const dbName = "test";
 const collName = "foo";

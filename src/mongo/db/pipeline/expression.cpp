@@ -27,7 +27,6 @@
  *    it in the license file.
  */
 
-
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
@@ -67,7 +66,7 @@
 #include "mongo/crypto/fle_field_schema_gen.h"
 #include "mongo/db/api_parameters.h"
 #include "mongo/db/basic_types.h"
-#include "mongo/db/bson/dotted_path_support.h"
+#include "mongo/db/curop_failpoint_helpers.h"
 #include "mongo/db/exec/document_value/document.h"
 #include "mongo/db/exec/document_value/value.h"
 #include "mongo/db/feature_compatibility_version_documentation.h"
@@ -77,6 +76,7 @@
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/pipeline/expression_parser_gen.h"
 #include "mongo/db/pipeline/variable_validation.h"
+#include "mongo/db/query/bson/dotted_path_support.h"
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/datetime/date_time_support.h"
@@ -93,9 +93,11 @@
 #include "mongo/platform/random.h"
 #include "mongo/stdx/unordered_map.h"
 #include "mongo/stdx/unordered_set.h"
+#include "mongo/util/assert_util.h"
 #include "mongo/util/base64.h"
 #include "mongo/util/decorable.h"
 #include "mongo/util/duration.h"
+#include "mongo/util/elapsed_tracker.h"
 #include "mongo/util/errno_util.h"
 #include "mongo/util/pcre.h"
 #include "mongo/util/pcre_util.h"
@@ -112,6 +114,8 @@ using std::move;
 using std::pair;
 using std::string;
 using std::vector;
+
+MONGO_FAIL_POINT_DEFINE(mapReduceFilterPauseBeforeLoop);
 
 Value ExpressionConstant::serializeConstant(const SerializationOptions& opts,
                                             Value val,
@@ -133,6 +137,33 @@ Value ExpressionConstant::serializeConstant(const SerializationOptions& opts,
 
     return opts.serializeLiteral(val);
 }
+
+namespace {
+
+void mapReduceFilterWaitBeforeLoop(OperationContext* opCtx) {
+    CurOpFailpointHelpers::waitWhileFailPointEnabled(&mapReduceFilterPauseBeforeLoop,
+                                                     opCtx,
+                                                     "mapReduceFilterPauseBeforeLoop",
+                                                     []() { std::cout << "waiting\n"; });
+}
+
+std::function<void()> getExpressionInterruptChecker(OperationContext* opCtx) {
+    if (opCtx) {
+        ElapsedTracker et(opCtx->getServiceContext()->getFastClockSource(),
+                          internalQueryExpressionInterruptIterations.load(),
+                          Milliseconds{internalQueryExpressionInterruptPeriodMS.load()});
+        return [=]() mutable {
+            if (MONGO_unlikely(et.intervalHasElapsed())) {
+                opCtx->checkForInterrupt();
+            }
+        };
+    } else {
+        return []() {
+        };
+    }
+}
+
+}  // namespace
 
 /* --------------------------- Expression ------------------------------ */
 
@@ -2526,15 +2557,26 @@ intrusive_ptr<Expression> ExpressionFieldPath::optimize() {
         return ExpressionConstant::create(getExpressionContext(), Value());
     }
 
-    if (_variable == Variables::kNowId || _variable == Variables::kClusterTimeId ||
-        _variable == Variables::kUserRolesId) {
-        // The agg system is allowed to replace the ExpressionFieldPath with an ExpressionConstant,
-        // which in turn would result in a plan cache entry that inlines the value of a system
-        // variable. However, the values of these system variables are not guaranteed to be constant
-        // across different executions of the same query shape, so we prohibit the optimization.
+    const bool sbeFullEnabled = feature_flags::gFeatureFlagSbeFull.isEnabled(
+        serverGlobalParams.featureCompatibility.acquireFCVSnapshot());
+    if (sbeFullEnabled &&
+        (_variable == Variables::kNowId || _variable == Variables::kClusterTimeId ||
+         _variable == Variables::kUserRolesId)) {
+        // Normally, we should be able to constant fold ExpressionFieldPath representing a system
+        // variable into an ExpressionConstant during expression optimization. However, this causes
+        // a problem with the current implementation of the SBE plan cache as it would effectively
+        // embed a value for the system variable into the plan in the cache. This constant folding
+        // optimization is important for queries which want to use an index scan and contain a
+        // predicate referencing a system variable, for example:
+        // {a: {$expr: {$lt: ["$foo", {$subtract: ["$$NOW", 10]}]}}})
+        // Saving such a plan with the constant folded expression in the plan is wrong because a
+        // cache hit will reuse the plan with the wrong constant, resulting in incorrect query
+        // results. To avoid this problem, when featureFlagSbeFull is enabled (the SBE plan cache is
+        // enabled), prohibit this optimization.
         return intrusive_ptr<Expression>(this);
     }
 
+    // We allow system variables to be constant folded when the SBE plan cache is not enabled.
     if (getExpressionContext()->variables.hasConstantValue(_variable)) {
         return ExpressionConstant::create(
             getExpressionContext(), evaluate(Document(), &(getExpressionContext()->variables)));
@@ -2858,9 +2900,13 @@ Value ExpressionFilter::evaluate(const Document& root, Variables* variables) con
         }
     }
 
+    auto checkForInterrupt = getExpressionInterruptChecker(getExpressionContext()->opCtx);
+    mapReduceFilterWaitBeforeLoop(getExpressionContext()->opCtx);
+
     vector<Value> output;
     output.reserve(approximateOutputSize);
     for (const auto& elem : input) {
+        checkForInterrupt();
         variables->setValue(_varId, elem);
 
         if (_children[_kCond]->evaluate(root, variables).coerceToBool()) {
@@ -3107,9 +3153,15 @@ Value ExpressionMap::evaluate(const Document& root, Variables* variables) const 
     if (input.empty())
         return inputVal;
 
+    auto checkForInterrupt = getExpressionInterruptChecker(getExpressionContext()->opCtx);
+    mapReduceFilterWaitBeforeLoop(getExpressionContext()->opCtx);
+
+    size_t memUsed = 0;
     vector<Value> output;
     output.reserve(input.size());
+    size_t memLimit = internalQueryMaxMapFilterReduceBytes.load();
     for (size_t i = 0; i < input.size(); i++) {
+        checkForInterrupt();
         variables->setValue(_varId, input[i]);
 
         Value toInsert = _children[_kEach]->evaluate(root, variables);
@@ -3117,6 +3169,11 @@ Value ExpressionMap::evaluate(const Document& root, Variables* variables) const 
             toInsert = Value(BSONNULL);  // can't insert missing values into array
 
         output.push_back(toInsert);
+        memUsed += toInsert.getApproximateSize();
+        if (MONGO_unlikely(memUsed > memLimit)) {
+            uasserted(ErrorCodes::ExceededMemoryLimit,
+                      "$map would use too much memory and cannot spill");
+        }
     }
 
     return Value(std::move(output));
@@ -3879,7 +3936,7 @@ Value ExpressionLn::evaluateNumericArg(const Value& numericArg) const {
     if (numericArg.getType() == NumberDecimal) {
         Decimal128 argDecimal = numericArg.getDecimal();
         if (argDecimal.isGreater(Decimal128::kNormalizedZero))
-            return Value(argDecimal.logarithm());
+            return Value(argDecimal.naturalLogarithm());
         // Fall through for error case.
     }
     double argDouble = numericArg.coerceToDouble();
@@ -4676,13 +4733,23 @@ Value ExpressionReduce::evaluate(const Document& root, Variables* variables) con
                           << inputVal.toString(),
             inputVal.isArray());
 
+    auto checkForInterrupt = getExpressionInterruptChecker(getExpressionContext()->opCtx);
+    mapReduceFilterWaitBeforeLoop(getExpressionContext()->opCtx);
+
+    size_t memLimit = internalQueryMaxMapFilterReduceBytes.load();
     Value accumulatedValue = _children[_kInitial]->evaluate(root, variables);
 
     for (auto&& elem : inputVal.getArray()) {
+        checkForInterrupt();
+
         variables->setValue(_thisVar, elem);
         variables->setValue(_valueVar, accumulatedValue);
 
         accumulatedValue = _children[_kIn]->evaluate(root, variables);
+        if (MONGO_unlikely(accumulatedValue.getApproximateSize() > memLimit)) {
+            uasserted(ErrorCodes::ExceededMemoryLimit,
+                      "$reduce would use too much memory and cannot spill");
+        }
     }
 
     return accumulatedValue;
@@ -5406,6 +5473,61 @@ REGISTER_STABLE_EXPRESSION(slice, ExpressionSlice::parse);
 const char* ExpressionSlice::getOpName() const {
     return "$slice";
 }
+
+/* ----------------------- ExpressionSigmoid ----------------------- */
+
+/**
+ * A $sigmoid expression gets desugared to the following:
+ * {
+ *     $divide: [1,
+ *         { $add: [
+ *             1,
+ *             { $exp: {$multiply: [-1, <input>]} }
+ *         ] }
+ *     ]
+ * }
+ */
+static intrusive_ptr<Expression> parseExpressionSigmoid(ExpressionContext* const expCtx,
+                                                        BSONElement expr,
+                                                        const VariablesParseState& vps) {
+    // TODO SERVER-92973: Improve error handling so that any field or expression that resolves to a
+    // non-numeric input is handled by $sigmoid instead of the desugared $multiply.
+
+    // Check that the input to $sigmoid is not an array or a string.
+    BSONType type = expr.type();
+    uassert(ErrorCodes::TypeMismatch,
+            str::stream() << "$sigmoid only supports numeric types, not " << typeName(type),
+            (type != String ? true : expr.valueStringData().starts_with('$')) && type != Array);
+
+    auto inputExpression = Expression::parseOperand(expCtx, expr, vps);
+
+    // Built the multiply expression: {$multiply: [-1, <input>]}.
+    std::vector<boost::intrusive_ptr<Expression>> multiplyChildren = {
+        make_intrusive<ExpressionConstant>(expCtx, Value(-1)), std::move(inputExpression)};
+    auto multiplyExpression =
+        make_intrusive<ExpressionMultiply>(expCtx, std::move(multiplyChildren));
+
+    // Built the exponent expression: { $exp: {$multiply: [-1, <input>]} }.
+    std::vector<boost::intrusive_ptr<Expression>> expChildren = {std::move(multiplyExpression)};
+    auto expExpression = make_intrusive<ExpressionExp>(expCtx, std::move(expChildren));
+
+    // Built the addition expression: { $add: [1, {$exp: {$multiply: [-1, <input>]} }.
+    std::vector<boost::intrusive_ptr<Expression>> addChildren = {
+        make_intrusive<ExpressionConstant>(expCtx, Value(1)), std::move(expExpression)};
+    auto addExpression = make_intrusive<ExpressionAdd>(expCtx, std::move(addChildren));
+
+    // Build and return the divide expression: { $divide: [1, { $add: [1, { $exp: {$multiply: [-1,
+    // <input>]} }] }] }.
+    std::vector<boost::intrusive_ptr<Expression>> divideChildren = {
+        make_intrusive<ExpressionConstant>(expCtx, Value(1)), std::move(addExpression)};
+    return make_intrusive<ExpressionDivide>(expCtx, std::move(divideChildren));
+}
+
+REGISTER_EXPRESSION_WITH_FEATURE_FLAG(sigmoid,
+                                      parseExpressionSigmoid,
+                                      AllowedWithApiStrict::kNeverInVersion1,
+                                      AllowedWithClientType::kAny,
+                                      feature_flags::gFeatureFlagSearchHybridScoringPrerequisites);
 
 /* ----------------------- ExpressionSize ---------------------------- */
 
@@ -6439,17 +6561,23 @@ public:
 
     using FormatArg = BinDataFormat;
     using SubtypeArg = Value;
+    using ByteOrderArg = ConvertByteOrderType;
 
     using ConversionFunc = ConversionFuncWithExtraArgs<>;
     using ConversionFuncWithFormat = ConversionFuncWithExtraArgs<FormatArg>;
     using ConversionFuncWithSubtype = ConversionFuncWithExtraArgs<SubtypeArg>;
     using ConversionFuncWithFormatAndSubtype = ConversionFuncWithExtraArgs<FormatArg, SubtypeArg>;
+    using ConversionFuncWithByteOrder = ConversionFuncWithExtraArgs<ByteOrderArg>;
+    using ConversionFuncWithByteOrderAndSubtype =
+        ConversionFuncWithExtraArgs<ByteOrderArg, SubtypeArg>;
 
     using AnyConversionFunc = std::variant<std::monostate,
                                            ConversionFunc,
                                            ConversionFuncWithFormat,
                                            ConversionFuncWithSubtype,
-                                           ConversionFuncWithFormatAndSubtype>;
+                                           ConversionFuncWithFormatAndSubtype,
+                                           ConversionFuncWithByteOrder,
+                                           ConversionFuncWithByteOrderAndSubtype>;
 
     ConversionTable() {
         //
@@ -6468,6 +6596,7 @@ public:
                                                                     Value inputValue) {
             return Value(inputValue.coerceToDecimal());
         };
+        table[BSONType::NumberDouble][BSONType::BinData] = &performConvertDoubleToBinData;
 
         //
         // Conversions from String
@@ -6491,6 +6620,9 @@ public:
         //
         table[BSONType::BinData][BSONType::BinData] = &performConvertBinDataToBinData;
         table[BSONType::BinData][BSONType::String] = &performConvertBinDataToString;
+        table[BSONType::BinData][BSONType::NumberInt] = &performConvertBinDataToInt;
+        table[BSONType::BinData][BSONType::NumberLong] = &performConvertBinDataToLong;
+        table[BSONType::BinData][BSONType::NumberDouble] = &performConvertBinDataToDouble;
 
         //
         // Conversions from jstOID
@@ -6591,6 +6723,7 @@ public:
                                                                  Value inputValue) {
             return Value(inputValue.coerceToDecimal());
         };
+        table[BSONType::NumberInt][BSONType::BinData] = &performConvertIntToBinData;
 
         //
         // Conversions from NumberLong
@@ -6614,6 +6747,7 @@ public:
                                                                   Value inputValue) {
             return Value(inputValue.coerceToDecimal());
         };
+        table[BSONType::NumberLong][BSONType::BinData] = &performConvertLongToBinData;
 
         //
         // Conversions from NumberDecimal
@@ -6655,7 +6789,8 @@ public:
     ConversionFunc findConversionFunc(BSONType inputType,
                                       BSONType targetType,
                                       boost::optional<FormatArg> format,
-                                      SubtypeArg subtype) const {
+                                      SubtypeArg subtype,
+                                      boost::optional<ByteOrderArg> byteOrder) const {
         AnyConversionFunc foundFunction;
 
         // Note: We can't use BSONType::MinKey (-1) or BSONType::MaxKey (127) as table indexes,
@@ -6674,8 +6809,12 @@ public:
             // illegal.
         }
 
-        return makeConversionFunc(
-            foundFunction, inputType, targetType, std::move(format), std::move(subtype));
+        return makeConversionFunc(foundFunction,
+                                  inputType,
+                                  targetType,
+                                  std::move(format),
+                                  std::move(subtype),
+                                  std::move(byteOrder));
     }
 
 private:
@@ -6685,7 +6824,8 @@ private:
                                       BSONType inputType,
                                       BSONType targetType,
                                       boost::optional<FormatArg> format,
-                                      SubtypeArg subtype) const {
+                                      SubtypeArg subtype,
+                                      boost::optional<ByteOrderArg> byteOrder) const {
         const auto checkFormat = [&] {
             uassert(4341115,
                     str::stream() << "Format must be speficied when converting from '"
@@ -6719,6 +6859,17 @@ private:
                              checkSubtype();
                              return makeConvertWithExtraArgs(
                                  conversionFunc, std::move(*format), std::move(subtype));
+                         },
+                         [&](ConversionFuncWithByteOrder conversionFunc) {
+                             return makeConvertWithExtraArgs(
+                                 conversionFunc,
+                                 std::move(byteOrder ? *byteOrder : ConvertByteOrderType::little));
+                         },
+                         [&](ConversionFuncWithByteOrderAndSubtype conversionFunc) {
+                             return makeConvertWithExtraArgs(
+                                 conversionFunc,
+                                 std::move(byteOrder ? *byteOrder : ConvertByteOrderType::little),
+                                 std::move(subtype));
                          },
                          [&](std::monostate) -> ConversionFunc {
                              uasserted(ErrorCodes::ConversionFailure,
@@ -7036,6 +7187,112 @@ private:
         return Value(BSONBinData{binData.data, binData.length, binDataType});
     }
 
+    template <class ReturnType, class SizeClass>
+    static ReturnType readNumberAccordingToEndianness(const ConstDataView& dataView,
+                                                      ConvertByteOrderType byteOrder) {
+        switch (byteOrder) {
+            case ConvertByteOrderType::little:
+                return dataView.read<LittleEndian<SizeClass>>();
+            case ConvertByteOrderType::big:
+                return dataView.read<BigEndian<SizeClass>>();
+            default:
+                MONGO_UNREACHABLE_TASSERT(9130003);
+        }
+    }
+
+    template <class ReturnType, class... SizeClass>
+    static ReturnType readSizedNumberFromBinData(const BSONBinData& binData,
+                                                 ConvertByteOrderType byteOrder) {
+        ConstDataView dataView(static_cast<const char*>(binData.data));
+        boost::optional<ReturnType> result;
+        ((result = sizeof(SizeClass) == binData.length
+              ? readNumberAccordingToEndianness<ReturnType, SizeClass>(dataView, byteOrder)
+              : result),
+         ...);
+        uassert(ErrorCodes::ConversionFailure,
+                str::stream() << "Failed to convert '" << Value(binData).toString()
+                              << "' to number in $convert because of invalid length: "
+                              << binData.length,
+                result.has_value());
+        return *result;
+    }
+
+    static Value performConvertBinDataToInt(ExpressionContext* const expCtx,
+                                            Value inputValue,
+                                            ByteOrderArg byteOrder) {
+        BSONBinData binData = inputValue.getBinData();
+        int result = readSizedNumberFromBinData<int /* Return type */, int8_t, int16_t, int32_t>(
+            binData, byteOrder);
+        return Value(result);
+    }
+
+    static Value performConvertBinDataToLong(ExpressionContext* const expCtx,
+                                             Value inputValue,
+                                             ByteOrderArg byteOrder) {
+        BSONBinData binData = inputValue.getBinData();
+        long long result = readSizedNumberFromBinData<long long /* Return type */,
+                                                      int8_t,
+                                                      int16_t,
+                                                      int32_t,
+                                                      int64_t>(binData, byteOrder);
+        return Value(result);
+    }
+
+    static Value performConvertBinDataToDouble(ExpressionContext* const expCtx,
+                                               Value inputValue,
+                                               ByteOrderArg byteOrder) {
+        static_assert(sizeof(double) == 8);
+        static_assert(sizeof(float) == 4);
+        BSONBinData binData = inputValue.getBinData();
+        double result =
+            readSizedNumberFromBinData<double /* Return type */, float, double>(binData, byteOrder);
+        return Value(result);
+    }
+
+    template <class ValueType>
+    static Value writeNumberAccordingToEndianness(ValueType inputValue,
+                                                  ConvertByteOrderType byteOrder,
+                                                  SubtypeArg subtypeValue) {
+        auto binDataType = computeBinDataType(subtypeValue);
+        std::array<char, sizeof(ValueType)> valBytes;
+        DataView dataView(valBytes.data());
+        switch (byteOrder) {
+            case ByteOrderArg::big:
+                dataView.write<BigEndian<ValueType>>(inputValue);
+                break;
+            case ByteOrderArg::little:
+                dataView.write<LittleEndian<ValueType>>(inputValue);
+                break;
+            default:
+                MONGO_UNREACHABLE_TASSERT(9130005);
+        };
+        return Value(BSONBinData{valBytes.data(), static_cast<int>(valBytes.size()), binDataType});
+    }
+
+    static Value performConvertIntToBinData(ExpressionContext* const expCtx,
+                                            Value inputValue,
+                                            ByteOrderArg byteOrder,
+                                            SubtypeArg subtypeValue) {
+        return writeNumberAccordingToEndianness<int32_t>(
+            inputValue.getInt(), byteOrder, subtypeValue);
+    }
+
+    static Value performConvertLongToBinData(ExpressionContext* const expCtx,
+                                             Value inputValue,
+                                             ByteOrderArg byteOrder,
+                                             SubtypeArg subtypeValue) {
+        return writeNumberAccordingToEndianness<int64_t>(
+            inputValue.getLong(), byteOrder, subtypeValue);
+    }
+
+    static Value performConvertDoubleToBinData(ExpressionContext* const expCtx,
+                                               Value inputValue,
+                                               ByteOrderArg byteOrder,
+                                               SubtypeArg subtypeValue) {
+        return writeNumberAccordingToEndianness<double>(
+            inputValue.getDouble(), byteOrder, subtypeValue);
+    }
+
     static bool isValidUserDefinedBinDataType(int typeCode) {
         static const auto smallestUserDefinedType = BinDataType::bdtCustom;
         static const auto largestUserDefinedType = static_cast<BinDataType>(255);
@@ -7066,10 +7323,12 @@ private:
     }
 };
 
-Expression::Parser makeConversionAlias(const StringData shortcutName,
-                                       BSONType toType,
-                                       boost::optional<BinDataFormat> format = boost::none,
-                                       boost::optional<BinDataType> toSubtype = boost::none) {
+Expression::Parser makeConversionAlias(
+    const StringData shortcutName,
+    BSONType toType,
+    boost::optional<BinDataFormat> format = boost::none,
+    boost::optional<BinDataType> toSubtype = boost::none,
+    boost::optional<ConvertByteOrderType> byteOrder = boost::none) {
     return [=](ExpressionContext* const expCtx,
                BSONElement elem,
                const VariablesParseState& vps) -> intrusive_ptr<Expression> {
@@ -7123,6 +7382,32 @@ boost::optional<BinDataFormat> parseBinDataFormat(Value formatValue) {
     return formatPair->second;
 }
 
+boost::optional<ConvertByteOrderType> parseByteOrder(Value byteOrderValue) {
+    if (byteOrderValue.nullish()) {
+        return {};
+    }
+
+    uassert(9130001,
+            str::stream() << "$convert requires that 'byteOrder' be a string, found: "
+                          << typeName(byteOrderValue.getType()) << " with value "
+                          << byteOrderValue.toString(),
+            byteOrderValue.getType() == BSONType::String);
+
+    static const StringDataMap<ConvertByteOrderType> stringToByteOrder{
+        {toStringData(ConvertByteOrderType::big), ConvertByteOrderType::big},
+        {toStringData(ConvertByteOrderType::little), ConvertByteOrderType::little},
+    };
+
+    auto byteOrderString = byteOrderValue.getStringData();
+    auto byteOrderPair = stringToByteOrder.find(byteOrderString);
+
+    uassert(9130002,
+            str::stream() << "Invalid 'byteOrder' argument for $convert: " << byteOrderString,
+            byteOrderPair != stringToByteOrder.end());
+
+    return byteOrderPair->second;
+}
+
 }  // namespace
 
 REGISTER_STABLE_EXPRESSION(convert, ExpressionConvert::parse);
@@ -7148,11 +7433,13 @@ REGISTER_EXPRESSION_WITH_FEATURE_FLAG(toUUID,
                                       AllowedWithClientType::kAny,
                                       feature_flags::gFeatureFlagBinDataConvert);
 
-boost::intrusive_ptr<Expression> ExpressionConvert::create(ExpressionContext* const expCtx,
-                                                           boost::intrusive_ptr<Expression> input,
-                                                           BSONType toType,
-                                                           boost::optional<BinDataFormat> format,
-                                                           boost::optional<BinDataType> toSubtype) {
+boost::intrusive_ptr<Expression> ExpressionConvert::create(
+    ExpressionContext* const expCtx,
+    boost::intrusive_ptr<Expression> input,
+    BSONType toType,
+    boost::optional<BinDataFormat> format,
+    boost::optional<BinDataType> toSubtype,
+    boost::optional<ConvertByteOrderType> byteOrder) {
     auto targetType = StringData(typeName(toType));
     auto toValue = toSubtype
         ? Value(BSON("type" << targetType << "subtype" << static_cast<int>(*toSubtype)))
@@ -7165,7 +7452,9 @@ boost::intrusive_ptr<Expression> ExpressionConvert::create(ExpressionContext* co
         format ? ExpressionConstant::create(expCtx, Value(toStringData(*format))) : nullptr,
         nullptr,
         nullptr,
-        checkBinDataConvertAllowed());
+        byteOrder ? ExpressionConstant::create(expCtx, Value(toStringData(*byteOrder))) : nullptr,
+        checkBinDataConvertAllowed(),
+        checkBinDataConvertNumericAllowed());
 }
 
 ExpressionConvert::ExpressionConvert(ExpressionContext* const expCtx,
@@ -7174,14 +7463,18 @@ ExpressionConvert::ExpressionConvert(ExpressionContext* const expCtx,
                                      boost::intrusive_ptr<Expression> format,
                                      boost::intrusive_ptr<Expression> onError,
                                      boost::intrusive_ptr<Expression> onNull,
-                                     const bool allowBinDataConvert)
+                                     boost::intrusive_ptr<Expression> byteOrder,
+                                     const bool allowBinDataConvert,
+                                     const bool allowBinDataConvertNumeric)
     : Expression(expCtx,
                  {std::move(input),
                   std::move(to),
                   std::move(format),
                   std::move(onError),
-                  std::move(onNull)}),
-      _allowBinDataConvert{allowBinDataConvert} {
+                  std::move(onNull),
+                  std::move(byteOrder)}),
+      _allowBinDataConvert{allowBinDataConvert},
+      _allowBinDataConvertNumeric{allowBinDataConvertNumeric} {
     expCtx->sbeCompatibility = SbeCompatibility::notCompatible;
 }
 
@@ -7194,12 +7487,14 @@ intrusive_ptr<Expression> ExpressionConvert::parse(ExpressionContext* const expC
             expr.type() == BSONType::Object);
 
     const bool allowBinDataConvert = checkBinDataConvertAllowed();
+    const bool allowBinDataConvertNumeric = checkBinDataConvertNumericAllowed();
 
     boost::intrusive_ptr<Expression> input;
     boost::intrusive_ptr<Expression> to;
     boost::intrusive_ptr<Expression> format;
     boost::intrusive_ptr<Expression> onError;
     boost::intrusive_ptr<Expression> onNull;
+    boost::intrusive_ptr<Expression> byteOrder;
     for (auto&& elem : expr.embeddedObject()) {
         const auto field = elem.fieldNameStringData();
         if (field == "input"_sd) {
@@ -7220,6 +7515,14 @@ intrusive_ptr<Expression> ExpressionConvert::parse(ExpressionContext* const expC
             onError = parseOperand(expCtx, elem, vps);
         } else if (field == "onNull"_sd) {
             onNull = parseOperand(expCtx, elem, vps);
+        } else if (field == "byteOrder"_sd) {
+            uassert(ErrorCodes::FailedToParse,
+                    str::stream() << "The 'byteOrder' argument to $convert is not allowed in the "
+                                     "current feature compatibility version. See "
+                                  << feature_compatibility_version_documentation::kCompatibilityLink
+                                  << ".",
+                    allowBinDataConvertNumeric);
+            byteOrder = parseOperand(expCtx, elem, vps);
         } else {
             uasserted(ErrorCodes::FailedToParse,
                       str::stream()
@@ -7236,7 +7539,9 @@ intrusive_ptr<Expression> ExpressionConvert::parse(ExpressionContext* const expC
                                  std::move(format),
                                  std::move(onError),
                                  std::move(onNull),
-                                 allowBinDataConvert);
+                                 std::move(byteOrder),
+                                 allowBinDataConvert,
+                                 allowBinDataConvertNumeric);
 }
 
 boost::optional<ExpressionConvert::ConvertTargetTypeInfo>
@@ -7270,6 +7575,8 @@ Value ExpressionConvert::evaluate(const Document& root, Variables* variables) co
     auto inputValue = _children[_kInput]->evaluate(root, variables);
     auto formatValue =
         _children[_kFormat] ? _children[_kFormat]->evaluate(root, variables) : Value();
+    auto byteOrderValue =
+        _children[_kByteOrder] ? _children[_kByteOrder]->evaluate(root, variables) : Value();
 
     auto targetTypeInfo = ConvertTargetTypeInfo::parse(toValue);
 
@@ -7284,9 +7591,10 @@ Value ExpressionConvert::evaluate(const Document& root, Variables* variables) co
     }
 
     auto format = parseBinDataFormat(formatValue);
+    auto byteOrder = parseByteOrder(byteOrderValue);
 
     try {
-        return performConversion(*targetTypeInfo, inputValue, format);
+        return performConversion(*targetTypeInfo, inputValue, format, byteOrder);
     } catch (const ExceptionFor<ErrorCodes::ConversionFailure>&) {
         if (_children[_kOnError]) {
             return _children[_kOnError]->evaluate(root, variables);
@@ -7308,6 +7616,9 @@ boost::intrusive_ptr<Expression> ExpressionConvert::optimize() {
     if (_children[_kOnNull]) {
         _children[_kOnNull] = _children[_kOnNull]->optimize();
     }
+    if (_children[_kByteOrder]) {
+        _children[_kByteOrder] = _children[_kByteOrder]->optimize();
+    }
 
     // Perform constant folding if possible. This does not support folding for $convert operations
     // that have constant _children[_kTo] and _children[_kInput] values but non-constant
@@ -7320,7 +7631,8 @@ boost::intrusive_ptr<Expression> ExpressionConvert::optimize() {
                                                _children[_kTo],
                                                _children[_kFormat],
                                                _children[_kOnError],
-                                               _children[_kOnNull]})) {
+                                               _children[_kOnNull],
+                                               _children[_kByteOrder]})) {
         return ExpressionConstant::create(
             getExpressionContext(), evaluate(Document{}, &(getExpressionContext()->variables)));
     }
@@ -7351,8 +7663,9 @@ Value ExpressionConvert::serialize(const SerializationOptions& options) const {
              {"to", toField},
              {"format", _children[_kFormat] ? _children[_kFormat]->serialize(options) : Value()},
              {"onError", _children[_kOnError] ? _children[_kOnError]->serialize(options) : Value()},
-             {"onNull",
-              _children[_kOnNull] ? _children[_kOnNull]->serialize(options) : Value()}}}});
+             {"onNull", _children[_kOnNull] ? _children[_kOnNull]->serialize(options) : Value()},
+             {"byteOrder",
+              _children[_kByteOrder] ? _children[_kByteOrder]->serialize(options) : Value()}}}});
 }
 
 BSONType ExpressionConvert::computeTargetType(Value targetTypeName) {
@@ -7387,9 +7700,21 @@ BSONType ExpressionConvert::computeTargetType(Value targetTypeName) {
     return targetType;
 }
 
+bool ExpressionConvert::requestingConvertBinDataNumeric(ConvertTargetTypeInfo targetTypeInfo,
+                                                        BSONType inputType) const {
+    return (inputType == BSONType::BinData &&
+            (targetTypeInfo.type == BSONType::NumberInt ||
+             targetTypeInfo.type == BSONType::NumberLong ||
+             targetTypeInfo.type == BSONType::NumberDouble)) ||
+        ((inputType == BSONType::NumberInt || inputType == BSONType::NumberLong ||
+          inputType == BSONType::NumberDouble) &&
+         targetTypeInfo.type == BSONType::BinData);
+}
+
 Value ExpressionConvert::performConversion(ConvertTargetTypeInfo targetTypeInfo,
                                            Value inputValue,
-                                           boost::optional<BinDataFormat> format) const {
+                                           boost::optional<BinDataFormat> format,
+                                           boost::optional<ConvertByteOrderType> byteOrder) const {
     invariant(!inputValue.nullish());
 
     static const ConversionTable table;
@@ -7402,12 +7727,26 @@ Value ExpressionConvert::performConversion(ConvertTargetTypeInfo targetTypeInfo,
             _allowBinDataConvert || targetTypeInfo.type == BSONType::Bool ||
                 (inputType != BSONType::BinData && targetTypeInfo.type != BSONType::BinData));
 
-    return table.findConversionFunc(inputType, targetTypeInfo.type, format, targetTypeInfo.subtype)(
+    uassert(ErrorCodes::ConversionFailure,
+            str::stream()
+                << "BinData $convert with numeric values is not allowed in the current feature "
+                   "compatibility version. See "
+                << feature_compatibility_version_documentation::kCompatibilityLink << ".",
+            _allowBinDataConvertNumeric ||
+                !requestingConvertBinDataNumeric(targetTypeInfo, inputType));
+
+    return table.findConversionFunc(
+        inputType, targetTypeInfo.type, format, targetTypeInfo.subtype, byteOrder)(
         getExpressionContext(), inputValue);
 }
 
 bool ExpressionConvert::checkBinDataConvertAllowed() {
     return feature_flags::gFeatureFlagBinDataConvert.isEnabledUseLatestFCVWhenUninitialized(
+        serverGlobalParams.featureCompatibility.acquireFCVSnapshot());
+}
+
+bool ExpressionConvert::checkBinDataConvertNumericAllowed() {
+    return feature_flags::gFeatureFlagBinDataConvertNumeric.isEnabledUseLatestFCVWhenUninitialized(
         serverGlobalParams.featureCompatibility.acquireFCVSnapshot());
 }
 

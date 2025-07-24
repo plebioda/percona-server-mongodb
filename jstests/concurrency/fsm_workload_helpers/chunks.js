@@ -87,6 +87,11 @@ export var ChunkHelper = (function() {
 
         const runningWithStepdowns =
             TestData.runningWithConfigStepdowns || TestData.runningWithShardStepdowns;
+        const isSlowBuild = () => {
+            // Consider this a slow build on TSAN or if we're fuzzing mongod configs, which
+            // can intentionally slow the server.
+            return TestData.fuzzMongodConfigs || db.getServerBuildInfo().isThreadSanitizerActive();
+        };
 
         return runCommandWithRetries(
             db,
@@ -96,8 +101,8 @@ export var ChunkHelper = (function() {
                     res.code === ErrorCodes.LockTimeout ||
                     // The chunk migration has surely been aborted if the startCommit of the
                     // procedure was interrupted by a stepdown.
-                    (runningWithStepdowns && res.code === ErrorCodes.CommandFailed &&
-                     res.errmsg.includes("startCommit")) ||
+                    ((runningWithStepdowns || isSlowBuild()) &&
+                     res.code === ErrorCodes.CommandFailed && res.errmsg.includes("startCommit")) ||
                     // The chunk migration has surely been aborted if the recipient shard didn't
                     // believe there was an active chunk migration.
                     (runningWithStepdowns && res.code === ErrorCodes.OperationFailed &&

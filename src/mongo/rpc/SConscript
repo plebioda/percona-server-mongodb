@@ -6,22 +6,6 @@ Import("get_option")
 
 env = env.Clone()
 
-env.Library(
-    target=[
-        "command_status",
-    ],
-    source=[
-        "get_status_from_command_result.cpp",
-        "write_concern_error_detail.cpp",
-        "write_concern_error.idl",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/bson/util/bson_extract",
-        "$BUILD_DIR/mongo/db/common",
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
 protoEnv = env.Clone()
 if wiredtiger:
     protoEnv.InjectThirdParty(libraries=["wiredtiger"])
@@ -42,7 +26,7 @@ protoEnv.Library(
         "$BUILD_DIR/mongo/bson/bson_validate",
         "$BUILD_DIR/mongo/bson/util/bson_extract",
         "$BUILD_DIR/mongo/db/auth/security_token_auth",
-        "$BUILD_DIR/mongo/db/bson/dotted_path_support",
+        "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/third_party/wiredtiger/wiredtiger_checksum" if wiredtiger else [],
     ],
@@ -57,7 +41,7 @@ env.Library(
         "legacy_reply_builder.cpp",
         "legacy_request.cpp",
         "object_check.cpp",
-        "object_check.idl",
+        "object_check_gen.cpp",
         "reply_builder_interface.cpp",
     ],
     LIBDEPS=[
@@ -79,7 +63,7 @@ env.Library(
     target="rewrite_state_change_errors",
     source=[
         "rewrite_state_change_errors.cpp",
-        "rewrite_state_change_errors_server_parameter.idl",
+        "rewrite_state_change_errors_server_parameter_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
@@ -113,7 +97,7 @@ env.Library(
         "metadata/egress_metadata_hook_list.cpp",
         "metadata/repl_set_metadata.cpp",
         "metadata/oplog_query_metadata.cpp",
-        "topology_version.idl",
+        "topology_version_gen.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/bson/util/bson_extract",
@@ -157,7 +141,7 @@ env.Library(
     target="client_metadata",
     source=[
         "metadata/client_metadata.cpp",
-        "metadata/client_metadata.idl",
+        "metadata/client_metadata_gen.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/base",

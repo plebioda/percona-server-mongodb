@@ -1,11 +1,17 @@
 # -*- mode: python; -*-
 
-Import("env")
-Import("wiredtiger")
+Import(
+    [
+        "env",
+        "has_option",
+        "wiredtiger",
+    ]
+)
 
 env = env.Clone()
 
 env.SConscript(
+    must_exist=1,
     dirs=[
         "util",
     ],
@@ -17,10 +23,10 @@ env.SConscript(
 env.Library(
     target="collection_options",
     source=[
-        "clustered_collection_options.idl",
+        "clustered_collection_options_gen.cpp",
         "clustered_collection_util.cpp",
         "collection_options.cpp",
-        "collection_options.idl",
+        "collection_options_gen.cpp",
         "collection_options_validation.cpp",
     ],
     LIBDEPS=[
@@ -35,62 +41,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/query/query_knobs",
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/timeseries/timeseries_options",
-    ],
-)
-
-env.Library(
-    target="document_validation",
-    source=[
-        "document_validation.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/service_context",
-    ],
-)
-
-env.Library(
-    target="commit_quorum_options",
-    source=[
-        "commit_quorum.idl",
-        "commit_quorum_options.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/bson/util/bson_extract",
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="validate_idl",
-    source=[
-        "validate.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
-    target="index_build_entry_idl",
-    source=[
-        "index_build_entry.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/util/net/network",
-        "commit_quorum_options",
-    ],
-)
-
-env.Library(
-    target="health_log_interface",
-    source=[
-        "health_log.idl",
-        "health_log_interface.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/service_context",
     ],
 )
 
@@ -165,6 +115,7 @@ env.Library(
         "index_key_validate.cpp",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/common",
         "$BUILD_DIR/mongo/db/index/index_access_method",
         "$BUILD_DIR/mongo/db/query/collation/collator_factory_interface",
@@ -176,24 +127,13 @@ env.Library(
 )
 
 env.Library(
-    target="index_catalog",
-    source=[
-        "index_catalog.cpp",
-        "index_catalog_entry.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/storage/storage_options",
-    ],
-)
-
-env.Library(
     target="index_build_block",
     source=[
         "index_build_block.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/audit",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/collection_index_usage_tracker",
         "$BUILD_DIR/mongo/db/common",
         "$BUILD_DIR/mongo/db/index/index_access_method",
@@ -215,6 +155,7 @@ env.Library(
         "collection_write_path.cpp",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/op_observer/op_observer_util",
         "$BUILD_DIR/mongo/db/query/query_stats/query_stats",
         "$BUILD_DIR/mongo/db/record_id_helpers",
         "$BUILD_DIR/mongo/db/repl/repl_coordinator_interface",
@@ -231,21 +172,10 @@ env.Library(
 )
 
 env.Library(
-    target="database_holder",
-    source=[
-        "database_holder.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/service_context",
-    ],
-)
-
-env.Library(
     target="multi_index_block",
     source=[
         "multi_index_block.cpp",
-        "multi_index_block.idl",
+        "multi_index_block_gen.cpp",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/concurrency/exception_util",
@@ -284,6 +214,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/audit",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/concurrency/lock_manager",
         "$BUILD_DIR/mongo/db/index/index_access_method",
         "$BUILD_DIR/mongo/db/profile_filter",
@@ -372,6 +303,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/audit",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/collection_index_usage_tracker",
         "$BUILD_DIR/mongo/db/commands/server_status_core",
         "$BUILD_DIR/mongo/db/dbcommands_idl",
@@ -405,6 +337,7 @@ env.Library(
         "$BUILD_DIR/mongo/db/ttl_collection_cache",
         "$BUILD_DIR/mongo/db/vector_clock",
         "$BUILD_DIR/mongo/db/views/view_catalog_helpers",
+        "$BUILD_DIR/mongo/util/log_and_backoff",
         "$BUILD_DIR/mongo/util/progress_meter",
         "capped_visibility",
         "catalog_helpers",
@@ -419,6 +352,7 @@ env.Library(
         "index_key_validate",
         "index_repair",
         "local_oplog_info",
+        "storage_engine_collection_options_flags_parser",
         "throttle_cursor",
         "validate_idl",
         "validate_state",
@@ -487,17 +421,6 @@ env.Library(
 )
 
 env.Library(
-    target="capped_visibility",
-    source=[
-        "capped_visibility.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/storage/recovery_unit_base",
-    ],
-)
-
-env.Library(
     target="local_oplog_info",
     source=[
         "local_oplog_info.cpp",
@@ -516,6 +439,7 @@ env.Library(
 env.Library(
     target="catalog_helpers",
     source=[
+        "backwards_compatible_collection_options_util.cpp",
         "capped_utils.cpp",
         "coll_mod.cpp",
         "coll_mod_index.cpp",
@@ -533,6 +457,7 @@ env.Library(
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/db/audit",
+        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/coll_mod_command_idl",
         "$BUILD_DIR/mongo/db/concurrency/exception_util",
         "$BUILD_DIR/mongo/db/index/index_access_method",
@@ -576,11 +501,11 @@ env.Library(
     source=[
         "$BUILD_DIR/mongo/db/query/collection_query_info.cpp",
         "$BUILD_DIR/mongo/db/query/collection_index_usage_tracker_decoration.cpp",
-        "$BUILD_DIR/mongo/db/query/plan_cache_key_factory.cpp",
+        "$BUILD_DIR/mongo/db/query/plan_cache/plan_cache_key_factory.cpp",
         "$BUILD_DIR/mongo/db/query/query_settings_decoration.cpp",
     ],
     LIBDEPS=[
-        "$BUILD_DIR/mongo/db/query/query_plan_cache",
+        "$BUILD_DIR/mongo/db/query/plan_cache/query_plan_cache",
         "$BUILD_DIR/mongo/db/update_index_data",
     ],
     LIBDEPS_PRIVATE=[
@@ -595,16 +520,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/shard_role",
         "$BUILD_DIR/mongo/db/storage/storage_options",
         "index_catalog",
-    ],
-)
-
-env.Library(
-    target="import_collection_oplog_entry",
-    source=[
-        "import_collection_oplog_entry.idl",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
     ],
 )
 
@@ -624,31 +539,25 @@ env.Library(
     ],
 )
 
-env.Library(
-    target="cannot_convert_index_to_unique_info",
-    source=[
-        "cannot_convert_index_to_unique_info.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-    ],
-)
-
-env.Library(
-    target="collection_uuid_mismatch_info",
-    source=[
-        "collection_uuid_mismatch_info.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
 if wiredtiger:
-    env.CppUnitTest(
+    wtEnv = env.Clone()
+    wtEnv.InjectThirdParty(libraries=["wiredtiger"])
+
+    wtEnv.Library(
+        target="storage_engine_collection_options_flags_parser",
+        source=[
+            "storage_engine_collection_options_flags_parser.cpp",
+        ],
+        LIBDEPS_PRIVATE=[
+            "$BUILD_DIR/mongo/db/storage/wiredtiger/storage_wiredtiger",
+            "$BUILD_DIR/mongo/util/pcre_wrapper",
+        ],
+    )
+
+    wtEnv.CppUnitTest(
         target="db_catalog_test",
         source=[
+            "backwards_compatible_collection_options_util_test.cpp",
             "capped_collection_test.cpp",
             "capped_visibility_test.cpp",
             "capped_utils_test.cpp",
@@ -658,7 +567,6 @@ if wiredtiger:
             "collection_validation_test.cpp",
             "collection_writer_test.cpp",
             "coll_mod_test.cpp",
-            "column_index_consistency_test.cpp",
             "commit_quorum_options_test.cpp",
             "create_collection_test.cpp",
             "database_test.cpp",
@@ -666,31 +574,37 @@ if wiredtiger:
             "historical_catalogid_tracker_test.cpp",
             "index_build_entry_test.cpp",
             "index_builds_manager_test.cpp",
+            "index_catalog_impl_test.cpp",
             "index_key_validate_test.cpp",
             "index_signature_test.cpp",
             "index_spec_validate_test.cpp",
             "multi_index_block_test.cpp",
             "rename_collection_test.cpp",
+            "storage_engine_collection_options_flags_parser_test.cpp",
             "throttle_cursor_test.cpp",
         ],
         LIBDEPS=[
+            "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
             "$BUILD_DIR/mongo/db/auth/authmocks",
             "$BUILD_DIR/mongo/db/coll_mod_command_idl",
             "$BUILD_DIR/mongo/db/commands/create_command",
             "$BUILD_DIR/mongo/db/commands/test_commands_enabled",
             "$BUILD_DIR/mongo/db/concurrency/exception_util",
+            "$BUILD_DIR/mongo/db/dbhelpers",
             "$BUILD_DIR/mongo/db/index/index_access_method",
             "$BUILD_DIR/mongo/db/index_builds_coordinator_mongod",
             "$BUILD_DIR/mongo/db/index_commands_idl",
             "$BUILD_DIR/mongo/db/multitenancy",
             "$BUILD_DIR/mongo/db/op_observer/op_observer",
             "$BUILD_DIR/mongo/db/op_observer/op_observer_impl",
+            "$BUILD_DIR/mongo/db/op_observer/operation_logger_impl",
             "$BUILD_DIR/mongo/db/query/collation/collator_factory_mock",
             "$BUILD_DIR/mongo/db/query/collation/collator_interface_mock",
             "$BUILD_DIR/mongo/db/query/datetime/date_time_support",
             "$BUILD_DIR/mongo/db/query_expressions",
             "$BUILD_DIR/mongo/db/repl/drop_pending_collection_reaper",
             "$BUILD_DIR/mongo/db/repl/oplog",
+            "$BUILD_DIR/mongo/db/repl/oplog_application",
             "$BUILD_DIR/mongo/db/repl/optime",
             "$BUILD_DIR/mongo/db/repl/repl_coordinator_interface",
             "$BUILD_DIR/mongo/db/repl/replmocks",
@@ -722,6 +636,7 @@ if wiredtiger:
             "index_builds_manager",
             "index_key_validate",
             "multi_index_block",
+            "storage_engine_collection_options_flags_parser",
             "throttle_cursor",
             "validate_idl",
             "validate_state",

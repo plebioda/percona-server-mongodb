@@ -6,8 +6,9 @@
 import {
     retryOnceOnTransientAndRestartTxnOnMongos
 } from "jstests/libs/auto_retry_transaction_in_sharding.js";
-import {ConfigShardUtil} from "jstests/libs/config_shard_util.js";
 import {Thread} from "jstests/libs/parallelTester.js";
+import {ShardTransitionUtil} from "jstests/libs/shard_transition_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {setLogVerbosity} from "jstests/replsets/rslib.js";
 import {
     commandsAddedToMongosSinceLastLTS,
@@ -96,7 +97,7 @@ export let MongosAPIParametersUtil = (function() {
     function awaitTransitionToDedicatedConfigServer() {
         assert.commandWorked(st.startBalancer());
         st.awaitBalancerRound();
-        ConfigShardUtil.transitionToDedicatedConfigServer(st);
+        ShardTransitionUtil.transitionToDedicatedConfigServer(st);
         assert.commandWorked(st.stopBalancer());
     }
 
@@ -1193,6 +1194,10 @@ export let MongosAPIParametersUtil = (function() {
             skip: "executes locally on mongos (not sent to any remote node)"
         },
         {
+            commandName: "rotateFTDC",
+            skip: "executes locally on mongos (not sent to any remote node)"
+        },
+        {
             commandName: "saslContinue",
             skip: "executes locally on mongos (not sent to any remote node)"
         },
@@ -1458,7 +1463,7 @@ export let MongosAPIParametersUtil = (function() {
         assert.commandWorked(st.rs0.getPrimary().adminCommand({serverStatus: 1}))
             .storageEngine.supportsCommittedReads;
 
-    const isConfigShardEnabled = ConfigShardUtil.isTransitionEnabledIgnoringFCV(st);
+    const isConfigShardEnabled = ShardTransitionUtil.isConfigServerTransitionEnabledIgnoringFCV(st);
 
     (() => {
         // Validate test cases for all commands. Ensure there is at least one test case for every

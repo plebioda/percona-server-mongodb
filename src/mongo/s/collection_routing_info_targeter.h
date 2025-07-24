@@ -184,6 +184,10 @@ public:
 
     bool isTrackedTimeSeriesBucketsNamespace() const override;
 
+    bool isUpdateOneWithIdWithoutShardKeyEnabled() const override;
+
+    bool isUpdateOneWithoutShardKeyEnabled() const override;
+
     bool timeseriesNamespaceNeedsRewrite(const NamespaceString& nss) const;
 
     const CollectionRoutingInfo& getRoutingInfo() const;
@@ -273,6 +277,10 @@ private:
 
     // The latest loaded routing cache entry
     CollectionRoutingInfo _cri;
+
+    bool _isUpdateOneWithIdWithoutShardKeyEnabled = false;
+
+    bool _isUpdateOneWithoutShardKeyEnabled = false;
 };
 
 }  // namespace mongo

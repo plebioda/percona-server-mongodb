@@ -37,8 +37,8 @@
 #include "mongo/base/status_with.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/client/connection_string.h"
-#include "mongo/db/commands/bulk_write_gen.h"
-#include "mongo/db/commands/bulk_write_parser.h"
+#include "mongo/db/commands/query_cmd/bulk_write_gen.h"
+#include "mongo/db/commands/query_cmd/bulk_write_parser.h"
 #include "mongo/db/fle_crud.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
@@ -429,6 +429,8 @@ private:
     // Set to true if this write is part of a transaction.
     const bool _inTransaction{false};
     const bool _isRetryableWrite{false};
+
+    PauseMigrationsDuringMultiUpdatesEnablement _pauseMigrationsDuringMultiUpdatesParameter;
 
     // Set to true if we encountered an error that prevents us from executing the rest of the
     // bulkWrite. Note this does *not* include cases where we saw an error for an individual

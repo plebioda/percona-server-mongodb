@@ -1,5 +1,7 @@
 // Use an aggregate because showRecordId() will hide any existing user '$recordId' field in the
 // documents, otherwise.
+import {ReplSetTest} from "jstests/libs/replsettest.js";
+
 function getShowRecordIdsCursor(node, dbName, replicatedCollName) {
     return node.getDB(dbName)[replicatedCollName].aggregate(
         [{"$project": {"recordId": {"$meta": "recordId"}, "document": "$$ROOT"}}]);
@@ -65,7 +67,7 @@ export function mapFieldToMatchingDocRid(docs, fieldName) {
 export function testPreservingRecordIdsDuringInitialSync(
     initSyncMethod, beforeCloningFP, afterCloningFP) {
     const testName = jsTestName();
-    const replTest = new ReplSetTest({name: testName, nodes: 1});
+    const replTest = new ReplSetTest({name: testName, nodes: 2});
     replTest.startSet();
     replTest.initiate();
 

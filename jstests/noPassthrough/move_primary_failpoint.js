@@ -9,6 +9,7 @@
  */
 import {EncryptedClient} from "jstests/fle2/libs/encrypted_client_util.js";
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {extractUUIDFromObject} from "jstests/libs/uuid_util.js";
 
 function getCollectionUuid(db, collName) {
@@ -267,7 +268,7 @@ function testInternalCollections({featureFlagReshardingForTimeseries}) {
         assert.commandFailedWithCode(
             st.s.adminCommand(
                 {moveCollection: dbName2 + "." + collName, toShard: st.shard1.shardName}),
-            ErrorCodes.NotImplemented);
+            ErrorCodes.IllegalOperation);
         assert.commandWorked(st.s.adminCommand({movePrimary: dbName2, to: st.shard1.shardName}));
     }
 
@@ -300,14 +301,14 @@ function testInternalCollections({featureFlagReshardingForTimeseries}) {
         st.s.adminCommand({enableSharding: dbName4, primaryShard: st.shard0.shardName}));
     assert.commandWorked(testDB4.createCollection("system.resharding.foo"));
     // moveCollection does not have a way to tell that this is not a real resharding temporary
-    // collection.
+    // collection. However, movePrimary should not be allowed to move it.
     assert.commandFailedWithCode(
         st.s.adminCommand(
             {moveCollection: dbName4 + ".system.resharding.foo", toShard: st.shard1.shardName}),
         // Can't move an internal resharding collection.
         ErrorCodes.IllegalOperation);
-    // movePrimary should be allowed to move the system.resharding. collection.
-    assert.commandWorked(st.s.adminCommand({movePrimary: dbName4, to: st.shard1.shardName}));
+    assert.commandFailedWithCode(st.s.adminCommand({movePrimary: dbName4, to: st.shard1.shardName}),
+                                 9046501);
 
     movePrimaryFp.off();
 

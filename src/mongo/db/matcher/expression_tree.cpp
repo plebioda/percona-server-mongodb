@@ -64,6 +64,14 @@ PathMatchExpression* getEligiblePathMatchForNotSerialization(MatchExpression* ex
     // This version below is less obviously exhaustive, but because this is just a legibility
     // optimization, and this function also gets called on the query shape stats recording hot path,
     // we think it is worth it.
+    //
+    // This function will return nullptr if the field path contains special characters like a "$"
+    // prefix. We will serialize to a $nor and delegate the path serialization to lower in the tree,
+    // which has special handlers for those characters.
+    if (expr->path().starts_with('$')) {
+        return nullptr;
+    }
+
     switch (expr->matchType()) {
         // leaf types
         case MatchExpression::EQ:
@@ -231,8 +239,14 @@ MatchExpression::ExpressionOptimizerFunc ListOfMatchExpression::getOptimizer() c
                 auto simplifiedExpression = std::move(children.front());
                 children.clear();
                 return simplifiedExpression;
-            } else if (matchType == NOR) {
-                // Simplify NOR of exactly one operand to NOT of that operand.
+            } else if (matchType == NOR && !children.front()->isTriviallyTrue()) {
+                // All children of NOR that are $alwaysFalse are removed above. NOR containing an
+                // expression that is $alwaysTrue is simplified to $alwaysFalse below. There is no
+                // need to deal with these cases separately.
+                // The else if statement above helps avoid invalid conversion from $nor+$alwaysTrue
+                // to $not+$alwaysTrue.
+
+                // Simplify NOR of exactly one operand to NOT of that operand in all other cases.
                 auto simplifiedExpression =
                     std::make_unique<NotMatchExpression>(std::move(children.front()));
                 children.clear();

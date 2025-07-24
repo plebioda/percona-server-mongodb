@@ -314,6 +314,8 @@ be invoked as either:
     _config.ENABLED_FEATURE_FLAGS, all_feature_flags = setup_feature_flags()
     not_enabled_feature_flags = list(set(all_feature_flags) - set(_config.ENABLED_FEATURE_FLAGS))
 
+    # This must be set before the fuzzers instantiated
+    _config.STORAGE_ENGINE = config.pop("storage_engine")
     _config.AUTO_KILL = config.pop("auto_kill")
     _config.ALWAYS_USE_LOG_FILES = config.pop("always_use_log_files")
     _config.BASE_PORT = int(config.pop("base_port"))
@@ -363,8 +365,6 @@ be invoked as either:
     _config.REQUIRES_WORKLOAD_CONTAINER_SETUP = _config.EXTERNAL_SUT
 
     _config.FAIL_FAST = not config.pop("continue_on_failure")
-    _config.FLOW_CONTROL = config.pop("flow_control")
-    _config.FLOW_CONTROL_TICKETS = config.pop("flow_control_tickets")
 
     _config.INCLUDE_WITH_ANY_TAGS = _tags_from_list(config.pop("include_with_any_tags"))
     _config.INCLUDE_TAGS = _tags_from_list(config.pop("include_with_all_tags"))
@@ -419,8 +419,10 @@ or explicitly pass --installDir to the run subcommand of buildscripts/resmoke.py
 
     _config.MONGOD_SET_PARAMETERS = _merge_set_params(mongod_set_parameters)
     _config.FUZZ_MONGOD_CONFIGS = config.pop("fuzz_mongod_configs")
+    _config.FUZZ_RUNTIME_PARAMS = config.pop("fuzz_runtime_params")
     _config.FUZZ_MONGOS_CONFIGS = config.pop("fuzz_mongos_configs")
     _config.CONFIG_FUZZ_SEED = config.pop("config_fuzz_seed")
+    _config.DISABLE_ENCRYPTION_FUZZING = config.pop("disable_encryption_fuzzing")
 
     if _config.FUZZ_MONGOD_CONFIGS:
         if not _config.CONFIG_FUZZ_SEED:
@@ -432,11 +434,11 @@ or explicitly pass --installDir to the run subcommand of buildscripts/resmoke.py
             _config.WT_ENGINE_CONFIG,
             _config.WT_COLL_CONFIG,
             _config.WT_INDEX_CONFIG,
+            _config.CONFIG_FUZZER_ENCRYPTION_OPTS,
         ) = mongo_fuzzer_configs.fuzz_mongod_set_parameters(
             _config.FUZZ_MONGOD_CONFIGS, _config.CONFIG_FUZZ_SEED, _config.MONGOD_SET_PARAMETERS
         )
         _config.EXCLUDE_WITH_ANY_TAGS.extend(["uses_compact"])
-        _config.EXCLUDE_WITH_ANY_TAGS.extend(["requires_emptycapped"])
 
     _config.MONGOS_EXECUTABLE = _expand_user(config.pop("mongos_executable"))
     mongos_set_parameters = config.pop("mongos_set_parameters")
@@ -488,7 +490,6 @@ or explicitly pass --installDir to the run subcommand of buildscripts/resmoke.py
     _config.EXPORT_MONGOD_CONFIG = config.pop("export_mongod_config")
     _config.SHELL_SEED = config.pop("shell_seed")
     _config.STAGGER_JOBS = config.pop("stagger_jobs") == "on"
-    _config.STORAGE_ENGINE = config.pop("storage_engine")
     _config.STORAGE_ENGINE_CACHE_SIZE = config.pop("storage_engine_cache_size_gb")
     _config.SUITE_FILES = config.pop("suite_files")
     if _config.SUITE_FILES is not None:

@@ -72,6 +72,7 @@ const expectedParamDefaults = {
     internalQuerySlotBasedExecutionDisableTimeSeriesPushdown: false,
     internalQueryCollectOptimizerMetrics: false,
     internalQueryDisablePlanCache: false,
+    internalQueryFindCommandBatchSize: 101,
 };
 
 function assertDefaultParameterValues() {
@@ -264,19 +265,8 @@ assertSetParameterSucceeds("allowDiskUseByDefault", true);
 assertSetParameterSucceeds("internalQueryFLERewriteMemoryLimit", 14 * 1024 * 1024);
 assertSetParameterFails("internalQueryFLERewriteMemoryLimit", 0);
 
-// Need to have the CQF feature flag enabled in order to set tryBonsai or forceBonsai.
 assertSetParameterSucceeds("internalQueryFrameworkControl", "forceClassicEngine");
 assertSetParameterSucceeds("internalQueryFrameworkControl", "trySbeEngine");
-if (checkCascadesFeatureFlagEnabled(testDB)) {
-    assertSetParameterSucceeds("internalQueryFrameworkControl", "tryBonsai");
-    assertSetParameterSucceeds("internalQueryFrameworkControl", "tryBonsaiExperimental");
-    assertSetParameterSucceeds("internalQueryFrameworkControl", "forceBonsai");
-} else {
-    assert.commandFailed(
-        testDB.adminCommand({setParameter: 1, internalQueryFrameworkControl: "tryBonsai"}));
-    assertSetParameterSucceeds("internalQueryFrameworkControl", "tryBonsaiExperimental");
-    assertSetParameterSucceeds("internalQueryFrameworkControl", "forceBonsai");
-}
 assertSetParameterFails("internalQueryFrameworkControl", "tryCascades");
 assertSetParameterFails("internalQueryFrameworkControl", 1);
 
@@ -320,5 +310,9 @@ assertSetParameterSucceeds("internalQueryCollectOptimizerMetrics", false);
 
 assertSetParameterSucceeds("internalQueryDisablePlanCache", true);
 assertSetParameterSucceeds("internalQueryDisablePlanCache", false);
+
+assertSetParameterSucceeds("internalQueryFindCommandBatchSize", 30);
+assertSetParameterFails("internalQueryFindCommandBatchSize", 0);
+assertSetParameterFails("internalQueryFindCommandBatchSize", -1);
 
 MongoRunner.stopMongod(conn);

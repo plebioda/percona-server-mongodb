@@ -17,6 +17,7 @@ rules:
   no-redeclare: 0
   no-constant-condition: 0
   no-loss-of-precision: 0
+  semi: 2
   no-restricted-syntax:
     [
       "error",
@@ -107,6 +108,7 @@ globals:
   _isLeakSanitizerActive: true
   _isThreadSanitizerActive: true
   _isUndefinedBehaviorSanitizerActive: true
+  _isSpiderMonkeyDebugEnabled: true
   _optimizationsEnabled: true
   allocatePort: true
   allocatePorts: true
@@ -146,10 +148,13 @@ globals:
   indentStr: true
   _forgetReplSet: true
   _fnvHashToHexString: true
+  _resultSetsEqualUnordered: true
   getStringWidth: true
+  _compareStringsWithCollation: true
 
   # likely could be replaced with `path`
   _copyFileRange: true
+  appendFile: true
   copyFile: true
   writeFile: true
   fileExists: true
@@ -180,7 +185,6 @@ globals:
   shellPrintHelper: true
   shellAutocomplete: true
   __autocomplete__: true
-  getActiveCommands: true
   defaultPrompt: true
   ___it___: true
   __promptWrapper__: true

@@ -5,10 +5,12 @@
  * @tags: [
  *    requires_sharding,
  *    requires_fcv_71,
- *    temp_disabled_embedded_router_uncategorized,
+ *    # TODO (SERVER-88125): Re-enable this test or add an explanation why it is incompatible.
+ *    embedded_router_incompatible,
  * ]
  */
 
+import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {
     WriteWithoutShardKeyTestUtil
 } from "jstests/sharding/updateOne_without_shard_key/libs/write_without_shard_key_test_util.js";

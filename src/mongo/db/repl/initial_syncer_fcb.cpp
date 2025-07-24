@@ -2242,8 +2242,6 @@ void InitialSyncerFCB::_switchToDownloadedCallback(
 
     // do some cleanup
     auto* consistencyMarkers = _replicationProcess->getConsistencyMarkers();
-    consistencyMarkers->setMinValid(opCtx.get(),
-                                    OpTime{kTimestampOne, repl::OpTime::kUninitializedTerm});
     // _oplogEnd gets its first value from the metadata returned by $backupCursor
     // The code around $backupCursorExtend sets _oplogEnd to the appliedOpTime value returned by
     // replSetGetStatus

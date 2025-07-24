@@ -3,6 +3,7 @@
  *
  * @tags: [requires_wiredtiger]
  */
+import {ReplSetTest} from "jstests/libs/replsettest.js";
 import {reconfig, isConfigCommitted} from "jstests/replsets/rslib.js";
 
 (function() {

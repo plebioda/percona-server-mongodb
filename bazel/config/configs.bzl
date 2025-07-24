@@ -539,6 +539,20 @@ fipsmode = rule(
     build_setting = config.bool(flag = True),
 )
 
+# --------------------------------------
+# fcbis
+# --------------------------------------
+
+fcbis_provider = provider(
+    doc = """Enable FCBIS (File Copy-Based Initial Sync)""",
+    fields = ["enabled"],
+)
+
+fcbis = rule(
+    implementation = lambda ctx: fcbis_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
 # =========
 # thin_lto
 # =========

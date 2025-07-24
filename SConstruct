@@ -2843,7 +2843,6 @@ if has_option("enable-fipsmode") or has_option("full-featured"):
     env["PSMDB_PRO_FEATURES"].append("FIPSMode")
 
 if has_option("enable-fcbis") or has_option("full-featured"):
-    env.SetConfigHeaderDefine("PERCONA_FCBIS_ENABLED")
     env["PSMDB_PRO_FEATURES"].append("FCBIS")
 
 env.Tool("forceincludes")

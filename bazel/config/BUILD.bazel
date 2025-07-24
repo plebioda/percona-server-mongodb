@@ -13,6 +13,7 @@ load(
     "developer_dir",
     "disable_warnings_as_errors",
     "dwarf_version",
+    "fcbis",
     "fipsmode",
     "fsan",
     "full_featured",
@@ -1842,6 +1843,29 @@ config_setting(
     name = "fipsmode_disabled",
     flag_values = {
         "//bazel/config:enable-fipsmode": "False",
+    },
+)
+
+# --------------------------------------
+# fcbis
+# --------------------------------------
+
+fcbis(
+    name = "enable-fcbis",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "fcbis_enabled",
+    flag_values = {
+        "//bazel/config:enable-fcbis": "True",
+    },
+)
+
+config_setting(
+    name = "fcbis_disabled",
+    flag_values = {
+        "//bazel/config:enable-fcbis": "False",
     },
 )
 

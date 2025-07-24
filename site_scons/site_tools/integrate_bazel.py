@@ -844,6 +844,7 @@ def generate(env: SCons.Environment.Environment) -> None:
         f'--//bazel/config:audit={env.GetOption("audit") is not None}',
         f'--//bazel/config:full-featured={env.GetOption("full-featured") is not None}',
         f'--//bazel/config:enable-fipsmode={env.GetOption("enable-fipsmode") is not None}',
+        f'--//bazel/config:enable-fcbis={env.GetOption("enable-fcbis") is not None}',
         "--define",
         f"MONGO_VERSION={env['MONGO_VERSION']}",
         "--compilation_mode=dbg",  # always build this compilation mode as we always build with -g

@@ -554,33 +554,9 @@ env.CppUnitTest(
     ],
 )
 
-auditEnv = env if has_option("audit") else env.Clone().InjectModule("enterprise")
-
-auditEnv.Library(
-    target="audit_interface",
-    source=[
-        "audit_interface.cpp",
-    ],
-    LIBDEPS=[
-        "service_context",
-    ],
-)
-
-auditEnv.Library(
-    target="audit",
-    source=[
-        "audit.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "service_context",
-    ],
-    LIBDEPS_PRIVATE=[
-        "audit_interface",
-    ],
-)
-
 if has_option("audit"):
+    auditEnv = env
+
     auditEnv.Library(
         target="audit_options",
         source=[

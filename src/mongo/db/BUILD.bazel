@@ -339,14 +339,26 @@ idl_generator(
 )
 
 mongo_cc_library(
+    name = "audit_interface",
+    srcs = [
+        "audit_interface.cpp",
+    ],
+    hdrs = [
+        "audit_format.h",
+        "audit_interface.h",
+    ],
+    deps = [
+        ":service_context",
+    ]
+)
+
+mongo_cc_library(
     name = "audit",
     srcs = [
         "audit.cpp",
     ],
     hdrs = [
         "audit.h",
-        "audit_format.h",
-        "audit_interface.h",
     ],
     local_defines = select({
         "//bazel/config:build_enterprise_enabled": [
@@ -355,6 +367,7 @@ mongo_cc_library(
         "//conditions:default": [],
     }),
     deps = [
+        ":audit_interface",
         ":service_context",
         "//src/mongo:base",
     ],

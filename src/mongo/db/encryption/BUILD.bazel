@@ -24,3 +24,13 @@ mongo_cc_library(
         "//src/mongo/base:secure_allocator",
     ],
 )
+
+mongo_cc_library(
+    name = "encryption_options",
+    srcs = [
+        "encryption_options.cpp",
+    ],
+    hdrs = [
+        "encryption_options.h",
+    ],
+)

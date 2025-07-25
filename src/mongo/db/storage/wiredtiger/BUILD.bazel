@@ -21,6 +21,7 @@ mongo_cc_library(
     ],
     deps = [
         "//src/mongo:base",
+        "//src/mongo/db/encryption:encryption_options",
         "//src/mongo/db:service_context",
     ],
 )

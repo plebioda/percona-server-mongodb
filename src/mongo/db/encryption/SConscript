@@ -14,13 +14,6 @@ env.CppUnitTest(
 )
 
 env.Library(
-    target="encryption_options",
-    source=[
-        "encryption_options.cpp",
-    ],
-)
-
-env.Library(
     target="read_file_to_secure_string",
     source=["read_file_to_secure_string.cpp"],
     LIBDEPS=[

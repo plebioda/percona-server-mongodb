@@ -123,31 +123,6 @@ if env.TargetOSIs("windows"):
     )
 
 env.Library(
-    target="ldap_options",
-    source=[
-        "ldap_options.cpp",
-        "ldap_options_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/util/options_parser/options_parser",
-    ],
-)
-
-env.Library(
-    target="ldap_options_init",
-    source=[
-        "ldap_options_init.cpp",
-    ],
-    LIBDEPS=["ldap_options"],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/util/net/network",
-        "$BUILD_DIR/mongo/util/options_parser/options_parser",
-    ],
-)
-
-env.Library(
     target="serverinit",
     source=[
         "initialize_server_global_state.cpp",

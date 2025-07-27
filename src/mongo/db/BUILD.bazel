@@ -365,6 +365,34 @@ mongo_cc_library(
     ],
 )
 
+mongo_cc_library(
+    name = "ldap_options",
+    srcs = [
+        "ldap_options.cpp",
+        "ldap_options_gen",
+    ],
+    hdrs = [
+        "ldap_options.h",
+    ],
+    deps = [
+        ":server_base",
+        "//src/mongo:base",
+        "//src/mongo/util/options_parser:options_parser",
+    ],
+)
+
+mongo_cc_library(
+    name = "ldap_options_init",
+    srcs = [
+        "ldap_options_init.cpp",
+    ],
+    deps = [
+        ":ldap_options",
+        "//src/mongo/util/net:network",
+        "//src/mongo/util/options_parser:options_parser",
+    ],
+)
+
 idl_generator(
     name = "keypattern_gen",
     src = "keypattern.idl",

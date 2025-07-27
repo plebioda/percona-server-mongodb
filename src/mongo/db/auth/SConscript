@@ -33,7 +33,7 @@ env.Library(
         "$BUILD_DIR/mongo/bson/util/bson_extract",
         "$BUILD_DIR/mongo/db/common",
         "$BUILD_DIR/mongo/db/global_settings",
-        "$BUILD_DIR/mongo/db/ldap/ldapmanager",
+        "$BUILD_DIR/mongo/db/ldap/ldap_manager",
         "$BUILD_DIR/mongo/db/ldap_options",
         "$BUILD_DIR/mongo/db/query/query_stats/query_stats",
         "$BUILD_DIR/mongo/db/server_base",

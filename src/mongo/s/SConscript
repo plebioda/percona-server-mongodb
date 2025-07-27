@@ -413,7 +413,7 @@ env.Library(
         "$BUILD_DIR/mongo/db/commands/rwc_defaults_commands",
         "$BUILD_DIR/mongo/db/exec/scoped_timer",
         "$BUILD_DIR/mongo/db/ftdc/ftdc_mongos",
-        "$BUILD_DIR/mongo/db/ldap/ldapmanager",
+        "$BUILD_DIR/mongo/db/ldap/ldap_manager",
         "$BUILD_DIR/mongo/db/modules/enterprise/src/audit/audit_enterprise"
         if "audit" in env.get("MONGO_ENTERPRISE_FEATURES", [])
         else "",

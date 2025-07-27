@@ -44,7 +44,6 @@ env.SConscript(
         "geo",
         "process_health",
         "index",
-        "ldap",
         "matcher",
         "op_observer",
         "ops",

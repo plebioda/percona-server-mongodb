@@ -1,0 +1,32 @@
+load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    glob([
+        "*.h",
+        "*.cpp",
+    ]),
+)
+
+mongo_cc_library(
+    name = "ldap_manager",
+    srcs = [
+        "ldap_manager.cpp",
+        "ldap_manager_impl.cpp",
+    ],
+    hdrs = [
+        "ldap_manager.h",
+        "ldap_manager_impl.h",
+    ],
+    deps = [
+        "//src/mongo/db:ldap_options",
+        "//src/mongo/db:service_context",
+        "//src/mongo/util:background_job",
+    ],
+    linkopts = [
+        "-lldap",
+        "-llber",
+    ],
+)
+

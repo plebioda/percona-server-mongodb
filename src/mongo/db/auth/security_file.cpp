@@ -48,7 +48,6 @@
 #include "mongo/base/error_codes.h"
 #include "mongo/base/status.h"
 #include "mongo/base/status_with.h"
-#include "mongo/db/auth/security_key.h"
 #include "mongo/db/server_options.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/str.h"

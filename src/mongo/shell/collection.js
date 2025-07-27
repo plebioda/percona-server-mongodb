@@ -148,6 +148,7 @@ DBCollection.prototype.help = function() {
     print("\tdb." + shortName + ".getShardVersion() - only for use with sharding");
     print("\tdb." + shortName +
           ".getShardDistribution() - prints statistics about data distribution in the cluster");
+    print("\tdb." + shortName + ".getShardKey() - prints the shard key for this collection");
     print(
         "\tdb." + shortName +
         ".getSplitKeysForChunks( <maxChunkSize> ) - calculates split points over all chunks and returns splitter function");
@@ -162,6 +163,8 @@ DBCollection.prototype.help = function() {
         ".unsetWriteConcern( <write concern doc> ) - unsets the write concern for writes to the collection");
     print("\tdb." + shortName +
           ".latencyStats() - display operation latency histograms for this collection");
+    print("\tdb." + shortName + ".disableAutoMerger() - disable auto-merging on this collection");
+    print("\tdb." + shortName + ".enableAutoMerger() - enable auto-merge on this collection");
     return __magicNoPrint;
 };
 
@@ -1227,6 +1230,19 @@ DBCollection.prototype.getShardDistribution = function() {
     print("\n");
 };
 
+/**
+ * Prints shard key for this collection
+ */
+DBCollection.prototype.getShardKey = function() {
+    if (!this._isSharded()) {
+        throw Error("Collection " + this + " is not sharded.");
+    }
+
+    var config = this.getDB().getSiblingDB("config");
+    const coll = config.collections.findOne({_id: this._fullName});
+    return coll.key;
+};
+
 /*
 
 Generates split points for all chunks in the collection, based on the default maxChunkSize
@@ -1401,6 +1417,22 @@ DBCollection.prototype.getWriteConcern = function() {
 
 DBCollection.prototype.unsetWriteConcern = function() {
     delete this._writeConcern;
+};
+
+/**
+ * disable auto-merging on this collection
+ */
+DBCollection.prototype.disableAutoMerger = function() {
+    return this._db._adminCommand(
+        {configureCollectionBalancing: this._fullName, enableAutoMerger: false});
+};
+
+/**
+ * enable auto-merge on this collection
+ */
+DBCollection.prototype.enableAutoMerger = function() {
+    return this._db._adminCommand(
+        {configureCollectionBalancing: this._fullName, enableAutoMerger: true});
 };
 
 //
@@ -1581,8 +1613,7 @@ DBCollection.prototype.watch = function(pipeline, options) {
     pipeline = pipeline || [];
     assert(pipeline instanceof Array, "'pipeline' argument must be an array");
     const [changeStreamStage, aggOptions] = this.getMongo()._extractChangeStreamOptions(options);
-    pipeline.unshift(changeStreamStage);
-    return this.aggregate(pipeline, aggOptions);
+    return this.aggregate([changeStreamStage, ...pipeline], aggOptions);
 };
 
 DBCollection.prototype.checkMetadataConsistency = function(options = {}) {

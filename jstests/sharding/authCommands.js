@@ -1,6 +1,6 @@
 /**
  * This tests using DB commands with authentication enabled when sharded.
- * @tags: [multiversion_incompatible]
+ * @tags: [multiversion_incompatible, requires_scripting]
  */
 // Multiple users cannot be authenticated on one connection within a session.
 TestData.disableImplicitSessions = true;
@@ -212,8 +212,7 @@ var checkWriteOps = function(hasWriteAuth) {
 };
 
 var checkAdminOps = function(hasAuth) {
-    const isMultiversion = jsTest.options().shardMixedBinVersions ||
-        jsTest.options().useRandomBinVersionsWithinReplicaSet;
+    const isMultiversion = Boolean(jsTest.options().useRandomBinVersionsWithinReplicaSet);
     if (hasAuth) {
         checkCommandSucceeded(adminDB, {getCmdLineOpts: 1});
         checkCommandSucceeded(adminDB, {serverStatus: 1});

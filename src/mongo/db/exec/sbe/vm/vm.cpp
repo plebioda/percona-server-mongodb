@@ -89,7 +89,9 @@
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/datetime/date_time_support.h"
 #include "mongo/db/query/query_knobs_gen.h"
+#include "mongo/db/query/random_utils.h"
 #include "mongo/db/query/str_trim_utils.h"
+#include "mongo/db/query/substr_utils.h"
 #include "mongo/db/storage/column_store.h"
 #include "mongo/db/storage/key_string.h"
 #include "mongo/logv2/log.h"
@@ -3751,14 +3753,93 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinStrLenBytes(Arit
     auto [_, operandTag, operandVal] = getFromStack(0);
 
     if (value::isString(operandTag)) {
-        auto str = value::getStringView(operandTag, operandVal);
-        auto strLenBytes = str.size();
+        StringData str = value::getStringView(operandTag, operandVal);
+        size_t strLenBytes = str.size();
         uassert(5155801,
                 "string length could not be represented as an int.",
                 strLenBytes <= std::numeric_limits<int>::max());
         return {false, value::TypeTags::NumberInt32, strLenBytes};
     }
     return {false, value::TypeTags::Nothing, 0};
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinSubstrBytes(ArityType arity) {
+    invariant(arity == 3);
+
+    auto [strOwned, strTag, strVal] = getFromStack(0);
+    auto [startIndexOwned, startIndexTag, startIndexVal] = getFromStack(1);
+    auto [lenOwned, lenTag, lenVal] = getFromStack(2);
+
+    if (!value::isString(strTag) || startIndexTag != value::TypeTags::NumberInt64 ||
+        lenTag != value::TypeTags::NumberInt64) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    StringData str = value::getStringView(strTag, strVal);
+    int64_t startIndexBytes = value::bitcastTo<int64_t>(startIndexVal);
+    int64_t lenBytes = value::bitcastTo<int64_t>(lenVal);
+
+    // Check start index is positive.
+    if (startIndexBytes < 0) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    // If passed length is negative, we should return rest of string.
+    const StringData::size_type length =
+        lenBytes < 0 ? str.length() : static_cast<StringData::size_type>(lenBytes);
+
+    // Check 'startIndexBytes' and byte after last char is not continuation byte.
+    uassert(5155604,
+            "Invalid range: starting index is a UTF-8 continuation byte",
+            (startIndexBytes >= value::bitcastTo<int64_t>(str.length()) ||
+             !str::isUTF8ContinuationByte(str[startIndexBytes])));
+    uassert(5155605,
+            "Invalid range: ending index is a UTF-8 continuation character",
+            (startIndexVal + length >= str.length() ||
+             !str::isUTF8ContinuationByte(str[startIndexBytes + length])));
+
+    // If 'startIndexVal' > str.length() then string::substr() will throw out_of_range, so return
+    // empty string if 'startIndexVal' is not a valid string index.
+    if (startIndexBytes >= value::bitcastTo<int64_t>(str.length())) {
+        auto [outTag, outVal] = value::makeNewString("");
+        return {true, outTag, outVal};
+    }
+    auto [outTag, outVal] = value::makeNewString(str.substr(startIndexBytes, lenBytes));
+    return {true, outTag, outVal};
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinStrLenCP(ArityType arity) {
+    invariant(arity == 1);
+
+    auto [_, operandTag, operandVal] = getFromStack(0);
+
+    if (value::isString(operandTag)) {
+        StringData str = value::getStringView(operandTag, operandVal);
+        size_t strLenCP = str::lengthInUTF8CodePoints(str);
+        uassert(5155901,
+                "string length could not be represented as an int.",
+                strLenCP <= std::numeric_limits<int>::max());
+        return {false, value::TypeTags::NumberInt32, strLenCP};
+    }
+    return {false, value::TypeTags::Nothing, 0};
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinSubstrCP(ArityType arity) {
+    invariant(arity == 3);
+
+    auto [strOwned, strTag, strVal] = getFromStack(0);
+    auto [startIndexOwned, startIndexTag, startIndexVal] = getFromStack(1);
+    auto [lenOwned, lenTag, lenVal] = getFromStack(2);
+
+    if (!value::isString(strTag) || startIndexTag != value::TypeTags::NumberInt32 ||
+        lenTag != value::TypeTags::NumberInt32 || startIndexVal < 0 || lenVal < 0) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    StringData str = value::getStringView(strTag, strVal);
+    auto [outTag, outVal] =
+        value::makeNewString(substr_utils::getSubstringCP(str, startIndexVal, lenVal));
+    return {true, outTag, outVal};
 }
 
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinToUpper(ArityType arity) {
@@ -4029,6 +4110,11 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::scalarRoundTrunc(
 
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinTrunc(ArityType arity) {
     return scalarRoundTrunc("$trunc", Decimal128::kRoundTowardZero, arity);
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinRand(ArityType arity) {
+    double num = random_utils::getRNG().nextCanonicalDouble();
+    return {true, value::TypeTags::NumberDouble, value::bitcastFrom<double>(num)};
 }
 
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinRound(ArityType arity) {
@@ -5573,61 +5659,60 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinSortKeyComponent
 
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinMakeBsonObj(
     ArityType arity, const CodeFragment* code) {
+    constexpr int64_t maxInt64 = std::numeric_limits<int64_t>::max();
+
     tassert(6897002,
-            str::stream() << "Unsupported number of arguments passed to makeBsonObj(): " << arity,
-            arity >= 3);
+            str::stream() << "Unsupported number of args passed to makeBsonObj(): " << arity,
+            arity >= 2);
 
     auto [specOwned, specTag, specVal] = getFromStack(0);
     auto [objOwned, objTag, objVal] = getFromStack(1);
-    auto [hasInputFieldsOwned, hasInputFieldsTag, hasInputFieldsVal] = getFromStack(2);
 
     if (specTag != value::TypeTags::makeObjSpec) {
         return {false, value::TypeTags::Nothing, 0};
     }
-    if (hasInputFieldsTag != value::TypeTags::Boolean) {
-        return {false, value::TypeTags::Nothing, 0};
-    }
 
     auto spec = value::getMakeObjSpecView(specVal);
-    bool hasInputFields = value::bitcastTo<bool>(hasInputFieldsVal);
+    auto maxDepth = spec->traversalDepth ? *spec->traversalDepth : maxInt64;
 
-    if (hasInputFields && objTag != value::TypeTags::Null && !value::isObject(objTag)) {
-        return {false, value::TypeTags::Nothing, 0};
-    }
-
-    if (!hasInputFields) {
-        if (spec->nonObjInputBehavior != MakeObjSpec::NonObjInputBehavior::kNewObj &&
-            !value::isObject(objTag)) {
-            if (spec->nonObjInputBehavior == MakeObjSpec::NonObjInputBehavior::kReturnNothing) {
-                // If the input is Nothing or not an Object and if 'nonObjInputBehavior' equals
-                // 'kReturnNothing', then return Nothing.
-                return {false, value::TypeTags::Nothing, 0};
-            } else if (spec->nonObjInputBehavior ==
-                       MakeObjSpec::NonObjInputBehavior::kReturnInput) {
-                // If the input is Nothing or not an Object and if 'nonObjInputBehavior' equals
-                // 'kReturnInput', then return the input.
-                topStack(false, value::TypeTags::Nothing, 0);
-                return {objOwned, objTag, objVal};
-            }
+    // If 'obj' is not an object or array, check if there is any applicable "NonObjInputBehavior"
+    // that should be applied.
+    if (spec->nonObjInputBehavior != MakeObjSpec::NonObjInputBehavior::kNewObj &&
+        !value::isObject(objTag) && (!value::isArray(objTag) || maxDepth == 0)) {
+        if (spec->nonObjInputBehavior == MakeObjSpec::NonObjInputBehavior::kReturnNothing) {
+            // If the input is Nothing or not an Object and if 'nonObjInputBehavior' equals
+            // 'kReturnNothing', then return Nothing.
+            return {false, value::TypeTags::Nothing, 0};
+        } else if (spec->nonObjInputBehavior == MakeObjSpec::NonObjInputBehavior::kReturnInput) {
+            // If the input is Nothing or not an Object and if 'nonObjInputBehavior' equals
+            // 'kReturnInput', then return the input.
+            topStack(false, value::TypeTags::Nothing, 0);
+            return {objOwned, objTag, objVal};
         }
     }
 
-    int numInputFields = hasInputFields && spec->numInputFields ? *spec->numInputFields : 0;
-    const int fieldsStackOff = 3;
-    const int argsStackOff = fieldsStackOff + numInputFields;
-    const auto ctx = ProduceObjContext{fieldsStackOff, argsStackOff, code};
+    const int argsStackOff = 2;
+    const auto ctx = ProduceObjContext{argsStackOff, code};
 
-    UniqueBSONObjBuilder bob;
+    // If 'tag' is an array and we have not exceeded the maximum depth yet, traverse the array.
+    if (maxDepth > 0 && value::isArray(objTag)) {
+        UniqueBSONArrayBuilder bab;
 
-    if (!hasInputFields) {
-        produceBsonObject(ctx, spec, bob, objTag, objVal);
+        auto newMaxDepth = maxDepth == maxInt64 ? maxDepth : maxDepth - 1;
+        traverseAndProduceBsonObj({ctx, spec}, objTag, objVal, newMaxDepth, bab);
+
+        bab.doneFast();
+        char* data = bab.bb().release().release();
+        return {true, value::TypeTags::bsonArray, value::bitcastFrom<char*>(data)};
     } else {
-        produceBsonObjectWithInputFields(ctx, spec, bob, objTag, objVal);
-    }
+        UniqueBSONObjBuilder bob;
 
-    bob.doneFast();
-    char* data = bob.bb().release().release();
-    return {true, value::TypeTags::bsonObject, value::bitcastFrom<char*>(data)};
+        produceBsonObject(ctx, spec, bob, objTag, objVal);
+
+        bob.doneFast();
+        char* data = bob.bb().release().release();
+        return {true, value::TypeTags::bsonObject, value::bitcastFrom<char*>(data)};
+    }
 }
 
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinReverseArray(ArityType arity) {
@@ -6156,6 +6241,254 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinArrayToObject(Ar
     }
     objGuard.reset();
     return {true, objTag, objVal};
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinAvgOfArray(ArityType arity) {
+    return avgOrSumOfArrayHelper(arity, true);
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinMaxOfArray(ArityType arity) {
+    return maxMinArrayHelper(arity, true);
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinMinOfArray(ArityType arity) {
+    return maxMinArrayHelper(arity, false);
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::maxMinArrayHelper(ArityType arity,
+                                                                           bool isMax) {
+    invariant(arity == 1);
+
+    auto [arrOwned, arrTag, arrVal] = getFromStack(0);
+
+    if (!value::isArray(arrTag)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+    value::TypeTags retTag = value::TypeTags::Nothing;
+    value::Value retVal = 0;
+
+    value::arrayForEach(arrTag, arrVal, [&](value::TypeTags elemTag, value::Value elemVal) {
+        if (elemTag != value::TypeTags::Null && elemTag != value::TypeTags::bsonUndefined) {
+            if (retTag == value::TypeTags::Nothing) {
+                retTag = elemTag;
+                retVal = elemVal;
+            } else {
+                auto [compTag, compVal] = value::compareValue(elemTag, elemVal, retTag, retVal);
+                if (compTag == value::TypeTags::NumberInt32 &&
+                    ((isMax && value::bitcastTo<int32_t>(compVal) == 1) ||
+                     (!isMax && value::bitcastTo<int32_t>(compVal) == -1))) {
+                    retTag = elemTag;
+                    retVal = elemVal;
+                }
+            }
+        }
+    });
+
+    auto [outputTag, outputVal] = value::copyValue(retTag, retVal);
+    return {true, outputTag, outputVal};
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinStdDevPop(ArityType arity) {
+    return stdDevHelper(arity, false);
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinStdDevSamp(ArityType arity) {
+    return stdDevHelper(arity, true);
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::stdDevHelper(ArityType arity,
+                                                                      bool isSamp) {
+    invariant(arity == 1);
+    auto [arrOwned, arrTag, arrVal] = getFromStack(0);
+    if (!value::isArray(arrTag)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    // This is an implementation of Welford's online algorithm.
+    int64_t count = 0;
+    value::TypeTags meanTag = value::TypeTags::NumberInt32;
+    value::Value meanVal = 0;
+    value::TypeTags meanSquaredTag = value::TypeTags::NumberInt32;
+    value::Value meanSquaredVal = 0;
+    value::arrayForEach(arrTag, arrVal, [&](value::TypeTags elemTag, value::Value elemVal) {
+        if (value::isNumber(elemTag)) {
+            count++;
+
+            auto [deltaOwned, deltaTag, deltaVal] = genericSub(elemTag, elemVal, meanTag, meanVal);
+            auto [divOwned, divTag, divVal] =
+                genericDiv(deltaTag, deltaVal, value::TypeTags::NumberInt64, count);
+            auto [newMeanOwned, newMeanTag, newMeanVal] =
+                genericAdd(meanTag, meanVal, divTag, divVal);
+            meanTag = newMeanTag;
+            meanVal = newMeanVal;
+
+            auto [deltaOwned2, deltaTag2, deltaVal2] =
+                genericSub(elemTag, elemVal, meanTag, meanVal);
+            auto [multOwned, multTag, multVal] =
+                genericMul(deltaTag, deltaVal, deltaTag2, deltaVal2);
+            auto [newMeanSquaredOwned, newMeanSquaredTag, newMeanSquaredVal] =
+                genericAdd(meanSquaredTag, meanSquaredVal, multTag, multVal);
+            meanSquaredTag = newMeanSquaredTag;
+            meanSquaredVal = newMeanSquaredVal;
+        }
+    });
+
+    if (count == 0 || (count == 1 && isSamp)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    if (count == 1) {
+        return {false, value::TypeTags::NumberInt32, 0};
+    }
+
+    if (isSamp) {
+        auto [resultOwned, resultTag, resultVal] =
+            genericDiv(meanSquaredTag, meanSquaredVal, value::TypeTags::NumberInt64, (count - 1));
+        return genericSqrt(resultTag, resultVal);
+    }
+
+    auto [resultOwned, resultTag, resultVal] =
+        genericDiv(meanSquaredTag, meanSquaredVal, value::TypeTags::NumberInt64, count);
+    return genericSqrt(resultTag, resultVal);
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinSumOfArray(ArityType arity) {
+    return avgOrSumOfArrayHelper(arity, false);
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::avgOrSumOfArrayHelper(ArityType arity,
+                                                                               bool isAvg) {
+    invariant(arity == 1);
+    auto [arrOwned, arrTag, arrVal] = getFromStack(0);
+
+    if (!value::isArray(arrTag)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    int64_t count = 0;
+    value::TypeTags sumTag = value::TypeTags::NumberInt32;
+    value::Value sumVal = 0;
+    value::arrayForEach(arrTag, arrVal, [&](value::TypeTags elemTag, value::Value elemVal) {
+        if (value::isNumber(elemTag)) {
+            count++;
+            auto [partialSumOwned, partialSumTag, partialSumVal] =
+                value::genericAdd(sumTag, sumVal, elemTag, elemVal);
+            sumTag = partialSumTag;
+            sumVal = partialSumVal;
+        }
+    });
+
+    if (isAvg) {
+        if (count == 0) {
+            return {false, value::TypeTags::Nothing, 0};
+        }
+        return genericDiv(sumTag, sumVal, value::TypeTags::NumberInt64, count);
+    }
+
+    if (sumTag == value::TypeTags::NumberDecimal) {
+        auto [outputTag, outputVal] = value::copyValue(sumTag, sumVal);
+        return {true, outputTag, outputVal};
+    }
+    return {false, sumTag, sumVal};
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinUnwindArray(ArityType arity) {
+    invariant(arity == 1);
+
+    auto [arrOwned, arrTag, arrVal] = getFromStack(0);
+
+    if (!value::isArray(arrTag)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    value::ArrayEnumerator arrayEnumerator(arrTag, arrVal);
+    if (arrayEnumerator.atEnd()) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    auto [resultTag, resultVal] = value::makeNewArray();
+    value::ValueGuard resultGuard{resultTag, resultVal};
+    value::Array* result = value::getArrayView(resultVal);
+
+    while (!arrayEnumerator.atEnd()) {
+        auto [elemTag, elemVal] = arrayEnumerator.getViewOfValue();
+        if (value::isArray(elemTag)) {
+            value::ArrayEnumerator subArrayEnumerator(elemTag, elemVal);
+            while (!subArrayEnumerator.atEnd()) {
+                auto [subElemTag, subElemVal] = subArrayEnumerator.getViewOfValue();
+                result->push_back(value::copyValue(subElemTag, subElemVal));
+                subArrayEnumerator.advance();
+            }
+        } else {
+            result->push_back(value::copyValue(elemTag, elemVal));
+        }
+        arrayEnumerator.advance();
+    }
+
+    resultGuard.reset();
+    return {true, resultTag, resultVal};
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinArrayToSet(ArityType arity) {
+    invariant(arity == 1);
+    auto [arrOwned, arrTag, arrVal] = getFromStack(0);
+
+    if (!value::isArray(arrTag)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    auto [tag, val] = value::makeNewArraySet();
+    value::ValueGuard guard{tag, val};
+
+    value::ArraySet* arrSet = value::getArraySetView(val);
+
+    auto [sizeOwned, sizeTag, sizeVal] = getArraySize(arrTag, arrVal);
+    invariant(sizeTag == value::TypeTags::NumberInt64);
+    arrSet->reserve(static_cast<int64_t>(sizeVal));
+
+    value::ArrayEnumerator arrayEnumerator(arrTag, arrVal);
+    while (!arrayEnumerator.atEnd()) {
+        auto [elemTag, elemVal] = arrayEnumerator.getViewOfValue();
+        arrSet->push_back(value::copyValue(elemTag, elemVal));
+        arrayEnumerator.advance();
+    }
+
+    guard.reset();
+    return {true, tag, val};
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinCollArrayToSet(ArityType arity) {
+    invariant(arity == 2);
+
+    auto [_, collTag, collVal] = getFromStack(0);
+    if (collTag != value::TypeTags::collator) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    auto [arrOwned, arrTag, arrVal] = getFromStack(1);
+
+    if (!value::isArray(arrTag)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
+
+    auto [tag, val] = value::makeNewArraySet(value::getCollatorView(collVal));
+    value::ValueGuard guard{tag, val};
+
+    value::ArraySet* arrSet = value::getArraySetView(val);
+
+    auto [sizeOwned, sizeTag, sizeVal] = getArraySize(arrTag, arrVal);
+    invariant(sizeTag == value::TypeTags::NumberInt64);
+    arrSet->reserve(static_cast<int64_t>(sizeVal));
+
+    value::ArrayEnumerator arrayEnumerator(arrTag, arrVal);
+    while (!arrayEnumerator.atEnd()) {
+        auto [elemTag, elemVal] = arrayEnumerator.getViewOfValue();
+        arrSet->push_back(value::copyValue(elemTag, elemVal));
+        arrayEnumerator.advance();
+    }
+
+    guard.reset();
+    return {true, tag, val};
 }
 
 ByteCode::MultiAccState ByteCode::getMultiAccState(value::TypeTags stateTag,
@@ -9533,6 +9866,12 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::dispatchBuiltin(Builtin
             return builtinBsonSize(arity);
         case Builtin::strLenBytes:
             return builtinStrLenBytes(arity);
+        case Builtin::strLenCP:
+            return builtinStrLenCP(arity);
+        case Builtin::substrBytes:
+            return builtinSubstrBytes(arity);
+        case Builtin::substrCP:
+            return builtinSubstrCP(arity);
         case Builtin::toUpper:
             return builtinToUpper(arity);
         case Builtin::toLower:
@@ -9577,6 +9916,8 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::dispatchBuiltin(Builtin
             return builtinTan(arity);
         case Builtin::tanh:
             return builtinTanh(arity);
+        case Builtin::rand:
+            return builtinRand(arity);
         case Builtin::round:
             return builtinRound(arity);
         case Builtin::concat:
@@ -9713,6 +10054,24 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::dispatchBuiltin(Builtin
             return builtinObjectToArray(arity);
         case Builtin::arrayToObject:
             return builtinArrayToObject(arity);
+        case Builtin::avgOfArray:
+            return builtinAvgOfArray(arity);
+        case Builtin::maxOfArray:
+            return builtinMaxOfArray(arity);
+        case Builtin::minOfArray:
+            return builtinMinOfArray(arity);
+        case Builtin::stdDevPop:
+            return builtinStdDevPop(arity);
+        case Builtin::stdDevSamp:
+            return builtinStdDevSamp(arity);
+        case Builtin::sumOfArray:
+            return builtinSumOfArray(arity);
+        case Builtin::unwindArray:
+            return builtinUnwindArray(arity);
+        case Builtin::arrayToSet:
+            return builtinArrayToSet(arity);
+        case Builtin::collArrayToSet:
+            return builtinCollArrayToSet(arity);
         case Builtin::setToArray:
             return builtinSetToArray(arity);
         case Builtin::fillType:
@@ -10080,6 +10439,12 @@ std::string builtinToString(Builtin b) {
             return "bsonSize";
         case Builtin::strLenBytes:
             return "strLenBytes";
+        case Builtin::strLenCP:
+            return "strLenCP";
+        case Builtin::substrBytes:
+            return "substrBytes";
+        case Builtin::substrCP:
+            return "substrCP";
         case Builtin::toUpper:
             return "toUpper";
         case Builtin::toLower:
@@ -10138,6 +10503,8 @@ std::string builtinToString(Builtin b) {
             return "tan";
         case Builtin::tanh:
             return "tanh";
+        case Builtin::rand:
+            return "rand";
         case Builtin::round:
             return "round";
         case Builtin::isMember:
@@ -10256,6 +10623,24 @@ std::string builtinToString(Builtin b) {
             return "objectToArray";
         case Builtin::arrayToObject:
             return "arrayToObject";
+        case Builtin::avgOfArray:
+            return "avgOfArray";
+        case Builtin::maxOfArray:
+            return "maxOfArray";
+        case Builtin::minOfArray:
+            return "minOfArray";
+        case Builtin::stdDevPop:
+            return "stdDevPop";
+        case Builtin::stdDevSamp:
+            return "stdDevSamp";
+        case Builtin::sumOfArray:
+            return "sumOfArray";
+        case Builtin::unwindArray:
+            return "unwindArray";
+        case Builtin::arrayToSet:
+            return "arrayToSet";
+        case Builtin::collArrayToSet:
+            return "collArrayToSet";
         case Builtin::setToArray:
             return "setToArray";
         case Builtin::fillType:

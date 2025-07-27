@@ -56,11 +56,20 @@ bool isAnyComponentOfPathMultikey(const BSONObj& indexKeyPattern,
  * If the provided solution could be mutated successfully, returns true, otherwise returns
  * false. This conversion is known as the 'distinct hack'.
  */
-bool turnIxscanIntoDistinctIxscan(const CanonicalQuery& canonicalQuery,
-                                  QuerySolution* soln,
-                                  const std::string& field,
-                                  bool strictDistinctOnly,
-                                  bool flipDistinctScanDirection = false);
+bool turnIxscanIntoDistinctScan(const CanonicalQuery& canonicalQuery,
+                                const QueryPlannerParams& plannerParams,
+                                QuerySolution* soln,
+                                const std::string& field,
+                                bool flipDistinctScanDirection = false);
+
+/**
+ * Attempt to create a query solution with DISTINCT_SCAN based on an index which could
+ * provide the distinct semantics on the key from the 'canonicalDistinct`.
+ */
+std::unique_ptr<QuerySolution> constructCoveredDistinctScan(
+    const CanonicalQuery& canonicalQuery,
+    const QueryPlannerParams& plannerParams,
+    const CanonicalDistinct& canonicalDistinct);
 
 /**
  * If the canonical query doesn't have a filter and a sort, the query planner won't try to build an
@@ -71,7 +80,6 @@ bool turnIxscanIntoDistinctIxscan(const CanonicalQuery& canonicalQuery,
  */
 std::unique_ptr<QuerySolution> createDistinctScanSolution(const CanonicalQuery& canonicalQuery,
                                                           const QueryPlannerParams& plannerParams,
-                                                          bool isDistinctMultiplanningEnabled,
                                                           bool flipDistinctScanDirection);
 
 }  // namespace mongo

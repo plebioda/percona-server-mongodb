@@ -52,6 +52,7 @@
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/feature_flag.h"
+#include "mongo/db/generic_argument_util.h"
 #include "mongo/db/keypattern.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/op_observer/op_observer.h"
@@ -188,6 +189,10 @@ ExecutorFuture<void> ReshardCollectionCoordinator::_runImpl(
             configsvrReshardCollection.setForceRedistribution(_doc.getForceRedistribution());
             configsvrReshardCollection.setReshardingUUID(_doc.getReshardingUUID());
 
+            resharding::validateImplicitlyCreateIndex(_doc.getImplicitlyCreateIndex(),
+                                                      _doc.getKey());
+            configsvrReshardCollection.setImplicitlyCreateIndex(_doc.getImplicitlyCreateIndex());
+
             auto provenance = _doc.getProvenance();
             if (resharding::isMoveCollection(provenance)) {
                 uassert(ErrorCodes::NamespaceNotFound,
@@ -228,6 +233,8 @@ ExecutorFuture<void> ReshardCollectionCoordinator::_runImpl(
             }
 
             configsvrReshardCollection.setProvenance(provenance);
+            generic_argument_util::setMajorityWriteConcern(configsvrReshardCollection,
+                                                           &opCtx->getWriteConcern());
 
             const auto configShard = Grid::get(opCtx)->shardRegistry()->getConfigShard();
 
@@ -235,8 +242,7 @@ ExecutorFuture<void> ReshardCollectionCoordinator::_runImpl(
                 opCtx,
                 ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                 DatabaseName::kAdmin,
-                CommandHelpers::appendMajorityWriteConcern(configsvrReshardCollection.toBSON(),
-                                                           opCtx->getWriteConcern()),
+                configsvrReshardCollection.toBSON(),
                 Shard::RetryPolicy::kIdempotent));
             uassertStatusOK(Shard::CommandResponse::getEffectiveStatus(cmdResponse));
         }));

@@ -2,19 +2,6 @@
 
 Import("env")
 
-env.Library(
-    target="query_sbe_makeobj_spec",
-    source=[
-        "makeobj_spec.cpp",
-        "size_estimator.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/sbe_values",
-        "$BUILD_DIR/mongo/util/field_set",
-    ],
-)
-
 sbeEnv = env.Clone()
 sbeEnv.InjectThirdParty(libraries=["snappy"])
 sbeEnv.Library(
@@ -53,9 +40,12 @@ sbeEnv.Library(
         "$BUILD_DIR/third_party/snappy/snappy",
     ],
     LIBDEPS_PRIVATE=[
+        "$BUILD_DIR/mongo/db/concurrency/exception_util",
         "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
+        "$BUILD_DIR/mongo/db/query/random_utils",
         "$BUILD_DIR/mongo/db/query/sort_pattern",
         "$BUILD_DIR/mongo/db/query/str_trim_utils",
+        "$BUILD_DIR/mongo/db/query/substr_utils",
         "$BUILD_DIR/mongo/db/shard_role_api",
         "$BUILD_DIR/mongo/db/sorter/sorter_base",
         "$BUILD_DIR/mongo/db/sorter/sorter_stats",
@@ -181,6 +171,7 @@ env.Library(
 env.CppUnitTest(
     target="db_sbe_test",
     source=[
+        "expressions/sbe_array_set_conversion_test.cpp",
         "expressions/sbe_block_expr_test.cpp",
         "expressions/sbe_block_top_bottom_test.cpp",
         "expressions/sbe_bson_size_test.cpp",
@@ -236,6 +227,7 @@ env.CppUnitTest(
         "expressions/sbe_trigonometric_expressions_test.cpp",
         "expressions/sbe_trunc_builtin_test.cpp",
         "expressions/sbe_ts_second_ts_increment_test.cpp",
+        "expressions/sbe_unwind_array_builtin_test.cpp",
         "expressions/sbe_variable_test.cpp",
         "expressions/sbe_fill_type_test.cpp",
         "sbe_agg_project_test.cpp",
@@ -298,6 +290,7 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/db/query/collation/collator_interface_mock",
         "$BUILD_DIR/mongo/db/query/optimizer/optimizer_rewrites",
         "$BUILD_DIR/mongo/db/query/optimizer/unit_test_utils",
+        "$BUILD_DIR/mongo/db/query/query_test_service_context",
         "$BUILD_DIR/mongo/db/service_context_d_test_fixture",
         "query_sbe_abt",
     ],
@@ -309,13 +302,14 @@ env.CppUnitTest(
         "makeobj_spec_hash_test.cpp",
     ],
     LIBDEPS=[
+        "$BUILD_DIR/mongo/db/query/query_test_service_context",
         "query_sbe_abt",
         "query_sbe_makeobj_spec",
     ],
 )
 
 env.CppUnitTest(
-    target="abt_lowering_test",
+    target="abt_lower_test",
     source=[
         "abt/abt_lower_test.cpp",
     ],
@@ -328,7 +322,7 @@ env.CppUnitTest(
 )
 
 env.Benchmark(
-    target="abt_lowering_bm",
+    target="abt_lower_bm",
     source=[
         "abt/abt_lower_bm.cpp",
     ],
@@ -349,5 +343,20 @@ env.Benchmark(
         "$BUILD_DIR/mongo/db/query/collation/collator_icu",
         "$BUILD_DIR/mongo/unittest/unittest",
         "query_sbe",
+    ],
+)
+
+env.Benchmark(
+    target="sbe_expression_bm",
+    source=[
+        "expressions/sbe_expression_bm.cpp",
+    ],
+    LIBDEPS=[
+        "$BUILD_DIR/mongo/db/auth/authmocks",
+        "$BUILD_DIR/mongo/db/pipeline/expression_bm_fixture",
+        "$BUILD_DIR/mongo/db/query/query_test_service_context",
+        "$BUILD_DIR/mongo/db/query_exec",
+        "$BUILD_DIR/mongo/db/service_context_non_d",
+        "query_sbe_stages",
     ],
 )

@@ -33,7 +33,6 @@
 #include "mongo/idl/server_parameter_test_util.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/framework.h"
-#include "mongo/util/assert_util.h"
 
 namespace mongo {
 class QueryPlannerDistinctTest : public QueryPlannerTest {
@@ -46,7 +45,8 @@ public:
     void runDistinctQuery(const std::string& distinctKey,
                           const BSONObj& filter = BSONObj(),
                           const BSONObj& sort = BSONObj(),
-                          const BSONObj& proj = BSONObj()) {
+                          const BSONObj& proj = BSONObj(),
+                          const bool flipDistinctScanDirection = false) {
         auto findCommand = std::make_unique<FindCommandRequest>(nss);
         findCommand->setFilter(filter);
         findCommand->setSort(sort);
@@ -60,7 +60,14 @@ public:
                                             MatchExpressionParser::kAllowAllSpecialFeatures},
             .pipeline = {},
             .isCountLike = isCountLike});
-        cq->setDistinct(CanonicalDistinct(distinctKey));
+        cq->setDistinct(
+            CanonicalDistinct(distinctKey,
+                              false,
+                              boost::none,
+                              // In order to replicate what distinct() does, we set up our
+                              // projection here for potential use in an optimization.
+                              parsed_distinct_command::getDistinctProjection(distinctKey),
+                              flipDistinctScanDirection));
 
         auto statusWithMultiPlanSolns = QueryPlanner::plan(*cq, params);
         ASSERT_OK(statusWithMultiPlanSolns.getStatus());
@@ -111,7 +118,8 @@ TEST_F(QueryPlannerDistinctTest, PredicateCovered) {
 
     assertNumSolutions(3);
     // Index {x: 1, y: 1} is transformed since it covers the filter.
-    assertCandidateExists("{fetch: {node: {distinct: {key: 'x', indexPattern: {x: 1, y: 1}}}}}");
+    assertCandidateExists(
+        "{proj: {spec: {_id: 0, x: 1}, node: {distinct: {key: 'x', indexPattern: {x: 1, y: 1}}}}}");
     assertCandidateExists("{fetch: {node: {ixscan: {pattern: {x: 1}}}}}");
     assertCandidateExists("{fetch: {node: {ixscan: {pattern: {y: 1, z: 1}}}}}");
 }
@@ -131,7 +139,8 @@ TEST_F(QueryPlannerDistinctTest, SortCovered) {
 
     assertNumSolutions(2);
     // Index {x: 1, y: 1} is transformed since it covers the sort.
-    assertCandidateExists("{fetch: {node: {distinct: {key: 'y', indexPattern: {x: 1, y: 1}}}}}");
+    assertCandidateExists(
+        "{proj: {spec: {_id: 0, y: 1}, node: {distinct: {key: 'y', indexPattern: {x: 1, y: 1}}}}}");
     assertCandidateExists("{fetch: {node: {ixscan: {pattern: {x: 1}}}}}");
 }
 
@@ -152,9 +161,11 @@ TEST_F(QueryPlannerDistinctTest, StrictDistinctOnlyRequirements) {
     assertNumSolutions(3);
     // Index {x: 1, y: 1} is transformed even though 'y' is not first in a STRICT_DISTINCT_ONLY
     // situation because x has a single-point bound.
-    assertCandidateExists("{fetch: {node: {distinct: {key: 'y', indexPattern: {x: 1, y: 1}}}}}");
+    assertCandidateExists(
+        "{proj: {spec: {_id: 0, y: 1}, node: {distinct: {key: 'y', indexPattern: {x: 1, y: 1}}}}}");
     // Index {y: 1, x: 1} is transformed since 'y' is the first field.
-    assertCandidateExists("{fetch: {node: {distinct: {key: 'y', indexPattern: {y: 1, x: 1}}}}}");
+    assertCandidateExists(
+        "{proj: {spec: {_id: 0, y: 1}, node: {distinct: {key: 'y', indexPattern: {y: 1, x: 1}}}}}");
     assertCandidateExists("{fetch: {node: {ixscan: {pattern: {x: 1}}}}}");
 }
 
@@ -172,12 +183,14 @@ TEST_F(QueryPlannerDistinctTest, DifferentSortDirections) {
 
     assertNumSolutions(3);
     assertCandidateExists(
-        "{fetch: {node: {distinct: {indexPattern: {x: 1, y: -1}, direction: '-1'}}}}");
+        "{proj: {spec: {_id: 0, x: 1}, node: {distinct: {indexPattern: {x: 1, y: -1}, direction: "
+        "'-1'}}}}");
     assertCandidateExists(
-        "{fetch: {node: {distinct: {indexPattern: {x: -1, y: 1}, direction: '1'}}}}");
+        "{proj: {spec: {_id: 0, x: 1}, node: {distinct: {indexPattern: {x: -1, y: 1}, direction: "
+        "'1'}}}}");
     assertCandidateExists(
-        "{fetch: {node: {sort: {pattern: {x: -1, y: 1}, limit: 0, type: 'default', node: {ixscan: "
-        "{pattern: {x: 1, y: 1}}}}}}}");
+        "{proj: {spec: {_id: 0, x: 1}, node: {sort: {pattern: {x: -1, y: 1}, limit: 0, type: "
+        "'default', node: {ixscan: {pattern: {x: 1, y: 1}}}}}}}");
 }
 
 /**
@@ -226,21 +239,21 @@ TEST_F(QueryPlannerDistinctTest, FlipDistinctScanDirection) {
     addIndex(fromjson("{x: 1, z: 1}"));
 
     // flag off
-    params.flipDistinctScanDirection = false;
-    runDistinctQuery("x", fromjson("{x: {$gt: 3}}"), fromjson("{x: 1, y: 1}"));
+    runDistinctQuery("x", fromjson("{x: {$gt: 3}}"), fromjson("{x: 1, y: 1}"), BSONObj(), false);
     assertNumSolutions(2);
     assertCandidateExists(
-        "{fetch: {node: {distinct: {indexPattern: {x: 1, y: 1}, direction: '1'}}}}");
+        "{proj: {spec: {_id: 0, x: 1}, node: {distinct: {indexPattern: {x: 1, y: 1}, direction: "
+        "'1'}}}}");
     assertCandidateExists(
         "{sort: {pattern: {x: 1, y: 1}, limit: 0, type: 'simple', node: {fetch: {node: {ixscan: "
         "{pattern: {x: 1, z: 1}, dir: 1}}}}}}");
 
     // flag on
-    params.flipDistinctScanDirection = true;
-    runDistinctQuery("x", fromjson("{x: {$gt: 3}}"), fromjson("{x: 1, y: 1}"));
+    runDistinctQuery("x", fromjson("{x: {$gt: 3}}"), fromjson("{x: 1, y: 1}"), BSONObj(), true);
     assertNumSolutions(2);
     assertCandidateExists(
-        "{fetch: {node: {distinct: {indexPattern: {x: 1, y: 1}, direction: '-1'}}}}");
+        "{proj: {spec: {_id: 0, x: 1}, node: {distinct: {indexPattern: {x: 1, y: 1}, direction: "
+        "'-1'}}}}");
     assertCandidateExists(
         "{sort: {pattern: {x: 1, y: 1}, limit: 0, type: 'simple', node: {fetch: {node: {ixscan: "
         "{pattern: {x: 1, z: 1}, dir: 1}}}}}}");

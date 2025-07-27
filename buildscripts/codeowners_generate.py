@@ -109,7 +109,7 @@ def process_owners_file(output_lines: list[str], directory: str) -> None:
                 # the last key remaining should be the pattern for the filter
                 assert len(_filter) == 1, f"Filter in {owners_file_path} has incorrect values."
                 pattern = next(iter(_filter))
-                owners = set()
+                owners: set[str] = set()
 
                 def process_owner(owner: str):
                     if "@" in owner:
@@ -133,6 +133,8 @@ def process_owners_file(output_lines: list[str], directory: str) -> None:
                                 process_owner(member)
                         else:
                             process_owner(approver)
+                    # Add the auto revert bot
+                    process_owner("svc-auto-approve-bot")
 
                 add_owner_line(output_lines, directory, pattern, owners)
     output_lines.append("")

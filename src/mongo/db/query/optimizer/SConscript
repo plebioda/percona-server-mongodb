@@ -14,50 +14,6 @@ env.SConscript(
     ],
 )
 
-# Core definitions: ABT, Logical and physical properties, Metadata, and core utilities.
-env.Library(
-    target="optimizer_base",
-    source=[
-        "defs.cpp",
-        "explain.cpp",
-        "index_bounds.cpp",
-        "metadata.cpp",
-        "node.cpp",
-        "partial_schema_requirements.cpp",
-        "props.cpp",
-        "reference_tracker.cpp",
-        "syntax/expr.cpp",
-        "utils/abt_compare.cpp",
-        "utils/abt_hash.cpp",
-        "utils/ce_math.cpp",
-        "utils/interval_utils.cpp",
-        "utils/path_utils.cpp",
-        "utils/reftracker_utils.cpp",
-        "utils/utils.cpp",
-    ],
-    LIBDEPS=[
-        # We should only depend on SBE for value representation and basic arithmetic for constant folding.
-        "$BUILD_DIR/mongo/db/exec/sbe/query_sbe_makeobj_spec",
-        "$BUILD_DIR/mongo/db/sbe_values",
-    ],
-)
-
-# Rewrites which manipulate the ABT directly.
-env.Library(
-    target="optimizer_rewrites",
-    source=[
-        "rewrites/const_eval.cpp",
-        "rewrites/normalize_projections.cpp",
-        "rewrites/path.cpp",
-        "rewrites/path_lower.cpp",
-        "rewrites/proj_spec_lower.cpp",
-        "rewrites/proj_spec_builder.cpp",
-    ],
-    LIBDEPS=[
-        "optimizer_base",
-    ],
-)
-
 env.CppUnitTest(
     target="optimizer_proj_spec_test",
     source=[
@@ -67,17 +23,6 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/db/exec/sbe/query_sbe",  # needed to register extended type destruction for MakeObjSpec :(
         "optimizer_rewrites",
         "unit_test_utils",
-    ],
-)
-
-# Main optimizer target.
-env.Library(
-    target="optimizer",
-    source=[
-        "metadata_factory.cpp",
-    ],
-    LIBDEPS=[
-        "optimizer_rewrites",
     ],
 )
 
@@ -91,7 +36,7 @@ env.Library(
         # We do not depend on the entire pipeline target.
         "$BUILD_DIR/mongo/db/pipeline/abt_utils",
         "$BUILD_DIR/mongo/db/query/bson/dotted_path_support",
-        "$BUILD_DIR/mongo/db/query/optimizer/optimizer",
+        "$BUILD_DIR/mongo/db/query/optimizer/optimizer_rewrites",
         "$BUILD_DIR/mongo/unittest/unittest",
     ],
 )
@@ -133,7 +78,7 @@ optimizer_gdb_test_program = env.Program(
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/service_context_non_d",
         "$BUILD_DIR/mongo/db/service_context_test_fixture",
-        "optimizer",
+        "optimizer_rewrites",
         "unit_test_utils",
     ],
     AIB_COMPONENT="pretty-printer-tests",

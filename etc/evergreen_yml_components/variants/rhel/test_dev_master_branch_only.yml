@@ -66,7 +66,7 @@ variables:
   # ANY MODIFICATIONS HERE SHOULD ALSO BE MADE IN THOSE FILES
   - &linux_x86_dynamic_compile_variant_dependency
     depends_on:
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
         variant: &linux_x86_dynamic_compile_variant_name linux-x86-dynamic-compile
       - name: version_gen
         variant: generate-tasks-for-version
@@ -195,6 +195,7 @@ buildvariants:
       <<: *linux-x86-dynamic-enterprise-compile-expansions
       bv_future_git_tag: r100.0.0-9999
       compile_variant: *linux-x86-dynamic-compile-future-tag-multiversion-latest
+      archive_dist_test_debug_task_name: archive_dist_test_debug_future_git_tag_multiversion
     tasks:
       - name: version_expansions_future_git_tag_multiversion_gen
       - name: compile_test_serial_future_git_tag_multiversion_TG
@@ -274,7 +275,7 @@ buildvariants:
       - name: .lint
       - name: libdeps_graph_linting
         distros:
-          - rhel8.8-large
+          - rhel8.8-xlarge
       - name: .clang_tidy
         distros:
           - rhel8.8-xxlarge
@@ -299,7 +300,7 @@ buildvariants:
       # run too long and hit execution timeouts.
       # burn_in_task_name: jsCore
     depends_on:
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
         variant: *linux_x86_dynamic_compile_variant_name
       - name: version_gen
         variant: generate-tasks-for-version
@@ -312,7 +313,7 @@ buildvariants:
       #   - name: version_burn_in_gen
       #     variant: generate-tasks-for-version
       #     omit_generated_tasks: true
-      #   - name: archive_dist_test_debug
+      #   - name: archive_dist_test
       #     variant: *linux_x86_dynamic_compile_variant_name
       - name: .development_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
       - name: .development_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags
@@ -449,7 +450,7 @@ buildvariants:
         omit_generated_tasks: true
       - name: archive_dist_test_debug_future_git_tag_multiversion
         variant: *linux-x86-dynamic-compile-future-tag-multiversion-latest
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
         variant: *linux-x86-dynamic-compile-future-tag-multiversion-last-continuous
     tasks:
       - name: .multiversion !.future_git_tag_incompatible
@@ -646,7 +647,7 @@ buildvariants:
         --mongodSetParameters="{internalQueryFrameworkControl: forceClassicEngine}"
         --excludeWithAnyTags=resource_intensive,featureFlagSbeFull
     depends_on:
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
         variant: *linux_x86_dynamic_compile_variant_name
       - name: version_gen
         variant: generate-tasks-for-version
@@ -655,7 +656,7 @@ buildvariants:
         omit_generated_tasks: true
     tasks:
       - name: .aggregation !.sbe_only
-      - name: .auth
+      - name: .auth !.suggested_excluding_required__for_devprod_mitigation_only
       - name: .causally_consistent !.sharding
       - name: .change_streams
       - name: .concurrency !.large !.no_txns !.compute_mode !.feature_flag_guarded
@@ -680,9 +681,6 @@ buildvariants:
       - name: .sharding .common !.feature_flag_guarded !.jstestfuzz
       - name: .sharding .jscore !.wo_snapshot !.multi_stmt !.feature_flag_guarded
       - name: .sharding .txns
-      - name: .serverless
-        distros:
-          - rhel8.8-xlarge
       - name: aggregation_repeat_queries_multiplan_single_solutions
       - name: audit
       - name: burn_in_tests_gen
@@ -690,7 +688,7 @@ buildvariants:
           - name: version_burn_in_gen
             variant: generate-tasks-for-version
             omit_generated_tasks: true
-          - name: archive_dist_test_debug
+          - name: archive_dist_test
             variant: *linux_x86_dynamic_compile_variant_name
       - name: check_feature_flag_tags
       - name: check_for_todos
@@ -764,7 +762,7 @@ buildvariants:
         --excludeWithAnyTags=resource_intensive,featureFlagSbeFull
     tasks:
       - name: .aggfuzzer
-      - name: .change_stream_fuzzer
+      - name: .change_stream_fuzzer !.serverless
       - name: .query_fuzzer
       - name: .updatefuzzer
       - name: .jstestfuzz
@@ -783,6 +781,29 @@ buildvariants:
       test_flags: >-
         --runAllFeatureFlagTests
         --excludeWithAnyTags=resource_intensive
+    tasks:
+      # - name: burn_in_tasks_gen
+      #   depends_on:
+      #   - name: version_burn_in_gen
+      #     variant: generate-tasks-for-version
+      #     omit_generated_tasks: true
+      #   - name: archive_dist_test
+      #     variant: *linux_x86_dynamic_compile_variant_name
+      - name: .development_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
+      - name: .development_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
+        distros:
+          - rhel8.8-medium
+      - name: .release_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
+      - name: .release_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
+        distros:
+          - rhel8.8-medium
+      - name: .default !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
+      - name: .default .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
+        distros:
+          - rhel8.8-medium
+      # TODO(SERVER-90936): Remove this once streams_kafka* tests can work with the "default" tag.
+      - name: streams_kafka
+      - name: streams_kafka_gwproxy
 
   ### Security Patch-Specific Build Variants ###
   - <<: *enterprise-rhel-8-64-bit-dynamic-all-feature-flags-template
@@ -800,7 +821,7 @@ buildvariants:
           - name: version_burn_in_gen
             variant: generate-tasks-for-version
             omit_generated_tasks: true
-          - name: archive_dist_test_debug
+          - name: archive_dist_test
             variant: *linux_x86_dynamic_compile_variant_name
       - name: .audit .patch_build
       - name: .encrypt .patch_build

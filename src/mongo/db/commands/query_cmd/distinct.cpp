@@ -32,7 +32,6 @@
 #include <boost/smart_ptr.hpp>
 #include <cstddef>
 #include <memory>
-#include <mutex>
 #include <set>
 #include <string>
 #include <utility>
@@ -52,7 +51,6 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/util/builder.h"
 #include "mongo/client/read_preference.h"
-#include "mongo/db/api_parameters.h"
 #include "mongo/db/auth/authorization_checks.h"
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/privilege.h"
@@ -62,7 +60,6 @@
 #include "mongo/db/client.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/query_cmd/run_aggregate.h"
-#include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/db_raii.h"
@@ -83,13 +80,9 @@
 #include "mongo/db/query/find_common.h"
 #include "mongo/db/query/get_executor.h"
 #include "mongo/db/query/plan_executor.h"
-#include "mongo/db/query/plan_explainer.h"
 #include "mongo/db/query/plan_summary_stats.h"
 #include "mongo/db/query/query_planner_params.h"
-#include "mongo/db/query/query_settings/query_settings_gen.h"
 #include "mongo/db/query/query_settings/query_settings_utils.h"
-#include "mongo/db/query/query_shape/distinct_cmd_shape.h"
-#include "mongo/db/query/query_shape/query_shape.h"
 #include "mongo/db/query/view_response_formatter.h"
 #include "mongo/db/read_concern_support_result.h"
 #include "mongo/db/repl/read_concern_args.h"
@@ -111,7 +104,6 @@
 #include "mongo/s/analyze_shard_key_common_gen.h"
 #include "mongo/s/query_analysis_sampler_util.h"
 #include "mongo/util/assert_util.h"
-#include "mongo/util/database_name_util.h"
 #include "mongo/util/decorable.h"
 #include "mongo/util/future.h"
 #include "mongo/util/serialization_context.h"
@@ -162,8 +154,8 @@ std::unique_ptr<CanonicalQuery> parseDistinctCmd(
     // on mongod if present.
     expCtx->setQuerySettingsIfNotPresent(
         query_settings::lookupQuerySettingsForDistinct(expCtx, *parsedDistinct, nss));
-    return parsed_distinct_command::parseCanonicalQuery(std::move(expCtx),
-                                                        std::move(parsedDistinct));
+    return parsed_distinct_command::parseCanonicalQuery(
+        std::move(expCtx), std::move(parsedDistinct), nullptr);
 }
 
 namespace dps = dotted_path_support;
@@ -179,38 +171,32 @@ std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> createExecutorForDistinctCo
     const auto& collectionPtr = coll.getCollectionPtr();
     const MultipleCollectionAccessor collections{coll};
 
-    // If the collection doesn't exist 'getExecutor()' should create an EOF plan for it no matter
-    // the query.
-    if (!collectionPtr) {
-        return uassertStatusOK(
-            getExecutorFind(opCtx, collections, std::move(canonicalQuery), yieldPolicy));
-    }
-
-    const auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
-    bool isDistinctMultiplanningEnabled = feature_flags::gFeatureFlagShardFilteringDistinctScan
-                                              .isEnabledUseLastLTSFCVWhenUninitialized(fcvSnapshot);
-
-    // Try creating a plan that does DISTINCT_SCAN.
-    auto swQuerySolution = tryGetQuerySolutionForDistinct(
-        collections, QueryPlannerParams::DEFAULT, *canonicalQuery, isDistinctMultiplanningEnabled);
-    if (swQuerySolution.isOK()) {
-        return uassertStatusOK(getExecutorDistinct(collections,
-                                                   QueryPlannerParams::DEFAULT,
-                                                   std::move(canonicalQuery),
-                                                   std::move(swQuerySolution.getValue())));
-    }
-
-    // TODO SERVER-93059: Investigate whether to keep the projection field of the canonical query
-    // when multiplanning is enabled.
-    if (isDistinctMultiplanningEnabled) {
+    if (canonicalQuery->getExpCtx()->isFeatureFlagShardFilteringDistinctScanEnabled()) {
         return uassertStatusOK(
             getExecutorFind(opCtx,
                             collections,
                             std::move(canonicalQuery),
                             yieldPolicy,
                             // TODO SERVER-93018: Investigate why we prefer a collection scan
-                            // against a GENERATE_COVERED_IXSCANS when no filter is present.
+                            // against a 'GENERATE_COVERED_IXSCANS' when no filter is present.
                             QueryPlannerParams::DEFAULT));
+    }
+
+    // If the collection doesn't exist 'getExecutor()' should create an EOF plan for it no
+    // matter the query.
+    if (!collectionPtr) {
+        return uassertStatusOK(
+            getExecutorFind(opCtx, collections, std::move(canonicalQuery), yieldPolicy));
+    }
+
+    // Try creating a plan that does DISTINCT_SCAN.
+    auto swQuerySolution =
+        tryGetQuerySolutionForDistinct(collections, QueryPlannerParams::DEFAULT, *canonicalQuery);
+    if (swQuerySolution.isOK()) {
+        return uassertStatusOK(getExecutorDistinct(collections,
+                                                   QueryPlannerParams::DEFAULT,
+                                                   std::move(canonicalQuery),
+                                                   std::move(swQuerySolution.getValue())));
     }
 
     // If there is no DISTINCT_SCAN plan, create whatever non-distinct plan is appropriate, because

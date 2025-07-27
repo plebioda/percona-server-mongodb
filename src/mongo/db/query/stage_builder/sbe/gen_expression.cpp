@@ -274,20 +274,6 @@ void generateStringCaseConversionExpression(ExpressionVisitorContext* _context,
         varStr, std::move(str), std::move(totalCaseConversionExpr))));
 }
 
-/**
- * Generate an EExpression representing a Regex function result upon null argument(s) depending on
- * the type of the function: $regexMatch - false, $regexFind - null, $RegexFindAll - [].
- */
-std::unique_ptr<sbe::EExpression> generateRegexNullResponse(StringData exprName) {
-    if (exprName.toString().compare(std::string("regexMatch")) == 0) {
-        return makeBoolConstant(false);
-    } else if (exprName.toString().compare("regexFindAll") == 0) {
-        auto [arrTag, arrVal] = sbe::value::makeNewArray();
-        return makeConstant(arrTag, arrVal);
-    }
-    return makeNullConstant();
-}
-
 class ExpressionPreVisitor final : public ExpressionConstVisitor {
 public:
     ExpressionPreVisitor(ExpressionVisitorContext* context) : _context{context} {}
@@ -2962,21 +2948,165 @@ public:
             std::move(inputName), _context->popABTExpr(), std::move(sqrtExpr)));
     }
     void visit(const ExpressionStrcasecmp* expr) final {
-        unsupportedExpression(expr->getOpName());
+        invariant(expr->getChildren().size() == 2);
+        _context->ensureArity(2);
+
+        SbExprBuilder b(_context->state);
+
+        generateStringCaseConversionExpression(_context, "toUpper");
+        SbExpr rhs = _context->popExpr();
+        generateStringCaseConversionExpression(_context, "toUpper");
+        SbExpr lhs = _context->popExpr();
+
+        _context->pushExpr(
+            b.makeBinaryOp(optimizer::Operations::Cmp3w, std::move(lhs), std::move(rhs)));
     }
     void visit(const ExpressionSubstrBytes* expr) final {
-        unsupportedExpression(expr->getOpName());
+        invariant(expr->getChildren().size() == 3);
+        _context->ensureArity(3);
+
+        optimizer::ABT byteCount = _context->popABTExpr();
+        optimizer::ABT startIndex = _context->popABTExpr();
+        optimizer::ABT stringExpr = _context->popABTExpr();
+
+        optimizer::ProjectionName stringExprName =
+            makeLocalVariableName(_context->state.frameId(), 0);
+        optimizer::ProjectionName startIndexName =
+            makeLocalVariableName(_context->state.frameId(), 0);
+        optimizer::ProjectionName byteCountName =
+            makeLocalVariableName(_context->state.frameId(), 0);
+
+        optimizer::ABTVector functionArgs;
+
+        optimizer::ABT validStringExpr = buildABTMultiBranchConditional(
+            ABTCaseValuePair{generateABTNullMissingOrUndefined(stringExprName),
+                             makeABTConstant(""_sd)},
+            ABTCaseValuePair{
+                makeFillEmptyTrue(makeABTFunction("coerceToString", makeVariable(stringExprName))),
+                makeABTFail(ErrorCodes::Error(5155608),
+                            "$substrBytes: string expression could not be resolved to a string")},
+            makeABTFunction("coerceToString", makeVariable(stringExprName)));
+        functionArgs.push_back(std::move(validStringExpr));
+
+        optimizer::ABT validStartIndexExpr = optimizer::make<optimizer::If>(
+            optimizer::make<optimizer::BinaryOp>(
+                optimizer::Operations::Or,
+                generateABTNullMissingOrUndefined(startIndexName),
+                optimizer::make<optimizer::BinaryOp>(
+                    optimizer::Operations::Or,
+                    generateABTNonNumericCheck(startIndexName),
+                    optimizer::make<optimizer::BinaryOp>(optimizer::Operations::Lt,
+                                                         makeVariable(startIndexName),
+                                                         optimizer::Constant::int32(0)))),
+            makeABTFail(ErrorCodes::Error{5155603},
+                        "Starting index must be non-negative numeric type"),
+            makeABTFunction("convert",
+                            makeVariable(startIndexName),
+                            optimizer::Constant::int32(
+                                static_cast<int32_t>(sbe::value::TypeTags::NumberInt64))));
+        functionArgs.push_back(std::move(validStartIndexExpr));
+
+        optimizer::ABT validLengthExpr = optimizer::make<optimizer::If>(
+            optimizer::make<optimizer::BinaryOp>(optimizer::Operations::Or,
+                                                 generateABTNullMissingOrUndefined(byteCountName),
+                                                 generateABTNonNumericCheck(byteCountName)),
+            makeABTFail(ErrorCodes::Error{5155602}, "Length must be a numeric type"),
+            makeABTFunction("convert",
+                            makeVariable(byteCountName),
+                            optimizer::Constant::int32(
+                                static_cast<int32_t>(sbe::value::TypeTags::NumberInt64))));
+        functionArgs.push_back(std::move(validLengthExpr));
+
+        auto resultExpr =
+            optimizer::make<optimizer::FunctionCall>("substrBytes", std::move(functionArgs));
+
+        resultExpr = optimizer::make<optimizer::Let>(
+            std::move(byteCountName), std::move(byteCount), std::move(resultExpr));
+        resultExpr = optimizer::make<optimizer::Let>(
+            std::move(startIndexName), std::move(startIndex), std::move(resultExpr));
+        resultExpr = optimizer::make<optimizer::Let>(
+            std::move(stringExprName), std::move(stringExpr), std::move(resultExpr));
+        pushABT(std::move(resultExpr));
     }
     void visit(const ExpressionSubstrCP* expr) final {
-        unsupportedExpression(expr->getOpName());
+        invariant(expr->getChildren().size() == 3);
+        _context->ensureArity(3);
+
+        optimizer::ABT len = _context->popABTExpr();
+        optimizer::ABT startIndex = _context->popABTExpr();
+        optimizer::ABT stringExpr = _context->popABTExpr();
+
+        optimizer::ProjectionName stringExprName =
+            makeLocalVariableName(_context->state.frameId(), 0);
+        optimizer::ProjectionName startIndexName =
+            makeLocalVariableName(_context->state.frameId(), 0);
+        optimizer::ProjectionName lenName = makeLocalVariableName(_context->state.frameId(), 0);
+
+        optimizer::ABTVector functionArgs;
+
+        optimizer::ABT validStringExpr = buildABTMultiBranchConditional(
+            ABTCaseValuePair{generateABTNullMissingOrUndefined(stringExprName),
+                             makeABTConstant(""_sd)},
+            ABTCaseValuePair{
+                makeFillEmptyTrue(makeABTFunction("coerceToString", makeVariable(stringExprName))),
+                makeABTFail(ErrorCodes::Error(5155708),
+                            "$substrCP: string expression could not be resolved to a "
+                            "string")},
+            makeABTFunction("coerceToString", makeVariable(stringExprName)));
+        functionArgs.push_back(std::move(validStringExpr));
+
+        optimizer::ABT validStartIndexExpr = buildABTMultiBranchConditional(
+            ABTCaseValuePair{
+                generateABTNullishOrNotRepresentableInt32Check(startIndexName),
+                makeABTFail(ErrorCodes::Error{5155700},
+                            "$substrCP: starting index must be numeric type representable as a "
+                            "32-bit integral value")},
+            ABTCaseValuePair{
+                optimizer::make<optimizer::BinaryOp>(optimizer::Operations::Lt,
+                                                     makeVariable(startIndexName),
+                                                     optimizer::Constant::int32(0)),
+                makeABTFail(ErrorCodes::Error{5155701},
+                            "$substrCP: starting index must be a non-negative integer")},
+            makeABTFunction("convert",
+                            makeVariable(startIndexName),
+                            optimizer::Constant::int32(
+                                static_cast<int32_t>(sbe::value::TypeTags::NumberInt32))));
+        functionArgs.push_back(std::move(validStartIndexExpr));
+
+        optimizer::ABT validLengthExpr = buildABTMultiBranchConditional(
+            ABTCaseValuePair{generateABTNullishOrNotRepresentableInt32Check(lenName),
+                             makeABTFail(ErrorCodes::Error{5155702},
+                                         "$substrCP: length must be numeric type representable as "
+                                         "a 32-bit integral value")},
+            ABTCaseValuePair{optimizer::make<optimizer::BinaryOp>(optimizer::Operations::Lt,
+                                                                  makeVariable(lenName),
+                                                                  optimizer::Constant::int32(0)),
+                             makeABTFail(ErrorCodes::Error{5155703},
+                                         "$substrCP: length must be a non-negative integer")},
+            makeABTFunction("convert",
+                            makeVariable(lenName),
+                            optimizer::Constant::int32(
+                                static_cast<int32_t>(sbe::value::TypeTags::NumberInt32))));
+        functionArgs.push_back(std::move(validLengthExpr));
+
+        auto resultExpr =
+            optimizer::make<optimizer::FunctionCall>("substrCP", std::move(functionArgs));
+
+        resultExpr = optimizer::make<optimizer::Let>(
+            std::move(lenName), std::move(len), std::move(resultExpr));
+        resultExpr = optimizer::make<optimizer::Let>(
+            std::move(startIndexName), std::move(startIndex), std::move(resultExpr));
+        resultExpr = optimizer::make<optimizer::Let>(
+            std::move(stringExprName), std::move(stringExpr), std::move(resultExpr));
+        pushABT(std::move(resultExpr));
     }
     void visit(const ExpressionStrLenBytes* expr) final {
-        invariant(expr->getChildren().size() == 1);
+        tassert(5155802, "expected 'expr' to have 1 child", expr->getChildren().size() == 1);
         _context->ensureArity(1);
 
-        auto strName = makeLocalVariableName(_context->state.frameId(), 0);
-        auto strExpression = _context->popABTExpr();
-        auto strVar = makeVariable(strName);
+        optimizer::ProjectionName strName = makeLocalVariableName(_context->state.frameId(), 0);
+        optimizer::ABT strExpression = _context->popABTExpr();
+        optimizer::ABT strVar = makeVariable(strName);
 
         auto strLenBytesExpr = optimizer::make<optimizer::If>(
             makeFillEmptyFalse(makeABTFunction("isString", strVar)),
@@ -2991,7 +3121,20 @@ public:
         unsupportedExpression(expr->getOpName());
     }
     void visit(const ExpressionStrLenCP* expr) final {
-        unsupportedExpression(expr->getOpName());
+        tassert(5155902, "expected 'expr' to have 1 child", expr->getChildren().size() == 1);
+        _context->ensureArity(1);
+
+        optimizer::ProjectionName strName = makeLocalVariableName(_context->state.frameId(), 0);
+        optimizer::ABT strExpression = _context->popABTExpr();
+        optimizer::ABT strVar = makeVariable(strName);
+
+        auto strLenCPExpr = optimizer::make<optimizer::If>(
+            makeFillEmptyFalse(makeABTFunction("isString", strVar)),
+            makeABTFunction("strLenCP", strVar),
+            makeABTFail(ErrorCodes::Error{5155900}, "$strLenCP requires a string argument"));
+
+        pushABT(optimizer::make<optimizer::Let>(
+            std::move(strName), strExpression, std::move(strLenCPExpr)));
     }
     void visit(const ExpressionSubtract* expr) final {
         invariant(expr->getChildren().size() == 2);
@@ -3228,7 +3371,32 @@ public:
         generateDateExpressionAcceptingTimeZone("year", expr);
     }
     void visit(const ExpressionFromAccumulator<AccumulatorAvg>* expr) final {
-        unsupportedExpression(expr->getOpName());
+        size_t arity = expr->getChildren().size();
+        _context->ensureArity(arity);
+        if (arity == 0) {
+            pushABT(optimizer::Constant::null());
+        } else if (arity == 1) {
+            optimizer::ABT singleInput = _context->popABTExpr();
+            optimizer::ProjectionName singleInputName =
+                makeLocalVariableName(_context->state.frameId(), 0);
+            auto k = makeVariable(singleInputName);
+
+            optimizer::ABT stdDevSampExpr = buildABTMultiBranchConditional(
+                ABTCaseValuePair{generateABTNullMissingOrUndefined(singleInputName),
+                                 optimizer::Constant::null()},
+                ABTCaseValuePair{makeABTFunction("isArray", makeVariable(singleInputName)),
+                                 makeFillEmptyNull(
+                                     makeABTFunction("avgOfArray", makeVariable(singleInputName)))},
+                optimizer::make<optimizer::If>(
+                    makeABTFunction("isNumber", makeVariable(singleInputName)),
+                    makeVariable(singleInputName),
+                    optimizer::Constant::null()));
+
+            pushABT(optimizer::make<optimizer::Let>(
+                std::move(singleInputName), std::move(singleInput), std::move(stdDevSampExpr)));
+        } else {
+            generateExpressionFromAccumulatorExpression(expr, _context, "avgOfArray");
+        }
     }
     void visit(const ExpressionFromAccumulatorN<AccumulatorFirstN>* expr) final {
         unsupportedExpression(expr->getOpName());
@@ -3237,11 +3405,13 @@ public:
         unsupportedExpression(expr->getOpName());
     }
     void visit(const ExpressionFromAccumulator<AccumulatorMax>* expr) final {
-        unsupportedExpression(expr->getOpName());
+        visitMaxMinFunction(expr, _context, "maxOfArray");
     }
+
     void visit(const ExpressionFromAccumulator<AccumulatorMin>* expr) final {
-        unsupportedExpression(expr->getOpName());
+        visitMaxMinFunction(expr, _context, "minOfArray");
     }
+
     void visit(const ExpressionFromAccumulatorN<AccumulatorMaxN>* expr) final {
         unsupportedExpression(expr->getOpName());
     }
@@ -3255,13 +3425,86 @@ public:
         unsupportedExpression(expr->getOpName());
     }
     void visit(const ExpressionFromAccumulator<AccumulatorStdDevPop>* expr) final {
-        unsupportedExpression(expr->getOpName());
+        size_t arity = expr->getChildren().size();
+        _context->ensureArity(arity);
+
+        if (arity == 0) {
+            pushABT(optimizer::Constant::null());
+        } else if (arity == 1) {
+            optimizer::ABT singleInput = _context->popABTExpr();
+            optimizer::ProjectionName singleInputName =
+                makeLocalVariableName(_context->state.frameId(), 0);
+            optimizer::ABT stdDevPopExpr = buildABTMultiBranchConditional(
+                ABTCaseValuePair{generateABTNullMissingOrUndefined(singleInputName),
+                                 optimizer::Constant::null()},
+                ABTCaseValuePair{
+                    makeABTFunction("isArray", makeVariable(singleInputName)),
+                    makeFillEmptyNull(makeABTFunction("stdDevPop", makeVariable(singleInputName)))},
+                optimizer::make<optimizer::If>(
+                    makeABTFunction("isNumber", makeVariable(singleInputName)),
+                    // Population standard deviation for a single numeric input is always 0.
+                    optimizer::Constant::int32(0),
+                    optimizer::Constant::null()));
+
+            pushABT(optimizer::make<optimizer::Let>(
+                std::move(singleInputName), std::move(singleInput), std::move(stdDevPopExpr)));
+        } else {
+            generateExpressionFromAccumulatorExpression(expr, _context, "stdDevPop");
+        }
     }
     void visit(const ExpressionFromAccumulator<AccumulatorStdDevSamp>* expr) final {
-        unsupportedExpression(expr->getOpName());
+        size_t arity = expr->getChildren().size();
+        _context->ensureArity(arity);
+
+        if (arity == 0) {
+            pushABT(optimizer::Constant::null());
+        } else if (arity == 1) {
+            optimizer::ABT singleInput = _context->popABTExpr();
+            optimizer::ProjectionName singleInputName =
+                makeLocalVariableName(_context->state.frameId(), 0);
+            optimizer::ABT stdDevSampExpr = buildABTMultiBranchConditional(
+                ABTCaseValuePair{generateABTNullMissingOrUndefined(singleInputName),
+                                 optimizer::Constant::null()},
+                ABTCaseValuePair{makeABTFunction("isArray", makeVariable(singleInputName)),
+                                 makeFillEmptyNull(
+                                     makeABTFunction("stdDevSamp", makeVariable(singleInputName)))},
+                // Sample standard deviation is undefined for a single input.
+                optimizer::Constant::null());
+
+            pushABT(optimizer::make<optimizer::Let>(
+                std::move(singleInputName), std::move(singleInput), std::move(stdDevSampExpr)));
+        } else {
+            generateExpressionFromAccumulatorExpression(expr, _context, "stdDevSamp");
+        }
     }
     void visit(const ExpressionFromAccumulator<AccumulatorSum>* expr) final {
-        unsupportedExpression(expr->getOpName());
+        size_t arity = expr->getChildren().size();
+        _context->ensureArity(arity);
+        if (arity == 0) {
+            pushABT(optimizer::Constant::null());
+        } else if (arity == 1) {
+            optimizer::ABT singleInput = _context->popABTExpr();
+            optimizer::ProjectionName singleInputName =
+                makeLocalVariableName(_context->state.frameId(), 0);
+            auto k = makeVariable(singleInputName);
+
+            // $sum returns 0 if the operand is missing, undefined, or non-numeric.
+            optimizer::ABT stdDevSampExpr = buildABTMultiBranchConditional(
+                ABTCaseValuePair{generateABTNullMissingOrUndefined(singleInputName),
+                                 optimizer::Constant::int32(0)},
+                ABTCaseValuePair{makeABTFunction("isArray", makeVariable(singleInputName)),
+                                 makeFillEmptyNull(
+                                     makeABTFunction("sumOfArray", makeVariable(singleInputName)))},
+                optimizer::make<optimizer::If>(
+                    makeABTFunction("isNumber", makeVariable(singleInputName)),
+                    makeVariable(singleInputName),
+                    optimizer::Constant::int32(0)));
+
+            pushABT(optimizer::make<optimizer::Let>(
+                std::move(singleInputName), std::move(singleInput), std::move(stdDevSampExpr)));
+        } else {
+            generateExpressionFromAccumulatorExpression(expr, _context, "sumOfArray");
+        }
     }
     void visit(const ExpressionFromAccumulator<AccumulatorMergeObjects>* expr) final {
         unsupportedExpression(expr->getOpName());
@@ -3286,7 +3529,10 @@ public:
     }
 
     void visit(const ExpressionRandom* expr) final {
-        unsupportedExpression(expr->getOpName());
+        uassert(
+            5155201, "$rand does not currently accept arguments", expr->getChildren().size() == 0);
+        auto expression = makeABTFunction("rand");
+        pushABT(std::move(expression));
     }
 
     void visit(const ExpressionToHashedIndexKey* expr) final {
@@ -3565,18 +3811,6 @@ private:
      * expressionName - a name of an expression the parameter belongs to.
      * parameterName - a name of the parameter corresponding to variable 'dateRef'.
      */
-    static CaseValuePair generateFailIfNotCoercibleToDate(const sbe::EVariable& dateRef,
-                                                          ErrorCodes::Error errorCode,
-                                                          StringData expressionName,
-                                                          StringData parameterName) {
-        return {
-            makeNot(makeFunction("typeMatch", dateRef.clone(), makeInt32Constant(dateTypeMask()))),
-            sbe::makeE<sbe::EFail>(errorCode,
-                                   str::stream()
-                                       << expressionName << " parameter '" << parameterName
-                                       << "' must be coercible to date")};
-    }
-
     static ABTCaseValuePair generateABTFailIfNotCoercibleToDate(const optimizer::ABT& dateVar,
                                                                 ErrorCodes::Error errorCode,
                                                                 StringData expressionName,
@@ -3592,33 +3826,14 @@ private:
      * Creates a CaseValuePair such that Null value is returned if a value of variable denoted by
      * 'variable' is null, missing, or undefined.
      */
-    static CaseValuePair generateReturnNullIfNullMissingOrUndefined(
-        const sbe::EVariable& variable) {
-        return {generateNullMissingOrUndefined(variable), makeNullConstant()};
-    }
-
     static ABTCaseValuePair generateABTReturnNullIfNullMissingOrUndefined(
         const optimizer::ABT& name) {
         return {generateABTNullMissingOrUndefined(name), optimizer::Constant::null()};
     }
 
-    static CaseValuePair generateReturnNullIfNullOrMissingOrUndefined(
-        std::unique_ptr<sbe::EExpression> expr) {
-        return {generateNullMissingOrUndefined(std::move(expr)), makeNullConstant()};
-    }
-
     /**
      * Creates a boolean expression to check if 'variable' is equal to string 'string'.
      */
-    static std::unique_ptr<sbe::EExpression> generateIsEqualToStringCheck(
-        const sbe::EExpression& expr, StringData string) {
-        return sbe::makeE<sbe::EPrimBinary>(sbe::EPrimBinary::logicAnd,
-                                            makeFunction("isString", expr.clone()),
-                                            sbe::makeE<sbe::EPrimBinary>(sbe::EPrimBinary::eq,
-                                                                         expr.clone(),
-                                                                         makeStrConstant(string)));
-    }
-
     static optimizer::ABT generateABTIsEqualToStringCheck(const optimizer::ABT& expr,
                                                           StringData string) {
         return optimizer::make<optimizer::BinaryOp>(
@@ -3855,6 +4070,70 @@ private:
             std::move(strName), std::move(operands[operandIdx++]), std::move(resultExpr));
 
         pushABT(std::move(resultExpr));
+    }
+
+    /*
+     * Generates an EExpression that returns the maximum for $max and minimum for $min.
+     */
+    void visitMaxMinFunction(const Expression* expr,
+                             ExpressionVisitorContext* _context,
+                             const std::string& maxMinFunction) {
+        size_t arity = expr->getChildren().size();
+        _context->ensureArity(arity);
+
+        if (arity == 0) {
+            pushABT(optimizer::Constant::null());
+        } else if (arity == 1) {
+            optimizer::ABT singleInput = _context->popABTExpr();
+            optimizer::ProjectionName singleInputName =
+                makeLocalVariableName(_context->state.frameId(), 0);
+
+            optimizer::ABT maxMinExpr = buildABTMultiBranchConditional(
+                ABTCaseValuePair{generateABTNullMissingOrUndefined(singleInputName),
+                                 optimizer::Constant::null()},
+                ABTCaseValuePair{
+                    makeABTFunction("isArray", makeVariable(singleInputName)),
+                    // In the case of a single argument, if the input is an array, $min or $max
+                    // operates on the elements of array to return a single value.
+                    makeFillEmptyNull(
+                        makeABTFunction(maxMinFunction, makeVariable(singleInputName)))},
+                makeVariable(singleInputName));
+
+            pushABT(optimizer::make<optimizer::Let>(
+                std::move(singleInputName), std::move(singleInput), std::move(maxMinExpr)));
+        } else {
+            generateExpressionFromAccumulatorExpression(expr, _context, maxMinFunction);
+        }
+    }
+
+    /*
+     * Converts n > 1 children into an array and generates an EExpression for
+     * ExpressionFromAccumulator expressions. Accepts an Expression, ExpressionVisitorContext, and
+     * the name of a builtin function.
+     */
+    void generateExpressionFromAccumulatorExpression(const Expression* expr,
+                                                     ExpressionVisitorContext* _context,
+                                                     const std::string& functionCall) {
+        size_t arity = expr->getChildren().size();
+        std::vector<std::pair<optimizer::ProjectionName, optimizer::ABT>> binds;
+        for (size_t idx = 0; idx < arity; ++idx) {
+            binds.emplace_back(makeLocalVariableName(_context->state.frameId(), 0),
+                               _context->popABTExpr());
+        }
+
+        std::reverse(std::begin(binds), std::end(binds));
+        optimizer::ABTVector argVars;
+        for (auto& bind : binds) {
+            argVars.push_back(makeVariable(bind.first));
+        }
+
+        // Take in all arguments and construct an array.
+        auto arrayExpr = optimizer::make<optimizer::FunctionCall>("newArray", std::move(argVars));
+        for (auto it = binds.begin(); it != binds.end(); ++it) {
+            arrayExpr = optimizer::make<optimizer::Let>(
+                it->first, std::move(it->second), std::move(arrayExpr));
+        }
+        pushABT(makeFillEmptyNull(makeABTFunction(functionCall, std::move(arrayExpr))));
     }
 
     /**

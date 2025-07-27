@@ -53,7 +53,7 @@
 #include "mongo/db/auth/authentication_session.h"
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/auth/authorization_session.h"
-#include "mongo/db/auth/sasl_commands_gen.h"
+#include "mongo/db/auth/sasl_commands.h"
 #include "mongo/db/auth/sasl_mechanism_registry.h"
 #include "mongo/db/auth/sasl_options.h"
 #include "mongo/db/auth/sasl_payload.h"
@@ -194,10 +194,10 @@ SaslReply doSaslStep(OperationContext* opCtx,
     }
 
     if (mechanism.isSuccess()) {
-        auto request = mechanism.getUserRequest();
+        auto request = mechanism.makeUserRequest();
         auto expirationTime = mechanism.getExpirationTime();
         uassertStatusOK(AuthorizationSession::get(opCtx->getClient())
-                            ->addAndAuthorizeUser(opCtx, request, expirationTime));
+                            ->addAndAuthorizeUser(opCtx, std::move(request), expirationTime));
 
         session->markSuccessful();
     }
@@ -219,43 +219,6 @@ void warnIfCompressed(OperationContext* opCtx) {
                       "SASL commands should not be run over the OP_COMPRESSED message type. This "
                       "invocation may have security implications.");
     }
-}
-
-SaslReply doSaslStart(OperationContext* opCtx,
-                      AuthenticationSession* session,
-                      const SaslStartCommand& request) {
-    auto mechanism = uassertStatusOK(
-        SASLServerMechanismRegistry::get(opCtx->getService())
-            .getServerMechanism(request.getMechanism(),
-                                DatabaseNameUtil::serialize(request.getDbName(),
-                                                            request.getSerializationContext())));
-
-    uassert(ErrorCodes::BadValue,
-            "Plaintext mechanisms may not be used with speculativeSaslStart",
-            !session->isSpeculative() ||
-                mechanism->properties().hasAllProperties(
-                    SecurityPropertySet({SecurityProperty::kNoPlainText})));
-
-    session->setMechanism(std::move(mechanism), request.getOptions());
-
-    return doSaslStep(opCtx, request.getPayload(), session);
-}
-
-SaslReply runSaslStart(OperationContext* opCtx,
-                       AuthenticationSession* session,
-                       const SaslStartCommand& request) {
-
-    session->metrics()->restart();
-
-    warnIfCompressed(opCtx);
-    opCtx->markKillOnClientDisconnect();
-
-    // Note that while updateDatabase can throw, it should not be able to for saslStart.
-    session->updateDatabase(
-        DatabaseNameUtil::serialize(request.getDbName(), request.getSerializationContext()));
-    session->setMechanismName(request.getMechanism());
-
-    return doSaslStart(opCtx, session, request);
 }
 
 SaslReply runSaslContinue(OperationContext* opCtx,
@@ -308,6 +271,38 @@ SaslReply runSaslContinue(OperationContext* opCtx,
 
 constexpr auto kDBFieldName = "db"_sd;
 }  // namespace
+
+SaslReply runSaslStart(OperationContext* opCtx,
+                       AuthenticationSession* session,
+                       const SaslStartCommand& request) {
+    session->metrics()->restart();
+
+    warnIfCompressed(opCtx);
+    opCtx->markKillOnClientDisconnect();
+
+    // Note that while updateDatabase can throw, it should not be able to for saslStart.
+    session->updateDatabase(
+        DatabaseNameUtil::serialize(request.getDbName(), request.getSerializationContext()),
+        request.getMechanism() == auth::kMechanismMongoX509);
+    session->setMechanismName(request.getMechanism());
+
+    auto mechanism = uassertStatusOK(
+        SASLServerMechanismRegistry::get(opCtx->getService())
+            .getServerMechanism(request.getMechanism(),
+                                DatabaseNameUtil::serialize(request.getDbName(),
+                                                            request.getSerializationContext())));
+
+    uassert(ErrorCodes::BadValue,
+            "Plaintext mechanisms may not be used with speculativeSaslStart",
+            !session->isSpeculative() ||
+                mechanism->properties().hasAllProperties(
+                    SecurityPropertySet({SecurityProperty::kNoPlainText})));
+
+    session->setMechanism(std::move(mechanism), request.getOptions());
+
+    return auth::doSaslStep(opCtx, request.getPayload(), session);
+}
+
 }  // namespace auth
 
 void doSpeculativeSaslStart(OperationContext* opCtx,

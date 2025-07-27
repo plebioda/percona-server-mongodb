@@ -90,6 +90,8 @@ namespace mongo {
 class RecoveryUnit;
 class WiredTigerSessionCache;
 class WiredTigerSizeStorer;
+class WiredTigerOplogData;
+class WiredTigerOplogTruncateMarkers;
 
 class WiredTigerRecordStore : public RecordStore {
 public:
@@ -252,6 +254,8 @@ public:
 
     Timestamp getPinnedOplog() const;
 
+    int64_t getOplogMaxSize() const;
+
     // Pass in NamespaceString, it is not possible to resolve the UUID to NamespaceString yet.
     void postConstructorInit(OperationContext* opCtx, const NamespaceString& ns);
 
@@ -278,12 +282,8 @@ public:
 
     bool isOpHidden_forTest(const RecordId& id) const;
 
-    class OplogTruncateMarkers;
-
     // Exposed only for testing.
-    OplogTruncateMarkers* oplogTruncateMarkers() {
-        return _oplogTruncateMarkers.get();
-    };
+    WiredTigerOplogTruncateMarkers* oplogTruncateMarkers();
 
     typedef std::variant<int64_t, WiredTigerItem> CursorKey;
 
@@ -351,8 +351,6 @@ private:
     const bool _isEphemeral;
     // True if WiredTiger is logging updates to this table
     const bool _isLogged;
-    // True if the namespace of this record store starts with "local.oplog.", and false otherwise.
-    const bool _isOplog;
     // True if the namespace of this record store starts with "config.system.change_collection", and
     // false otherwise.
     const bool _isChangeCollection;
@@ -360,8 +358,6 @@ private:
     // TODO (SERVER-57482): Remove special handling of skipping "wiredtiger_calc_modify()".
     // True if force to update with the full document, and false otherwise.
     const bool _forceUpdateWithFullDocument;
-    AtomicWord<int64_t> _oplogMaxSize;
-    AtomicWord<Timestamp> _oplogFirstRecordTimestamp{Timestamp()};
 
     // Protects initialization of the _nextIdNum.
     mutable Mutex _initNextIdMutex = MONGO_MAKE_LATCH("WiredTigerRecordStore::_initNextIdMutex");
@@ -372,12 +368,8 @@ private:
     bool _tracksSizeAdjustments;
     WiredTigerKVEngine* _kvEngine;  // not owned.
 
-    // Non-null if this record store is underlying the active oplog.
-    std::shared_ptr<OplogTruncateMarkers> _oplogTruncateMarkers;
-
-    AtomicWord<int64_t>
-        _totalTimeTruncating;            // Cumulative amount of time spent truncating the oplog.
-    AtomicWord<int64_t> _truncateCount;  // Cumulative number of truncates of the oplog.
+    // Set iff this RecordStore is for the oplog (i.e. the namespace starts with "local.oplog.").
+    std::unique_ptr<WiredTigerOplogData> _oplog;
 };
 
 

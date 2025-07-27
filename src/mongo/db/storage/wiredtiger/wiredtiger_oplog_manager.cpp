@@ -99,10 +99,11 @@ void WiredTigerOplogManager::startVisibilityThread(OperationContext* opCtx,
     // Need to obtain the mutex before starting the thread, as otherwise it may race ahead
     // see _shuttingDown as true and quit prematurely.
     stdx::lock_guard<Latch> lk(_oplogVisibilityStateMutex);
-    _oplogVisibilityThread = stdx::thread(&WiredTigerOplogManager::_updateOplogVisibilityLoop,
-                                          this,
-                                          WiredTigerRecoveryUnit::get(opCtx)->getSessionCache(),
-                                          oplogRecordStore);
+    _oplogVisibilityThread = stdx::thread(
+        &WiredTigerOplogManager::_updateOplogVisibilityLoop,
+        this,
+        WiredTigerRecoveryUnit::get(shard_role_details::getRecoveryUnit(opCtx))->getSessionCache(),
+        oplogRecordStore);
 
     _isRunning.store(true);
     _shuttingDown = false;
@@ -149,7 +150,7 @@ void WiredTigerOplogManager::triggerOplogVisibilityUpdate() {
 
 void WiredTigerOplogManager::waitForAllEarlierOplogWritesToBeVisible(
     const RecordStore* oplogRecordStore, OperationContext* opCtx) {
-    invariant(!shard_role_details::getLocker(opCtx)->inAWriteUnitOfWork());
+    invariant(!shard_role_details::getRecoveryUnit(opCtx)->inUnitOfWork());
 
     // In order to reliably detect rollback situations, we need to fetch the latestVisibleTimestamp
     // prior to querying the end of the oplog.

@@ -2,6 +2,7 @@
 // plan. For instance, there are helpers for checking whether a plan is a collection
 // scan or whether the plan is covered (index only).
 
+import {documentEq} from "jstests/aggregation/extras/utils.js";
 import {usedBonsaiOptimizer} from "jstests/libs/optimizer_utils.js";
 
 /**
@@ -919,6 +920,9 @@ export function isIdhack(db, root) {
     if (stage.minRecord instanceof ObjectId) {
         return stage.minRecord.equals(stage.maxRecord);
     } else {
+        if (isObject(stage.minRecord) && isObject(stage.maxRecord)) {
+            return documentEq(stage.minRecord, stage.maxRecord);
+        }
         return stage.minRecord === stage.maxRecord;
     }
 }
@@ -1268,9 +1272,8 @@ export function assertFetchFilter({coll, predicate, expectedFilter, nReturned}) 
 
 /**
  * Recursively checks if a javascript object contains a nested property key and returns the values.
- * NOTE: only recurses into other objects, array elements are ignored.
  */
-function getNestedProperties(object, key) {
+export function getNestedProperties(object, key) {
     let accumulator = [];
 
     function traverse(object) {

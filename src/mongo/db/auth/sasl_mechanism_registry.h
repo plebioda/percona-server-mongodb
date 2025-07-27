@@ -199,7 +199,7 @@ public:
      * Provides logic for determining if a user is a cluster member or an actual client for SASL
      * authentication mechanisms
      */
-    bool isClusterMember() const {
+    virtual bool isClusterMember(Client* client) const {
         auto systemUser = internalSecurity.getUser();
         return _principalName == (*systemUser)->getName().getUser() &&
             getAuthenticationDatabase() == (*systemUser)->getName().getDB();
@@ -247,8 +247,9 @@ public:
     /**
      * Create a UserRequest to send to AuthorizationSession.
      */
-    virtual UserRequest getUserRequest() const {
-        return UserRequest(UserName(getPrincipalName(), getAuthenticationDatabase()), boost::none);
+    virtual std::unique_ptr<UserRequest> makeUserRequest() const {
+        return std::make_unique<UserRequestGeneral>(
+            UserName(getPrincipalName(), getAuthenticationDatabase()), boost::none);
     }
 
 protected:

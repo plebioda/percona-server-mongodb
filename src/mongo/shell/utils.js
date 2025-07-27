@@ -470,7 +470,6 @@ jsTestOptions = function() {
             maxPort: TestData.maxPort,
             // Note: does not support the array version
             mongosBinVersion: TestData.mongosBinVersion || "",
-            shardMixedBinVersions: TestData.shardMixedBinVersions || false,
             mixedBinVersions: TestData.mixedBinVersions || false,
             networkMessageCompressors: TestData.networkMessageCompressors,
             replSetFeatureCompatibilityVersion: TestData.replSetFeatureCompatibilityVersion,
@@ -547,6 +546,7 @@ jsTestOptions = function() {
 
             performTimeseriesCompressionIntermediateDataIntegrityCheckOnInsert: true,
             fuzzMongodConfigs: TestData.fuzzMongodConfigs || false,
+            mozJSGCZeal: TestData.mozJSGCZeal || "",
         });
     }
     return _jsTestOptions;

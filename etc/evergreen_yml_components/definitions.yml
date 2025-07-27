@@ -741,6 +741,10 @@ functions:
       params:
         directory: src/buildscripts/antithesis/base_images/workload/src
         clone_depth: 1000
+    - command: git.get_project
+      params:
+        directory: src/buildscripts/antithesis/base_images/mongo_binaries/src
+        clone_depth: 1000
     - command: subprocess.exec
       display_name: "restore git history and tags"
       params:
@@ -1605,6 +1609,7 @@ functions:
     - command: subprocess.exec
       display_name: "sync repo with copybara"
       type: test
+      patchable: false
       params:
         binary: bash
         args:
@@ -1780,6 +1785,8 @@ functions:
     - *get_version_expansions
     - *apply_version_expansions
     - *f_expansions_write
+    - *fetch_dist_tarball
+    - *fetch_dist_debugsymbols
     - command: subprocess.exec
       display_name: "package test py"
       type: test
@@ -1818,7 +1825,7 @@ functions:
       params:
         provider: ec2
         distro: ${distro_id}
-        timeout_teardown_secs: 604800 # 7 days
+        timeout_teardown_secs: 86400 # 24 hours
         security_group_ids:
           - sg-097bff6dd0d1d31d0
 

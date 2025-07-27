@@ -251,28 +251,6 @@ ResolveRoleOption makeResolveRoleOption(PrivilegeFormat showPrivileges,
     return option;
 }
 
-MONGO_FAIL_POINT_DEFINE(authLocalGetUser);
-void handleAuthLocalGetUserFailPoint(const UserName& userName) {
-    auto sfp = authLocalGetUser.scoped();
-    if (!sfp.isActive()) {
-        return;
-    }
-
-    IDLParserContext ctx("authLocalGetUser");
-    auto delay = AuthLocalGetUserFailPoint::parse(ctx, sfp.getData()).getResolveUserDelayMS();
-
-    if (delay <= 0) {
-        return;
-    }
-
-    LOGV2_DEBUG(9139100,
-                3,
-                "Sleeping prior to loading user document",
-                "duration"_attr = Milliseconds(delay),
-                "user"_attr = userName);
-    sleepmillis(delay);
-}
-
 MONGO_FAIL_POINT_DEFINE(authLocalGetSubRoles);
 void handleAuthLocalGetSubRolesFailPoint(const std::vector<RoleName>& directRoles) {
     auto sfp = authLocalGetSubRoles.scoped();
@@ -353,17 +331,20 @@ AuthzManagerExternalStateLocal::RolesLocks AuthzManagerExternalStateLocal::_lock
 }
 
 static StatusWith<boost::optional<const std::set<RoleName>&>> _userRoles(
-    OperationContext* opCtx, const UserRequest& userReq, std::set<RoleName>& roles) {
-    if (userReq.roles) {
-        return userReq.roles.get();
+    OperationContext* opCtx,
+    const UserRequest& userReq,
+    const UserName& userName,
+    std::set<RoleName>& roles) {
+    if (const auto& roles = userReq.getRoles(); roles) {
+        return roles.get();
     }
     // no roles in userReq but probably roles can be fetched from LDAP
     auto* ldapManager = LDAPManager::get(opCtx->getServiceContext());
-    if (ldapManager && userReq.name.getDB() == "$external"_sd &&
+    if (ldapManager && userName.getDB() == "$external"_sd &&
         !ldapGlobalParams.ldapQueryTemplate->empty()) {
 
         stdx::unordered_set<RoleName> uroles;
-        auto status = ldapManager->queryUserRoles(userReq.name, uroles);
+        auto status = ldapManager->queryUserRoles(userName, uroles);
         if (!status.isOK())
             return status;
         roles.insert(uroles.cbegin(), uroles.cend());
@@ -376,18 +357,19 @@ StatusWith<User> AuthzManagerExternalStateLocal::getUserObject(
     OperationContext* opCtx,
     const UserRequest& userReq,
     const SharedUserAcquisitionStats& userAcquisitionStats) try {
-    const UserName& userName = userReq.name;
     std::vector<RoleName> directRoles;
-    User user(userReq);
+    User user(userReq.clone());
+
+    const UserRequest* request = user.getUserRequest();
+    const UserName& userName = request->getUserName();
 
     std::set<RoleName> externalRoles;
-    auto rolesStatus = _userRoles(opCtx, userReq, externalRoles);
+    auto rolesStatus = _userRoles(opCtx, *request, userName, externalRoles);
     if (!rolesStatus.isOK())
         return rolesStatus.getStatus();
     const auto& roles = rolesStatus.getValue();
 
     auto rolesLock = _lockRoles(opCtx, userName.tenantId());
-    handleAuthLocalGetUserFailPoint(userName);
 
     if (!roles) {
         // Normal path: Acquire a user from the local store by UserName.
@@ -404,7 +386,7 @@ StatusWith<User> AuthzManagerExternalStateLocal::getUserObject(
         }
 
         V2UserDocumentParser userDocParser;
-        userDocParser.setTenantId(userReq.name.tenantId());
+        userDocParser.setTenantId(request->getUserName().tenantId());
         uassertStatusOK(userDocParser.initializeUserFromUserDocument(userDoc, &user));
         for (auto iter = user.getRoles(); iter.more();) {
             directRoles.push_back(iter.next());
@@ -452,18 +434,18 @@ Status AuthzManagerExternalStateLocal::getUserDescription(
     const UserRequest& userReq,
     BSONObj* result,
     const SharedUserAcquisitionStats& userAcquisitionStats) try {
-    const UserName& userName = userReq.name;
+
+    const UserName& userName = userReq.getUserName();
     std::vector<RoleName> directRoles;
     BSONObjBuilder resultBuilder;
 
     std::set<RoleName> externalRoles;
-    auto rolesStatus = _userRoles(opCtx, userReq, externalRoles);
+    auto rolesStatus = _userRoles(opCtx, userReq, userName, externalRoles);
     if (!rolesStatus.isOK())
         return rolesStatus.getStatus();
     const auto& roles = rolesStatus.getValue();
 
     auto rolesLock = _lockRoles(opCtx, userName.tenantId());
-    handleAuthLocalGetUserFailPoint(userName);
 
     if (!roles) {
         BSONObj userDoc;

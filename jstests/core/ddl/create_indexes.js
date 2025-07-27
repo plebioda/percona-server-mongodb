@@ -6,7 +6,6 @@
  *   cannot_run_during_upgrade_downgrade,
  *   # simulate_atlas_proxy.js can't simulate req on config.transaction as tested
  *   simulate_atlas_proxy_incompatible,
- *   multiversion_incompatible,
  * ]
  * fcv49 for the change to error code in createIndexes invalid field reply.
  */
@@ -46,8 +45,7 @@ const extractResult = function(obj) {
 
 // TODO SERVER-88069: remove check once createdCollectionAutomatically is removed.
 const checkImplicitCreate = function(admin, createIndexResult) {
-    const isMultiversion = jsTest.options().shardMixedBinVersions ||
-        jsTest.options().useRandomBinVersionsWithinReplicaSet;
+    const isMultiversion = Boolean(jsTest.options().useRandomBinVersionsWithinReplicaSet);
     if (!isMultiversion &&
         !FeatureFlagUtil.isPresentAndEnabled(admin, "80CollectionCreationPath")) {
         assert.eq(true, createIndexResult.createdCollectionAutomatically);

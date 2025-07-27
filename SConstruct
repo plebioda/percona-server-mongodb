@@ -18,7 +18,6 @@ import textwrap
 import threading
 import time
 import uuid
-import warnings
 from datetime import datetime
 from glob import glob
 
@@ -72,11 +71,6 @@ atexit.register(mongo.print_build_failures)
 # (https://github.com/SCons/scons/issues/4187). Upon a future upgrade to SCons
 # that incorporates #4187, we should replace this solution with that.
 _parser = SCons.Script.SConsOptions.Parser("")
-
-# TODO：SERVER-93552： Bumping pymongo to the new version
-warnings.filterwarnings(
-    "ignore", message="Properties that return a naïve datetime", category=UserWarning
-)
 
 
 def add_option(name, **kwargs):
@@ -2370,7 +2364,7 @@ if link_model.startswith("dynamic"):
     if link_model == "dynamic" and visibility_annotations_enabled:
 
         def visibility_cppdefines_generator(target, source, env, for_signature):
-            if not "MONGO_API_NAME" in env:
+            if "MONGO_API_NAME" not in env:
                 return None
             return "MONGO_API_${MONGO_API_NAME}"
 
@@ -2599,16 +2593,16 @@ if not env.Verbose():
 # add TEMPFILE in. For verbose builds when using a tempfile, we need
 # some trickery so that we print the command we are running, and not
 # just the invocation of the compiler being fed the command file.
-if not "mslink" in env["TOOLS"]:
+if "mslink" not in env["TOOLS"]:
     if env.Verbose():
         env["LINKCOM"] = "${{TEMPFILE('{0}', '')}}".format(env["LINKCOM"])
         env["SHLINKCOM"] = "${{TEMPFILE('{0}', '')}}".format(env["SHLINKCOM"])
-        if not "libtool" in env["TOOLS"]:
+        if "libtool" not in env["TOOLS"]:
             env["ARCOM"] = "${{TEMPFILE('{0}', '')}}".format(env["ARCOM"])
     else:
         env["LINKCOM"] = "${{TEMPFILE('{0}', 'LINKCOMSTR')}}".format(env["LINKCOM"])
         env["SHLINKCOM"] = "${{TEMPFILE('{0}', 'SHLINKCOMSTR')}}".format(env["SHLINKCOM"])
-        if not "libtool" in env["TOOLS"]:
+        if "libtool" not in env["TOOLS"]:
             env["ARCOM"] = "${{TEMPFILE('{0}', 'ARCOMSTR')}}".format(env["ARCOM"])
 
 if env["_LIBDEPS"] == "$_LIBDEPS_OBJS":
@@ -3249,7 +3243,7 @@ if env.TargetOSIs("posix"):
     if not can_nofp:
         env.Append(CCFLAGS=["-fno-omit-frame-pointer"])
 
-    if not "tbaa" in selected_experimental_optimizations:
+    if "tbaa" not in selected_experimental_optimizations:
         env.Append(CCFLAGS=["-fno-strict-aliasing"])
 
     # Enabling hidden visibility on non-darwin requires that we have
@@ -3743,18 +3737,18 @@ def doConfigure(myenv):
         # selection manually.
         if any(flag.startswith("-fuse-ld=") for flag in env["LINKFLAGS"]):
             myenv.FatalError(
-                f"Use the '--linker' option instead of modifying the LINKFLAGS directly."
+                "Use the '--linker' option instead of modifying the LINKFLAGS directly."
             )
 
         linker_ld = get_option("linker")
 
         if linker_ld == "bfd":
-            myenv.FatalError(f"The linker 'bfd' is not supported.")
+            myenv.FatalError("The linker 'bfd' is not supported.")
         elif linker_ld == "auto":
             if not env.TargetOSIs("darwin", "macOS"):
                 if not myenv.AddToLINKFLAGSIfSupported("-fuse-ld=lld"):
                     myenv.FatalError(
-                        f"The recommended linker 'lld' is not supported with the current compiler configuration, you can try the 'gold' linker with '--linker=gold'."
+                        "The recommended linker 'lld' is not supported with the current compiler configuration, you can try the 'gold' linker with '--linker=gold'."
                     )
         elif link_model.startswith("dynamic") and linker_ld == "bfd":
             # BFD is not supported due to issues with it causing warnings from some of
@@ -5032,7 +5026,7 @@ def doConfigure(myenv):
     # We set this with GCC on x86 platforms to work around
     # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=43052
     if myenv.ToolchainIs("gcc") and (env["TARGET_ARCH"] in ["i386", "x86_64"]):
-        if not "builtin-memcmp" in selected_experimental_optimizations:
+        if "builtin-memcmp" not in selected_experimental_optimizations:
             myenv.AddToCCFLAGSIfSupported("-fno-builtin-memcmp")
 
     def CheckBoostMinVersion(context):
@@ -5437,6 +5431,18 @@ def doConfigure(myenv):
 
 
 env = doConfigure(env)
+saslconf = Configure(env)
+
+have_sasl_lib = saslconf.CheckLibWithHeader(
+    "sasl2",
+    ["stddef.h", "sasl/sasl.h"],
+    "C",
+    "sasl_version_info(0, 0, 0, 0, 0, 0);",
+    autoadd=False,
+)
+
+saslconf.Finish()
+
 env["NINJA_SYNTAX"] = "#site_scons/third_party/ninja_syntax.py"
 
 if env.ToolchainIs("clang"):
@@ -5470,7 +5476,7 @@ if "ICECC" in env and env["ICECC"]:
         # SERVER-70648: Need to revert on how to update icecream
         if "ICECREAM_VERSION" in env and env["ICECREAM_VERSION"] < parse_version("1.3"):
             env.FatalError(
-                textwrap.dedent(f"""\
+                textwrap.dedent("""\
                 Please refer to the following commands to update your icecream:
                     sudo add-apt-repository ppa:mongodb-dev-prod/mongodb-build
                     sudo apt update
@@ -6316,6 +6322,7 @@ Export(
         "debugBuild",
         "endian",
         "get_option",
+        "have_sasl_lib",
         "has_option",
         "http_client",
         "inmemory",
@@ -6419,7 +6426,7 @@ def half_source_emitter(target, source, env):
     global first_half_flag
     if first_half_flag:
         first_half_flag = False
-        if not "conftest" in str(target[0]) and not str(source[0]).endswith("_test.cpp"):
+        if "conftest" not in str(target[0]) and not str(source[0]).endswith("_test.cpp"):
             env.Alias("compile_first_half_non_test_source", target)
     else:
         first_half_flag = True
@@ -6439,7 +6446,7 @@ if SCons.Util.case_sensitive_suffixes(".c", ".C"):
 for object_builder in SCons.Tool.createObjBuilders(env):
     emitterdict = object_builder.builder.emitter
     for suffix in emitterdict.keys():
-        if not suffix in _CSuffixes + _CXXSuffixes:
+        if suffix not in _CSuffixes + _CXXSuffixes:
             continue
         base = emitterdict[suffix]
         emitterdict[suffix] = SCons.Builder.ListEmitter(
@@ -6529,9 +6536,9 @@ elif env.GetOption("build-mongot"):
         target=["$BUILD_ROOT/db_contrib_tool_venv/bin/db-contrib-tool"],
         source=[],
         action=[
-            f"rm -rf $BUILD_ROOT/db_contrib_tool_venv",
+            "rm -rf $BUILD_ROOT/db_contrib_tool_venv",
             f"{sys.executable} -m virtualenv -p {sys.executable} $BUILD_ROOT/db_contrib_tool_venv",
-            f"$BUILD_ROOT/db_contrib_tool_venv/bin/python3 -m pip install db-contrib-tool",
+            "$BUILD_ROOT/db_contrib_tool_venv/bin/python3 -m pip install db-contrib-tool",
         ],
         BUILD_ROOT=env.Dir("$BUILD_ROOT").path,
     )
@@ -6541,7 +6548,7 @@ elif env.GetOption("build-mongot"):
         source=db_contrib_tool,
         action=[
             f"$SOURCE setup-mongot-repro-env {binary_ver_str} --platform={platform_str} --architecture={arch_str}",
-            f"mv build/mongot-localdev mongot-localdev",
+            "mv build/mongot-localdev mongot-localdev",
         ],
         ENV=os.environ,
     )

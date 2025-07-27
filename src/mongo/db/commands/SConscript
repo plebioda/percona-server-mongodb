@@ -16,20 +16,6 @@ env.SConscript(
     ],
 )
 
-env.Library(
-    target="server_status_servers",
-    source=[
-        "server_status_servers.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/stats/counters",
-        "$BUILD_DIR/mongo/transport/message_compressor",
-        "$BUILD_DIR/mongo/transport/service_executor",
-        "$BUILD_DIR/mongo/util/net/ssl_manager",
-        "server_status_core",
-    ],
-)
-
 # Commands available in every process that executes commands
 env.Library(
     target="core",
@@ -170,23 +156,12 @@ env.Library(
 )
 
 env.Library(
-    target="rwc_defaults_commands",
-    source=[
-        "rwc_defaults_commands_gen.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/read_write_concern_defaults",
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
-)
-
-env.Library(
     target="authentication_commands",
     source=[
         "authentication_commands.cpp",
         "authentication_commands_gen.cpp",
     ],
-    LIBDEPS_PRIVATE=[
+    LIBDEPS_PRIVATE=[  # TODO SERVER-72648 - remove dependencies
         "$BUILD_DIR/mongo/bson/mutable/mutable_bson",
         "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/auth/auth",
@@ -194,6 +169,8 @@ env.Library(
         "$BUILD_DIR/mongo/db/auth/authentication_session",
         "$BUILD_DIR/mongo/db/auth/authorization_manager_global",
         "$BUILD_DIR/mongo/db/auth/cluster_auth_mode",
+        "$BUILD_DIR/mongo/db/auth/sasl_commands",
+        "$BUILD_DIR/mongo/db/auth/user_request_x509" if get_option("ssl") == "on" else [],
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/rpc/client_metadata",
@@ -241,22 +218,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/shard_role",
         "$BUILD_DIR/mongo/db/storage/storage_options",
-    ],
-)
-
-env.Library(
-    target="create_command",
-    source=[
-        "create_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/crypto/encrypted_field_config",
-        "$BUILD_DIR/mongo/db/auth/authprivilege",
-        "$BUILD_DIR/mongo/db/catalog/collection_options",
-        "$BUILD_DIR/mongo/db/query/query_knobs",
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/server_options",
-        "$BUILD_DIR/mongo/db/timeseries/timeseries_options",
     ],
 )
 
@@ -432,16 +393,17 @@ env.Library(
         "collection_to_capped.cpp",
         "compact.cpp",
         "compact_gen.cpp",
-        "dbcommands_d.cpp",
         "dbhash.cpp",
+        "filemd5_cmd.cpp",
         "fle2_cleanup_cmd.cpp",
         "fle2_compact_cmd.cpp",
         "get_cluster_parameter_command.cpp",
-        "internal_rename_if_options_and_indexes_match_gen.cpp",
         "internal_rename_if_options_and_indexes_match_cmd.cpp",
+        "internal_rename_if_options_and_indexes_match_gen.cpp",
         "internal_transactions_test_command_d.cpp",
         "oplog_application_checks.cpp",
         "oplog_note.cpp",
+        "profile_cmd.cpp",
         "query_cmd/change_stream_state_command.cpp",
         "query_cmd/map_reduce_command.cpp",
         "read_write_concern_defaults_server_status.cpp",
@@ -495,10 +457,22 @@ env.Library(
         "$BUILD_DIR/mongo/db/fle_crud_mongod",
         "$BUILD_DIR/mongo/db/index_builds_coordinator_interface",
         "$BUILD_DIR/mongo/db/index_commands_idl",
-        "$BUILD_DIR/mongo/db/introspect",
+        "$BUILD_DIR/mongo/db/modules/enterprise/src/audit/audit_command"
+        if "audit" in env.get("MONGO_ENTERPRISE_FEATURES", [])
+        else "",
+        "$BUILD_DIR/mongo/db/modules/enterprise/src/live_import/commands/export_collection_command"
+        if "live_import" in env.get("MONGO_ENTERPRISE_FEATURES", [])
+        else "",
+        "$BUILD_DIR/mongo/db/modules/enterprise/src/live_import/commands/import_collection_command"
+        if "live_import" in env.get("MONGO_ENTERPRISE_FEATURES", [])
+        else "",
+        "$BUILD_DIR/mongo/db/modules/enterprise/src/live_import/commands/vote_commit_import_collection_command"
+        if "live_import" in env.get("MONGO_ENTERPRISE_FEATURES", [])
+        else "",
         "$BUILD_DIR/mongo/db/multitenancy",
         "$BUILD_DIR/mongo/db/pipeline/pipeline",
         "$BUILD_DIR/mongo/db/pipeline/process_interface/mongo_process_interface",
+        "$BUILD_DIR/mongo/db/profile_collection",
         "$BUILD_DIR/mongo/db/repl/dbcheck",
         "$BUILD_DIR/mongo/db/repl/oplog",
         "$BUILD_DIR/mongo/db/repl/repl_coordinator_interface",

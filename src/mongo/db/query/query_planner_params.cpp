@@ -521,8 +521,7 @@ void QueryPlannerParams::fillOutMainCollectionPlannerParams(
 
     // _id queries can skip checking the catalog for indices since they will always use the _id
     // index.
-    if (isIdHackEligibleQuery(
-            mainColl, canonicalQuery.getFindCommandRequest(), canonicalQuery.getCollator())) {
+    if (isIdHackEligibleQuery(mainColl, canonicalQuery)) {
         return;
     }
 
@@ -643,7 +642,6 @@ std::vector<IndexEntry> getIndexEntriesForDistinct(
 
 QueryPlannerParams::QueryPlannerParams(QueryPlannerParams::ArgsForDistinct&& distinctArgs) {
     mainCollectionInfo.options = QueryPlannerParams::NO_TABLE_SCAN | distinctArgs.plannerOptions;
-    flipDistinctScanDirection = distinctArgs.flipDistinctScanDirection;
 
     if (!distinctArgs.collections.hasMainCollection()) {
         return;

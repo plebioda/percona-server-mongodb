@@ -44,7 +44,6 @@
 #include "mongo/db/query/optimizer/containers.h"
 #include "mongo/db/query/optimizer/defs.h"
 #include "mongo/db/query/optimizer/index_bounds.h"
-#include "mongo/db/query/optimizer/metadata.h"
 #include "mongo/util/assert_util.h"
 
 namespace mongo::optimizer::properties {
@@ -73,7 +72,6 @@ class DistributionAvailability;
  * Physical properties.
  */
 class CollationRequirement;
-class LimitSkipRequirement;
 class ProjectionRequirement;
 class DistributionRequirement;
 class IndexingRequirement;
@@ -88,7 +86,6 @@ using LogicalProperty = algebra::PolyValue<CardinalityEstimate,
                                            DistributionAvailability>;
 
 using PhysProperty = algebra::PolyValue<CollationRequirement,
-                                        LimitSkipRequirement,
                                         ProjectionRequirement,
                                         DistributionRequirement,
                                         IndexingRequirement,
@@ -195,33 +192,6 @@ public:
 
 private:
     ProjectionCollationSpec _spec;
-};
-
-/**
- * A physical property which specifies what portion of the result in terms of window defined by the
- * limit and skip is to be returned.
- */
-class LimitSkipRequirement final : public PhysPropertyTag {
-public:
-    static constexpr int64_t kMaxVal = std::numeric_limits<int64_t>::max();
-
-    LimitSkipRequirement(int64_t limit, int64_t skip);
-
-    bool operator==(const LimitSkipRequirement& other) const;
-
-    bool hasLimit() const;
-
-    int64_t getLimit() const;
-    int64_t getSkip() const;
-    int64_t getAbsoluteLimit() const;
-
-    ProjectionNameSet getAffectedProjectionNames() const;
-
-private:
-    // Max number of documents to return. Maximum integer value means unlimited.
-    int64_t _limit;
-    // Documents to skip before start returning in result.
-    int64_t _skip;
 };
 
 /**
@@ -344,7 +314,7 @@ private:
 
 /**
  * A physical property that specifies that the we will consider only some approximate number of
- * documents. Typically generated after enforcing a LimitSkipRequirement. This property affects
+ * documents. Typically generated after enforcing a limit/skip. This property affects
  * costing of stateful physical operators such as sort and hash groupby.
  */
 class LimitEstimate final : public PhysPropertyTag {

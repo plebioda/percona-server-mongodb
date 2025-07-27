@@ -61,6 +61,7 @@
 #include "mongo/db/s/collection_sharding_state.h"
 #include "mongo/db/s/database_sharding_state.h"
 #include "mongo/db/s/operation_sharding_state.h"
+#include "mongo/db/s/shard_filtering_util.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/storage/capped_snapshots.h"
 #include "mongo/db/storage/recovery_unit.h"
@@ -262,7 +263,7 @@ void verifyDbAndCollection(OperationContext* opCtx,
         }
         if (shard_role_details::getRecoveryUnit(opCtx)->isActive()) {
             const auto mySnapshot =
-                shard_role_details::getRecoveryUnit(opCtx)->getPointInTimeReadTimestamp(opCtx);
+                shard_role_details::getRecoveryUnit(opCtx)->getPointInTimeReadTimestamp();
             if (mySnapshot && *mySnapshot < coll->getMinimumValidSnapshot()) {
                 throwWriteConflictException(str::stream()
                                             << "Unable to write to collection '"
@@ -298,8 +299,7 @@ std::variant<CollectionPtr, std::shared_ptr<const ViewDefinition>> acquireLocalC
     const AcquisitionPrerequisites& prerequisites) {
     const auto& nss = prerequisites.nss;
 
-    auto readTimestamp =
-        shard_role_details::getRecoveryUnit(opCtx)->getPointInTimeReadTimestamp(opCtx);
+    auto readTimestamp = shard_role_details::getRecoveryUnit(opCtx)->getPointInTimeReadTimestamp();
     auto coll = CollectionPtr(
         catalog.establishConsistentCollection(opCtx, NamespaceStringOrUUID(nss), readTimestamp));
     checkCollectionUUIDMismatch(opCtx, catalog, nss, coll, prerequisites.uuid);
@@ -1038,8 +1038,7 @@ ResolvedNamespaceOrViewAcquisitionRequests generateSortedAcquisitionRequests(
         lockFreeReadsResources) {
     ResolvedNamespaceOrViewAcquisitionRequests resolvedAcquisitionRequests;
 
-    auto readTimestamp =
-        shard_role_details::getRecoveryUnit(opCtx)->getPointInTimeReadTimestamp(opCtx);
+    auto readTimestamp = shard_role_details::getRecoveryUnit(opCtx)->getPointInTimeReadTimestamp();
 
     int counter = 0;
     for (const auto& ar : acquisitionRequests) {
@@ -1586,8 +1585,8 @@ void restoreTransactionResourcesToOperationContext(
                     transactionResources.yielded.emplace(
                         TransactionResources::YieldedStateHolder{std::move(lockSnapshot)});
                     // Wait for the critical section to finish.
-                    OperationShardingState::waitForCriticalSectionToComplete(
-                        opCtx, *ex->getCriticalSectionSignal())
+                    refresh_util::waitForCriticalSectionToComplete(opCtx,
+                                                                   *ex->getCriticalSectionSignal())
                         .ignore();
                     // Try again to restore.
                     continue;

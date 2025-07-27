@@ -40,7 +40,7 @@ variables:
   # ANY MODIFICATIONS HERE SHOULD ALSO BE MADE IN THOSE FILES
   - &linux_x86_dynamic_compile_variant_dependency
     depends_on:
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
         variant: &linux_x86_dynamic_compile_variant_name linux-x86-dynamic-compile
       - name: version_gen
         variant: generate-tasks-for-version
@@ -104,7 +104,7 @@ variables:
 
   - &linux_x86_dynamic_debug_compile_variant_dependency
     depends_on:
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
         variant: &linux_x86_dynamic_debug_compile_variant_name linux-x86-dynamic-debug-compile-required
       - name: version_gen
         variant: generate-tasks-for-version
@@ -120,7 +120,7 @@ variables:
   # ANY MODIFICATIONS HERE SHOULD ALSO BE MADE IN THOSE FILES
   - &linux_debug_aubsan_compile_variant_dependency
     depends_on:
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
         variant: &linux_debug_aubsan_compile_variant_name linux-debug-aubsan-compile-required
       - name: archive_jstestshell
         variant: *linux_debug_aubsan_compile_variant_name
@@ -176,7 +176,7 @@ variables:
   # ANY MODIFICATIONS HERE SHOULD ALSO BE MADE IN THOSE FILES
   - &enterprise-rhel8-debug-tsan-compile-dependency
     depends_on:
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
         variant: &enterprise-rhel8-debug-tsan-compile enterprise-rhel8-debug-tsan-compile
       - name: archive_jstestshell
         variant: *enterprise-rhel8-debug-tsan-compile
@@ -322,12 +322,12 @@ buildvariants:
     tasks:
       - name: search_end_to_end_sharded_cluster
       - name: search_end_to_end_single_node
-      - name: .development_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_community !.requires_all_feature_flags
-      - name: .development_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_community !.requires_all_feature_flags
+      - name: .development_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_community !.requires_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
+      - name: .development_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_community !.requires_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
         distros:
           - rhel8.8-medium
-      - name: .release_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_community !.requires_all_feature_flags
-      - name: .release_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_community !.requires_all_feature_flags
+      - name: .release_critical !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_community !.requires_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
+      - name: .release_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_community !.requires_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
         distros:
           - rhel8.8-medium
 
@@ -598,7 +598,6 @@ buildvariants:
       - name: .sharding .jscore !.wo_snapshot !.feature_flag_guarded
       - name: .sharding .common !.csrs !.jstestfuzz !.feature_flag_guarded
       - name: .updatefuzzer
-      - name: .serverless
       - name: unittest_shell_hang_analyzer_gen
       - name: .watchdog
 
@@ -611,8 +610,9 @@ buildvariants:
     expansions:
       <<: *enterprise-rhel-8-64-bit-dynamic-expansions
       # JS_GC_ZEAL modes can be found at https://github.com/mongodb/mongo/blob/r8.0.0-rc9/src/third_party/mozjs/extract/js/src/gc/GC.cpp#L563-L612.
-      # These modes correspond to collecting the nursery (GenerationalGC) every 50 allocations.
-      mozjs_options: JS_GC_ZEAL='7,50'
+      # These modes correspond to a GC policy of generationalGC (mode 7) every 75 allocations, and a
+      # consistency check of the heap after every GC cycle (mode 15).
+      mongo_mozjs_options: "7;15,75"
       compile_flags: >-
         --ssl
         MONGO_DISTMOD=rhel88
@@ -624,6 +624,8 @@ buildvariants:
       compile_variant: enterprise-rhel-8-64-bit-dynamic-spider-monkey-dbg
       exec_timeout_secs: 32400 # 9 hour timeout
       timeout_secs: 18000 # 5 hour idle timeout
+      test_flags: >-
+        --includeWithAnyTags=requires_scripting
     depends_on: []
     tasks:
       - name: compile_test_parallel_core_stream_TG
@@ -631,5 +633,8 @@ buildvariants:
           - rhel8.8-xlarge
       - name: aggregation
       - name: aggregation_mongos_passthrough
+      - name: auth_gen
       - name: concurrency_simultaneous_gen
       - name: jsCore
+      - name: noPassthrough_gen
+      - name: sharding_gen

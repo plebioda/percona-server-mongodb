@@ -49,8 +49,7 @@
 
 namespace mongo::optimizer {
 
-ABT translateCanonicalQueryToABT(const Metadata& metadata,
-                                 const CanonicalQuery& canonicalQuery,
+ABT translateCanonicalQueryToABT(const CanonicalQuery& canonicalQuery,
                                  ProjectionName scanProjName,
                                  ABT initialNode,
                                  PrefixId& prefixId,
@@ -83,12 +82,10 @@ ABT translateCanonicalQueryToABT(const Metadata& metadata,
     auto limitAmount = canonicalQuery.getFindCommandRequest().getLimit();
 
     if (limitAmount || skipAmount) {
-        ctx.setNode<LimitSkipNode>(
-            std::move(ctx.getNode()._rootProjection),
-            properties::LimitSkipRequirement(
-                limitAmount.value_or(properties::LimitSkipRequirement::kMaxVal),
-                skipAmount.value_or(0)),
-            std::move(ctx.getNode()._node));
+        ctx.setNode<LimitSkipNode>(std::move(ctx.getNode()._rootProjection),
+                                   limitAmount.value_or(LimitSkipNode::kMaxVal),
+                                   skipAmount.value_or(0),
+                                   std::move(ctx.getNode()._node));
     }
 
     return make<RootNode>(properties::ProjectionRequirement{ProjectionNameVector{

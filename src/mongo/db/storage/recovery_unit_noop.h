@@ -47,23 +47,19 @@ public:
         return true;
     }
 
-    bool waitUntilDurable(OperationContext* opCtx) final {
-        return true;
-    }
-
     void setOrderedCommit(bool orderedCommit) final {}
 
     void validateInUnitOfWork() const final {}
 
-    void doBeginUnitOfWork() final {}
+    void doBeginUnitOfWork() override {}
 
     void doAbandonSnapshot() override {}
 
-    void doCommitUnitOfWork() final {
+    void doCommitUnitOfWork() override {
         _executeCommitHandlers(boost::none);
     }
 
-    void doAbortUnitOfWork() final {
+    void doAbortUnitOfWork() override {
         _executeRollbackHandlers();
     }
 

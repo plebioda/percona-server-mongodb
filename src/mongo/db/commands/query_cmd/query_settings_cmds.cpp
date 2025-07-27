@@ -109,6 +109,11 @@ auto findQueryShapeConfigurationByQueryShapeHash(
  * with the existing attributes in 'rhs'.
  */
 QuerySettings mergeQuerySettings(const QuerySettings& lhs, const QuerySettings& rhs) {
+    static_assert(
+        QuerySettings::fieldNames.size() == 5,
+        "A new field has been added to the QuerySettings structure, mergeQuerySettings() should be "
+        "updated appropriately.");
+
     QuerySettings querySettings = lhs;
 
     if (rhs.getQueryFramework()) {
@@ -122,6 +127,10 @@ QuerySettings mergeQuerySettings(const QuerySettings& lhs, const QuerySettings& 
     // Note: update if reject has a value in the rhs, not just if that value is true.
     if (rhs.getReject().has_value()) {
         querySettings.setReject(rhs.getReject());
+    }
+
+    if (auto comment = rhs.getComment()) {
+        querySettings.setComment(comment);
     }
 
     return querySettings;
@@ -148,7 +157,7 @@ void readModifyWriteQuerySettingsConfigOption(
     // Read the query shape configurations for the tenant from the local copy of the query settings
     // cluster-wide configuration option.
     auto queryShapeConfigurations =
-        querySettingsManager.getAllQueryShapeConfigurations(opCtx, dbName.tenantId());
+        querySettingsManager.getAllQueryShapeConfigurations(dbName.tenantId());
 
     // Block if the operation is on the 'representativeQuery' that matches the
     // "representativeQueryToBlock" field of the fail-point configuration.
@@ -314,10 +323,7 @@ public:
                 utils::validateRepresentativeQuery(*representativeQueryInfo);
             }
 
-            // Make a query shape configuration to insert.
-            QueryShapeConfiguration newQueryShapeConfiguration(queryShapeHash,
-                                                               request().getSettings());
-            newQueryShapeConfiguration.setRepresentativeQuery(representativeQuery);
+            SetQuerySettingsCommandReply reply;
             auto&& tenantId = request().getDbName().tenantId();
 
             readModifyWriteQuerySettingsConfigOption(
@@ -330,6 +336,10 @@ public:
                         findQueryShapeConfigurationByQueryShapeHash(queryShapeConfigurations,
                                                                     queryShapeHash);
                     if (matchingQueryShapeConfigurationIt == queryShapeConfigurations.end()) {
+                        // Make a query shape configuration to insert.
+                        QueryShapeConfiguration newQueryShapeConfiguration(queryShapeHash,
+                                                                           request().getSettings());
+                        newQueryShapeConfiguration.setRepresentativeQuery(representativeQuery);
                         // Add a new query settings entry.
                         validateAndSimplifyQuerySettings(
                             opCtx,
@@ -344,6 +354,9 @@ public:
                                     "settings"_attr =
                                         newQueryShapeConfiguration.getSettings().toBSON());
                         queryShapeConfigurations.push_back(newQueryShapeConfiguration);
+
+                        // Update the reply with the new query shape configuration.
+                        reply.setQueryShapeConfiguration(std::move(newQueryShapeConfiguration));
                     } else {
                         // Update an existing query settings entry by updating the existing
                         // QueryShapeConfiguration with the new query settings.
@@ -368,11 +381,11 @@ public:
                             queryShapeConfigurationToUpdate.setRepresentativeQuery(
                                 representativeQuery);
                         }
+
+                        // Update the reply with the updated query shape configuration.
+                        reply.setQueryShapeConfiguration(queryShapeConfigurationToUpdate);
                     }
                 });
-
-            SetQuerySettingsCommandReply reply;
-            reply.setQueryShapeConfiguration(std::move(newQueryShapeConfiguration));
             return reply;
         }
     };

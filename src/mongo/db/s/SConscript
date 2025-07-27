@@ -226,6 +226,7 @@ env.Library(
         "$BUILD_DIR/mongo/db/index_commands_idl",
         "$BUILD_DIR/mongo/db/internal_transactions_feature_flag",
         "$BUILD_DIR/mongo/db/keys_collection_client_direct",
+        "$BUILD_DIR/mongo/db/op_observer/batched_write_context",
         "$BUILD_DIR/mongo/db/op_observer/op_observer",
         "$BUILD_DIR/mongo/db/op_observer/op_observer_impl",
         "$BUILD_DIR/mongo/db/op_observer/op_observer_util",
@@ -301,23 +302,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/vector_clock_mongod",
         "$BUILD_DIR/mongo/executor/task_executor_pool",
         "$BUILD_DIR/mongo/s/grid",
-    ],
-)
-
-env.Library(
-    target="forwardable_operation_metadata",
-    source=[
-        "forwardable_operation_metadata.cpp",
-        "forwardable_operation_metadata_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/auth/auth",
-        "$BUILD_DIR/mongo/db/auth/security_token",
-        "$BUILD_DIR/mongo/db/auth/security_token_auth",
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/write_block_bypass",
-        "$BUILD_DIR/mongo/rpc/metadata_impersonated_user",
-        "$BUILD_DIR/mongo/util/concurrency/spin_lock",
     ],
 )
 

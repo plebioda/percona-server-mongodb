@@ -5,6 +5,7 @@
  *   resource_intensive,
  *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
  *    embedded_router_incompatible,
+ *    requires_scripting
  * ]
  */
 import {configureFailPoint} from "jstests/libs/fail_point_util.js";
@@ -327,8 +328,7 @@ let testConnReadPreference = function(
                 pipeline: [isRouter ? {$project: {_id: true, x: true}} : {$project: {x: 1}}]
             }));
 
-    const isMultiversion = jsTest.options().shardMixedBinVersions ||
-        jsTest.options().useRandomBinVersionsWithinReplicaSet;
+    const isMultiversion = Boolean(jsTest.options().useRandomBinVersionsWithinReplicaSet);
 
     const isValidMongos =
         !isMongos || MongoRunner.compareBinVersions(conn.fullOptions.binVersion, "7.1") >= 0;

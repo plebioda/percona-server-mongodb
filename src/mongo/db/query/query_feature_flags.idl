@@ -153,6 +153,12 @@ feature_flags:
       default: false
       shouldBeFCVGated: true
 
+    featureFlagCursorBasedTop:
+      description: "Feature flag to enable cursor-based top command."
+      cpp_varname: gFeatureFlagCursorBasedTop
+      default: false
+      shouldBeFCVGated: true
+
     featureFlagSearchExplainExecutionStats:
       description: "Feature flag to enable executing search queries for explain."
       cpp_varname: gFeatureFlagSearchExplainExecutionStats
@@ -162,5 +168,11 @@ feature_flags:
     featureFlagShardFilteringDistinctScan:
       description: "Feature flag to support shard filtering in distinct scan optimization"
       cpp_varname: gFeatureFlagShardFilteringDistinctScan
+      default: false
+      shouldBeFCVGated: true
+    
+    featureFlagArrayAccumulators:
+      description: "Feature flag to enable the $concatArrays and $setUnion accumulators."
+      cpp_varname: gFeatureFlagArrayAccumulators
       default: false
       shouldBeFCVGated: true

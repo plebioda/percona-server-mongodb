@@ -53,6 +53,8 @@
 #include "mongo/db/auth/address_restriction.h"
 #include "mongo/db/auth/auth_name.h"
 #include "mongo/db/auth/auth_types_gen.h"
+#include "mongo/db/auth/authentication_session.h"
+#include "mongo/db/auth/authorization_manager_global_parameters_gen.h"
 #include "mongo/db/auth/authorization_manager_impl.h"
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/authorization_session_impl.h"
@@ -60,6 +62,8 @@
 #include "mongo/db/auth/builtin_roles.h"
 #include "mongo/db/auth/privilege.h"
 #include "mongo/db/auth/restriction_set.h"
+#include "mongo/db/auth/user.h"
+#include "mongo/db/auth/user_request_x509.h"
 #include "mongo/db/commands/authentication_commands.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/global_settings.h"
@@ -77,6 +81,7 @@
 #include "mongo/util/fail_point.h"
 #include "mongo/util/future.h"
 #include "mongo/util/str.h"
+#include "mongo/util/testing_proctor.h"
 #include "mongo/util/time_support.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kAccessControl
@@ -86,8 +91,8 @@ namespace mongo {
 namespace {
 
 std::shared_ptr<UserHandle> createSystemUserHandle() {
-    UserRequest request(UserName("__system", "local"), boost::none);
-    auto user = std::make_shared<UserHandle>(User(std::move(request)));
+    auto user = std::make_shared<UserHandle>(
+        User(std::make_unique<UserRequestGeneral>(UserName("__system", "local"), boost::none)));
 
     ActionSet allActions;
     allActions.addAllActions();
@@ -246,6 +251,32 @@ void handleWaitForUserCacheInvalidation(OperationContext* opCtx, const UserHandl
     }
 }
 
+// TODO SERVER-83488 - move user request role resolution into the UserRequest object.
+std::unique_ptr<UserRequest> getX509UserRequest(OperationContext* opCtx, const UserName& username) {
+#ifdef MONGO_CONFIG_SSL
+    std::shared_ptr<transport::Session> session;
+    if (opCtx && opCtx->getClient()) {
+        session = opCtx->getClient()->session();
+    }
+
+    if (!allowRolesFromX509Certificates || !session) {
+        return std::make_unique<UserRequestGeneral>(username, boost::none);
+    }
+
+    auto& sslPeerInfo = SSLPeerInfo::forSession(session);
+    auto&& peerRoles = sslPeerInfo.roles();
+    if (peerRoles.empty() || (sslPeerInfo.subjectName().toString() != username.getUser())) {
+        return std::make_unique<UserRequestGeneral>(username, boost::none);
+    }
+
+    std::set<RoleName> requestRoles;
+    std::copy(
+        peerRoles.begin(), peerRoles.end(), std::inserter(requestRoles, requestRoles.begin()));
+
+    return std::make_unique<UserRequestX509>(username, std::move(requestRoles), sslPeerInfo);
+#endif
+    return std::make_unique<UserRequestGeneral>(username, boost::none);
+}
 
 }  // namespace
 
@@ -352,11 +383,19 @@ OID AuthorizationManagerImpl::getCacheGeneration() {
 }
 
 void AuthorizationManagerImpl::setAuthEnabled(bool enabled) {
-    _authEnabled.storeRelaxed(enabled);
+    if (_authEnabled == enabled) {
+        return;
+    }
+
+    tassert(ErrorCodes::OperationFailed,
+            "Auth may not be disabled once enabled except for unit tests",
+            enabled || TestingProctor::instance().isEnabled());
+
+    _authEnabled = enabled;
 }
 
 bool AuthorizationManagerImpl::isAuthEnabled() const {
-    return _authEnabled.loadRelaxed();
+    return _authEnabled;
 }
 
 bool AuthorizationManagerImpl::hasAnyPrivilegeDocuments(OperationContext* opCtx) {
@@ -378,7 +417,7 @@ Status AuthorizationManagerImpl::getUserDescription(OperationContext* opCtx,
                                                     const UserName& userName,
                                                     BSONObj* result) {
     return _externalState->getUserDescription(opCtx,
-                                              UserRequest(userName, boost::none),
+                                              UserRequestGeneral(userName, boost::none),
                                               result,
                                               CurOp::get(opCtx)->getUserAcquisitionStats());
 }
@@ -460,36 +499,35 @@ MONGO_FAIL_POINT_DEFINE(authUserCacheBypass);
 MONGO_FAIL_POINT_DEFINE(authUserCacheSleep);
 }  // namespace
 
-StatusWith<UserHandle> AuthorizationManagerImpl::acquireUser(OperationContext* opCtx,
-                                                             const UserRequest& request) try {
-    const auto& userName = request.name;
+StatusWith<UserHandle> AuthorizationManagerImpl::acquireUser(
+    OperationContext* opCtx, std::unique_ptr<UserRequest> request) try {
+    const UserName userName = request->getUserName();
+
+    // X.509 will give us our roles for initial acquire, but we have to lose them during
+    // reacquire (for now) so reparse those roles into the request if not already present.
+    if (request->getType() == UserRequest::UserRequestType::X509) {
+        request = getX509UserRequest(opCtx, userName);
+    }
 
     auto systemUser = internalSecurity.getUser();
     if (userName == (*systemUser)->getName()) {
         uassert(ErrorCodes::OperationFailed,
                 "Attempted to acquire system user with predefined roles",
-                request.roles == boost::none);
+                request->getRoles() == boost::none);
         return *systemUser;
     }
-
-    UserRequest userRequest(request);
-#ifdef MONGO_CONFIG_SSL
-    // X.509 will give us our roles for initial acquire, but we have to lose them during
-    // reacquire (for now) so reparse those roles into the request if not already present.
-    if ((request.roles == boost::none) && request.mechanismData.empty() &&
-        (userName.getDatabaseName().isExternalDB())) {
-        userRequest = getX509UserRequest(opCtx, std::move(userRequest));
-    }
-#endif
 
     auto userAcquisitionStats = CurOp::get(opCtx)->getUserAcquisitionStats();
     if (authUserCacheBypass.shouldFail()) {
         // Bypass cache and force a fresh load of the user.
-        auto loadedUser =
-            uassertStatusOK(_externalState->getUserObject(opCtx, request, userAcquisitionStats));
+        auto loadedUser = uassertStatusOK(
+            _externalState->getUserObject(opCtx, *request.get(), userAcquisitionStats));
         // We have to inject into the cache in order to get a UserHandle.
-        auto userHandle =
-            _userCache.insertOrAssignAndGet(request, std::move(loadedUser), Date_t::now());
+
+        auto userHandle = _userCache.insertOrAssignAndGet(
+            loadedUser.getUserRequest()->generateUserRequestCacheKey(),
+            std::move(loadedUser),
+            Date_t::now());
         invariant(userHandle);
         LOGV2_DEBUG(4859401, 1, "Bypassing user cache to load user", "user"_attr = userName);
         return userHandle;
@@ -503,9 +541,11 @@ StatusWith<UserHandle> AuthorizationManagerImpl::acquireUser(OperationContext* o
         sleepsecs(1);
     }
 
+    std::shared_ptr<UserRequest> sharedReq = std::move(request);
     auto cachedUser = _userCache.acquire(opCtx,
-                                         userRequest,
+                                         sharedReq->generateUserRequestCacheKey(),
                                          CacheCausalConsistency::kLatestCached,
+                                         std::move(sharedReq),
                                          CurOp::get(opCtx)->getUserAcquisitionStats());
 
     userAcquisitionStatsHandle.recordTimerEnd();
@@ -531,9 +571,10 @@ StatusWith<UserHandle> AuthorizationManagerImpl::reacquireUser(OperationContext*
     // necessary now to preserve the mechanismData from the original UserRequest while eliminating
     // the roles. If the roles aren't reset to none, it will cause LDAP acquisition to be bypassed
     // in favor of reusing the ones from before.
-    UserRequest requestWithoutRoles(user->getUserRequest());
-    requestWithoutRoles.roles = boost::none;
-    auto swUserHandle = acquireUser(opCtx, requestWithoutRoles);
+    std::unique_ptr<UserRequest> requestWithoutRoles = user->getUserRequest()->clone();
+    requestWithoutRoles->setRoles(boost::none);
+
+    auto swUserHandle = acquireUser(opCtx, std::move(requestWithoutRoles));
     if (!swUserHandle.isOK()) {
         return swUserHandle.getStatus();
     }
@@ -558,16 +599,17 @@ void AuthorizationManagerImpl::invalidateUserByName(const UserName& userName) {
     _authSchemaVersionCache.invalidateAll();
     // There may be multiple entries in the cache with arbitrary other UserRequest data.
     // Scan the full cache looking for a weak match on UserName only.
-    _userCache.invalidateKeyIf(
-        [&userName](const UserRequest& key) { return key.name == userName; });
+    _userCache.invalidateKeyIf([&userName](const UserRequest::UserRequestCacheKey& key) {
+        return key.getUserName() == userName;
+    });
     _updateCacheGeneration();
 }
 
 void AuthorizationManagerImpl::invalidateUsersFromDB(const DatabaseName& dbname) {
     LOGV2_DEBUG(20236, 2, "Invalidating all users from database", "database"_attr = dbname);
     _authSchemaVersionCache.invalidateAll();
-    _userCache.invalidateKeyIf([&](const UserRequest& userRequest) {
-        return userRequest.name.getDatabaseName() == dbname;
+    _userCache.invalidateKeyIf([&](const UserRequest::UserRequestCacheKey& key) {
+        return key.getUserName().getDatabaseName() == dbname;
     });
     _updateCacheGeneration();
 }
@@ -580,8 +622,9 @@ void AuthorizationManagerImpl::invalidateUsersByTenant(const boost::optional<Ten
 
     LOGV2_DEBUG(6323600, 2, "Invalidating tenant users", "tenant"_attr = tenant);
     _authSchemaVersionCache.invalidateAll();
-    _userCache.invalidateKeyIf(
-        [&](const UserRequest& userRequest) { return userRequest.name.tenantId() == tenant; });
+    _userCache.invalidateKeyIf([&](const UserRequest::UserRequestCacheKey& key) {
+        return key.getUserName().tenantId() == tenant;
+    });
     _updateCacheGeneration();
 }
 
@@ -595,9 +638,9 @@ void AuthorizationManagerImpl::invalidateUserCache() {
 Status AuthorizationManagerImpl::refreshExternalUsers(OperationContext* opCtx) {
     LOGV2_DEBUG(5914801, 2, "Refreshing all users from the $external database");
     // First, get a snapshot of the UserHandles in the cache.
-    auto cachedUsers =
-        _userCache.peekLatestCachedIf([&](const UserRequest& userRequest, const User&) {
-            return userRequest.name.getDatabaseName().isExternalDB();
+    auto cachedUsers = _userCache.peekLatestCachedIf(
+        [&](const UserRequest::UserRequestCacheKey& cacheKey, const User&) {
+            return cacheKey.getUserName().getDatabaseName().isExternalDB();
         });
 
     // Then, retrieve the corresponding Users from the backing store for users in the $external
@@ -605,13 +648,17 @@ Status AuthorizationManagerImpl::refreshExternalUsers(OperationContext* opCtx) {
     // insertOrAssign if they differ.
     bool isRefreshed{false};
     for (const auto& cachedUser : cachedUsers) {
-        UserRequest request(cachedUser->getName(), boost::none);
-        auto storedUserStatus = _externalState->getUserObject(
-            opCtx, request, CurOp::get(opCtx)->getUserAcquisitionStats());
+        // TODO SERVER-83488: look into whether constructing a new UserRequest makes the most
+        // sense, or re-gather the roles upfront in this pathway.
+        auto storedUserStatus =
+            _externalState->getUserObject(opCtx,
+                                          UserRequestGeneral(cachedUser->getName(), boost::none),
+                                          CurOp::get(opCtx)->getUserAcquisitionStats());
         if (!storedUserStatus.isOK()) {
             // If the user simply is not found, then just invalidate the cached user and continue.
             if (storedUserStatus.getStatus().code() == ErrorCodes::UserNotFound) {
-                _userCache.invalidateKey(request);
+                _userCache.invalidateKey(
+                    cachedUser->getUserRequest()->generateUserRequestCacheKey());
                 continue;
             } else {
                 return storedUserStatus.getStatus();
@@ -620,7 +667,10 @@ Status AuthorizationManagerImpl::refreshExternalUsers(OperationContext* opCtx) {
 
         if (cachedUser->hasDifferentRoles(storedUserStatus.getValue())) {
             _userCache.insertOrAssign(
-                request, std::move(storedUserStatus.getValue()), Date_t::now());
+                std::make_unique<UserRequestGeneral>(cachedUser->getName(), boost::none)
+                    ->generateUserRequestCacheKey(),
+                std::move(storedUserStatus.getValue()),
+                Date_t::now());
             isRefreshed = true;
         }
     }
@@ -664,7 +714,7 @@ std::vector<AuthorizationManager::CachedUserInfo> AuthorizationManagerImpl::getU
     ret.reserve(cacheData.size());
     std::transform(
         cacheData.begin(), cacheData.end(), std::back_inserter(ret), [](const auto& info) {
-            return AuthorizationManager::CachedUserInfo{info.key.name, info.useCount > 0};
+            return AuthorizationManager::CachedUserInfo{info.key.getUserName(), info.useCount > 0};
         });
 
     return ret;
@@ -705,10 +755,12 @@ AuthorizationManagerImpl::UserCacheImpl::UserCacheImpl(
           service,
           threadPool,
           [this](OperationContext* opCtx,
-                 const UserRequest& userReq,
+                 const UserRequest::UserRequestCacheKey& userReqCacheKey,
                  const UserHandle& cachedUser,
+                 std::shared_ptr<UserRequest> userReq,
                  const SharedUserAcquisitionStats& userAcquisitionStats) {
-              return _lookup(opCtx, userReq, cachedUser, userAcquisitionStats);
+              return _lookup(
+                  opCtx, userReqCacheKey, cachedUser, *userReq.get(), userAcquisitionStats);
           },
           cacheSize),
       _authSchemaVersionCache(authSchemaVersionCache),
@@ -717,10 +769,11 @@ AuthorizationManagerImpl::UserCacheImpl::UserCacheImpl(
 AuthorizationManagerImpl::UserCacheImpl::LookupResult
 AuthorizationManagerImpl::UserCacheImpl::_lookup(
     OperationContext* opCtx,
-    const UserRequest& userReq,
+    const UserRequest::UserRequestCacheKey& userReqCacheKey,
     const UserHandle& unusedCachedUser,
+    const UserRequest& userReq,
     const SharedUserAcquisitionStats& userAcquisitionStats) {
-    LOGV2_DEBUG(20238, 1, "Getting user record", "user"_attr = userReq.name);
+    LOGV2_DEBUG(20238, 1, "Getting user record", "user"_attr = userReq.getUserName());
 
     // Number of times to retry a user document that fetches due to transient AuthSchemaIncompatible
     // errors. These errors should only ever occur during and shortly after schema upgrades.

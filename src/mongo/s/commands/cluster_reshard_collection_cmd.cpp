@@ -45,6 +45,7 @@
 #include "mongo/db/auth/resource_pattern.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/feature_flag.h"
+#include "mongo/db/generic_argument_util.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/server_options.h"
@@ -61,6 +62,7 @@
 #include "mongo/s/request_types/sharded_ddl_commands_gen.h"
 #include "mongo/s/resharding/common_types_gen.h"
 #include "mongo/s/resharding/resharding_feature_flag_gen.h"
+#include "mongo/s/sharding_feature_flags_gen.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/uuid.h"
 
@@ -124,6 +126,7 @@ public:
                     serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
                 reshardCollectionRequest.setProvenance(ProvenanceEnum::kReshardCollection);
             }
+            reshardCollectionRequest.setImplicitlyCreateIndex(request().getImplicitlyCreateIndex());
 
             shardsvrReshardCollection.setReshardCollectionRequest(
                 std::move(reshardCollectionRequest));
@@ -131,12 +134,13 @@ public:
             auto catalogCache = Grid::get(opCtx)->catalogCache();
             const auto dbInfo = uassertStatusOK(catalogCache->getDatabase(opCtx, nss.dbName()));
 
+            generic_argument_util::setMajorityWriteConcern(shardsvrReshardCollection,
+                                                           &opCtx->getWriteConcern());
             auto cmdResponse = executeDDLCoordinatorCommandAgainstDatabasePrimary(
                 opCtx,
                 DatabaseName::kAdmin,
                 dbInfo,
-                CommandHelpers::appendMajorityWriteConcern(shardsvrReshardCollection.toBSON(),
-                                                           opCtx->getWriteConcern()),
+                shardsvrReshardCollection.toBSON(),
                 ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                 Shard::RetryPolicy::kIdempotent);
 

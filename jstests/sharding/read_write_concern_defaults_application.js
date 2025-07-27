@@ -222,7 +222,6 @@ let testCases = {
     streams_writeCheckpoint: {skip: "internal command"},
     streams_sendEvent: {skip: "internal command"},
     _transferMods: {skip: "internal command"},
-    _vectorClockPersist: {skip: "internal command"},
     abortMoveCollection: {skip: "does not accept read or write concern"},
     abortReshardCollection: {skip: "does not accept read or write concern"},
     abortTransaction: {
@@ -971,8 +970,7 @@ function runScenario(
             return;
         }
 
-        const isMultiversion = jsTest.options().shardMixedBinVersions ||
-            jsTest.options().useRandomBinVersionsWithinReplicaSet;
+        const isMultiversion = Boolean(jsTest.options().useRandomBinVersionsWithinReplicaSet);
         if (isMultiversion && test.skipMultiversion) {
             print("skipping " + cmdName + " since we are in a multiversion suite.");
             return;

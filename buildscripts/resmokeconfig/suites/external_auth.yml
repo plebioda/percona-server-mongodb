@@ -11,4 +11,6 @@ executor:
       global_vars:
         TestData:
           roleGraphInvalidationIsFatal: true
+          setParameters:
+            logComponentVerbosity: "{accessControl:2}"
       nodb: ""

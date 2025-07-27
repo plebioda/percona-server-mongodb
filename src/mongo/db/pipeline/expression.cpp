@@ -81,8 +81,10 @@
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/datetime/date_time_support.h"
 #include "mongo/db/query/query_knobs_gen.h"
+#include "mongo/db/query/random_utils.h"
 #include "mongo/db/query/sort_pattern.h"
 #include "mongo/db/query/str_trim_utils.h"
+#include "mongo/db/query/substr_utils.h"
 #include "mongo/db/query/util/make_data_structure.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/stats/counters.h"
@@ -2957,114 +2959,6 @@ const char* ExpressionFloor::getOpName() const {
     return "$floor";
 }
 
-/* ------------------------- ExpressionLet ----------------------------- */
-
-REGISTER_STABLE_EXPRESSION(let, ExpressionLet::parse);
-intrusive_ptr<Expression> ExpressionLet::parse(ExpressionContext* const expCtx,
-                                               BSONElement expr,
-                                               const VariablesParseState& vpsIn) {
-    MONGO_verify(expr.fieldNameStringData() == "$let");
-
-    uassert(16874, "$let only supports an object as its argument", expr.type() == Object);
-    const BSONObj args = expr.embeddedObject();
-
-    // varsElem must be parsed before inElem regardless of BSON order.
-    BSONElement varsElem;
-    BSONElement inElem;
-    for (auto&& arg : args) {
-        if (arg.fieldNameStringData() == "vars") {
-            varsElem = arg;
-        } else if (arg.fieldNameStringData() == "in") {
-            inElem = arg;
-        } else {
-            uasserted(16875,
-                      str::stream() << "Unrecognized parameter to $let: " << arg.fieldName());
-        }
-    }
-
-    uassert(16876, "Missing 'vars' parameter to $let", !varsElem.eoo());
-    uassert(16877, "Missing 'in' parameter to $let", !inElem.eoo());
-
-    // parse "vars"
-    VariablesParseState vpsSub(vpsIn);  // vpsSub gets our vars, vpsIn doesn't.
-    VariableMap vars;
-    std::vector<boost::intrusive_ptr<Expression>> children;
-    auto&& varsObj = varsElem.embeddedObjectUserCheck();
-    for (auto&& varElem : varsObj)
-        children.push_back(parseOperand(expCtx, varElem, vpsIn));
-
-    // Make a place in the vector for "in".
-    auto& inPtr = children.emplace_back(nullptr);
-
-    std::vector<boost::intrusive_ptr<Expression>>::size_type index = 0;
-    std::vector<Variables::Id> orderedVariableIds;
-    for (auto&& varElem : varsObj) {
-        const string varName = varElem.fieldName();
-        variableValidation::validateNameForUserWrite(varName);
-        Variables::Id id = vpsSub.defineVariable(varName);
-
-        orderedVariableIds.push_back(id);
-
-        vars.emplace(id, NameAndExpression{varName, children[index]});  // only has outer vars
-        ++index;
-    }
-
-    // parse "in"
-    inPtr = parseOperand(expCtx, inElem, vpsSub);  // has our vars
-
-    return new ExpressionLet(
-        expCtx, std::move(vars), std::move(children), std::move(orderedVariableIds));
-}
-
-ExpressionLet::ExpressionLet(ExpressionContext* const expCtx,
-                             VariableMap&& vars,
-                             std::vector<boost::intrusive_ptr<Expression>> children,
-                             std::vector<Variables::Id> orderedVariableIds)
-    : Expression(expCtx, std::move(children)),
-      _kSubExpression(_children.size() - 1),
-      _variables(std::move(vars)),
-      _orderedVariableIds(std::move(orderedVariableIds)) {}
-
-intrusive_ptr<Expression> ExpressionLet::optimize() {
-    if (_variables.empty()) {
-        // we aren't binding any variables so just return the subexpression
-        return _children[_kSubExpression]->optimize();
-    }
-
-    for (VariableMap::iterator it = _variables.begin(), end = _variables.end(); it != end; ++it) {
-        it->second.expression = it->second.expression->optimize();
-    }
-
-    _children[_kSubExpression] = _children[_kSubExpression]->optimize();
-
-    return this;
-}
-
-Value ExpressionLet::serialize(const SerializationOptions& options) const {
-    MutableDocument vars;
-    for (VariableMap::const_iterator it = _variables.begin(), end = _variables.end(); it != end;
-         ++it) {
-        auto key = it->second.name;
-        if (options.transformIdentifiers) {
-            key = options.transformIdentifiersCallback(key);
-        }
-        vars[key] = it->second.expression->serialize(options);
-    }
-
-    return Value(DOC("$let" << DOC("vars" << vars.freeze() << "in"
-                                          << _children[_kSubExpression]->serialize(options))));
-}
-
-Value ExpressionLet::evaluate(const Document& root, Variables* variables) const {
-    for (const auto& item : _variables) {
-        // It is guaranteed at parse-time that these expressions don't use the variable ids we
-        // are setting
-        variables->setValue(item.first, item.second.expression->evaluate(root, variables));
-    }
-
-    return _children[_kSubExpression]->evaluate(root, variables);
-}
-
 /* ------------------------- ExpressionMap ----------------------------- */
 
 REGISTER_STABLE_EXPRESSION(map, ExpressionMap::parse);
@@ -5740,34 +5634,7 @@ Value ExpressionSubstrCP::evaluate(const Document& root, Variables* variables) c
             str::stream() << getOpName() << ": the starting index must be nonnegative integer.",
             startIndexCodePoints >= 0);
 
-    size_t startIndexBytes = 0;
-
-    for (int i = 0; i < startIndexCodePoints; i++) {
-        if (startIndexBytes >= str.size()) {
-            return Value(StringData());
-        }
-        uassert(34456,
-                str::stream() << getOpName() << ": invalid UTF-8 string",
-                !str::isUTF8ContinuationByte(str[startIndexBytes]));
-        size_t codePointLength = str::getCodePointLength(str[startIndexBytes]);
-        uassert(
-            34457, str::stream() << getOpName() << ": invalid UTF-8 string", codePointLength <= 4);
-        startIndexBytes += codePointLength;
-    }
-
-    size_t endIndexBytes = startIndexBytes;
-
-    for (int i = 0; i < length && endIndexBytes < str.size(); i++) {
-        uassert(34458,
-                str::stream() << getOpName() << ": invalid UTF-8 string",
-                !str::isUTF8ContinuationByte(str[endIndexBytes]));
-        size_t codePointLength = str::getCodePointLength(str[endIndexBytes]);
-        uassert(
-            34459, str::stream() << getOpName() << ": invalid UTF-8 string", codePointLength <= 4);
-        endIndexBytes += codePointLength;
-    }
-
-    return Value(std::string(str, startIndexBytes, endIndexBytes - startIndexBytes));
+    return Value(substr_utils::getSubstringCP(str, startIndexCodePoints, length));
 }
 
 REGISTER_STABLE_EXPRESSION(substrCP, ExpressionSubstrCP::parse);
@@ -8124,11 +7991,7 @@ Value ExpressionRegexMatch::evaluate(const Document& root, Variables* variables)
 /* -------------------------- ExpressionRandom ------------------------------ */
 REGISTER_STABLE_EXPRESSION(rand, ExpressionRandom::parse);
 
-static thread_local PseudoRandom threadLocalRNG(SecureRandom().nextInt64());
-
-ExpressionRandom::ExpressionRandom(ExpressionContext* const expCtx) : Expression(expCtx) {
-    expCtx->sbeCompatibility = SbeCompatibility::notCompatible;
-}
+ExpressionRandom::ExpressionRandom(ExpressionContext* const expCtx) : Expression(expCtx) {}
 
 intrusive_ptr<Expression> ExpressionRandom::parse(ExpressionContext* const expCtx,
                                                   BSONElement exprElement,
@@ -8147,7 +8010,7 @@ const char* ExpressionRandom::getOpName() const {
 }
 
 double ExpressionRandom::getRandomValue() const {
-    return kMinValue + (kMaxValue - kMinValue) * threadLocalRNG.nextCanonicalDouble();
+    return kMinValue + (kMaxValue - kMinValue) * random_utils::getRNG().nextCanonicalDouble();
 }
 
 Value ExpressionRandom::evaluate(const Document& root, Variables* variables) const {

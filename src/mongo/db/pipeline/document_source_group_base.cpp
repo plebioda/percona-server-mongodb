@@ -118,7 +118,7 @@ Value DocumentSourceGroupBase::serialize(const SerializationOptions& opts) const
         for (size_t i = 0; i < accumulatedFields.size(); i++) {
             md[opts.serializeFieldPathFromString(accumulatedFields[i].fieldName)] =
                 opts.serializeLiteral(static_cast<long long>(
-                    memoryTracker[accumulatedFields[i].fieldName].maxMemoryBytes()));
+                    memoryTracker.maxMemoryBytes(accumulatedFields[i].fieldName)));
         }
 
         out["maxAccumulatorMemoryUsageBytes"] = Value(md.freezeToValue());
@@ -533,7 +533,7 @@ DocumentSourceGroupBase::distributedPlanLogic() {
             tassert(9158201,
                     "casting AccumulatorState* to AccumulatorPercentile* failed",
                     accumPercentile);
-            if (accumPercentile->getMethod() != PercentileMethod::Approximate) {
+            if (accumPercentile->getMethod() != PercentileMethodEnum::kApproximate) {
                 return DistributedPlanLogic{nullptr, this, boost::none};
             }
         }

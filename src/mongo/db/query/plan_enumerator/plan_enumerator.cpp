@@ -299,7 +299,9 @@ PlanEnumerator::PlanEnumerator(const PlanEnumeratorParams& params)
       _intersectLimit(params.maxIntersectPerAnd),
       _disableOrPushdown(params.disableOrPushdown),
       _projection(params.projection),
-      _shardKey(params.shardKey) {
+      _shardKey(params.shardKey),
+      _distinct(params.distinct),
+      _shouldPruneDistinct(params.shouldPruneDistinct) {
     if (params.sort && *params.sort) {
         _sortPatFields = stdx::unordered_set<std::string>();
         for (size_t i = 0; i < (*params.sort)->size(); i++) {
@@ -314,7 +316,8 @@ PlanEnumerator::PlanEnumerator(const PlanEnumeratorParams& params)
 Status PlanEnumerator::init() {
     // Fill out our memo structure from the tagged _root.
     _done = !prepMemo(_root, PrepMemoContext());
-    if (internalQueryPlannerEnableIndexPruning.load()) {
+    // TODO SERVER-94155: Enable index pruning for distinct-like queries when feature flag is on.
+    if (internalQueryPlannerEnableIndexPruning.load() && (!_distinct || _shouldPruneDistinct)) {
         bool prunedAnyIndexes = pruneMemoOfDupIndexes(
             _memo, QueryPruningInfo{_projection, _sortPatFields, _shardKey, _indices});
         _explainInfo.prunedAnyIndexes = prunedAnyIndexes;

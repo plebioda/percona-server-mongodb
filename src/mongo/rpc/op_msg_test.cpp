@@ -91,7 +91,8 @@ public:
      * Synthesize a user with the useTenant privilege and add them to the authorization session.
      */
     static void grantUseTenant(Client& client) {
-        User user(UserRequest(UserName("useTenant", "admin"), boost::none));
+        User user(
+            std::make_unique<UserRequestGeneral>(UserName("useTenant", "admin"), boost::none));
         user.setPrivileges(
             {Privilege(ResourcePattern::forClusterResource(boost::none), ActionType::useTenant)});
         auto* as = dynamic_cast<AuthorizationSessionImpl*>(AuthorizationSession::get(client));
@@ -999,9 +1000,6 @@ TEST(OpMsgRequestBuilder, WithVTSAndSerializationContextExpPrefixDefault) {
         vts, DatabaseName::createDatabaseName_forTest(tenantId, dbString), body);
     ASSERT(msg.validatedTenancyScope);
     ASSERT_EQ(msg.validatedTenancyScope->tenantId(), tenantId);
-
-    // Missing expectPrefix in the request body.
-    ASSERT_EQ(msg.body.getField("expectPrefix").eoo(), true);
     ASSERT_EQ(msg.parseDbName().toString_forTest(), dbString);
 }
 

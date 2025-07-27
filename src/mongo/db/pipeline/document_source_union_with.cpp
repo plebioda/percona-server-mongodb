@@ -404,6 +404,10 @@ Value DocumentSourceUnionWith::serialize(const SerializationOptions& opts) const
             std::move(_pushedDownStages.begin(),
                       _pushedDownStages.end(),
                       std::back_inserter(recoveredPipeline));
+            // We reset the variables to their inital state for another execution.
+            // TODO SERVER-94227 we probably don't need to do any validation as part of this parsing
+            // pass?
+            _variables.copyToExpCtx(_variablesParseState, _pipeline->getContext().get());
             pipeCopy = Pipeline::parse(recoveredPipeline, _pipeline->getContext()).release();
         } else {
             // The plan does not require reading from the sub-pipeline, so just include the
@@ -421,10 +425,6 @@ Value DocumentSourceUnionWith::serialize(const SerializationOptions& opts) const
         invariant(pipeCopy);
 
         auto preparePipelineAndExplain = [&](Pipeline* ownedPipeline) {
-            if (*opts.verbosity >= ExplainOptions::Verbosity::kExecStats) {
-                // We reset the variables to their inital state for another execution.
-                _variables.copyToExpCtx(_variablesParseState, _pipeline->getContext().get());
-            }
             // Query settings are looked up after parsing and therefore are not populated in the
             // context of the unionWith '_pipeline' as part of DocumentSourceUnionWith
             // constructor. Attach query settings to the '_pipeline->getContext()' by copying
@@ -469,6 +469,8 @@ Value DocumentSourceUnionWith::serialize(const SerializationOptions& opts) const
         auto serializedPipeline = [&]() -> std::vector<BSONObj> {
             if (opts.transformIdentifiers ||
                 opts.literalPolicy != LiteralSerializationPolicy::kUnchanged) {
+                // TODO SERVER-94227 we don't need to do any validation as part of this parsing
+                // pass.
                 return Pipeline::parse(_userPipeline, _pipeline->getContext())
                     ->serializeToBson(opts);
             }

@@ -51,9 +51,13 @@
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/auth/authorization_manager_global_parameters_gen.h"
 #include "mongo/db/auth/authorization_session.h"
-#include "mongo/db/auth/cluster_auth_mode.h"
 #include "mongo/db/auth/role_name.h"
+#include "mongo/db/auth/sasl_commands.h"
+#include "mongo/db/auth/sasl_options.h"
+#include "mongo/db/auth/sasl_payload.h"
 #include "mongo/db/auth/user_name.h"
+#include "mongo/db/auth/user_request_x509.h"
+#include "mongo/db/auth/x509_protocol_gen.h"
 #include "mongo/db/client.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/authentication_commands.h"
@@ -61,6 +65,8 @@
 #include "mongo/db/commands/test_commands_enabled.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/operation_context.h"
+#include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/server_options.h"
 #include "mongo/idl/idl_parser.h"
 #include "mongo/logv2/log.h"
@@ -72,9 +78,7 @@
 #include "mongo/util/assert_util.h"
 #include "mongo/util/database_name_util.h"
 #include "mongo/util/decorable.h"
-#include "mongo/util/net/ssl_manager.h"
-#include "mongo/util/net/ssl_peer_info.h"
-#include "mongo/util/net/ssl_types.h"
+#include "mongo/util/sequence_util.h"
 #include "mongo/util/time_support.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kAccessControl
@@ -84,24 +88,8 @@ namespace mongo {
 namespace {
 
 constexpr auto kDBFieldName = "db"_sd;
-
-/**
- * A simple class to track "global" parameters related to the logout command.
- */
-class LogoutCommandState {
-public:
-    /**
-     * Marks the command as invoked and returns if it was previously invoked.
-     */
-    bool markAsInvoked() {
-        return _hasBeenInvoked.swap(true);
-    }
-
-private:
-    AtomicWord<bool> _hasBeenInvoked{false};
-};
-
-auto getLogoutCommandState = ServiceContext::declareDecoration<LogoutCommandState>();
+constexpr auto kSASLPayloadUsernameField = "username"_sd;
+constexpr StringData kX509AuthMechanism = "MONGODB-X509"_sd;
 
 class CmdLogout : public TypedCommand<CmdLogout> {
 public:
@@ -136,13 +124,12 @@ public:
         void doCheckAuthorization(OperationContext*) const final {}
 
         void typedRun(OperationContext* opCtx) {
-            auto& logoutState = getLogoutCommandState(opCtx->getServiceContext());
-            auto hasBeenInvoked = logoutState.markAsInvoked();
-            if (!hasBeenInvoked) {
+            static std::once_flag logoutState;
+            std::call_once(logoutState, []() {
                 LOGV2_WARNING(5626600,
                               "The logout command has been deprecated, clients should end their "
                               "session instead");
-            }
+            });
 
             auto dbname = request().getDbName();
             auto* as = AuthorizationSession::get(opCtx->getClient());
@@ -167,34 +154,32 @@ public:
 MONGO_REGISTER_COMMAND(CmdLogout).forRouter().forShard();
 
 #ifdef MONGO_CONFIG_SSL
-}  // namespace
 
-UserRequest getX509UserRequest(OperationContext* opCtx, UserRequest request) {
+std::unique_ptr<UserRequest> getX509UserRequest(OperationContext* opCtx, const UserName& username) {
     std::shared_ptr<transport::Session> session;
     if (opCtx && opCtx->getClient()) {
         session = opCtx->getClient()->session();
     }
 
-    if (!allowRolesFromX509Certificates || !session || request.roles) {
-        return request;
+    if (!allowRolesFromX509Certificates || !session) {
+        return std::make_unique<UserRequestGeneral>(username, boost::none);
     }
 
     auto& sslPeerInfo = SSLPeerInfo::forSession(session);
     auto&& peerRoles = sslPeerInfo.roles();
-    if (peerRoles.empty() || (sslPeerInfo.subjectName().toString() != request.name.getUser())) {
-        return request;
+    if (peerRoles.empty() || (sslPeerInfo.subjectName().toString() != username.getUser())) {
+        return std::make_unique<UserRequestGeneral>(username, boost::none);
     }
 
-    // In order to be hashable, the role names must be converted from unordered_set to a set.
-    request.roles = std::set<RoleName>();
-    std::copy(
-        peerRoles.begin(), peerRoles.end(), std::inserter(*request.roles, request.roles->begin()));
-    return request;
+    auto roles = std::set<RoleName>();
+    std::copy(peerRoles.begin(), peerRoles.end(), std::inserter(roles, roles.begin()));
+
+    return std::make_unique<UserRequestX509>(username, roles, sslPeerInfo);
 }
 
-namespace {
 constexpr auto kX509AuthenticationDisabledMessage = "x.509 authentication is disabled."_sd;
 
+// TODO SERVER-72648: remove
 /**
  * Completes the authentication of "user".
  *
@@ -243,12 +228,15 @@ void _authenticateX509(OperationContext* opCtx, AuthenticationSession* session) 
 
     const auto clusterAuthMode = ClusterAuthMode::get(opCtx->getServiceContext());
 
-    auto request = getX509UserRequest(opCtx, UserRequest(userName, boost::none));
+    auto request = getX509UserRequest(opCtx, userName);
+
     auto authorizeExternalUser = [&] {
         uassert(ErrorCodes::BadValue,
                 kX509AuthenticationDisabledMessage,
-                !isX509AuthDisabled(opCtx->getService()));
-        uassertStatusOK(authorizationSession->addAndAuthorizeUser(opCtx, request, boost::none));
+                sequenceContains(saslGlobalParams.authenticationMechanisms, kX509AuthMechanism));
+
+        uassertStatusOK(
+            authorizationSession->addAndAuthorizeUser(opCtx, std::move(request), boost::none));
     };
 
     if (sslConfiguration.isClusterMember(clientName, sslPeerInfo.getClusterMembership())) {
@@ -273,7 +261,7 @@ void _authenticateX509(OperationContext* opCtx, AuthenticationSession* session) 
                 auto* am = AuthorizationManager::get(opCtx->getService());
                 BSONObj ignored;
                 const bool userExists =
-                    am->getUserDescription(opCtx, request.name, &ignored).isOK();
+                    am->getUserDescription(opCtx, request->getUserName(), &ignored).isOK();
                 uassert(ErrorCodes::AuthenticationFailed,
                         "The provided certificate represents both a cluster member and an "
                         "explicit user which exists in the authzn database. "
@@ -291,27 +279,115 @@ void _authenticateX509(OperationContext* opCtx, AuthenticationSession* session) 
 }
 #endif  // MONGO_CONFIG_SSL
 
+// TODO SERVER-72648: remove
 void _authenticate(OperationContext* opCtx, AuthenticationSession* session, StringData mechanism) {
 #ifdef MONGO_CONFIG_SSL
-    if (mechanism == kX509AuthMechanism) {
+    if (mechanism == auth::kMechanismMongoX509) {
         return _authenticateX509(opCtx, session);
     }
 #endif
     uasserted(ErrorCodes::BadValue, "Unsupported mechanism: " + mechanism);
 }
 
+auth::SaslPayload generateSaslPayload(const boost::optional<StringData>& user,
+                                      const DatabaseName& dbname) {
+    auth::X509MechanismClientStep1 step;
+    step.setPrincipalName(user);
+    auto payloadBSON = step.toBSON();
+    auto payloadStr = std::string(payloadBSON.objdata(), payloadBSON.objsize());
+    return auth::SaslPayload(payloadStr);
+}
+
+std::string getNameFromPeerInfo(Client* client) {
+#ifdef MONGO_CONFIG_SSL
+    auto& sslPeerInfo = SSLPeerInfo::forSession(client->session());
+    auto& clientName = sslPeerInfo.subjectName();
+
+    // If clientName is empty, that means that there is no certificate for
+    // the user and they won't be able to use MONGODB-X509 anyways.
+    return clientName.toString();
+#else
+    uasserted(ErrorCodes::BadValue, "MONGODB-X509 is unsupported on no-ssl builds");
+#endif
+}
+
+/**
+ * The steps of authCommand (sans feature flag) are below.
+ *
+ * 1. We should validate the inputs.
+ * 2. We should synthesize the SASLStartCommand payload.
+ * 3. We should log that we are performing the Authenticate Command.
+ * 4. We should start metrics capture.
+ * 5. We should call runSASLStart with the command payload.
+ * 6. We should translate the saslStartReply into an authenticate reply.
+ * 7. We should return the authenticate reply.
+ */
 AuthenticateReply authCommand(OperationContext* opCtx,
                               AuthenticationSession* session,
                               const AuthenticateCommand& cmd) {
+
     auto client = opCtx->getClient();
-
     auto dbname = cmd.getDbName();
-    auto user = cmd.getUser().value_or("");
-
+    auto user = cmd.getUser();
     auto mechanism = cmd.getMechanism();
 
+    // TODO SERVER-72648: remove
+    if (!gFeatureFlagRearchitectUserAcquisition.isEnabled(
+            serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
+
+        auto userStr = user.value_or("").toString();
+
+        if (!serverGlobalParams.quiet.load()) {
+            LOGV2_DEBUG(5315501,
+                        2,
+                        "Authenticate Command",
+                        "client"_attr = client->getRemote(),
+                        "mechanism"_attr = mechanism,
+                        "user"_attr = user,
+                        logAttrs(dbname));
+        }
+
+        auto& internalSecurityUser = (*internalSecurity.getUser())->getName();
+        if (getTestCommandsEnabled() && dbname.isAdminDB() &&
+            userStr == internalSecurityUser.getUser()) {
+            // Allows authenticating as the internal user against the admin database.  This is to
+            // support the auth passthrough test framework on mongos (since you can't use the local
+            // database on a mongos, so you can't auth as the internal user without this).
+            session->updateUserName(internalSecurityUser, mechanism == auth::kMechanismMongoX509);
+        } else {
+            session->updateUserName(UserName{userStr, dbname},
+                                    mechanism == auth::kMechanismMongoX509);
+        }
+
+        uassert(ErrorCodes::BadValue, "Auth mechanism not specified", !mechanism.empty());
+
+        session->metrics()->restart();
+
+        session->setMechanismName(mechanism);
+
+        _authenticate(opCtx, session, mechanism);
+
+        session->markSuccessful();
+
+        AuthenticateReply reply;
+        reply.setUser(session->getUserName());
+        reply.setDbname(session->getDatabase());
+
+        return reply;
+    }
+
+    // Synthesize the SASLStartCommand.
+    auth::SaslStartCommand request;
+    auto payload = generateSaslPayload(user, dbname);
+
+    request.setPayload(std::move(payload));
+    request.setDbName(dbname);
+    request.setMechanism(mechanism);
+    request.setSerializationContext(cmd.getSerializationContext());
+
+    // Log Authenticate command.
     if (!serverGlobalParams.quiet.load()) {
-        LOGV2_DEBUG(5315501,
+        LOGV2_DEBUG(8209201,
                     2,
                     "Authenticate Command",
                     "client"_attr = client->getRemote(),
@@ -320,28 +396,14 @@ AuthenticateReply authCommand(OperationContext* opCtx,
                     logAttrs(dbname));
     }
 
-    session->metrics()->restart();
+    // Run SASL Start.
+    // We do not need to check the response to runSaslStart because that function
+    // will throw and we will eventually get caught by the AuthenticationSession
+    // stepguard.
+    auto saslStartReply = runSaslStart(opCtx, session, request);
+    invariant(saslStartReply.getDone() == true);
 
-    auto& internalSecurityUser = (*internalSecurity.getUser())->getName();
-    if (getTestCommandsEnabled() && dbname.isAdminDB() && user == internalSecurityUser.getUser()) {
-        // Allows authenticating as the internal user against the admin database.  This is to
-        // support the auth passthrough test framework on mongos (since you can't use the local
-        // database on a mongos, so you can't auth as the internal user without this).
-        session->updateUserName(internalSecurityUser, mechanism == auth::kMechanismMongoX509);
-    } else {
-        session->updateUserName(UserName{user, dbname}, mechanism == auth::kMechanismMongoX509);
-    }
-
-    if (mechanism.empty()) {
-        uasserted(ErrorCodes::BadValue, "Auth mechanism not specified");
-    }
-
-    session->setMechanismName(mechanism);
-
-    _authenticate(opCtx, session, mechanism);
-
-    session->markSuccessful();
-
+    // Translate SASLStartReply and return AuthenticateReply.
     AuthenticateReply reply;
     reply.setUser(session->getUserName());
     reply.setDbname(session->getDatabase());

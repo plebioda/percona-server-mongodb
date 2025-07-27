@@ -63,6 +63,19 @@ struct ParsedDistinctCommand {
 
 namespace parsed_distinct_command {
 /**
+ * Creates a projection spec for a distinct command from the requested field. In most cases, the
+ * projection spec will be {_id: 0, key: 1}.
+ * The exceptions are:
+ * 1) When the requested field is '_id', the projection spec will {_id: 1}.
+ * 2) When the requested field could be an array element (eg. a.0), the projected field will be the
+ *    prefix of the field up to the array element. For example, a.b.2 => {_id: 0, 'a.b': 1} Note
+ *    that we can't use a $slice projection because the distinct command filters the results from
+ *    the executor using the dotted field name. Using $slice will re-order the documents in the
+ *    array in the results.
+ */
+BSONObj getDistinctProjection(const std::string& field);
+
+/**
  * Parses each big component of the input 'distinctCommand'.
  *
  * 'extensionsCallback' allows for additional mongod parsing. If called from mongos, an

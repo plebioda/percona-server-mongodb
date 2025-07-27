@@ -10,13 +10,6 @@
 	"rejectedPlans" : [ ],
 	"winningPlan" : [
 		{
-			"stage" : "PROJECTION_SIMPLE",
-			"transformBy" : {
-				"_id" : 0,
-				"a" : 1
-			}
-		},
-		{
 			"direction" : "forward",
 			"stage" : "COLLSCAN"
 		}
@@ -292,7 +285,44 @@
 ### Summarized explain
 ```json
 {
-	"rejectedPlans" : [ ],
+	"rejectedPlans" : [
+		[
+			{
+				"stage" : "PROJECTION_COVERED",
+				"transformBy" : {
+					"_id" : 0,
+					"a" : 1
+				}
+			},
+			{
+				"direction" : "forward",
+				"indexBounds" : {
+					"a" : [
+						"[-inf.0, 3.0]"
+					],
+					"b" : [
+						"[MinKey, MaxKey]"
+					]
+				},
+				"indexName" : "a_1_b_1",
+				"isFetching" : false,
+				"isMultiKey" : false,
+				"isPartial" : false,
+				"isShardFiltering" : false,
+				"isSparse" : false,
+				"isUnique" : false,
+				"keyPattern" : {
+					"a" : 1,
+					"b" : 1
+				},
+				"multiKeyPaths" : {
+					"a" : [ ],
+					"b" : [ ]
+				},
+				"stage" : "DISTINCT_SCAN"
+			}
+		]
+	],
 	"winningPlan" : [
 		{
 			"stage" : "PROJECTION_COVERED",
@@ -357,7 +387,44 @@
 	"stages" : [
 		{
 			"$cursor" : {
-				"rejectedPlans" : [ ],
+				"rejectedPlans" : [
+					[
+						{
+							"stage" : "PROJECTION_COVERED",
+							"transformBy" : {
+								"_id" : 0,
+								"a" : 1
+							}
+						},
+						{
+							"direction" : "forward",
+							"indexBounds" : {
+								"a" : [
+									"[-inf.0, 3.0]"
+								],
+								"b" : [
+									"[MinKey, MaxKey]"
+								]
+							},
+							"indexName" : "a_1_b_1",
+							"isFetching" : false,
+							"isMultiKey" : false,
+							"isPartial" : false,
+							"isShardFiltering" : false,
+							"isSparse" : false,
+							"isUnique" : false,
+							"keyPattern" : {
+								"a" : 1,
+								"b" : 1
+							},
+							"multiKeyPaths" : {
+								"a" : [ ],
+								"b" : [ ]
+							},
+							"stage" : "DISTINCT_SCAN"
+						}
+					]
+				],
 				"winningPlan" : [
 					{
 						"stage" : "PROJECTION_COVERED",
@@ -414,13 +481,6 @@
 	"rejectedPlans" : [ ],
 	"winningPlan" : [
 		{
-			"stage" : "PROJECTION_SIMPLE",
-			"transformBy" : {
-				"_id" : 0,
-				"a" : 1
-			}
-		},
-		{
 			"stage" : "FETCH"
 		},
 		{
@@ -471,33 +531,48 @@
 ### Summarized explain
 ```json
 {
-	"rejectedPlans" : [ ],
-	"winningPlan" : [
+	"stages" : [
 		{
-			"stage" : "GROUP"
-		},
-		{
-			"stage" : "FETCH"
-		},
-		{
-			"direction" : "forward",
-			"indexBounds" : {
-				"b" : [
-					"[3.0, 3.0]"
+			"$cursor" : {
+				"rejectedPlans" : [ ],
+				"winningPlan" : [
+					{
+						"stage" : "PROJECTION_SIMPLE",
+						"transformBy" : {
+							"_id" : 0,
+							"a" : 1
+						}
+					},
+					{
+						"stage" : "FETCH"
+					},
+					{
+						"direction" : "forward",
+						"indexBounds" : {
+							"b" : [
+								"[3.0, 3.0]"
+							]
+						},
+						"indexName" : "b_1",
+						"isMultiKey" : false,
+						"isPartial" : false,
+						"isSparse" : false,
+						"isUnique" : false,
+						"keyPattern" : {
+							"b" : 1
+						},
+						"multiKeyPaths" : {
+							"b" : [ ]
+						},
+						"stage" : "IXSCAN"
+					}
 				]
-			},
-			"indexName" : "b_1",
-			"isMultiKey" : false,
-			"isPartial" : false,
-			"isSparse" : false,
-			"isUnique" : false,
-			"keyPattern" : {
-				"b" : 1
-			},
-			"multiKeyPaths" : {
-				"b" : [ ]
-			},
-			"stage" : "IXSCAN"
+			}
+		},
+		{
+			"$group" : {
+				"_id" : "$a"
+			}
 		}
 	]
 }

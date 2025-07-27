@@ -14,7 +14,7 @@ variables:
   - &task_template
     name: template
     depends_on:
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -36,7 +36,7 @@ variables:
         # This is added because of EVG-18211.
         # Without this we are adding extra dependencies on evergreen and it is causing strain
         omit_generated_tasks: true
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
     commands:
       - func: "generate resmoke tasks"
         vars:
@@ -99,7 +99,7 @@ variables:
         # This is added because of EVG-18211.
         # Without this we are adding extra dependencies on evergreen and it is causing strain
         omit_generated_tasks: true
-      - archive_dist_test_debug
+      - archive_dist_test
     commands:
       - func: "generate resmoke tasks"
 
@@ -267,7 +267,7 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_servicearch",
-        "default",
+        "experimental",
         "incompatible_debug_mode",
         "serverless",
       ]
@@ -417,20 +417,6 @@ tasks:
       - func: "generate resmoke tasks"
         vars:
           use_xlarge_distro: "true"
-          resmoke_jobs_max: 1
-
-  - <<: *gen_task_template
-    name: concurrency_embedded_router_replication_bulk_write_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_catalog_and_routing",
-        "default",
-        "bulk_write",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
           resmoke_jobs_max: 1
 
   - <<: *gen_task_template
@@ -671,7 +657,7 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_servicearch",
-        "default",
+        "experimental",
         "incompatible_debug_mode",
         "serverless",
       ]
@@ -686,7 +672,7 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_servicearch",
-        "default",
+        "experimental",
         "incompatible_debug_mode",
         "serverless",
       ]
@@ -701,7 +687,7 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_servicearch",
-        "default",
+        "experimental",
         "incompatible_debug_mode",
         "serverless",
       ]
@@ -775,7 +761,7 @@ tasks:
     tags:
       [
         "assigned_to_jira_team_server_servicearch",
-        "default",
+        "experimental",
         "incompatible_debug_mode",
         "requires_large_host_debug_mode",
         "requires_large_host_tsan",
@@ -1194,6 +1180,7 @@ tasks:
         "multiversion",
         "no_multiversion_generate_tasks",
         "multiversion_future_git_tag",
+        "suggested_excluding_required__for_devprod_mitigation_only",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1210,6 +1197,7 @@ tasks:
         "multiversion",
         "no_multiversion_generate_tasks",
         "future_git_tag_incompatible",
+        "suggested_excluding_required__for_devprod_mitigation_only",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1273,6 +1261,7 @@ tasks:
         "auth",
         "audit",
         "non_live_record",
+        "suggested_excluding_required__for_devprod_mitigation_only",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1289,6 +1278,7 @@ tasks:
         "incompatible_windows",
         "incompatible_ppc",
         "incompatible_s390x",
+        "suggested_excluding_required__for_devprod_mitigation_only",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1986,30 +1976,12 @@ tasks:
         "incompatible_windows",
         "incompatible_ppc",
         "incompatible_s390x",
+        "suggested_excluding_required__for_devprod_mitigation_only",
       ]
     commands:
       - func: "generate resmoke tasks"
         vars:
           use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: sharding_mongos_and_mixed_shards_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_cluster_scalability",
-        "default",
-        "sharding",
-        "common",
-        "multiversion",
-      ]
-    commands:
-      - func: "initialize multiversion tasks"
-        vars:
-          sharding_last_lts_mongos_and_mixed_shards: last_lts
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-          run_no_feature_flag_tests: "true"
 
   - <<: *gen_task_template
     name: sharding_multiversion_gen

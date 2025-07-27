@@ -35,6 +35,7 @@
 #include <memory>
 
 #include "mongo/db/exec/sbe/values/slot.h"
+#include "mongo/db/query/plan_yield_policy_sbe.h"
 
 namespace mongo {
 class InMatchExpression;
@@ -108,9 +109,9 @@ struct StageBuilderState {
     }
 
     sbe::value::SlotId getNothingSlot();
+    sbe::value::SlotId getEmptyObjSlot();
     sbe::value::SlotId getSortSpecSlot(const AccumulationStatement* sortPattern);
     sbe::value::SlotId getSortSpecSlot(const WindowFunctionStatement* sortPattern);
-
     boost::optional<sbe::value::SlotId> getTimeZoneDBSlot();
     boost::optional<sbe::value::SlotId> getCollatorSlot();
     boost::optional<sbe::value::SlotId> getOplogTsSlot();

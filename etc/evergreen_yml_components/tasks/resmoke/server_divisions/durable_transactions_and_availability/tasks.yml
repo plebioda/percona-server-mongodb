@@ -14,7 +14,7 @@ variables:
   - &task_template
     name: template
     depends_on:
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -36,7 +36,7 @@ variables:
         # This is added because of EVG-18211.
         # Without this we are adding extra dependencies on evergreen and it is causing strain
         omit_generated_tasks: true
-      - name: archive_dist_test_debug
+      - name: archive_dist_test
     commands:
       - func: "generate resmoke tasks"
         vars:
@@ -99,7 +99,7 @@ variables:
         # This is added because of EVG-18211.
         # Without this we are adding extra dependencies on evergreen and it is causing strain
         omit_generated_tasks: true
-      - archive_dist_test_debug
+      - archive_dist_test
     commands:
       - func: "generate resmoke tasks"
 
@@ -200,28 +200,6 @@ tasks:
       - func: "generate resmoke tasks"
         vars:
           use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: concurrency_replication_bulk_write_gen
-    tags: ["assigned_to_jira_team_server_repl", "default", "bulk_write"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          use_large_distro: "true"
-
-  - <<: *gen_task_template
-    name: concurrency_replication_bulk_write_with_replica_set_endpoint_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_cluster_scalability",
-        "experimental",
-        "replica_set_endpoint",
-        "requires_all_feature_flags",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          resmoke_jobs_max: 1
 
   # TODO(SERVER-93789): Re-enable magic_restore passthroughs in master
   # - <<: *gen_task_template
@@ -1094,6 +1072,7 @@ tasks:
         "common",
         "san",
         "auth",
+        "suggested_excluding_required__for_devprod_mitigation_only",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1326,7 +1305,12 @@ tasks:
 
   - <<: *gen_task_template
     name: replica_sets_max_mirroring_large_txns_format_gen
-    tags: ["assigned_to_jira_team_server_repl", "default"]
+    tags:
+      [
+        "assigned_to_jira_team_server_repl",
+        "default",
+        "suggested_excluding_required__for_devprod_mitigation_only",
+      ]
     commands:
       - func: "generate resmoke tasks"
 
@@ -1790,43 +1774,6 @@ tasks:
           use_large_distro: "true"
 
   - <<: *gen_task_template
-    name: concurrency_metrics_gen
-    tags: ["assigned_to_jira_team_server_execution", "default", "concurrency"]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          resmoke_jobs_max: 1
-
-  - <<: *gen_task_template
-    name: concurrency_replication_metrics_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_execution",
-        "default",
-        "concurrency",
-        "repl",
-        "disabled_on_code_coverage",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          resmoke_jobs_max: 1
-
-  - <<: *gen_task_template
-    name: concurrency_replication_metrics_with_replica_set_endpoint_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_cluster_scalability",
-        "experimental",
-        "replica_set_endpoint",
-        "requires_all_feature_flags",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          resmoke_jobs_max: 1
-
-  - <<: *gen_task_template
     name: concurrency_simultaneous_gen
     tags:
       [
@@ -1958,6 +1905,7 @@ tasks:
         "default",
         "config_fuzzer",
         "incompatible_inmemory",
+        "incompatible_tsan",
       ]
     commands:
       - func: "do setup"
@@ -2245,6 +2193,7 @@ tasks:
         "default",
         "large",
         "clustered_collections",
+        "suggested_excluding_required__for_devprod_mitigation_only",
       ]
     commands:
       - func: "generate resmoke tasks"

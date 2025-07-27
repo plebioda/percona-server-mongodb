@@ -56,6 +56,7 @@
 #include "mongo/db/client.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/service_context_test_fixture.h"
+#include "mongo/db/storage/recovery_unit_noop.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/transport/session.h"
 #include "mongo/transport/transport_layer_mock.h"
@@ -89,13 +90,68 @@ void setX509PeerInfo(const std::shared_ptr<transport::Session>& session, SSLPeer
 const auto kTestDB = DatabaseName::createDatabaseName_forTest(boost::none, "test"_sd);
 const auto kTestRsrc = ResourcePattern::forDatabaseName(kTestDB);
 
+// Custom AuthorizationManagerImpl which keeps track of how many times user cache invalidation
+// functions have been called.
+class AuthorizationManagerImplForTest : public AuthorizationManagerImpl {
+public:
+    using AuthorizationManagerImpl::AuthorizationManagerImpl;
+
+    void invalidateUserByName(const UserName& user) override {
+        _byNameCount.fetchAndAdd(1);
+        AuthorizationManagerImpl::invalidateUserByName(user);
+    }
+
+    void invalidateUsersByTenant(const boost::optional<TenantId>& tenant) override {
+        _byTenantCount.fetchAndAdd(1);
+        AuthorizationManagerImpl::invalidateUsersByTenant(tenant);
+    }
+
+    void invalidateUserCache() override {
+        _wholeCacheCount.fetchAndAdd(1);
+        AuthorizationManagerImpl::invalidateUserCache();
+    }
+
+    void resetCounts() {
+        _byNameCount.store(0);
+        _byTenantCount.store(0);
+        _wholeCacheCount.store(0);
+    }
+
+    void assertCounts(uint64_t whole, uint64_t name, uint64_t tenant) {
+        ASSERT_EQ(whole, _wholeCacheCount.load());
+        ASSERT_EQ(name, _byNameCount.load());
+        ASSERT_EQ(tenant, _byTenantCount.load());
+    }
+
+private:
+    AtomicWord<uint64_t> _byNameCount = 0, _byTenantCount = 0, _wholeCacheCount = 0;
+};
+
+// Custom RecoveryUnit which extends RecoveryUnitNoop to handle entering and exiting WUOWs. Does not
+// work for nested WUOWs.
+class RecoveryUnitMock : public RecoveryUnitNoop {
+    void doBeginUnitOfWork() override {
+        _setState(State::kActive);
+    }
+
+    void doCommitUnitOfWork() override {
+        _executeCommitHandlers(boost::none);
+        _setState(State::kActiveNotInUnitOfWork);
+    }
+
+    void doAbortUnitOfWork() override {
+        _executeRollbackHandlers();
+        _setState(State::kActiveNotInUnitOfWork);
+    }
+};
+
 class AuthorizationManagerTest : public ServiceContextTest {
 public:
     AuthorizationManagerTest() {
         auto localExternalState = std::make_unique<AuthzManagerExternalStateMock>();
         externalState = localExternalState.get();
-        auto localAuthzManager =
-            std::make_unique<AuthorizationManagerImpl>(getService(), std::move(localExternalState));
+        auto localAuthzManager = std::make_unique<AuthorizationManagerImplForTest>(
+            getService(), std::move(localExternalState));
         authzManager = localAuthzManager.get();
         authzManager->setAuthEnabled(true);
         AuthorizationManager::set(getService(), std::move(localAuthzManager));
@@ -112,6 +168,10 @@ public:
                            << "SCRAM-SHA-256"
                            << scram::Secrets<SHA256Block>::generateCredentials(
                                   "password", saslGlobalParams.scramSHA256IterationCount.load()));
+
+        shard_role_details::setRecoveryUnit(opCtx.get(),
+                                            std::make_unique<RecoveryUnitMock>(),
+                                            WriteUnitOfWork::RecoveryUnitState::kNotInUnitOfWork);
     }
 
     ~AuthorizationManagerTest() override {
@@ -119,9 +179,50 @@ public:
             AuthorizationManager::get(opCtx->getService())->invalidateUserCache();
     }
 
+    void resetInvalidateCounts() {
+        authzManager->resetCounts();
+    }
+
+    void assertInvalidateCounts(uint64_t whole, uint64_t name, uint64_t tenant) {
+        authzManager->assertCounts(whole, name, tenant);
+    }
+
+    // Helpers that log ops which should cause a specific type of user invalidation.
+    void logOpSingleUser() {
+        externalState->logOp(opCtx.get(),
+                             authzManager,
+                             "i"_sd,
+                             NamespaceString::kAdminUsersNamespace,
+                             BSON("_id"
+                                  << "db.user"),
+                             NULL);
+    }
+
+    void logOpWholeCache() {
+        externalState->logOp(opCtx.get(),
+                             authzManager,
+                             "i"_sd,
+                             NamespaceString::kAdminUsersNamespace,
+                             BSON("_id"
+                                  << "invaliduser"),
+                             NULL);
+    }
+
+    void logOpTenant() {
+        TenantId tenantId(OID::gen());
+        auto ns = NamespaceString::makeTenantUsersCollection(tenantId);
+        externalState->logOp(opCtx.get(),
+                             authzManager,
+                             ""_sd,
+                             ns,
+                             BSON("_id"
+                                  << "db.user"),
+                             NULL);
+    }
+
     transport::TransportLayerMock transportLayer;
     std::shared_ptr<transport::Session> session = transportLayer.createSession();
-    AuthorizationManager* authzManager;
+    AuthorizationManagerImplForTest* authzManager;
     AuthzManagerExternalStateMock* externalState;
     BSONObj credentials;
     ServiceContext::UniqueOperationContext opCtx;
@@ -155,7 +256,8 @@ TEST_F(AuthorizationManagerTest, testAcquireV2User) {
                                                                              << "admin"))),
                                                      BSONObj()));
 
-    auto swu = authzManager->acquireUser(opCtx.get(), {{"v2read", "test"}, boost::none});
+    auto swu = authzManager->acquireUser(
+        opCtx.get(), std::make_unique<UserRequestGeneral>(UserName("v2read", "test"), boost::none));
     ASSERT_OK(swu.getStatus());
     auto v2read = std::move(swu.getValue());
     ASSERT_EQUALS(UserName("v2read", "test"), v2read->getName());
@@ -168,7 +270,9 @@ TEST_F(AuthorizationManagerTest, testAcquireV2User) {
     ASSERT(testDBPrivilege.getActions().contains(ActionType::find));
     // Make sure user's refCount is 0 at the end of the test to avoid an assertion failure
 
-    swu = authzManager->acquireUser(opCtx.get(), {{"v2cluster", "admin"}, boost::none});
+    swu = authzManager->acquireUser(
+        opCtx.get(),
+        std::make_unique<UserRequestGeneral>(UserName("v2cluster", "admin"), boost::none));
     ASSERT_OK(swu.getStatus());
     auto v2cluster = std::move(swu.getValue());
     ASSERT_EQUALS(UserName("v2cluster", "admin"), v2cluster->getName());
@@ -185,9 +289,10 @@ TEST_F(AuthorizationManagerTest, testAcquireV2User) {
 #ifdef MONGO_CONFIG_SSL
 TEST_F(AuthorizationManagerTest, testLocalX509Authorization) {
     std::set<RoleName> roles({{"read", "test"}, {"readWrite", "test"}});
-    UserRequest request(UserName("CN=mongodb.com", "$external"), roles);
+    std::unique_ptr<UserRequest> request =
+        std::make_unique<UserRequestGeneral>(UserName("CN=mongodb.com", "$external"), roles);
 
-    auto swu = authzManager->acquireUser(opCtx.get(), request);
+    auto swu = authzManager->acquireUser(opCtx.get(), std::move(request));
     ASSERT_OK(swu.getStatus());
     auto x509User = std::move(swu.getValue());
     ASSERT(x509User.isValid());
@@ -211,17 +316,21 @@ TEST_F(AuthorizationManagerTest, testLocalX509AuthorizationInvalidUser) {
                                 boost::none,
                                 {RoleName("read", "test"), RoleName("write", "test")}));
 
-    ASSERT_NOT_OK(
-        authzManager->acquireUser(opCtx.get(), {{"CN=10gen.com", "$external"}, boost::none})
-            .getStatus());
+    ASSERT_NOT_OK(authzManager
+                      ->acquireUser(opCtx.get(),
+                                    std::make_unique<UserRequestGeneral>(
+                                        UserName("CN=10gen.com", "$external"), boost::none))
+                      .getStatus());
 }
 
 TEST_F(AuthorizationManagerTest, testLocalX509AuthenticationNoAuthorization) {
     setX509PeerInfo(session, {});
 
-    ASSERT_NOT_OK(
-        authzManager->acquireUser(opCtx.get(), {{"CN=mongodb.com", "$external"}, boost::none})
-            .getStatus());
+    ASSERT_NOT_OK(authzManager
+                      ->acquireUser(opCtx.get(),
+                                    std::make_unique<UserRequestGeneral>(
+                                        UserName("CN=mongodb.com", "$external"), boost::none))
+                      .getStatus());
 }
 
 #endif
@@ -252,7 +361,8 @@ TEST_F(AuthorizationManagerTest, testAcquireV2UserWithUnrecognizedActions) {
                                                          << "insert")))),
         BSONObj()));
 
-    auto swu = authzManager->acquireUser(opCtx.get(), {{"myUser", "test"}, boost::none});
+    auto swu = authzManager->acquireUser(
+        opCtx.get(), std::make_unique<UserRequestGeneral>(UserName("myUser", "test"), boost::none));
     ASSERT_OK(swu.getStatus());
     auto myUser = std::move(swu.getValue());
     ASSERT_EQUALS(UserName("myUser", "test"), myUser->getName());
@@ -331,7 +441,8 @@ TEST_F(AuthorizationManagerTest, testRefreshExternalV2User) {
     for (const auto& userDoc : userDocs) {
         const UserName userName(userDoc.getStringField(kUserFieldName),
                                 userDoc.getStringField(kDbFieldName));
-        auto swUser = authzManager->acquireUser(opCtx.get(), {userName, boost::none});
+        auto swUser = authzManager->acquireUser(
+            opCtx.get(), std::make_unique<UserRequestGeneral>(userName, boost::none));
         ASSERT_OK(swUser.getStatus());
         auto user = std::move(swUser.getValue());
         ASSERT_EQUALS(userName, user->getName());
@@ -376,7 +487,8 @@ TEST_F(AuthorizationManagerTest, testRefreshExternalV2User) {
     for (const auto& userDoc : userDocs) {
         const UserName userName(userDoc.getStringField(kUserFieldName),
                                 userDoc.getStringField(kDbFieldName));
-        auto swUser = authzManager->acquireUser(opCtx.get(), {userName, boost::none});
+        auto swUser = authzManager->acquireUser(
+            opCtx.get(), std::make_unique<UserRequestGeneral>(userName, boost::none));
         ASSERT_OK(swUser.getStatus());
         auto user = std::move(swUser.getValue());
         ASSERT_EQUALS(userName, user->getName());
@@ -398,6 +510,96 @@ TEST_F(AuthorizationManagerTest, testRefreshExternalV2User) {
         }
         ASSERT_FALSE(cachedUserRolesIt.more());
     }
+}
+
+TEST_F(AuthorizationManagerTest, testLogWholeCacheInvalidateNoWuow) {
+    resetInvalidateCounts();
+    // With no write unit enabled, logOp should immediately push cache invalidates.
+    logOpWholeCache();
+    assertInvalidateCounts(1, 0, 0);
+}
+TEST_F(AuthorizationManagerTest, testLogWholeCacheInvalidateInWuowCommit) {
+    resetInvalidateCounts();
+    // With a write unit, cache invalidation should not occur until a commit().
+    {
+        WriteUnitOfWork wuow(opCtx.get());
+        logOpWholeCache();
+        assertInvalidateCounts(0, 0, 0);
+        wuow.commit();
+        assertInvalidateCounts(1, 0, 0);
+    }
+    assertInvalidateCounts(1, 0, 0);
+}
+TEST_F(AuthorizationManagerTest, testLogWholeCacheInvalidateInWuowAbandon) {
+    resetInvalidateCounts();
+    // If the write unit is abandoned (which we can emulate by leaving its owned scope without
+    // committing), cache invalidation should not occur.
+    {
+        WriteUnitOfWork wuow(opCtx.get());
+        logOpWholeCache();
+        assertInvalidateCounts(0, 0, 0);
+    }
+    assertInvalidateCounts(0, 0, 0);
+}
+
+TEST_F(AuthorizationManagerTest, testLogSpecificUserInvalidateNoWuow) {
+    resetInvalidateCounts();
+    // With no write unit enabled, logOp should immediately push cache invalidates.
+    logOpSingleUser();
+    assertInvalidateCounts(0, 1, 0);
+}
+TEST_F(AuthorizationManagerTest, testLogSpecificUserInvalidateInWuowCommit) {
+    resetInvalidateCounts();
+    // With a write unit, cache invalidation should not occur until a commit().
+    {
+        WriteUnitOfWork wuow(opCtx.get());
+        logOpSingleUser();
+        assertInvalidateCounts(0, 0, 0);
+        wuow.commit();
+        assertInvalidateCounts(0, 1, 0);
+    }
+    assertInvalidateCounts(0, 1, 0);
+}
+TEST_F(AuthorizationManagerTest, testLogSpecificUserInvalidateInWuowAbandon) {
+    resetInvalidateCounts();
+    // If the write unit is abandoned (which we can emulate by leaving its owned scope without
+    // committing), cache invalidation should not occur.
+    {
+        WriteUnitOfWork wuow(opCtx.get());
+        logOpSingleUser();
+        assertInvalidateCounts(0, 0, 0);
+    }
+    assertInvalidateCounts(0, 0, 0);
+}
+
+TEST_F(AuthorizationManagerTest, testLogTenantInvalidateNoWuow) {
+    resetInvalidateCounts();
+    // With no write unit enabled, logOp should immediately push cache invalidates.
+    logOpTenant();
+    assertInvalidateCounts(0, 0, 1);
+}
+TEST_F(AuthorizationManagerTest, testLogTenantInvalidateInWuowCommit) {
+    resetInvalidateCounts();
+    // With a write unit, cache invalidation should not occur until a commit().
+    {
+        WriteUnitOfWork wuow(opCtx.get());
+        logOpTenant();
+        assertInvalidateCounts(0, 0, 0);
+        wuow.commit();
+        assertInvalidateCounts(0, 0, 1);
+    }
+    assertInvalidateCounts(0, 0, 1);
+}
+TEST_F(AuthorizationManagerTest, testLogTenantInvalidateInWuowAbandon) {
+    resetInvalidateCounts();
+    // If the write unit is abandoned (which we can emulate by leaving its owned scope without
+    // committing), cache invalidation should not occur.
+    {
+        WriteUnitOfWork wuow(opCtx.get());
+        logOpTenant();
+        assertInvalidateCounts(0, 0, 0);
+    }
+    assertInvalidateCounts(0, 0, 0);
 }
 
 }  // namespace

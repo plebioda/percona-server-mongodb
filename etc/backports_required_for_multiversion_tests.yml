@@ -187,6 +187,12 @@ last-continuous:
       ticket: SERVER-91465
     - test_file: jstests/aggregation/bugs/add_fields_adds_to_missing_fields.js
       ticket: SERVER-91784
+    - test_file: jstests/aggregation/group_with_acc_n_to_distinct_scan.js
+      ticket: SERVER-90017
+    - test_file: jstests/core/query/query_settings/query_settings_cmds_validation.js
+      ticket: SERVER-90965
+    - test_file: jstests/core/query/query_settings/query_settings_cmds.js
+      ticket: SERVER-90965
     - test_file: jstests/core/query/index_deduplication.js
       ticket: SERVER-92147
     - test_file: jstests/replsets/backwards_compatible_timeseries_catalog_options.js
@@ -239,8 +245,16 @@ last-continuous:
       ticket: SERVER-92843
     - test_file: jstests/core/query/plan_cache/elem_match_index_diff_types.js
       ticket: SERVER-92806
+    - test_file: jstests/replsets/initial_sync_index_conflict_recreate.js
+      ticket: SERVER-93141
     - test_file: jstests/replsets/new_primary_prevents_stale_majority_reads_on_stepup.js
       ticket: SERVER-53813
+    - test_file: jstests/sharding/resharding_collection_cloner_stale_config_retry.js
+      ticket: SERVER-94151
+    - test_file: jstests/core/write/update/upsert_duplicate_key_retry_collation.js
+      ticket: SERVER-84089
+    - test_file: jstests/core/ddl/create_indexes.js
+      ticket: SERVER-90952
   suites: null
 last-lts:
   all:
@@ -438,6 +452,12 @@ last-lts:
       ticket: SERVER-91465
     - test_file: jstests/aggregation/bugs/add_fields_adds_to_missing_fields.js
       ticket: SERVER-91784
+    - test_file: jstests/aggregation/group_with_acc_n_to_distinct_scan.js
+      ticket: SERVER-90017
+    - test_file: jstests/core/query/query_settings/query_settings_cmds_validation.js
+      ticket: SERVER-90965
+    - test_file: jstests/core/query/query_settings/query_settings_cmds.js
+      ticket: SERVER-90965
     - test_file: jstests/core/query/index_deduplication.js
       ticket: SERVER-92147
     - test_file: jstests/replsets/backwards_compatible_timeseries_catalog_options.js
@@ -494,6 +514,14 @@ last-lts:
       ticket: SERVER-92843
     - test_file: jstests/core/query/plan_cache/elem_match_index_diff_types.js
       ticket: SERVER-92806
+    - test_file: jstests/replsets/initial_sync_index_conflict_recreate.js
+      ticket: SERVER-93141
     - test_file: jstests/replsets/new_primary_prevents_stale_majority_reads_on_stepup.js
       ticket: SERVER-53813
+    - test_file: jstests/sharding/resharding_collection_cloner_stale_config_retry.js
+      ticket: SERVER-94151
+    - test_file: jstests/core/write/update/upsert_duplicate_key_retry_collation.js
+      ticket: SERVER-84089
+    - test_file: jstests/core/ddl/create_indexes.js
+      ticket: SERVER-90952
   suites: null

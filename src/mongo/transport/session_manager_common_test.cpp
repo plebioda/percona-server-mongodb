@@ -32,31 +32,14 @@
 
 #include "mongo/db/service_context_test_fixture.h"
 #include "mongo/transport/session_manager_common.h"
+#include "mongo/transport/session_manager_common_mock.h"
+
 #include "mongo/unittest/unittest.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kTest
 
 namespace mongo::transport {
 namespace {
-
-class SessionManagerCommonNoop : public SessionManagerCommon {
-public:
-    using SessionManagerCommon::SessionManagerCommon;
-
-protected:
-    std::string getClientThreadName(const Session&) const final {
-        MONGO_UNREACHABLE;
-    }
-    void configureServiceExecutorContext(Client* client, bool isPrivilegedSession) const final {
-        MONGO_UNREACHABLE;
-    }
-    void onClientConnect(Client* client) final {
-        MONGO_UNREACHABLE;
-    }
-    void onClientDisconnect(Client* client) final {
-        MONGO_UNREACHABLE;
-    }
-};
 
 class SessionManagerCommonTest : public ServiceContextTest {};
 
@@ -76,7 +59,7 @@ TEST_F(SessionManagerCommonTest, VerifyMaxOpenSessionsBasedOnRlimit) {
 
     // 80% of half of 10 is 4, which is the arithmetic we want to verify in the
     // `getSupportedMax` function via the `maxOpenSessions` getter.
-    SessionManagerCommonNoop sm(getServiceContext());
+    MockSessionManagerCommon sm(getServiceContext());
     ASSERT_EQ(sm.maxOpenSessions(), 4);
 
     rlimitReturnCode = setrlimit(RLIMIT_NOFILE, &originalLimit);

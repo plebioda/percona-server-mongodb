@@ -1252,8 +1252,7 @@ void TransactionParticipant::Participant::_setReadSnapshot(OperationContext* opC
     if (readConcernArgs.getArgsAtClusterTime()) {
         // Read concern code should have already set the timestamp on the recovery unit.
         const auto readTimestamp = readConcernArgs.getArgsAtClusterTime()->asTimestamp();
-        const auto ruTs =
-            shard_role_details::getRecoveryUnit(opCtx)->getPointInTimeReadTimestamp(opCtx);
+        const auto ruTs = shard_role_details::getRecoveryUnit(opCtx)->getPointInTimeReadTimestamp();
         invariant(readTimestamp == ruTs,
                   "readTimestamp: {}, pointInTime: {}"_format(readTimestamp.toString(),
                                                               ruTs ? ruTs->toString() : "none"));
@@ -3593,7 +3592,8 @@ void TransactionParticipant::Participant::invalidate(OperationContext* opCtx) {
     _resetTransactionStateAndUnlock(&lk, opCtx, TransactionState::kNone);
 }
 
-boost::optional<repl::OplogEntry> TransactionParticipant::Participant::checkStatementExecuted(
+boost::optional<repl::OplogEntry>
+TransactionParticipant::Participant::checkStatementExecutedAndFetchOplogEntry(
     OperationContext* opCtx, StmtId stmtId) const {
     const auto stmtOpTime = _checkStatementExecuted(opCtx, stmtId);
 
@@ -3631,8 +3631,8 @@ boost::optional<repl::OplogEntry> TransactionParticipant::Participant::checkStat
     MONGO_UNREACHABLE;
 }
 
-bool TransactionParticipant::Participant::checkStatementExecutedNoOplogEntryFetch(
-    OperationContext* opCtx, StmtId stmtId) const {
+bool TransactionParticipant::Participant::checkStatementExecuted(OperationContext* opCtx,
+                                                                 StmtId stmtId) const {
     return bool(_checkStatementExecuted(opCtx, stmtId));
 }
 

@@ -21,13 +21,13 @@ mongo_cc_library(
         "s2_common.h",
     ],
     deps = [
-        "//src/mongo/bson/util:bson_extract",  # TODO(SERVER-98376): Remove.
+        "//src/mongo/bson/util:bson_extract",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db:mongohasher",
         "//src/mongo/db:server_base",
-        "//src/mongo/db/geo:geometry",  # TODO(SERVER-98376): Remove.
+        "//src/mongo/db/geo:geometry",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db/geo:geoparser",
-        "//src/mongo/db/query/collation:collator_interface",  # TODO(SERVER-98376): Remove.
-        "//src/mongo/db/storage:key_string",  # TODO(SERVER-98376): Remove.
+        "//src/mongo/db/query/collation:collator_interface",  # TODO(SERVER-93876): Remove.
+        "//src/mongo/db/storage:key_string",  # TODO(SERVER-93876): Remove.
         "//src/third_party/s2",
     ],
 )
@@ -37,5 +37,28 @@ idl_generator(
     src = "index_build_interceptor.idl",
     deps = [
         "//src/mongo/db:basic_types_gen",
+    ],
+)
+
+mongo_cc_library(
+    name = "column_store_index",
+    srcs = [
+        "column_cell.cpp",
+        "column_store_sorter.cpp",
+    ],
+    hdrs = [
+        "column_cell.h",
+        "column_key_generator.h",
+        "column_store_sorter.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db/sorter:sorter_base",
+        "//src/mongo/db/sorter:sorter_stats",  # TODO(SERVER-93876): Remove.
+        "//src/mongo/db/storage:encryption_hooks",
+        "//src/mongo/db/storage:execution_context",
+        "//src/mongo/db/storage:storage_options",  # TODO(SERVER-93876): Remove.
+        "//src/third_party/snappy",
     ],
 )

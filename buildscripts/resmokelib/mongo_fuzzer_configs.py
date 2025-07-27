@@ -1,6 +1,8 @@
 """Generator functions for all parameters that we fuzz when invoked with --fuzzMongodConfigs."""
 
 import random
+import os
+import stat
 from buildscripts.resmokelib import config, utils
 
 
@@ -213,7 +215,21 @@ def generate_encryption_config(rng: random.Random):
     chance_to_encrypt = 0.33
     if rng.random() < chance_to_encrypt:
         ret["enableEncryption"] = ""
-        ret["encryptionKeyFile"] = "src/mongo/db/modules/enterprise/jstests/encryptdb/libs/ekf2"
+        encryption_key_file = "src/mongo/db/modules/enterprise/jstests/encryptdb/libs/ekf2"
+
+        # Antithesis runs mongo processes in a docker container separate from the resmoke process.
+        # It cannot use the absolute path from the machine that resmoke running on.
+        # Other applications, such as Jepsen, can be run in a different directory than the root
+        # of the mongo directory so we use the absolute path.
+        if not config.NOOP_MONGO_D_S_PROCESSES:
+            encryption_key_file = os.path.abspath(encryption_key_file)
+
+        # Set file permissions to avoid "too open" error.
+        # MongoDB requires keyfiles to have restricted permissions.
+        # Since git doesn't preserve file permissions across clones,
+        # we need to explicitly set them to a state Mongo accepts.
+        os.chmod(encryption_key_file, stat.S_IRUSR | stat.S_IWUSR)
+        ret["encryptionKeyFile"] = encryption_key_file
 
         chance_to_use_gcm = 0.50
         if rng.random() < chance_to_use_gcm:

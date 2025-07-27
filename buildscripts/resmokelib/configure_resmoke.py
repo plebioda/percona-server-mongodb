@@ -16,6 +16,7 @@ import shlex
 import shutil
 import traceback
 from typing import Dict, Optional
+import subprocess
 
 import pymongo.uri_parser
 import yaml
@@ -48,7 +49,7 @@ def validate_and_update_config(parser, args):
 def _validate_options(parser, args):
     """Do preliminary validation on the options and error on any invalid options."""
 
-    if not "shell_port" in args or not "shell_conn_string" in args:
+    if "shell_port" not in args or "shell_conn_string" not in args:
         return
 
     if args.shell_port is not None and args.shell_conn_string is not None:
@@ -181,6 +182,9 @@ def _find_resmoke_wrappers():
     # We assume that users who fall under either case will explicitly pass the
     # --installDir argument.
     candidate_installs = glob.glob("**/bin/resmoke.py", recursive=True)
+    candidate_installs = [
+        wrapper for wrapper in candidate_installs if not wrapper.startswith("bazel-mongo/")
+    ]
     return list(candidate_installs)
 
 
@@ -460,6 +464,35 @@ or explicitly pass --installDir to the run subcommand of buildscripts/resmoke.py
     mongot_set_parameters = config.pop("mongot_set_parameters")
     _config.MONGOT_SET_PARAMETERS = _merge_set_params(mongot_set_parameters)
 
+    # Add future mongot versions to EXCLUDE_WITH_ANY_TAGS.
+    def get_excluded_mongot_versions(mongot_version):
+        mongot_excluded_versions = []
+        value = mongot_version.replace("-", ".").split(".")
+        # Mongot versions are formatted X.Y.Z where X is the API version, Y updates for functionality changes,
+        # and Z updates for patches (bug fixes).
+        mongot_major_version = value[0]
+        mongot_minor_version = value[1]
+        mongot_patch_version = value[2]
+
+        # Excludes tags for the next API version, the next 5 feature releases, and the next 10 patches.
+        mongot_excluded_versions.append(f"requires_mongot_{eval(mongot_major_version) + 1}")
+        for i in range(1, 6):
+            mongot_excluded_versions.append(
+                f"requires_mongot_{mongot_major_version}_{eval(mongot_minor_version) + i}"
+            )
+        for i in range(1, 11):
+            mongot_excluded_versions.append(
+                f"requires_mongot_{mongot_major_version}_{mongot_minor_version}_{eval(mongot_patch_version) + i}"
+            )
+        return mongot_excluded_versions
+
+    if _config.MONGOT_EXECUTABLE and os.path.exists(_config.MONGOT_EXECUTABLE):
+        mongot_version = subprocess.check_output(
+            [_config.MONGOT_EXECUTABLE, "--version"], text=True
+        ).strip()
+        mongot_excluded_versions = get_excluded_mongot_versions(mongot_version)
+        _config.EXCLUDE_WITH_ANY_TAGS.extend(mongot_excluded_versions)
+
     _config.MRLOG = config.pop("mrlog")
     _config.NO_JOURNAL = config.pop("no_journal")
     _config.NUM_CLIENTS_PER_FIXTURE = config.pop("num_clients_per_fixture")
@@ -491,6 +524,7 @@ or explicitly pass --installDir to the run subcommand of buildscripts/resmoke.py
     _config.SHELL_SEED = config.pop("shell_seed")
     _config.STAGGER_JOBS = config.pop("stagger_jobs") == "on"
     _config.STORAGE_ENGINE_CACHE_SIZE = config.pop("storage_engine_cache_size_gb")
+    _config.MOZJS_JS_GC_ZEAL = config.pop("mozjs_js_gc_zeal")
     _config.SUITE_FILES = config.pop("suite_files")
     if _config.SUITE_FILES is not None:
         _config.SUITE_FILES = _config.SUITE_FILES.split(",")

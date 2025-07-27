@@ -16,6 +16,7 @@ filegroup(
         "database_name_util.h",
         "fail_point.h",
         "inline_memory.h",
+        "log_with_sampling.h",
         "make_array_type.h",
         "namespace_string_util.h",
         "overloaded_visitor.h",
@@ -59,7 +60,7 @@ mongo_cc_library(
     deps = [
         "//src/mongo:base",
         "//src/mongo/db:service_context",
-        "//src/mongo/util/concurrency:spin_lock",  # TODO(SERVER-98376): Remove.
+        "//src/mongo/util/concurrency:spin_lock",  # TODO(SERVER-93876): Remove.
     ],
 )
 
@@ -81,10 +82,10 @@ mongo_cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":fail_point",  # TODO(SERVER-98376): Remove.
+        ":fail_point",  # TODO(SERVER-93876): Remove.
         "//src/mongo:base",
         "//src/mongo/db:service_context",
-        "//src/mongo/util/concurrency:spin_lock",  # TODO(SERVER-98376): Remove.
+        "//src/mongo/util/concurrency:spin_lock",  # TODO(SERVER-93876): Remove.
     ],
 )
 
@@ -101,10 +102,10 @@ mongo_cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":fail_point",  # TODO(SERVER-98376): Remove.
+        ":fail_point",  # TODO(SERVER-93876): Remove.
         "//src/mongo:base",
         "//src/mongo/db:service_context",
-        "//src/mongo/db/commands:server_status_core",  # TODO(SERVER-98376): Remove.
+        "//src/mongo/db/commands:server_status_core",  # TODO(SERVER-93876): Remove.
     ],
 )
 
@@ -386,10 +387,10 @@ mongo_cc_library(
         "periodic_runner_impl.h",
     ],
     deps = [
-        ":periodic_runner",  # TODO(SERVER-98376): Remove.
+        ":periodic_runner",  # TODO(SERVER-93876): Remove.
         "//src/mongo:base",
         "//src/mongo/db:service_context",
-        "//src/mongo/util/concurrency:spin_lock",  # TODO(SERVER-98376): Remove.
+        "//src/mongo/util/concurrency:spin_lock",  # TODO(SERVER-93876): Remove.
     ],
 )
 
@@ -403,8 +404,8 @@ mongo_cc_library(
     ],
     deps = [
         ":periodic_runner_impl",
-        "//src/mongo:base",  # TODO(SERVER-98376): Remove.
-        "//src/mongo/db:service_context",  # TODO(SERVER-98376): Remove.
+        "//src/mongo:base",  # TODO(SERVER-93876): Remove.
+        "//src/mongo/db:service_context",  # TODO(SERVER-93876): Remove.
     ],
 )
 

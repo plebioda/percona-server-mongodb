@@ -193,6 +193,8 @@ idl_generator(
 mongo_cc_library(
     name = "server_options",
     srcs = [
+        "redaction_parameter.cpp",
+        "redaction_parameter_gen",
         "server_options_helpers.cpp",
         "server_options_helpers_gen",
     ],
@@ -346,6 +348,7 @@ mongo_cc_library(
         ":server_base",  # TODO(SERVER-93876): Remove.
         ":service_context",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db/repl:repl_settings",
+        "//src/mongo/db/encryption:encryption_options",
     ],
 )
 
@@ -476,7 +479,6 @@ mongo_cc_library(
         ":server_options_base",  # TODO(SERVER-93876): Remove.
         ":server_options_servers",
         "//src/mongo/db/auth:cluster_auth_mode",  # TODO(SERVER-93876): Remove.
-        "//src/mongo/db/encryption:encryption_options",
         "//src/mongo/db/repl:repl_server_parameters",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db/repl:repl_settings",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db/repl:replica_set_messages",

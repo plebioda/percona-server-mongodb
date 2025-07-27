@@ -112,6 +112,9 @@ mongo_cc_library(
         "ssl_options_client.cpp",
         "ssl_options_client_gen",
     ],
+    hdrs = [
+        "fipsmode_config.h",
+    ],
     deps = [
         ":ssl_options",
         "//src/mongo:base",  # TODO(SERVER-93876): Remove.
@@ -134,6 +137,7 @@ mongo_cc_library(
         "ssl_options_server_gen",
     ],
     hdrs = [
+        "fipsmode_config.h",
         "//src/mongo/db:server_feature_flags_gen",
     ],
     deps = [

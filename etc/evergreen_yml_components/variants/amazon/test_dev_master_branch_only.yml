@@ -171,7 +171,7 @@ buildvariants:
     <<: *amazon_linux2_arm64_static_compile_variant_dependency
     name: &enterprise-amazon-linux2-arm64-all-feature-flags enterprise-amazon-linux2-arm64-all-feature-flags
     display_name: "! Amazon Linux 2 arm64 Atlas Enterprise (all feature flags)"
-    tags: ["required"]
+    tags: ["required", "forbid_tasks_tagged_with_experimental"]
     cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
     run_on:
       - amazon2-arm64-atlas-latest-small
@@ -217,6 +217,14 @@ buildvariants:
       - name: .query_fuzzer
       - name: .updatefuzzer
       - name: .jstestfuzz
+
+  - &enterprise-amazon-linux2-arm64-all-feature-flags-embedded-router
+    <<: *enterprise-amazon-linux2-arm64-all-feature-flags-template
+    name: enterprise-amazon-linux2-arm64-all-feature-flags-embedded-router
+    display_name: "*| Amazon Linux 2 arm64 Enterprise (all feature flags) Embedded Router Tasks"
+    tags: ["suggested"]
+    tasks:
+      - name: .embedded_router
 
   - name: &al2023-arm64-sep-benchmark al2023-arm64-sep-benchmark
     display_name: "! AL2023.3 arm64 Enterprise (SEP Benchmark)"

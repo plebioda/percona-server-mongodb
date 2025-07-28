@@ -94,19 +94,20 @@
 #include "mongo/db/dbdirectclient.h"
 #include "mongo/db/dbhelpers.h"
 #include "mongo/db/global_index.h"
+#include "mongo/db/index/index_constants.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/index_builds_coordinator.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/op_observer/op_observer.h"
 #include "mongo/db/op_observer/op_observer_util.h"
-#include "mongo/db/ops/delete.h"
-#include "mongo/db/ops/delete_request_gen.h"
-#include "mongo/db/ops/update.h"
-#include "mongo/db/ops/update_request.h"
-#include "mongo/db/ops/update_result.h"
-#include "mongo/db/ops/write_ops_parsers.h"
 #include "mongo/db/pipeline/change_stream_preimage_gen.h"
 #include "mongo/db/query/find_command.h"
+#include "mongo/db/query/write_ops/delete.h"
+#include "mongo/db/query/write_ops/delete_request_gen.h"
+#include "mongo/db/query/write_ops/update.h"
+#include "mongo/db/query/write_ops/update_request.h"
+#include "mongo/db/query/write_ops/update_result.h"
+#include "mongo/db/query/write_ops/write_ops_parsers.h"
 #include "mongo/db/repl/apply_ops.h"
 #include "mongo/db/repl/dbcheck.h"
 #include "mongo/db/repl/image_collection_entry_gen.h"
@@ -883,7 +884,8 @@ const StringMap<ApplyOpMetadata> kOpsMap = {
           BSONObjBuilder idIndexSpecBuilder;
           idIndexSpecBuilder.append(IndexDescriptor::kIndexVersionFieldName,
                                     static_cast<int>(IndexVersion::kV1));
-          idIndexSpecBuilder.append(IndexDescriptor::kIndexNameFieldName, "_id_");
+          idIndexSpecBuilder.append(IndexDescriptor::kIndexNameFieldName,
+                                    IndexConstants::kIdIndexName);
           idIndexSpecBuilder.append(IndexDescriptor::kKeyPatternFieldName, BSON("_id" << 1));
           return createCollectionForApplyOps(
               opCtx, nss.dbName(), ui, cmd, allowRenameOutOfTheWay, idIndexSpecBuilder.done());

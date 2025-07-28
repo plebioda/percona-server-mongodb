@@ -79,13 +79,14 @@
 #include "mongo/db/dbdirectclient.h"
 #include "mongo/db/dbhelpers.h"
 #include "mongo/db/exec/document_value/value.h"
+#include "mongo/db/index/index_constants.h"
 #include "mongo/db/multi_key_path_tracker.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/op_observer/op_observer.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/ops/write_ops.h"
 #include "mongo/db/pipeline/change_stream_pre_and_post_images_options_gen.h"
 #include "mongo/db/pipeline/change_stream_preimage_gen.h"
+#include "mongo/db/query/write_ops/write_ops.h"
 #include "mongo/db/repl/idempotency_test_fixture.h"
 #include "mongo/db/repl/image_collection_entry_gen.h"
 #include "mongo/db/repl/member_state.h"
@@ -4305,11 +4306,10 @@ TEST_F(IdempotencyTest, CreateCollectionWithCollation) {
                                   << "punct"
                                   << "normalization" << false << "backwards" << false << "version"
                                   << "57.1");
-        auto options = BSON("collation" << collationOpts << "uuid" << uuid << "idIndex"
-                                        << BSON("collation" << collationOpts << "key"
-                                                            << BSON("_id" << 1) << "name"
-                                                            << "_id_"
-                                                            << "v" << 2));
+        auto options = BSON(
+            "collation" << collationOpts << "uuid" << uuid << "idIndex"
+                        << BSON("collation" << collationOpts << "key" << BSON("_id" << 1) << "name"
+                                            << IndexConstants::kIdIndexName << "v" << 2));
         auto createColl = makeCreateCollectionOplogEntry(nextOpTime(), _nss, options);
         auto insertOp1 = insert(fromjson("{ _id: 'foo' }"));
         auto updateOp1 = update("foo",

@@ -34,8 +34,8 @@ env.Library(
         "$BUILD_DIR/mongo/db/catalog/collection_crud",
         "$BUILD_DIR/mongo/db/concurrency/exception_util",
         "$BUILD_DIR/mongo/db/dbhelpers",
-        "$BUILD_DIR/mongo/db/ops/write_ops",
         "$BUILD_DIR/mongo/db/query/query_stats/query_stats",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops",
         "$BUILD_DIR/mongo/db/shard_role",
         "$BUILD_DIR/mongo/s/common_s",
     ],
@@ -48,7 +48,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/dbdirectclient",
-        "$BUILD_DIR/mongo/db/ops/write_ops_parsers",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_parsers",
         "$BUILD_DIR/mongo/db/repl/replica_set_aware_service",
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/service_context",
@@ -197,8 +197,8 @@ env.Library(
         "$BUILD_DIR/mongo/db/concurrency/exception_util",
         "$BUILD_DIR/mongo/db/dbhelpers",
         "$BUILD_DIR/mongo/db/metadata_consistency_types_idl",
-        "$BUILD_DIR/mongo/db/ops/write_ops_exec",
         "$BUILD_DIR/mongo/db/pipeline/aggregation_request_helper",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_exec",
         "$BUILD_DIR/mongo/db/repl/abstract_async_component",
         "$BUILD_DIR/mongo/db/repl/change_stream_oplog_notification",
         "$BUILD_DIR/mongo/db/repl/oplog",
@@ -230,8 +230,8 @@ env.Library(
         "$BUILD_DIR/mongo/db/op_observer/op_observer",
         "$BUILD_DIR/mongo/db/op_observer/op_observer_impl",
         "$BUILD_DIR/mongo/db/op_observer/op_observer_util",
-        "$BUILD_DIR/mongo/db/ops/write_ops",
         "$BUILD_DIR/mongo/db/pipeline/docs_needed_bounds_visitor",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops",
         "$BUILD_DIR/mongo/db/repl/image_collection_entry",
         "$BUILD_DIR/mongo/db/repl/primary_only_service",
         "$BUILD_DIR/mongo/db/repl/replica_set_aware_service",
@@ -838,11 +838,11 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/db/op_observer/op_observer_impl",
         "$BUILD_DIR/mongo/db/op_observer/op_observer_util",
         "$BUILD_DIR/mongo/db/op_observer/operation_logger_impl",
-        "$BUILD_DIR/mongo/db/ops/write_ops_exec",
         "$BUILD_DIR/mongo/db/pipeline/document_source_mock",
         "$BUILD_DIR/mongo/db/pipeline/process_interface/shardsvr_process_interface",
         "$BUILD_DIR/mongo/db/query/query_request",
         "$BUILD_DIR/mongo/db/query/query_test_service_context",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_exec",
         "$BUILD_DIR/mongo/db/query_expressions",
         "$BUILD_DIR/mongo/db/read_write_concern_defaults_mock",
         "$BUILD_DIR/mongo/db/repl/image_collection_entry",
@@ -876,7 +876,6 @@ env.CppUnitTest(
         "balancer/balancer_defragmentation_policy_test.cpp",
         "balancer/move_unsharded_policy_test.cpp",
         "balancer/balancer_policy_test.cpp",
-        "balancer/core_options_stub.cpp",
         "balancer/balancer_commands_scheduler_test.cpp",
         "balancer/migration_test_fixture.cpp",
         "config_server_op_observer_test.cpp",
@@ -942,6 +941,7 @@ env.Benchmark(
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/shard_role_api",
     ],
+    CONSOLIDATED_TARGET="s_bm",
 )
 
 env.Benchmark(
@@ -954,6 +954,7 @@ env.Benchmark(
         "$BUILD_DIR/mongo/db/auth/authorization_manager_global",
         "sharding_runtime_d",
     ],
+    CONSOLIDATED_TARGET="s_bm",
 )
 
 env.Benchmark(
@@ -985,4 +986,5 @@ env.Benchmark(
         "config_server_test_fixture",
         "sharding_catalog_manager",
     ],
+    CONSOLIDATED_TARGET="s_bm",
 )

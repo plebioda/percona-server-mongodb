@@ -86,10 +86,10 @@
 #include "mongo/db/logical_time.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/ops/write_ops_gen.h"
-#include "mongo/db/ops/write_ops_parsers.h"
 #include "mongo/db/persistent_task_store.h"
 #include "mongo/db/query/find_command.h"
+#include "mongo/db/query/write_ops/write_ops_gen.h"
+#include "mongo/db/query/write_ops/write_ops_parsers.h"
 #include "mongo/db/read_write_concern_defaults.h"
 #include "mongo/db/repl/hello_gen.h"
 #include "mongo/db/repl/optime_with.h"
@@ -174,6 +174,7 @@ namespace {
 
 MONGO_FAIL_POINT_DEFINE(hangAddShardBeforeUpdatingClusterCardinalityParameter);
 MONGO_FAIL_POINT_DEFINE(hangAfterDroppingDatabaseInTransitionToDedicatedConfigServer);
+MONGO_FAIL_POINT_DEFINE(hangRemoveShardAfterSettingDrainingFlag);
 MONGO_FAIL_POINT_DEFINE(hangRemoveShardAfterDrainingDDL);
 MONGO_FAIL_POINT_DEFINE(hangRemoveShardBeforeUpdatingClusterCardinalityParameter);
 MONGO_FAIL_POINT_DEFINE(skipUpdatingClusterCardinalityParameterAfterAddShard);
@@ -1451,6 +1452,8 @@ RemoveShardProgress ShardingCatalogManager::removeShard(OperationContext* opCtx,
 
     shardMembershipLock.unlock();
     clusterCardinalityParameterLock.unlock();
+
+    hangRemoveShardAfterSettingDrainingFlag.pauseWhileSet(opCtx);
 
     // Draining has already started, now figure out how many chunks and databases are still on the
     // shard.

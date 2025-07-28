@@ -21,6 +21,16 @@
 #
 last-continuous:
   all:
+    - test_file: jstests/change_streams/ddl_create_event.js
+      ticket: SERVER-88142
+    - test_file: jstests/change_streams/ddl_view_events.js
+      ticket: SERVER-88142
+    - test_file: jstests/change_streams/resume_expanded_events.js
+      ticket: SERVER-88142
+    - test_file: jstests/change_streams/show_expanded_events.js
+      ticket: SERVER-88142
+    - test_file: jstests/change_streams/timeseries.js
+      ticket: SERVER-88142
     - test_file: jstests/aggregation/bugs/lookup_using_hashed_index.js
       ticket: SERVER-92668
     - test_file: jstests/core/query/query_settings/query_settings_strictness.js
@@ -125,7 +135,7 @@ last-continuous:
       ticket: SERVER-89826
     - test_file: jstests/core/index/index_count_scan.js
       ticket: SERVER-90461
-    - test_file: jstests/noPassthrough/move_primary_failpoint.js
+    - test_file: jstests/noPassthrough/sharding/move_primary_failpoint.js
       ticket: SERVER-90465
     - test_file: jstests/sharding/change_streams_with_config_transitions.js
       ticket: SERVER-90358
@@ -225,7 +235,7 @@ last-continuous:
       ticket: SERVER-92193
     - test_file: jstests/replsets/write_concern_update_where.js
       ticket: SERVER-87126
-    - test_file: jstests/core/find_with_resume_after_param.js
+    - test_file: jstests/core/query/find_with_resume_after_param.js
       ticket: SERVER-92431
     - test_file: jstests/sharding/txn_two_phase_commit_failover.js
       ticket: SERVER-41314
@@ -253,11 +263,41 @@ last-continuous:
       ticket: SERVER-94151
     - test_file: jstests/core/write/update/upsert_duplicate_key_retry_collation.js
       ticket: SERVER-84089
+    - test_file: jstests/replsets/max_seven_voting_members_allowed.js
+      ticket: SERVER-69418
     - test_file: jstests/core/ddl/create_indexes.js
       ticket: SERVER-90952
+    - test_file: jstests/aggregation/bugs/server94212.js
+      ticket: SERVER-94212
+    - test_file: jstests/sharding/refresh_sessions.js
+      ticket: SERVER-94635
+    - test_file: jstests/change_streams/ddl_create_drop_index_events.js
+      ticket: SERVER-93153
+    - test_file: jstests/change_streams/resume_expanded_events.js
+      ticket: SERVER-93153
+    - test_file: jstests/change_streams/show_resharding_system_events.js
+      ticket: SERVER-93153
+    - test_file: jstests/concurrency/fsm_workloads/query/update/upsert_unique_index_collation.js
+      ticket: SERVER-94156
+    - test_file: jstests/core/timeseries/timeseries_filter_extended_range.js
+      ticket: SERVER-94207
+    - test_file: jstests/sharding/explain_find_transformed_query.js
+      ticket: SERVER-82471
+    - test_file: jstests/change_streams/ddl_abort_index_build_event.js
+      ticket: SERVER-93154
   suites: null
 last-lts:
   all:
+    - test_file: jstests/change_streams/ddl_create_event.js
+      ticket: SERVER-88142
+    - test_file: jstests/change_streams/ddl_view_events.js
+      ticket: SERVER-88142
+    - test_file: jstests/change_streams/resume_expanded_events.js
+      ticket: SERVER-88142
+    - test_file: jstests/change_streams/show_expanded_events.js
+      ticket: SERVER-88142
+    - test_file: jstests/change_streams/timeseries.js
+      ticket: SERVER-88142
     - test_file: jstests/aggregation/bugs/lookup_using_hashed_index.js
       ticket: SERVER-92668
     - test_file: jstests/core/query/query_settings/query_settings_strictness.js
@@ -492,7 +532,7 @@ last-lts:
       ticket: SERVER-92193
     - test_file: jstests/replsets/write_concern_update_where.js
       ticket: SERVER-87126
-    - test_file: jstests/core/find_with_resume_after_param.js
+    - test_file: jstests/core/query/find_with_resume_after_param.js
       ticket: SERVER-92431
     - test_file: jstests/sharding/txn_two_phase_commit_failover.js
       ticket: SERVER-41314
@@ -522,6 +562,26 @@ last-lts:
       ticket: SERVER-94151
     - test_file: jstests/core/write/update/upsert_duplicate_key_retry_collation.js
       ticket: SERVER-84089
+    - test_file: jstests/replsets/max_seven_voting_members_allowed.js
+      ticket: SERVER-69418
     - test_file: jstests/core/ddl/create_indexes.js
       ticket: SERVER-90952
+    - test_file: jstests/aggregation/bugs/server94212.js
+      ticket: SERVER-94212
+    - test_file: jstests/sharding/refresh_sessions.js
+      ticket: SERVER-94635
+    - test_file: jstests/change_streams/ddl_create_drop_index_events.js
+      ticket: SERVER-93153
+    - test_file: jstests/change_streams/resume_expanded_events.js
+      ticket: SERVER-93153
+    - test_file: jstests/change_streams/show_resharding_system_events.js
+      ticket: SERVER-93153
+    - test_file: jstests/concurrency/fsm_workloads/query/update/upsert_unique_index_collation.js
+      ticket: SERVER-94156
+    - test_file: jstests/core/timeseries/timeseries_filter_extended_range.js
+      ticket: SERVER-94207
+    - test_file: jstests/sharding/explain_find_transformed_query.js
+      ticket: SERVER-82471
+    - test_file: jstests/change_streams/ddl_abort_index_build_event.js
+      ticket: SERVER-93154
   suites: null

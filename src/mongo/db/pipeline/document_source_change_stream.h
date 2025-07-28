@@ -232,6 +232,9 @@ public:
     // The target namespace of a rename operation.
     static constexpr StringData kRenameTargetNssField = "to"_sd;
 
+    // The collection type created by a create operation.
+    static constexpr StringData kCollectionTypeField = "type"_sd;
+
     // Wall time of the corresponding oplog entry.
     static constexpr StringData kWallTimeField = "wallTime"_sd;
 
@@ -269,6 +272,10 @@ public:
     static constexpr StringData kReshardCollectionOpType = "reshardCollection"_sd;
     static constexpr StringData kModifyOpType = "modify"_sd;
     static constexpr StringData kEndOfTransactionOpType = "endOfTransaction"_sd;
+
+    // These events are guarded behind the 'showSystemEvents' flag.
+    static constexpr StringData kStartIndexBuildOpType = "startIndexBuild"_sd;
+    static constexpr StringData kAbortIndexBuildOpType = "abortIndexBuild"_sd;
 
     // Default regex for collections match which prohibits system collections.
     static constexpr StringData kRegexAllCollections = R"((?!(\$|system\.)))"_sd;

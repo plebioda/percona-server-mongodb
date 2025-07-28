@@ -57,8 +57,8 @@ env.Library(
         "$BUILD_DIR/mongo/db/dbdirectclient",
         "$BUILD_DIR/mongo/db/fle_crud",
         "$BUILD_DIR/mongo/db/mongohasher",
-        "$BUILD_DIR/mongo/db/ops/write_ops_parsers",
         "$BUILD_DIR/mongo/db/pipeline/lite_parsed_document_source",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_parsers",
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/db/session/kill_sessions",
         "$BUILD_DIR/mongo/db/session/logical_session_cache",
@@ -118,7 +118,6 @@ env.Library(
         "test_api_version_2_commands.cpp",
         "test_deprecation_command.cpp",
         "traffic_recording_cmds.cpp",
-        "user_management_commands_gen.cpp",
         "user_management_commands_common.cpp",
     ]
     + xray_files,
@@ -152,6 +151,7 @@ env.Library(
         "core",
         "query_cmd/query_settings_cmds",
         "test_commands_enabled",
+        "umc_commands_idl",
     ],
 )
 
@@ -289,8 +289,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/index_builds_coordinator_interface",
         "$BUILD_DIR/mongo/db/index_commands_idl",
         "$BUILD_DIR/mongo/db/multitenancy",
-        "$BUILD_DIR/mongo/db/ops/write_ops",
-        "$BUILD_DIR/mongo/db/ops/write_ops_exec",
         "$BUILD_DIR/mongo/db/pipeline/aggregation_request_helper",
         "$BUILD_DIR/mongo/db/pipeline/docs_needed_bounds_visitor",
         "$BUILD_DIR/mongo/db/pipeline/process_interface/mongo_process_interface",
@@ -303,6 +301,8 @@ env.Library(
         "$BUILD_DIR/mongo/db/query/search/search_index_process_shard",
         "$BUILD_DIR/mongo/db/query/stats/stats",
         "$BUILD_DIR/mongo/db/query/stats/stats_histograms",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_exec",
         "$BUILD_DIR/mongo/db/query_exec",
         "$BUILD_DIR/mongo/db/repl/replica_set_messages",
         "$BUILD_DIR/mongo/db/repl/tenant_migration_access_blocker",
@@ -363,8 +363,8 @@ env.Library(
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/dbhelpers",
         "$BUILD_DIR/mongo/db/index_builds_coordinator_interface",
-        "$BUILD_DIR/mongo/db/ops/write_ops",
-        "$BUILD_DIR/mongo/db/ops/write_ops_exec",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_exec",
         "$BUILD_DIR/mongo/db/query_exec",
         "$BUILD_DIR/mongo/db/shard_role",
         "$BUILD_DIR/mongo/util/system_perf",
@@ -518,6 +518,7 @@ env.Library(
         "test_commands",
         "test_commands_enabled",
         "txn_cmd_request",
+        "umc_commands_idl",
     ],
 )
 

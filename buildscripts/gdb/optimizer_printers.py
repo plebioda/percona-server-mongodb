@@ -76,28 +76,12 @@ class CompoundIntervalPrinter(OptimizerTypePrinter):
         super().__init__(val, "ExplainGenerator::explainCompoundInterval")
 
 
-class CandidateIndexEntryPrinter(OptimizerTypePrinter):
-    """Pretty-printer for mongo::optimizer::CandidateIndexEntry."""
-
-    def __init__(self, val):
-        """Initialize CandidateIndexEntryPrinter."""
-        super().__init__(val, "ExplainGenerator::explainCandidateIndex")
-
-
 class IntervalExprPrinter(OptimizerTypePrinter):
     """Pretty-printer for mongo::optimizer::IntervalRequirement::Node."""
 
     def __init__(self, val):
         """Initialize IntervalExprPrinter."""
         super().__init__(val, "ExplainGenerator::explainIntervalExpr")
-
-
-class PSRExprPrinter(OptimizerTypePrinter):
-    """Pretty-printer for mongo::optimizer::PSRExpr::Node."""
-
-    def __init__(self, val):
-        """Initialize PSRExprPrinter."""
-        super().__init__(val, "ExplainGenerator::explainPartialSchemaReqExpr")
 
 
 class StrongStringAliasPrinter(object):
@@ -356,7 +340,7 @@ class RootNodePrinter(FixedArityNodePrinter):
         super().__init__(val, 1, "RootNode")
 
     def to_string(self):
-        projections = Vector(self.val["_property"]["_projections"]["_vector"])
+        projections = Vector(self.val["_projections"]["_vector"])
         return "\nRoot[{}]".format(projections.get(0))
 
 
@@ -916,7 +900,7 @@ class CollationNodePrinter(FixedArityNodePrinter):
         super().__init__(val, 1, "Collation")
 
     def to_string(self):
-        return "Collation[" + print_collation_req(self.val["_property"]) + "]"
+        return "Collation[" + print_collation_req(self.val["_collationSpec"]) + "]"
 
 
 class LimitSkipNodePrinter(FixedArityNodePrinter):
@@ -929,9 +913,9 @@ class LimitSkipNodePrinter(FixedArityNodePrinter):
     def to_string(self):
         return (
             "LimitSkip[limit: "
-            + str(self.val["_property"]["_limit"])
+            + str(self.val["_limit"])
             + ", skip: "
-            + str(self.val["_property"]["_skip"])
+            + str(self.val["_skip"])
             + "]"
         )
 
@@ -1097,16 +1081,6 @@ def register_optimizer_printers(pp):
         IntervalExprPrinter,
     )
 
-    # PSRExpr printer.
-    pp.add(
-        "PSRExpr",
-        bool_expr_type(
-            f"std::pair<{OPTIMIZER_NS}::PartialSchemaKey, {OPTIMIZER_NS}::PartialSchemaRequirement> "
-        ),
-        False,
-        PSRExprPrinter,
-    )
-
     # Memo printer.
     pp.add("Memo", f"{OPTIMIZER_NS}::cascades::Memo", False, MemoPrinter)
 
@@ -1116,14 +1090,6 @@ def register_optimizer_printers(pp):
         f"{OPTIMIZER_NS}::ResidualRequirement",
         False,
         ResidualRequirementPrinter,
-    )
-
-    # CandidateIndexEntry printer.
-    pp.add(
-        "CandidateIndexEntry",
-        f"{OPTIMIZER_NS}::CandidateIndexEntry",
-        False,
-        CandidateIndexEntryPrinter,
     )
 
     # BoolExpr<ResidualRequirement> is handled by the PolyValue printer, but still need to add

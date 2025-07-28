@@ -61,15 +61,16 @@
 #include "mongo/db/dbdirectclient.h"
 #include "mongo/db/dbhelpers.h"
 #include "mongo/db/feature_flag.h"
+#include "mongo/db/index/index_constants.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/index_builds_coordinator.h"
 #include "mongo/db/keypattern.h"
 #include "mongo/db/logical_time.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/ops/delete.h"
-#include "mongo/db/ops/update_result.h"
 #include "mongo/db/persistent_task_store.h"
+#include "mongo/db/query/write_ops/delete.h"
+#include "mongo/db/query/write_ops/update_result.h"
 #include "mongo/db/repl/read_concern_args.h"
 #include "mongo/db/repl/read_concern_level.h"
 #include "mongo/db/repl/repl_client_info.h"
@@ -944,7 +945,7 @@ MigrationDestinationManager::IndexesAndIdIndex MigrationDestinationManager::getC
 
         if (auto indexNameElem = spec[IndexDescriptor::kIndexNameFieldName];
             indexNameElem.type() == BSONType::String &&
-            indexNameElem.valueStringData() == "_id_"_sd) {
+            indexNameElem.valueStringData() == IndexConstants::kIdIndexName) {
             // The _id index always uses the collection's default collation and so there is no need
             // to add the collation field to attempt to disambiguate.
             donorIdIndexSpec = spec;

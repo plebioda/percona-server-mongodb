@@ -3,6 +3,7 @@
 import random
 import os
 import stat
+import json
 from buildscripts.resmokelib import config, utils
 
 
@@ -332,6 +333,30 @@ def generate_special_mongod_parameters(rng, ret, fuzzer_stress_mode, params):
         ret["logicalSessionRefreshMillis"] = rng.choice(
             params["logicalSessionRefreshMillis"]["choices"]
         )
+    if rng.random() >= 0.1:
+        ret["failpoint.hangAfterPreCommittingCatalogUpdates"] = {"mode": "off"}
+        ret["failpoint.hangBeforePublishingCatalogUpdates"] = {"mode": "off"}
+    else:
+        waitMillisMax = params["failpoint.hangAfterPreCommittingCatalogUpdates"][
+            "pauseEntireCommitMillis"
+        ]["max"]
+        waitMillisMin = params["failpoint.hangAfterPreCommittingCatalogUpdates"][
+            "pauseEntireCommitMillis"
+        ]["min"]
+        ret["failpoint.hangAfterPreCommittingCatalogUpdates"] = {
+            "mode": {"activationProbability": random.uniform(0, 0.5)},
+            "data": {"pauseEntireCommitMillis": rng.randint(waitMillisMin, waitMillisMax)},
+        }
+        waitMillisMax = params["failpoint.hangBeforePublishingCatalogUpdates"][
+            "pauseEntireCommitMillis"
+        ]["max"]
+        waitMillisMin = params["failpoint.hangBeforePublishingCatalogUpdates"][
+            "pauseEntireCommitMillis"
+        ]["min"]
+        ret["failpoint.hangBeforePublishingCatalogUpdates"] = {
+            "mode": {"activationProbability": random.uniform(0, 0.5)},
+            "data": {"pauseEntireCommitMillis": rng.randint(waitMillisMin, waitMillisMax)},
+        }
     return ret
 
 
@@ -380,6 +405,8 @@ def generate_mongod_parameters(rng, fuzzer_stress_mode):
         "wiredTigerConcurrentReadTransactions",
         "wiredTigerConcurrentWriteTransactions",
         "wiredTigerStressConfig",
+        "failpoint.hangAfterPreCommittingCatalogUpdates",
+        "failpoint.hangBeforePublishingCatalogUpdates",
     ]
     # TODO (SERVER-75632): Remove/comment out the below line to enable passthrough testing.
     excluded_normal_params.append("lockCodeSegmentsInMemory")
@@ -420,6 +447,13 @@ def fuzz_mongod_set_parameters(fuzzer_stress_mode, seed, user_provided_params):
     for key, value in utils.load_yaml(user_provided_params).items():
         ret[key] = value
 
+    for key, value in ret.items():
+        # We may at times contain a dictionary for the parameter value, in order to pass them via
+        # setParameter we must dump them as a JSON.
+        if isinstance(value, dict):
+            value = json.dumps(value)
+        ret[key] = value
+
     return (
         utils.dump_yaml(ret),
         generate_eviction_configs(rng, fuzzer_stress_mode),
@@ -439,6 +473,13 @@ def fuzz_mongos_set_parameters(fuzzer_stress_mode, seed, user_provided_params):
         ret[key] = value
 
     for key, value in utils.load_yaml(user_provided_params).items():
+        ret[key] = value
+
+    for key, value in ret.items():
+        # We may at times contain a dictionary for the parameter value, in order to pass them
+        # via setParameter we must dump them as a JSON.
+        if isinstance(value, dict):
+            value = json.dumps(value)
         ret[key] = value
 
     return utils.dump_yaml(ret)

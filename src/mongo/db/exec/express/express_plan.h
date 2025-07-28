@@ -48,16 +48,17 @@
 #include "mongo/db/exec/update_stage.h"
 #include "mongo/db/exec/write_stage_common.h"
 #include "mongo/db/index/index_access_method.h"
+#include "mongo/db/index/index_constants.h"
 #include "mongo/db/internal_transactions_feature_flag_gen.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/ops/update_request.h"
 #include "mongo/db/query/collation/collation_index_key.h"
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/index_bounds_builder.h"
 #include "mongo/db/query/plan_explainer_express.h"
 #include "mongo/db/query/plan_summary_stats.h"
 #include "mongo/db/query/projection.h"
+#include "mongo/db/query/write_ops/update_request.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/record_id_helpers.h"
 #include "mongo/db/s/scoped_collection_metadata.h"
@@ -418,7 +419,7 @@ public:
 
         _stats = stats;
         _stats->setStageName("EXPRESS_IXSCAN"_sd);
-        _stats->setIndexName("_id_"_sd);
+        _stats->setIndexName(IndexConstants::kIdIndexName);
         _stats->setIndexKeyPattern("{ _id: 1 }"_sd);
     }
 

@@ -65,21 +65,22 @@
 #include "mongo/db/exec/collection_scan_common.h"
 #include "mongo/db/exec/delete_stage.h"
 #include "mongo/db/exec/update_stage.h"
+#include "mongo/db/index/index_constants.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/index_builds_coordinator.h"
 #include "mongo/db/keypattern.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/ops/delete_request_gen.h"
-#include "mongo/db/ops/parsed_delete.h"
-#include "mongo/db/ops/parsed_update.h"
-#include "mongo/db/ops/update_request.h"
-#include "mongo/db/ops/write_ops_parsers.h"
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/get_executor.h"
 #include "mongo/db/query/internal_plans.h"
 #include "mongo/db/query/plan_executor.h"
 #include "mongo/db/query/plan_yield_policy.h"
 #include "mongo/db/query/record_id_bound.h"
+#include "mongo/db/query/write_ops/delete_request_gen.h"
+#include "mongo/db/query/write_ops/parsed_delete.h"
+#include "mongo/db/query/write_ops/parsed_update.h"
+#include "mongo/db/query/write_ops/update_request.h"
+#include "mongo/db/query/write_ops/write_ops_parsers.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/record_id_helpers.h"
 #include "mongo/db/repl/collection_bulk_loader_impl.h"
@@ -125,7 +126,7 @@ const char StorageInterfaceImpl::kRollbackIdDocumentId[] = "rollbackId";
 namespace {
 using UniqueLock = stdx::unique_lock<Latch>;
 
-const auto kIdIndexName = "_id_"_sd;
+const auto kIdIndexName = IndexConstants::kIdIndexName;
 
 }  // namespace
 

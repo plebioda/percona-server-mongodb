@@ -41,6 +41,7 @@ env.Library(
         "accumulation_statement.cpp",
         "accumulator_add_to_set.cpp",
         "accumulator_avg.cpp",
+        "accumulator_concat_arrays.cpp",
         "accumulator_covariance.cpp",
         "accumulator_exp_moving_avg.cpp",
         "accumulator_first.cpp",
@@ -363,6 +364,7 @@ pipelineEnv.Library(
         "$BUILD_DIR/mongo/db/query/search/mongot_options",
         "$BUILD_DIR/mongo/db/query/search/search_index_common",
         "$BUILD_DIR/mongo/db/query/search/search_index_process_interface",
+        "$BUILD_DIR/mongo/db/query/spill_util",
         "$BUILD_DIR/mongo/db/repl/image_collection_entry",
         "$BUILD_DIR/mongo/db/shard_role_api",
         "$BUILD_DIR/mongo/db/sorter/sorter_base",
@@ -390,6 +392,7 @@ env.Benchmark(
         "document_source_mock",
         "pipeline",
     ],
+    CONSOLIDATED_TARGET="pipeline_bm",
 )
 
 env.Library(
@@ -399,9 +402,9 @@ env.Library(
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/multitenancy",
-        "$BUILD_DIR/mongo/db/ops/write_ops_parsers",
         "$BUILD_DIR/mongo/db/pipeline/pipeline",
         "$BUILD_DIR/mongo/db/pipeline/sharded_agg_helpers",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_parsers",
         "$BUILD_DIR/mongo/db/update/update_driver",
         "$BUILD_DIR/mongo/s/query/exec/router_exec_stage",
     ],
@@ -431,9 +434,9 @@ env.Library(
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/change_stream_serverless_helpers",
         "$BUILD_DIR/mongo/db/multitenancy",
-        "$BUILD_DIR/mongo/db/ops/write_ops_parsers",
         "$BUILD_DIR/mongo/db/pipeline/pipeline",
         "$BUILD_DIR/mongo/db/pipeline/sharded_agg_helpers",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_parsers",
         "$BUILD_DIR/mongo/db/server_feature_flags",
         "$BUILD_DIR/mongo/db/update/update_driver",
         "$BUILD_DIR/mongo/s/query/exec/router_exec_stage",
@@ -484,6 +487,7 @@ env.Benchmark(
         "$BUILD_DIR/mongo/unittest/unittest",
         "$BUILD_DIR/mongo/util/processinfo",
     ],
+    CONSOLIDATED_TARGET="pipeline_bm",
 )
 
 env.CppUnitTest(
@@ -608,6 +612,7 @@ env.CppUnitTest(
         "window_function/partition_iterator_test.cpp",
         "window_function/spillable_cache_test.cpp",
         "window_function/window_function_add_to_set_test.cpp",
+        "window_function/window_function_concat_arrays_test.cpp",
         "window_function/window_function_covariance_test.cpp",
         "window_function/window_function_exec_derivative_test.cpp",
         "window_function/window_function_exec_non_removable_test.cpp",
@@ -639,6 +644,7 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/db/pipeline/change_stream_expired_pre_image_remover",
         "$BUILD_DIR/mongo/db/query/collation/collator_interface_mock",
         "$BUILD_DIR/mongo/db/query/query_test_service_context",
+        "$BUILD_DIR/mongo/db/query/search/mongot_cursor",
         "$BUILD_DIR/mongo/db/query/search/mongot_options",
         "$BUILD_DIR/mongo/db/query_expressions",
         "$BUILD_DIR/mongo/db/repl/image_collection_entry",
@@ -695,6 +701,7 @@ env.Benchmark(
     LIBDEPS=[
         "accumulator",
     ],
+    CONSOLIDATED_TARGET="pipeline_bm",
 )
 
 env.CppUnitTest(
@@ -725,6 +732,19 @@ env.Benchmark(
     target="window_function_percentile_bm",
     source=[
         "window_function/window_function_percentile_bm_fixture.cpp",
+    ],
+    LIBDEPS=[
+        "$BUILD_DIR/mongo/db/query/query_test_service_context",
+        "$BUILD_DIR/mongo/db/service_context_non_d",
+        "accumulator",
+    ],
+    CONSOLIDATED_TARGET="pipeline_bm",
+)
+
+env.Benchmark(
+    target="window_function_concat_arrays_bm",
+    source=[
+        "window_function/window_function_concat_arrays_bm_fixture.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/query/query_test_service_context",
@@ -762,4 +782,5 @@ env.Benchmark(
         "accumulator",
         "expression_bm_fixture",
     ],
+    CONSOLIDATED_TARGET="pipeline_bm",
 )

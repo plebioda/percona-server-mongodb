@@ -56,9 +56,9 @@
 #include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/matcher/expression_with_placeholder.h"
 #include "mongo/db/namespace_string.h"
-#include "mongo/db/ops/write_ops_parsers.h"
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/query/collation/collator_interface.h"
+#include "mongo/db/query/write_ops/write_ops_parsers.h"
 #include "mongo/db/update/update_driver.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/intrusive_counter.h"
@@ -192,10 +192,16 @@ Status AuthzManagerExternalStateMock::insert(OperationContext* opCtx,
     return Status::OK();
 }
 
-Status AuthzManagerExternalStateMock::insertPrivilegeDocument(OperationContext* opCtx,
-                                                              const BSONObj& userObj,
-                                                              const BSONObj& writeConcern) {
+Status AuthzManagerExternalStateMock::insertUserDocument(OperationContext* opCtx,
+                                                         const BSONObj& userObj,
+                                                         const BSONObj& writeConcern) {
     return insert(opCtx, NamespaceString::kAdminUsersNamespace, userObj, writeConcern);
+}
+
+Status AuthzManagerExternalStateMock::insertRoleDocument(OperationContext* opCtx,
+                                                         const BSONObj& roleObj,
+                                                         const BSONObj& writeConcern) {
+    return insert(opCtx, NamespaceString::kAdminRolesNamespace, roleObj, writeConcern);
 }
 
 Status AuthzManagerExternalStateMock::updateOne(OperationContext* opCtx,

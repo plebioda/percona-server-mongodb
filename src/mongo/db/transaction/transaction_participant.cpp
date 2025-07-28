@@ -85,11 +85,11 @@
 #include "mongo/db/matcher/expression.h"
 #include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/op_observer/op_observer.h"
-#include "mongo/db/ops/write_ops_parsers.h"
-#include "mongo/db/ops/write_ops_retryability.h"
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/find_command.h"
+#include "mongo/db/query/write_ops/write_ops_parsers.h"
+#include "mongo/db/query/write_ops/write_ops_retryability.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/record_id_helpers.h"
 #include "mongo/db/repl/apply_ops_command_info.h"
@@ -566,6 +566,23 @@ MONGO_FAIL_POINT_DEFINE(onPrimaryTransactionalWrite);
 }  // namespace
 
 const BSONObj TransactionParticipant::kDeadEndSentinel(BSON("$incompleteOplogHistory" << 1));
+
+void allocateSnapshotWithConsistentCatalog(
+    OperationContext* opCtx, const RecoveryUnit::OpenSnapshotOptions& openSnapshotOptions) {
+    auto catalog = CollectionCatalog::get(opCtx);
+    while (true) {
+        shard_role_details::getRecoveryUnit(opCtx)->preallocateSnapshot(openSnapshotOptions);
+        auto after = CollectionCatalog::get(opCtx);
+        if (catalog == after) {
+            // Catalog did not change, break out of the retry loop and use this instance
+            break;
+        }
+        // Catalog change detected, reallocate the snapshot and try again.
+        shard_role_details::getRecoveryUnit(opCtx)->abandonSnapshot();
+        catalog = std::move(after);
+    }
+    CollectionCatalog::stash(opCtx, std::move(catalog));
+}
 
 TransactionParticipant::TransactionParticipant() = default;
 
@@ -1247,8 +1264,10 @@ TransactionParticipant::Participant::onConflictingInternalTransactionCompletion(
     return Future<void>::makeReady();
 }
 
-void TransactionParticipant::Participant::_setReadSnapshot(OperationContext* opCtx,
-                                                           repl::ReadConcernArgs readConcernArgs) {
+void TransactionParticipant::Participant::_setReadSnapshot(
+    OperationContext* opCtx,
+    repl::ReadConcernArgs readConcernArgs,
+    const RecoveryUnit::OpenSnapshotOptions& openSnapshotOptions) {
     if (readConcernArgs.getArgsAtClusterTime()) {
         // Read concern code should have already set the timestamp on the recovery unit.
         const auto readTimestamp = readConcernArgs.getArgsAtClusterTime()->asTimestamp();
@@ -1280,23 +1299,7 @@ void TransactionParticipant::Participant::_setReadSnapshot(OperationContext* opC
             RecoveryUnit::ReadSource::kNoTimestamp);
     }
 
-    // Allocate the snapshot together with a consistent CollectionCatalog instance. As we have no
-    // critical section we use optimistic concurrency control and check that there was no write to
-    // the CollectionCatalog while we allocated the storage snapshot. Stash the catalog instance so
-    // collection lookups within this transaction are consistent with the snapshot.
-    auto catalog = CollectionCatalog::get(opCtx);
-    while (true) {
-        shard_role_details::getRecoveryUnit(opCtx)->preallocateSnapshot();
-        auto after = CollectionCatalog::get(opCtx);
-        if (catalog == after) {
-            // Catalog did not change, break out of the retry loop and use this instance
-            break;
-        }
-        // Catalog change detected, reallocate the snapshot and try again.
-        shard_role_details::getRecoveryUnit(opCtx)->abandonSnapshot();
-        catalog = std::move(after);
-    }
-    CollectionCatalog::stash(opCtx, std::move(catalog));
+    allocateSnapshotWithConsistentCatalog(opCtx, openSnapshotOptions);
 }
 
 TransactionParticipant::OplogSlotReserver::OplogSlotReserver(OperationContext* opCtx,
@@ -1553,9 +1556,7 @@ void TransactionParticipant::Participant::stashTransactionResources(OperationCon
 }
 
 void TransactionParticipant::Participant::_releaseTransactionResourcesToOpCtx(
-    OperationContext* opCtx,
-    MaxLockTimeout maxLockTimeout,
-    bool forRecoveryPreparedTxnApplication) {
+    OperationContext* opCtx, MaxLockTimeout maxLockTimeout) {
     // Transaction resources already exist for this transaction.  Transfer them from the
     // stash to the operation context.
     //
@@ -1582,21 +1583,6 @@ void TransactionParticipant::Participant::_releaseTransactionResourcesToOpCtx(
     auto stashLocker = tempTxnResourceStash->locker();
     invariant(stashLocker);
 
-    if (forRecoveryPreparedTxnApplication) {
-        bool hasRecoveryUnit = tempTxnResourceStash->recoveryUnit() != nullptr;
-        auto roundUpVal = "no recovery unit";
-        if (hasRecoveryUnit) {
-            roundUpVal = tempTxnResourceStash->recoveryUnit()->getRoundUpPreparedTimestamps()
-                ? "true"
-                : "false";
-        }
-        LOGV2(8676302,
-              "Unstashing transaction resources for prepared transaction application during "
-              "recovery",
-              "hasStashedRecoveryUnit"_attr = hasRecoveryUnit,
-              "recoveryUnitRoundUpValue"_attr = roundUpVal);
-    }
-
     if (maxLockTimeout == MaxLockTimeout::kNotAllowed) {
         stashLocker->unsetMaxLockTimeout();
     } else {
@@ -1617,8 +1603,8 @@ void TransactionParticipant::Participant::_releaseTransactionResourcesToOpCtx(
 void TransactionParticipant::Participant::unstashTransactionResources(
     OperationContext* opCtx,
     const std::string& cmdName,
-    bool forRecoveryPreparedTxnApplication,
-    bool forUnyield) {
+    bool forUnyield,
+    const RecoveryUnit::OpenSnapshotOptions& openSnapshotOptions) {
     invariant(!opCtx->getClient()->isInDirectClient());
     invariant(opCtx->getTxnNumber());
 
@@ -1690,8 +1676,7 @@ void TransactionParticipant::Participant::unstashTransactionResources(
             admissionPriority.emplace(opCtx, AdmissionContext::Priority::kExempt);
         }
 
-        _releaseTransactionResourcesToOpCtx(
-            opCtx, maxLockTimeout, forRecoveryPreparedTxnApplication);
+        _releaseTransactionResourcesToOpCtx(opCtx, maxLockTimeout);
         stdx::lock_guard<Client> lg(*opCtx->getClient());
         o(lg).transactionMetricsObserver.onUnstash(ServerTransactionsMetrics::get(opCtx),
                                                    opCtx->getServiceContext()->getTickSource());
@@ -1745,7 +1730,7 @@ void TransactionParticipant::Participant::unstashTransactionResources(
     Lock::GlobalLock globalLock(opCtx, MODE_IX);
 
     // This begins the storage transaction and so we do it after acquiring the global lock.
-    _setReadSnapshot(opCtx, repl::ReadConcernArgs::get(opCtx));
+    _setReadSnapshot(opCtx, repl::ReadConcernArgs::get(opCtx), openSnapshotOptions);
 
     // Stashed transaction resources do not exist for this in-progress multi-document transaction.
     // Set up the transaction resources on the opCtx. Must be done after setting up the read
@@ -1778,7 +1763,7 @@ void TransactionParticipant::Participant::refreshLocksForPreparedTransaction(
 
     ScopedAdmissionPriority<ExecutionAdmissionContext> skipTicketAcquisition(
         opCtx, AdmissionContext::Priority::kExempt);
-    _releaseTransactionResourcesToOpCtx(opCtx, MaxLockTimeout::kNotAllowed, false);
+    _releaseTransactionResourcesToOpCtx(opCtx, MaxLockTimeout::kNotAllowed);
 
     // Transfer the txn resource back from the operation context to the stash.
     auto stashStyle =

@@ -543,8 +543,6 @@ mongo_cc_library(
         "//src/mongo/db/matcher:expression_hasher.h",
         "//src/mongo/db/matcher:matcher.h",
         "//src/mongo/db/matcher/schema:encrypt_schema_gen",
-        "//src/mongo/db/ops:single_write_result_gen",
-        "//src/mongo/db/ops:write_ops_gen",
         "//src/mongo/db/pipeline:accumulation_statement.h",
         "//src/mongo/db/pipeline:accumulator.h",
         "//src/mongo/db/pipeline:accumulator_for_window_functions.h",
@@ -576,6 +574,8 @@ mongo_cc_library(
         "//src/mongo/db/query:canonical_distinct.h",
         "//src/mongo/db/query:canonical_query.h",
         "//src/mongo/db/query:canonical_query_encoder.h",
+        "//src/mongo/db/query:count_command_gen",
+        "//src/mongo/db/query:count_request.h",
         "//src/mongo/db/query:cursor_response_gen",
         "//src/mongo/db/query:distinct_command_gen",
         "//src/mongo/db/query:explain_verbosity_gen",
@@ -616,6 +616,8 @@ mongo_cc_library(
         "//src/mongo/db/query/stats:value_utils.h",
         "//src/mongo/db/query/timeseries:bucket_spec.h",
         "//src/mongo/db/query/util:named_enum.h",
+        "//src/mongo/db/query/write_ops:single_write_result_gen",
+        "//src/mongo/db/query/write_ops:write_ops_gen",
         "//src/mongo/db/repl:apply_ops_gen",
         "//src/mongo/db/repl:member_config_gen",
         "//src/mongo/db/repl:oplog_entry_gen",
@@ -751,6 +753,24 @@ mongo_cc_library(
     ],
     deps = [
         "//src/mongo/db:server_base",
+    ],
+)
+
+# TODO SERVER-83663 - move this library back to servers below.
+mongo_cc_library(
+    name = "umc_commands_idl",
+    srcs = [
+        ":user_management_commands_gen",
+    ],
+    hdrs = [
+        "//src/mongo/db/auth:umc_info_command_arg.h",
+    ],
+    deps = [
+        "//src/mongo/db:common",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db/auth:address_restriction",
+        "//src/mongo/db/auth:authprivilege",
+        "//src/mongo/db/auth:role_name_or_string",
     ],
 )
 

@@ -389,8 +389,6 @@ private:
     stdx::condition_variable _prepareCommittedOrAbortedCond;
     AtomicWord<std::uint64_t> _prepareCommitOrAbortCounter{0};
 
-    WT_SESSION* _keyDBSession = nullptr;  // keyDB analog of _waitUntilDurableSession
-
     /**
      * Returns a session to the cache for later reuse. If closeAll was called between getting this
      * session and releasing it, the session is directly released. This method is thread safe.

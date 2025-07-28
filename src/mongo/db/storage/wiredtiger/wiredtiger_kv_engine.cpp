@@ -86,6 +86,7 @@
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/bsonobjbuilder.h"
+#include "mongo/db/audit/audit.h"
 #include "mongo/db/catalog/collection_options_gen.h"
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/exception_util.h"
@@ -4230,9 +4231,24 @@ void WiredTigerKVEngine::waitUntilDurable(OperationContext* opCtx,
     // waiters, as a log flush is much cheaper than a full checkpoint.
     if ((syncType == Fsync::kCheckpointStableTimestamp || syncType == Fsync::kCheckpointAll) &&
         !isEphemeral()) {
+        auto encryptionKeyDB = getEncryptionKeyDB();
+        std::unique_ptr<WiredTigerSession> encryptionKeyDbSession;
+        WT_SESSION* ekdbSession = nullptr;
+        if (encryptionKeyDB) {
+            encryptionKeyDbSession =
+                std::make_unique<WiredTigerSession>(encryptionKeyDB->getConnection());
+            ekdbSession = encryptionKeyDbSession->getSession();
+        }
+
         auto [journalListener, token] = _getJournalListenerWithToken(opCtx, useListener);
 
         forceCheckpoint(syncType == Fsync::kCheckpointStableTimestamp);
+
+        if (ekdbSession) {
+            auto config = syncType == Fsync::kCheckpointStableTimestamp ? "use_timestamp=true"
+                                                                        : "use_timestamp=false";
+            invariantWTOK(ekdbSession->checkpoint(ekdbSession, config), ekdbSession);
+        }
 
         if (token) {
             journalListener->onDurable(token.value());
@@ -4271,11 +4287,29 @@ void WiredTigerKVEngine::waitUntilDurable(OperationContext* opCtx,
             _conn->open_session(_conn, nullptr, "isolation=snapshot", &_waitUntilDurableSession),
             nullptr);
     }
+    if (!_keyDBSession) {
+        auto encryptionKeyDB = getEncryptionKeyDB();
+        if (encryptionKeyDB) {
+            auto conn = encryptionKeyDB->getConnection();
+            invariantWTOK(conn->open_session(conn, nullptr, "isolation=snapshot", &_keyDBSession),
+                          nullptr);
+        }
+    }
+
+#ifdef PERCONA_AUDIT_ENABLED
+    // Make audit log durable
+    audit::fsyncAuditLog();
+#endif
 
     // Flush the journal.
     invariantWTOK(_waitUntilDurableSession->log_flush(_waitUntilDurableSession, "sync=on"),
                   _waitUntilDurableSession);
     LOGV2_DEBUG(22419, 4, "flushed journal");
+
+    // keyDB is always durable (opened with journal enabled)
+    if (_keyDBSession) {
+        invariantWTOK(_keyDBSession->log_flush(_keyDBSession, "sync=on"), _keyDBSession);
+    }
 
     // The session is reset periodically so that WT doesn't consider it a rogue session and log
     // about it. The session doesn't actually pin any resources that need to be released.

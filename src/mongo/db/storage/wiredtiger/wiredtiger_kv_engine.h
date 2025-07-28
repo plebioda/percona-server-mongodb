@@ -820,6 +820,9 @@ private:
     // owned, and never explicitly closed (uses connection close to clean up)
     WT_SESSION* _waitUntilDurableSession = nullptr;
 
+    // keyDB analog of _waitUntilDurableSession
+    WT_SESSION* _keyDBSession = nullptr;
+
     // Tracks the time since the last _waitUntilDurableSession reset().
     Timer _timeSinceLastDurabilitySessionReset;
 };

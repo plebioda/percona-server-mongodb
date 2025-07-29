@@ -562,7 +562,7 @@ std::string getIpByHost(const std::string& host) {
     }
 
     static StringMap<std::string> hostToIpCache;
-    static auto cacheMutex = MONGO_MAKE_LATCH("audit::getIpByHost::cacheMutex");
+    static stdx::mutex cacheMutex;
 
     std::string ip;
     {

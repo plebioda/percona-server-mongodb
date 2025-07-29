@@ -75,7 +75,7 @@ constexpr StringData kTrue = "true"_sd;
 bool updatesEnabled = false;
 
 // mutex to serialize external API calls and access to updatesEnabled
-Mutex mutex = MONGO_MAKE_LATCH("TelemetryThread::mutex");
+stdx::mutex mutex;
 
 const auto getTelemetryThread =
     ServiceContext::declareDecoration<std::unique_ptr<TelemetryThreadBase>>();
@@ -106,7 +106,7 @@ void stopTelemetryThread_inlock(ServiceContext* serviceContext) {
 TelemetryThreadBase::TelemetryThreadBase()
     : BackgroundJob(false /* selfDelete */),
       _nextScrape(Date_t::now() + Seconds(perconaTelemetryGracePeriod)),
-      _mutex(MONGO_MAKE_LATCH("TelemetryThread::_mutex")) {}
+      _mutex() {}
 
 TelemetryThreadBase* TelemetryThreadBase::get(ServiceContext* serviceCtx) {
     return getTelemetryThread(serviceCtx).get();

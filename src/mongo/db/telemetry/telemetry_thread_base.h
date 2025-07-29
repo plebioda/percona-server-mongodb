@@ -123,7 +123,7 @@ private:
 
     AtomicWord<bool> _shuttingDown{false};
 
-    Mutex _mutex;  // protects _condvar
+    stdx::mutex _mutex;  // protects _condvar
     // The telemetry thread idles on this condition variable for a particular time duration
     // between creating metrics files. It can be triggered early to expediate shutdown.
     stdx::condition_variable _condvar;

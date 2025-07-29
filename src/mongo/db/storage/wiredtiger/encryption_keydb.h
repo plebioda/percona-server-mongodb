@@ -151,8 +151,8 @@ private:
     std::string _wtOpenConfig;
     WT_CONNECTION *_conn = nullptr;
     stdx::recursive_mutex _lock;  // _prng, _gcm_iv, _gcm_iv_reserved
-    Mutex _lock_sess = MONGO_MAKE_LATCH("EncryptionKeyDB::_lock_sess");  // _sess
-    Mutex _lock_key = MONGO_MAKE_LATCH("EncryptionKeyDB::_lock_key");  // serialize access to the encryption keys table, also protects _srng
+    stdx::mutex _lock_sess;       // _sess
+    stdx::mutex _lock_key;  // serialize access to the encryption keys table, also protects _srng
     WT_SESSION *_sess = nullptr;
     std::unique_ptr<SecureRandom> _srng;
     std::unique_ptr<PseudoRandom> _prng;

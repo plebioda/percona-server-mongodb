@@ -428,7 +428,7 @@ private:
     std::map<int, LDAPConnInfo> _poll_fds;
     AtomicWord<bool> _shuttingDown{false};
     // _mutex works in pair with _condvar and also protects _poll_fds
-    Mutex _mutex = MONGO_MAKE_LATCH("LDAPUserCacheInvalidator::_mutex");
+    stdx::mutex _mutex;
     stdx::condition_variable _condvar;
     stdx::condition_variable _condvar_pool;
 };

@@ -295,7 +295,7 @@ private:
     AuthorizationManagerImpl* _authzManager;
     bool _shuttingDown{false};  // should be accessed under the _mutex
     // _mutex works in pair with _condvar and also protects _shuttingDown
-    Mutex _mutex = MONGO_MAKE_LATCH("LDAPUserCacheInvalidator::_mutex");
+    stdx::mutex _mutex;
     stdx::condition_variable _condvar;
 };
 

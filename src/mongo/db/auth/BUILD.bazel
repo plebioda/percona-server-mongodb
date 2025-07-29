@@ -160,6 +160,7 @@ mongo_cc_library(
         "//src/mongo/db:audit",  # audit:logLogout in AuthZSession.
         "//src/mongo/db:common",
         "//src/mongo/db:global_settings",
+        "//src/mongo/db:mongod_options",
         "//src/mongo/db:server_base",
         "//src/mongo/db/query/query_stats",
         "//src/mongo/db/stats:counters",

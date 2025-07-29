@@ -56,15 +56,19 @@
 #include "mongo/db/catalog/index_catalog.h"
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/client.h"
+#include "mongo/db/commands/list_indexes_allowed_fields.h"
 #include "mongo/db/concurrency/exception_util.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/dbdirectclient.h"
 #include "mongo/db/dbhelpers.h"
 #include "mongo/db/feature_flag.h"
+#include "mongo/db/generic_argument_util.h"
 #include "mongo/db/index/index_constants.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/index_builds_coordinator.h"
 #include "mongo/db/keypattern.h"
+#include "mongo/db/list_collections_gen.h"
+#include "mongo/db/list_indexes_gen.h"
 #include "mongo/db/logical_time.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
@@ -155,13 +159,6 @@ const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
                                                 // in the ReplSetConfig.
                                                 WriteConcernOptions::SyncMode::UNSET,
                                                 WriteConcernOptions::kNoWaiting);
-
-BSONObj makeLocalReadConcernWithAfterClusterTime(Timestamp afterClusterTime) {
-    return BSON(repl::ReadConcernArgs::kReadConcernFieldName << BSON(
-                    repl::ReadConcernArgs::kLevelFieldName
-                    << repl::readConcernLevels::toString(repl::ReadConcernLevel::kLocalReadConcern)
-                    << repl::ReadConcernArgs::kAfterClusterTimeFieldName << afterClusterTime));
-}
 
 void checkOutSessionAndVerifyTxnState(OperationContext* opCtx) {
     auto mongoDSessionCatalog = MongoDSessionCatalog::get(opCtx);
@@ -922,12 +919,14 @@ MigrationDestinationManager::IndexesAndIdIndex MigrationDestinationManager::getC
     // Do not hold any locks while issuing remote calls.
     invariant(!shard_role_details::getLocker(opCtx)->isLocked());
 
-    auto cmd = BSON("listIndexes" << nss.coll());
+    ListIndexes listIndexesCmd(nss);
     if (cri) {
-        cmd = appendShardVersion(cmd, cri->getShardVersion(fromShardId));
+        listIndexesCmd.setShardVersion(cri->getShardVersion(fromShardId));
     }
     if (afterClusterTime) {
-        cmd = cmd.addFields(makeLocalReadConcernWithAfterClusterTime(*afterClusterTime));
+        repl::ReadConcernArgs args(LogicalTime(*afterClusterTime),
+                                   repl::ReadConcernLevel::kLocalReadConcern);
+        listIndexesCmd.setReadConcern(args);
     }
 
     // Get indexes by calling listIndexes against the donor.
@@ -935,7 +934,7 @@ MigrationDestinationManager::IndexesAndIdIndex MigrationDestinationManager::getC
         fromShard->runExhaustiveCursorCommand(opCtx,
                                               ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                                               nss.dbName(),
-                                              cmd,
+                                              listIndexesCmd.toBSON(),
                                               Milliseconds(-1)));
     for (auto&& spec : indexes.docs) {
         if (spec[IndexDescriptor::kClusteredFieldName]) {
@@ -983,16 +982,22 @@ MigrationDestinationManager::getCollectionOptions(OperationContext* opCtx,
 
     BSONObj fromOptions;
 
-    auto cmd = nssOrUUID.isNamespaceString()
-        ? BSON("listCollections" << 1 << "filter" << BSON("name" << nssOrUUID.nss().coll()))
-        : BSON("listCollections" << 1 << "filter" << BSON("info.uuid" << nssOrUUID.uuid()));
+    ListCollections listCollectionsCmd;
+    listCollectionsCmd.setDbName(nssOrUUID.dbName());
+    if (nssOrUUID.isNamespaceString()) {
+        listCollectionsCmd.setFilter(BSON("name" << nssOrUUID.nss().coll()));
+    } else {
+        listCollectionsCmd.setFilter(BSON("info.uuid" << nssOrUUID.uuid()));
+    }
 
     if (dbVersion) {
-        cmd = appendDbVersionIfPresent(cmd, *dbVersion);
+        generic_argument_util::setDbVersionIfPresent(listCollectionsCmd, *dbVersion);
     }
 
     if (afterClusterTime) {
-        cmd = cmd.addFields(makeLocalReadConcernWithAfterClusterTime(*afterClusterTime));
+        repl::ReadConcernArgs args(LogicalTime(*afterClusterTime),
+                                   repl::ReadConcernLevel::kLocalReadConcern);
+        listCollectionsCmd.setReadConcern(args);
     }
 
     // Get collection options by calling listCollections against the from shard.
@@ -1000,7 +1005,7 @@ MigrationDestinationManager::getCollectionOptions(OperationContext* opCtx,
         fromShard->runExhaustiveCursorCommand(opCtx,
                                               ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                                               nssOrUUID.dbName(),
-                                              cmd,
+                                              listCollectionsCmd.toBSON(),
                                               Milliseconds(-1)));
 
     auto infos = infosRes.docs;
@@ -1138,8 +1143,13 @@ void MigrationDestinationManager::cloneCollectionIndexesAndOptions(
 
         auto checkEmptyOrGetMissingIndexesFromDonor = [&](const CollectionPtr& collection) {
             auto indexCatalog = collection->getIndexCatalog();
+            // We force the index comparison to only use the fields allowed by listIndexes and to
+            // repair our index. Otherwise we might unnecessary fail the chunk migration due to
+            // having some invalid/unused fields in the index spec.
+            IndexCatalog::RemoveExistingIndexesFlags opts{!isFirstMigration,
+                                                          &kAllowedListIndexesFieldNames};
             auto indexSpecs = indexCatalog->removeExistingIndexesNoChecks(
-                opCtx, collection, collectionOptionsAndIndexes.indexSpecs, !isFirstMigration);
+                opCtx, collection, collectionOptionsAndIndexes.indexSpecs, opts);
             if (!indexSpecs.empty()) {
                 // Only allow indexes to be copied if the collection does not have any documents.
                 uassert(ErrorCodes::CannotCreateCollection,

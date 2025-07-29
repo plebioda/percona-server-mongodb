@@ -580,7 +580,7 @@ StatusWith<std::shared_ptr<Session>> AsioTransportLayer::connect(
     HostAndPort peer,
     ConnectSSLMode sslMode,
     Milliseconds timeout,
-    boost::optional<TransientSSLParams> transientSSLParams) {
+    const boost::optional<TransientSSLParams>& transientSSLParams) {
     if (transientSSLParams) {
         uassert(ErrorCodes::InvalidSSLConfiguration,
                 "Specified transient SSL params but connection SSL mode is not set",
@@ -785,7 +785,7 @@ Future<std::shared_ptr<Session>> AsioTransportLayer::asyncConnect(
         AtomicWord<bool> done{false};
         Promise<std::shared_ptr<Session>> promise;
 
-        Mutex mutex = MONGO_MAKE_LATCH(HierarchicalAcquisitionLevel(0), "AsyncConnectState::mutex");
+        stdx::mutex mutex;
         AsioSession::GenericSocket socket;
         AsioReactorTimer timeoutTimer;
         WrappedResolver resolver;
@@ -1419,7 +1419,8 @@ SSLParams::SSLModes AsioTransportLayer::sslMode() const {
 
 Status AsioTransportLayer::rotateCertificates(std::shared_ptr<SSLManagerInterface> manager,
                                               bool asyncOCSPStaple) {
-    if (manager && manager->isTransient()) {
+    if (manager &&
+        manager->getSSLManagerMode() == SSLManagerInterface::SSLManagerMode::TransientNoOverride) {
         return Status(ErrorCodes::InternalError,
                       "Should not rotate transient SSL manager's certificates");
     }
@@ -1478,7 +1479,8 @@ AsioTransportLayer::_createSSLContext(std::shared_ptr<SSLManagerInterface>& mana
         if (!status.isOK()) {
             return status;
         }
-        if (newSSLContext->manager->isTransient()) {
+        if (manager->getSSLManagerMode() ==
+            SSLManagerInterface::SSLManagerMode::TransientNoOverride) {
             newSSLContext->targetClusterURI =
                 newSSLContext->manager->getTargetedClusterConnectionString();
         }

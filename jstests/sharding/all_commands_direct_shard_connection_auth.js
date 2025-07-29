@@ -298,7 +298,6 @@ const allCommands = {
         },
         isAdminCommand: true,
     },
-    captrunc: {skip: isAnInternalCommand},
     changePrimary: {skip: requiresMongoS},
     checkMetadataConsistency: {skip: requiresMongoS},
     checkShardingIndex: {
@@ -1359,6 +1358,10 @@ shardAdminDB.createUser({
     ]
 });
 assert(userAdminDB.auth("user", "y"), "Authentication failed");
+
+// Increase verbosity so that we always see the direct connection error/warning
+assert.commandWorked(shardAdminDB.runCommand(
+    {setParameter: 1, logComponentVerbosity: {sharding: {verbosity: 1}, assert: {verbosity: 1}}}));
 
 // Establish mongoS user
 const mongoSConn = st.s;

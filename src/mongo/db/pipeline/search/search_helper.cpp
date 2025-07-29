@@ -42,6 +42,7 @@
 #include "mongo/db/pipeline/document_source_replace_root.h"
 #include "mongo/db/pipeline/search/document_source_internal_search_id_lookup.h"
 #include "mongo/db/pipeline/search/document_source_internal_search_mongot_remote.h"
+#include "mongo/db/pipeline/search/document_source_list_search_indexes.h"
 #include "mongo/db/pipeline/search/document_source_search.h"
 #include "mongo/db/pipeline/search/document_source_search_meta.h"
 #include "mongo/db/pipeline/search/document_source_vector_search.h"
@@ -49,6 +50,7 @@
 #include "mongo/db/pipeline/variables.h"
 #include "mongo/db/query/search/mongot_cursor.h"
 #include "mongo/db/query/search/search_task_executors.h"
+#include "mongo/db/views/resolved_view.h"
 #include "mongo/s/query/exec/document_source_merge_cursors.h"
 #include "mongo/util/assert_util.h"
 
@@ -57,7 +59,7 @@ MONGO_FAIL_POINT_DEFINE(searchReturnEofImmediately);
 
 namespace search_helpers {
 namespace {
-void prepareSearchPipelineLegacyExecutor(Pipeline* pipeline, bool applyShardFilter) {
+void desugarSearchPipeline(Pipeline* pipeline) {
     auto searchStage = pipeline->popFrontWithName(DocumentSourceSearch::kStageName);
     auto& sources = pipeline->getSources();
     if (searchStage) {
@@ -65,11 +67,26 @@ void prepareSearchPipelineLegacyExecutor(Pipeline* pipeline, bool applyShardFilt
         sources.insert(sources.begin(), desugaredPipeline.begin(), desugaredPipeline.end());
         Pipeline::stitch(&sources);
     }
+    // TODO: SERVER-85426 Take the below code out of the if statement--i.e., it should always
+    // happen.
+    // TODO: BACKPORT-22945 (8.0) Ensure that using this feature inside a view definition is not
+    // permitted.
+    if (enableUnionWithVectorSearch.load()) {
+        auto vectorSearchStage = pipeline->popFrontWithName(DocumentSourceVectorSearch::kStageName);
+        if (vectorSearchStage) {
+            auto desugaredPipeline =
+                dynamic_cast<DocumentSourceVectorSearch*>(vectorSearchStage.get())->desugar();
+            sources.insert(sources.begin(), desugaredPipeline.begin(), desugaredPipeline.end());
+            Pipeline::stitch(&sources);
+        }
+    }
+}
 
+void injectShardFilter(Pipeline* pipeline) {
+    auto& sources = pipeline->getSources();
     auto internalSearchLookupIt = sources.begin();
-    // Bail early if the pipeline is not $_internalSearchMongotRemote stage or doesn't need to apply
-    // shardFilter.
-    if (internalSearchLookupIt == sources.end() || !applyShardFilter ||
+    // Bail early if the pipeline is not $_internalSearchMongotRemote stage.
+    if (internalSearchLookupIt == sources.end() ||
         (mongo::DocumentSourceInternalSearchMongotRemote::kStageName !=
              (*internalSearchLookupIt)->getSourceName() &&
          mongo::DocumentSourceVectorSearch::kStageName !=
@@ -264,6 +281,17 @@ bool isSearchMetaPipeline(const Pipeline* pipeline) {
     return isSearchMetaStage(pipeline->peekFront());
 }
 
+void setResolvedNamespaceForSearch(const NamespaceString& origNss,
+                                   const ResolvedView& resolvedView,
+                                   boost::intrusive_ptr<ExpressionContext> expCtx,
+                                   boost::optional<UUID> uuid) {
+    auto resolvedNamespaces = StringMap<ExpressionContext::ResolvedNamespace>{
+        {origNss.coll().toString(),
+         {resolvedView.getNamespace(), resolvedView.getPipeline(), uuid}}};
+    expCtx->setResolvedNamespaces(resolvedNamespaces);
+    expCtx->viewNS = origNss;
+}
+
 bool isMongotPipeline(const Pipeline* pipeline) {
     if (!pipeline || pipeline->getSources().empty()) {
         return false;
@@ -291,7 +319,8 @@ bool isMongotStage(DocumentSource* stage) {
     return stage &&
         (dynamic_cast<mongo::DocumentSourceSearch*>(stage) ||
          dynamic_cast<mongo::DocumentSourceInternalSearchMongotRemote*>(stage) ||
-         dynamic_cast<mongo::DocumentSourceVectorSearch*>(stage));
+         dynamic_cast<mongo::DocumentSourceVectorSearch*>(stage) ||
+         dynamic_cast<mongo::DocumentSourceListSearchIndexes*>(stage));
 }
 
 void assertSearchMetaAccessValid(const Pipeline::SourceContainer& pipeline,
@@ -322,8 +351,10 @@ std::unique_ptr<Pipeline, PipelineDeleter> prepareSearchForTopLevelPipelineLegac
     DocsNeededBounds bounds,
     boost::optional<int64_t> userBatchSize) {
     // First, desuguar $search, and inject shard filterer.
-    prepareSearchPipelineLegacyExecutor(origPipeline, true);
+    desugarSearchPipeline(origPipeline);
+    injectShardFilter(origPipeline);
 
+    // TODO SERVER-94874 Establish mongot cursor for $searchMeta queries too.
     if ((expCtx->explain &&
          !feature_flags::gFeatureFlagSearchExplainExecutionStats.isEnabled(
              serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) ||
@@ -433,7 +464,9 @@ std::unique_ptr<Pipeline, PipelineDeleter> prepareSearchForTopLevelPipelineLegac
 }
 
 void prepareSearchForNestedPipelineLegacyExecutor(Pipeline* pipeline) {
-    prepareSearchPipelineLegacyExecutor(pipeline, false);
+    desugarSearchPipeline(pipeline);
+    // TODO SERVER-94874 Establish mongot cursor here, like is done in
+    // prepareSearchForTopLevelPipelineLegacyExecutor.
 }
 
 void establishSearchCursorsSBE(boost::intrusive_ptr<ExpressionContext> expCtx,

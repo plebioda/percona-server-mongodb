@@ -417,7 +417,6 @@ env.Benchmark(
         "apply_ops_command_info",
         "oplog_entry",
     ],
-    CONSOLIDATED_TARGET="repl_bm",
 )
 
 env.Library(
@@ -635,17 +634,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/read_write_concern_defaults_mock",
         "$BUILD_DIR/mongo/db/repl/repl_server_parameters",
         "$BUILD_DIR/mongo/db/storage/storage_engine_common",
-    ],
-)
-
-env.Library(
-    target="replica_set_aware_service",
-    source=[
-        "replica_set_aware_service.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/service_context",
-        "repl_server_parameters",
     ],
 )
 
@@ -1647,30 +1635,6 @@ env.Library(
         "hello_command",
     ],
 )
-wait_for_majority_service_env = env.Clone()
-# TODO(SERVER-77205): Review and Possibly Remove '-Wno-deprecated' After Mozjs Update
-wait_for_majority_service_env.Append(
-    CXXFLAGS=[]
-    if wait_for_majority_service_env.TargetOSIs("windows")
-    else [
-        "-Wno-deprecated",
-    ],
-)
-wait_for_majority_service_env.Library(
-    target="wait_for_majority_service",
-    source=[
-        "wait_for_majority_service.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/rw_concern_d",
-        "$BUILD_DIR/mongo/util/concurrency/thread_pool",
-        "$BUILD_DIR/mongo/util/future_util",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/util/concurrency/spin_lock",
-    ],
-)
 
 env.Library(
     target="primary_only_service",
@@ -1753,7 +1717,6 @@ env.Benchmark(
         "replmocks",
         "storage_interface_impl",
     ],
-    CONSOLIDATED_TARGET="repl_bm",
 )
 
 env.Benchmark(
@@ -1766,7 +1729,6 @@ env.Benchmark(
         "$BUILD_DIR/mongo/db/query/stats/stats_test_utils",
         "oplog_application",
     ],
-    CONSOLIDATED_TARGET="repl_bm",
 )
 
 env.Benchmark(
@@ -1799,7 +1761,6 @@ env.Benchmark(
         "tenant_migration_donor_service",
         "tenant_migration_recipient_service",
     ],
-    CONSOLIDATED_TARGET="repl_bm",
 )
 
 env.Benchmark(
@@ -1834,7 +1795,6 @@ env.Benchmark(
         "replmocks",
         "storage_interface_impl",
     ],
-    CONSOLIDATED_TARGET="repl_bm",
 )
 
 env.Benchmark(
@@ -1847,5 +1807,4 @@ env.Benchmark(
         "repl_coordinator_impl",
         "repl_coordinator_test_fixture",
     ],
-    CONSOLIDATED_TARGET="repl_bm",
 )

@@ -144,6 +144,7 @@
 #include "mongo/db/pipeline/change_stream_expired_pre_image_remover.h"
 #include "mongo/db/pipeline/change_stream_preimage_gen.h"
 #include "mongo/db/pipeline/process_interface/replica_set_node_process_interface.h"
+#include "mongo/db/profile_filter_impl.h"
 #include "mongo/db/query/query_knobs_gen.h"
 #include "mongo/db/query/query_settings/query_settings_manager.h"
 #include "mongo/db/query/stats/stats_cache_loader_impl.h"
@@ -296,7 +297,6 @@
 #include "mongo/util/exit_code.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/fast_clock_source_factory.h"
-#include "mongo/util/latch_analyzer.h"
 #include "mongo/util/net/ocsp/ocsp_manager.h"
 #include "mongo/util/net/private/ssl_expiration.h"
 #include "mongo/util/net/socket_utils.h"
@@ -534,6 +534,8 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
     logProcessDetails(nullptr);
 
     initializeCommandHooks(serviceContext);
+
+    ProfileFilterImpl::initializeDefaults(serviceContext);
 
     {
         // (Ignore FCV check): The ReplicaSetEndpoint service entry point needs to be set even
@@ -2133,10 +2135,6 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
     LOGV2(20565, "Now exiting");
 
     audit::logShutdown(client);
-
-#ifndef MONGO_CONFIG_USE_RAW_LATCHES
-    LatchAnalyzer::get(serviceContext).dump();
-#endif
 
 #if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
     // SessionKiller relies on the network stack being cleanly shutdown which only occurs under

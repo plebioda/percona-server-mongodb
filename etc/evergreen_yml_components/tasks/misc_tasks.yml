@@ -104,7 +104,7 @@ tasks:
             --runAllFeatureFlagTests
 
   - <<: *antithesis_task_template
-    name: antithesis_concurrency_sharded_multi_stmt_txn_kill_primary
+    name: antithesis_concurrency_sharded_multi_stmt_txn_stepdown_terminate_kill_primary
     tags:
       [
         "assigned_to_jira_team_devprod_correctness",
@@ -116,7 +116,7 @@ tasks:
       - func: "do setup for antithesis"
       - func: "antithesis image build and push"
         vars:
-          suite: concurrency_sharded_multi_stmt_txn_kill_primary
+          suite: concurrency_sharded_multi_stmt_txn_stepdown_terminate_kill_primary
           resmoke_args: >-
             --runAllFeatureFlagTests
 
@@ -172,7 +172,7 @@ tasks:
             --runAllFeatureFlagTests
 
   - <<: *antithesis_task_template
-    name: antithesis_concurrency_sharded_with_stepdowns_and_balancer_config_shard
+    name: antithesis_concurrency_sharded_stepdown_terminate_kill_primary_with_balancer_config_shard
     tags:
       [
         "assigned_to_jira_team_devprod_correctness",
@@ -184,7 +184,7 @@ tasks:
       - func: "do setup for antithesis"
       - func: "antithesis image build and push"
         vars:
-          suite: concurrency_sharded_with_stepdowns_and_balancer
+          suite: concurrency_sharded_stepdown_terminate_kill_primary_with_balancer
           resmoke_args: >-
             --configShard=0
             --numShards=2
@@ -1075,6 +1075,41 @@ tasks:
           args:
             - "src/evergreen/lint_yaml.sh"
 
+  - name: bazel_coverage
+    tags: ["assigned_to_jira_team_devprod_correctness", "auxiliary"]
+    depends_on:
+      - name: version_expansions_gen
+        variant: generate-tasks-for-version
+    commands:
+      - command: timeout.update
+        params:
+          exec_timeout_secs: 2400 # 40 minutes
+      - func: "f_expansions_write"
+      - command: manifest.load
+      - func: "git get project and add git tag"
+      - func: "f_expansions_write"
+      - func: "kill processes"
+      - func: "cleanup environment"
+      - func: "set up venv"
+      - func: "upload pip requirements"
+      - func: "get engflow creds"
+      # TODO SERVER-81038: Remove "fetch bazel" once bazelisk is self-hosted.
+      - func: "fetch bazel"
+      - func: "bazel coverage"
+        vars:
+          # Running something like "bazel test //src/..." has to do a lot of preprocessing on *all*
+          # targets before it actually runs the much smaller fraction of test targets, unless we're
+          # certain that a full build has already been cached.
+          # It might be optimized by doing a query upfront, which uses minimal analysis:
+          #   targets=$(bazel query 'kind(".*_test", //src/...)')
+          #   bazel test $targets
+          target: >-
+            //src/...
+          args: >-
+            --test_output=all
+            --config=local
+            --combined_report=lcov
+
   - name: monitor_build_status
     tags: ["assigned_to_jira_team_devprod_correctness", "auxiliary"]
     commands:
@@ -1415,6 +1450,7 @@ tasks:
 
   - name: sync_repo_with_copybara
     tags: ["assigned_to_jira_team_devprod_correctness", "auxiliary"]
+    patchable: false
     commands:
       - command: manifest.load
       - func: "git get project and add git tag"

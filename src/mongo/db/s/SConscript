@@ -10,20 +10,6 @@ Import(
 env = env.Clone()
 
 env.Library(
-    target="balancer_stats_registry",
-    source=[
-        "balancer_stats_registry.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/dbdirectclient",
-        "$BUILD_DIR/mongo/db/repl/replica_set_aware_service",
-        "$BUILD_DIR/mongo/db/shard_role",
-        "$BUILD_DIR/mongo/s/grid",
-        "$BUILD_DIR/mongo/util/concurrency/spin_lock",
-    ],
-)
-
-env.Library(
     target="sharding_catalog",
     source=[
         "shard_authoritative_catalog_gen.cpp",
@@ -941,7 +927,6 @@ env.Benchmark(
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/shard_role_api",
     ],
-    CONSOLIDATED_TARGET="s_bm",
 )
 
 env.Benchmark(
@@ -954,7 +939,6 @@ env.Benchmark(
         "$BUILD_DIR/mongo/db/auth/authorization_manager_global",
         "sharding_runtime_d",
     ],
-    CONSOLIDATED_TARGET="s_bm",
 )
 
 env.Benchmark(
@@ -986,5 +970,4 @@ env.Benchmark(
         "config_server_test_fixture",
         "sharding_catalog_manager",
     ],
-    CONSOLIDATED_TARGET="s_bm",
 )

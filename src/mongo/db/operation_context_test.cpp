@@ -296,7 +296,7 @@ public:
     }
 
     void checkForInterruptForTimeout(OperationContext* opCtx) {
-        auto m = MONGO_MAKE_LATCH();
+        stdx::mutex m;
         stdx::condition_variable cv;
         stdx::unique_lock<Latch> lk(m);
         opCtx->waitForConditionOrInterrupt(cv, lk, [] { return false; });
@@ -421,7 +421,7 @@ TEST_F(OperationDeadlineTests, VeryLargeRelativeDeadlinesNanoseconds) {
 TEST_F(OperationDeadlineTests, WaitForMaxTimeExpiredCV) {
     auto opCtx = client->makeOperationContext();
     opCtx->setDeadlineByDate(mockClock->now(), ErrorCodes::ExceededTimeLimit);
-    auto m = MONGO_MAKE_LATCH();
+    stdx::mutex m;
     stdx::condition_variable cv;
     stdx::unique_lock<Latch> lk(m);
     ASSERT_FALSE(opCtx->getCancellationToken().isCanceled());
@@ -434,7 +434,7 @@ TEST_F(OperationDeadlineTests, WaitForMaxTimeExpiredCV) {
 TEST_F(OperationDeadlineTests, WaitForMaxTimeExpiredCVWithWaitUntilSet) {
     auto opCtx = client->makeOperationContext();
     opCtx->setDeadlineByDate(mockClock->now(), ErrorCodes::ExceededTimeLimit);
-    auto m = MONGO_MAKE_LATCH();
+    stdx::mutex m;
     stdx::condition_variable cv;
     stdx::unique_lock<Latch> lk(m);
     ASSERT_FALSE(opCtx->getCancellationToken().isCanceled());
@@ -691,7 +691,7 @@ TEST_F(OperationDeadlineTests, DeadlineAfterRunWithoutInterruptDoesntSeeUnviolat
 TEST_F(OperationDeadlineTests, WaitForKilledOpCV) {
     auto opCtx = client->makeOperationContext();
     opCtx->markKilled();
-    auto m = MONGO_MAKE_LATCH();
+    stdx::mutex m;
     stdx::condition_variable cv;
     stdx::unique_lock<Latch> lk(m);
     ASSERT_THROWS_CODE(opCtx->waitForConditionOrInterrupt(cv, lk, [] { return false; }),
@@ -701,7 +701,7 @@ TEST_F(OperationDeadlineTests, WaitForKilledOpCV) {
 
 TEST_F(OperationDeadlineTests, WaitForUntilExpiredCV) {
     auto opCtx = client->makeOperationContext();
-    auto m = MONGO_MAKE_LATCH();
+    stdx::mutex m;
     stdx::condition_variable cv;
     stdx::unique_lock<Latch> lk(m);
     ASSERT_FALSE(
@@ -711,7 +711,7 @@ TEST_F(OperationDeadlineTests, WaitForUntilExpiredCV) {
 TEST_F(OperationDeadlineTests, WaitForUntilExpiredCVWithMaxTimeSet) {
     auto opCtx = client->makeOperationContext();
     opCtx->setDeadlineByDate(mockClock->now() + Seconds{10}, ErrorCodes::ExceededTimeLimit);
-    auto m = MONGO_MAKE_LATCH();
+    stdx::mutex m;
     stdx::condition_variable cv;
     stdx::unique_lock<Latch> lk(m);
     ASSERT_FALSE(
@@ -720,7 +720,7 @@ TEST_F(OperationDeadlineTests, WaitForUntilExpiredCVWithMaxTimeSet) {
 
 TEST_F(OperationDeadlineTests, WaitForDurationExpired) {
     auto opCtx = client->makeOperationContext();
-    auto m = MONGO_MAKE_LATCH();
+    stdx::mutex m;
     stdx::condition_variable cv;
     stdx::unique_lock<Latch> lk(m);
     ASSERT_FALSE(opCtx->waitForConditionOrInterruptFor(
@@ -730,7 +730,7 @@ TEST_F(OperationDeadlineTests, WaitForDurationExpired) {
 TEST_F(OperationDeadlineTests, DuringWaitMaxTimeExpirationDominatesUntilExpiration) {
     auto opCtx = client->makeOperationContext();
     opCtx->setDeadlineByDate(mockClock->now(), ErrorCodes::ExceededTimeLimit);
-    auto m = MONGO_MAKE_LATCH();
+    stdx::mutex m;
     stdx::condition_variable cv;
     stdx::unique_lock<Latch> lk(m);
     ASSERT_FALSE(opCtx->getCancellationToken().isCanceled());
@@ -781,7 +781,7 @@ public:
             return result;
         }
 
-        Mutex mutex = MONGO_MAKE_LATCH("WaitTestState::mutex");
+        stdx::mutex mutex;
         stdx::condition_variable cv;
         bool isSignaled = false;
         stdx::packaged_task<bool()> task;
@@ -1028,7 +1028,7 @@ TEST_F(OperationContextTest, TestWaitForConditionOrInterruptUntilAPI) {
     auto client = makeClient();
     auto opCtx = client->makeOperationContext();
 
-    auto mutex = MONGO_MAKE_LATCH();
+    stdx::mutex mutex;
     stdx::condition_variable cv;
     stdx::unique_lock<Latch> lk(mutex);
 
@@ -1070,7 +1070,7 @@ TEST_F(OperationContextTest, TestIsWaitingForConditionOrInterrupt) {
     unittest::Barrier barrier(2);
 
     stdx::thread worker([&] {
-        auto mutex = MONGO_MAKE_LATCH();
+        stdx::mutex mutex;
         stdx::condition_variable cv;
         stdx::unique_lock<Latch> lk(mutex);
         Date_t deadline = Date_t::now() + Milliseconds(300);
@@ -1097,42 +1097,39 @@ TEST_F(OperationContextTest, CurrentOpExcludesKilledOperations) {
         opCtx.get(), nullptr, NamespaceString::createNamespaceString_forTest("foo.bar"_sd)));
 
     for (auto truncateOps : {true, false}) {
-        for (auto backtraceMode : {true, false}) {
-            BSONObjBuilder bobNoOpCtx, bobKilledOpCtx;
-            // We use a separate client thread to generate CurrentOp reports in presence and absence
-            // of an `opCtx`. This is because `CurOp::reportCurrentOpForClient()` accepts an `opCtx`
-            // as input and requires it to be present throughout its execution.
-            stdx::thread thread([&]() mutable {
-                stdx::lock_guard<Client> lk(*opCtx->getClient());
+        BSONObjBuilder bobNoOpCtx, bobKilledOpCtx;
+        // We use a separate client thread to generate CurrentOp reports in presence and absence
+        // of an `opCtx`. This is because `CurOp::reportCurrentOpForClient()` accepts an `opCtx`
+        // as input and requires it to be present throughout its execution.
+        stdx::thread thread([&]() mutable {
+            stdx::lock_guard<Client> lk(*opCtx->getClient());
 
-                auto threadClient = getService()->makeClient("ThreadClient");
+            auto threadClient = getService()->makeClient("ThreadClient");
 
-                // Generate report in absence of any opCtx
-                CurOp::reportCurrentOpForClient(
-                    expCtx, threadClient.get(), truncateOps, backtraceMode, &bobNoOpCtx);
+            // Generate report in absence of any opCtx
+            CurOp::reportCurrentOpForClient(expCtx, threadClient.get(), truncateOps, &bobNoOpCtx);
 
-                auto threadOpCtx = threadClient->makeOperationContext();
-                getServiceContext()->killAndDelistOperation(threadOpCtx.get());
+            auto threadOpCtx = threadClient->makeOperationContext();
+            getServiceContext()->killAndDelistOperation(threadOpCtx.get());
 
-                // Generate report in presence of a killed opCtx
-                CurOp::reportCurrentOpForClient(
-                    expCtx, threadClient.get(), truncateOps, backtraceMode, &bobKilledOpCtx);
-            });
+            // Generate report in presence of a killed opCtx
+            CurOp::reportCurrentOpForClient(
+                expCtx, threadClient.get(), truncateOps, &bobKilledOpCtx);
+        });
 
-            thread.join();
-            auto objNoOpCtx = bobNoOpCtx.obj();
-            auto objKilledOpCtx = bobKilledOpCtx.obj();
+        thread.join();
+        auto objNoOpCtx = bobNoOpCtx.obj();
+        auto objKilledOpCtx = bobKilledOpCtx.obj();
 
-            LOGV2_DEBUG(4780201, 1, "With no opCtx", "object"_attr = objNoOpCtx);
-            LOGV2_DEBUG(4780202, 1, "With killed opCtx", "object"_attr = objKilledOpCtx);
+        LOGV2_DEBUG(4780201, 1, "With no opCtx", "object"_attr = objNoOpCtx);
+        LOGV2_DEBUG(4780202, 1, "With killed opCtx", "object"_attr = objKilledOpCtx);
 
-            ASSERT_EQ(objNoOpCtx.nFields(), objKilledOpCtx.nFields());
+        ASSERT_EQ(objNoOpCtx.nFields(), objKilledOpCtx.nFields());
 
-            auto compareBSONObjs = [](BSONObj& a, BSONObj& b) -> bool {
-                return (a == b).type == BSONObj::DeferredComparison::Type::kEQ;
-            };
-            ASSERT(compareBSONObjs(objNoOpCtx, objKilledOpCtx));
-        }
+        auto compareBSONObjs = [](BSONObj& a, BSONObj& b) -> bool {
+            return (a == b).type == BSONObj::DeferredComparison::Type::kEQ;
+        };
+        ASSERT(compareBSONObjs(objNoOpCtx, objKilledOpCtx));
     }
 }
 

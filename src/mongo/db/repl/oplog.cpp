@@ -173,9 +173,6 @@ using IndexVersion = IndexDescriptor::IndexVersion;
 namespace repl {
 namespace {
 
-// Failpoint to block after a write and its oplog entry have been written to the storage engine and
-// are visible, but before we have advanced 'lastApplied' for the write.
-MONGO_FAIL_POINT_DEFINE(hangBeforeLogOpAdvancesLastApplied);
 // Failpoint to block oplog application after receiving an IndexBuildAlreadyInProgress error.
 MONGO_FAIL_POINT_DEFINE(hangAfterIndexBuildConflict);
 
@@ -240,8 +237,9 @@ Status insertDocumentsForOplog(OperationContext* opCtx,
     if (!status.isOK())
         return status;
 
+    OpDebug* const nullOpDebug = nullptr;
     collection_internal::cappedDeleteUntilBelowConfiguredMaximum(
-        opCtx, oplogCollection, records->begin()->id);
+        opCtx, oplogCollection, records->begin()->id, nullOpDebug);
 
     // We do not need to notify capped waiters, as we have not yet updated oplog visibility, so
     // these inserts will not be visible.  When visibility updates, it will notify capped

@@ -17,6 +17,8 @@ include:
     module: dsi
   - filename: evergreen/system_perf/shared_tasks.yml
     module: dsi
+  - filename: evergreen/system_perf/master/genny_tasks.yml
+    module: genny
   ### lint_yaml trim end ###
 
 ## Parameters for parameterized builds (see https://github.com/evergreen-ci/evergreen/wiki/Parameterized-Builds)
@@ -468,7 +470,6 @@ buildvariants:
         -j$(grep -c ^processor /proc/cpuinfo)
         --release
         --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
-        --use-diagnostic-latches=off
         --allocator=system
         --enterprise-features=fle
         --js-engine=none

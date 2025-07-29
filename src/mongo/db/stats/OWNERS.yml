@@ -3,13 +3,22 @@ filters:
   - "storage_stats*":
     approvers:
       - 10gen/server-storage-execution
+      - 10gen/server-catalog-and-routing
       - 10gen/server-rss-sydney
   - "counters*":
     approvers:
       - 10gen/query-execution
   - "top*":
     approvers:
-      - 10gen/query-integration
+      - awagenmaker
+      - cswanson310
+      - TedTuckman
+    metadata:
+      owning_team: 10gen/query-integration
   - "latency_server_status_section.cpp":
     approvers:
-      - 10gen/query-integration
+      - awagenmaker
+      - banarun
+      - TedTuckman
+    metadata:
+      owning_team: 10gen/query-integration

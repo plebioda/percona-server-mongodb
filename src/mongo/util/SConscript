@@ -118,7 +118,6 @@ env.Benchmark(
     LIBDEPS=[
         "fail_point",
     ],
-    CONSOLIDATED_TARGET="util_bm",
 )
 
 env.CppUnitTest(
@@ -277,7 +276,6 @@ env.Benchmark(
         "clock_sources",
         "processinfo",
     ],
-    CONSOLIDATED_TARGET="util_bm",
 )
 
 env.Library(
@@ -313,7 +311,6 @@ env.Benchmark(
         "decimal_counter_bm.cpp",
     ],
     LIBDEPS=[],
-    CONSOLIDATED_TARGET="util_bm",
 )
 
 env.Benchmark(
@@ -322,7 +319,6 @@ env.Benchmark(
         "itoa_bm.cpp",
     ],
     LIBDEPS=[],
-    CONSOLIDATED_TARGET="util_bm",
 )
 
 env.Benchmark(
@@ -331,7 +327,6 @@ env.Benchmark(
         "future_bm.cpp",
     ],
     LIBDEPS=[],
-    CONSOLIDATED_TARGET="util_bm",
 )
 
 env.Benchmark(
@@ -340,18 +335,6 @@ env.Benchmark(
         "tick_source_bm.cpp",
     ],
     LIBDEPS=[],
-    CONSOLIDATED_TARGET="util_bm",
-)
-
-env.Library(
-    target="future_util",
-    source=[
-        "future_util.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/executor/task_executor_interface",
-    ],
-    CONSOLIDATED_TARGET="util_bm",
 )
 
 pcre_env = env.Clone()
@@ -362,7 +345,6 @@ env.Benchmark(
         "tracking_allocator_bm.cpp",
     ],
     LIBDEPS=[],
-    CONSOLIDATED_TARGET="util_bm",
 )
 
 env.CppUnitTest(
@@ -379,7 +361,6 @@ env.Benchmark(
     target="hash_table_bm",
     source="hash_table_bm.cpp",
     LIBDEPS=[],
-    CONSOLIDATED_TARGET="util_bm",
 )
 
 if env.TargetOSIs("windows"):
@@ -428,7 +409,6 @@ icuEnv.CppUnitTest(
         "ctype_test.cpp",
         "decimal_counter_test.cpp",
         "decorable_test.cpp",
-        "diagnostic_info_test.cpp" if get_option("use-diagnostic-latches") == "on" else [],
         "dns_name_test.cpp",
         "dns_query_test.cpp",
         "duration_test.cpp",
@@ -455,7 +435,6 @@ icuEnv.CppUnitTest(
         "interruptible_test.cpp",
         "invalidating_lru_cache_test.cpp",
         "itoa_test.cpp",
-        "latch_analyzer_test.cpp" if get_option("use-diagnostic-latches") == "on" else [],
         "latency_distribution_test.cpp",
         "lockable_adapter_test.cpp",
         "log_with_sampling_test.cpp",
@@ -508,12 +487,10 @@ icuEnv.CppUnitTest(
         "clock_source_mock",
         "clock_sources",
         "concurrency/thread_pool",
-        "diagnostic_info" if get_option("use-diagnostic-latches") == "on" else [],
         "dns_query",
         "fail_point",
         "future_util",
         "icu",
-        "latch_analyzer" if get_option("use-diagnostic-latches") == "on" else [],
         "pcre_util",
         "pcre_wrapper",
         "periodic_runner_impl",
@@ -546,7 +523,6 @@ if env.TargetOSIs("windows"):
 env.Benchmark(
     target="base64_bm",
     source="base64_bm.cpp",
-    CONSOLIDATED_TARGET="util_bm",
 )
 
 stacktraceEnv = env.Clone()
@@ -594,25 +570,21 @@ stacktraceEnv.Benchmark(
     source="stacktrace_bm.cpp",
     # See above for how to handle any future LIBDEPS additions here.
     # LIBDEPS=...
-    CONSOLIDATED_TARGET="util_stacktrace_bm",
 )
 
 env.Benchmark(
     target="string_bm",
     source="string_bm.cpp",
-    CONSOLIDATED_TARGET="util_stacktrace_bm",
 )
 
 env.Benchmark(
     target="cancellation_bm",
     source="cancellation_bm.cpp",
-    CONSOLIDATED_TARGET="util_stacktrace_bm",
 )
 
 env.Benchmark(
     target="inline_memory_bm",
     source="inline_memory_bm.cpp",
-    CONSOLIDATED_TARGET="util_stacktrace_bm",
 )
 
 env.Benchmark(
@@ -624,7 +596,6 @@ env.Benchmark(
         "$BUILD_DIR/mongo/base",
         "processinfo",
     ],
-    CONSOLIDATED_TARGET="util_stacktrace_bm",
 )
 
 pretty_printer_test_program = env.Program(

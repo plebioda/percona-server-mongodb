@@ -1350,6 +1350,22 @@ functions:
     - *f_expansions_write
     - *bazel_run_sh
 
+  # TODO (SERVER-94776): reuse exposed bazel commands
+  "bazel coverage sh": &bazel_coverage_sh
+    command: subprocess.exec
+    display_name: "bazel coverage sh"
+    type: test
+    params:
+      binary: bash
+      args:
+        - "src/evergreen/bazel_coverage.sh"
+
+  "bazel coverage":
+    - *get_version_expansions
+    - *apply_version_expansions
+    - *f_expansions_write
+    - *bazel_coverage_sh
+
   "ninja compile sh": &ninja_compile_sh
     command: subprocess.exec
     display_name: "ninja compile sh"
@@ -1608,7 +1624,6 @@ functions:
     - command: subprocess.exec
       display_name: "sync repo with copybara"
       type: test
-      patchable: false
       params:
         binary: bash
         args:
@@ -1834,6 +1849,18 @@ functions:
         timeout_seconds: 3000
         num_hosts: 1
         path: src/hosts.yml
+
+    - command: s3.put
+      params:
+        aws_key: ${aws_key}
+        aws_secret: ${aws_secret}
+        local_file: src/hosts.yml
+        remote_file: ${project}/${build_variant}/${revision}/powercycle-hosts-${task_id}-${execution}.yml
+        bucket: mciuploads
+        permissions: public-read
+        content_type: text/plain
+        display_name: Powercycle hosts - Execution ${execution}
+        optional: true
 
     - *f_expansions_write
     - command: subprocess.exec
@@ -2683,11 +2710,6 @@ functions:
       binary: bash
       args:
         - "./src/evergreen/functions/code_coverage_data_process.sh"
-      env:
-        GCOV_TOOL: ${gcov_tool}
-        COVERALLS_REPO_TOKEN: ${coveralls_token}
-        TRAVIS_JOB_ID: ${revision_order_id}
-        TRAVIS_PULL_REQUEST: ${github_pr_number}
 
   "save code coverage data":
     - *f_expansions_write

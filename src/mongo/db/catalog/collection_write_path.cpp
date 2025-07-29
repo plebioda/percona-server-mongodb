@@ -67,6 +67,7 @@
 #include "mongo/db/s/operation_sharding_state.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/service_context.h"
+#include "mongo/db/storage/damage_vector.h"
 #include "mongo/db/storage/duplicate_key_error_info.h"
 #include "mongo/db/storage/index_entry_comparison.h"
 #include "mongo/db/storage/key_format.h"
@@ -400,7 +401,7 @@ Status insertDocumentsImpl(OperationContext* opCtx,
             /*defaultFromMigrate=*/fromMigrate);
     }
 
-    cappedDeleteUntilBelowConfiguredMaximum(opCtx, collection, records.begin()->id);
+    cappedDeleteUntilBelowConfiguredMaximum(opCtx, collection, records.begin()->id, opDebug);
 
     return Status::OK();
 }
@@ -481,7 +482,8 @@ Status insertDocumentForBulkLoader(OperationContext* opCtx,
         /*fromMigrate=*/std::vector<bool>(inserts.size(), false),
         /*defaultFromMigrate=*/false);
 
-    cappedDeleteUntilBelowConfiguredMaximum(opCtx, collection, loc.getValue());
+    cappedDeleteUntilBelowConfiguredMaximum(
+        opCtx, collection, loc.getValue(), &CurOp::get(opCtx)->debug());
 
     // Capture the recordStore here instead of the CollectionPtr object itself, because the record
     // store's lifetime is controlled by the collection IX lock held on the write paths, whereas the
@@ -745,7 +747,7 @@ StatusWith<BSONObj> updateDocumentWithDamages(OperationContext* opCtx,
                                               const RecordId& loc,
                                               const Snapshotted<BSONObj>& oldDoc,
                                               const char* damageSource,
-                                              const mutablebson::DamageVector& damages,
+                                              const DamageVector& damages,
                                               const BSONObj* opDiff,
                                               bool* indexesAffected,
                                               OpDebug* opDebug,

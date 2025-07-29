@@ -133,10 +133,12 @@ bool canInternalizeProjectObj(const BSONObj& projObj) {
  */
 auto getIncludeExcludeProjectAndType(DocumentSource* src) {
     if (const auto proj = dynamic_cast<DocumentSourceSingleDocumentTransformation*>(src); proj &&
-        (proj->getType() == TransformerInterface::TransformerType::kInclusionProjection ||
-         proj->getType() == TransformerInterface::TransformerType::kExclusionProjection)) {
+        (proj->getTransformerType() ==
+             TransformerInterface::TransformerType::kInclusionProjection ||
+         proj->getTransformerType() ==
+             TransformerInterface::TransformerType::kExclusionProjection)) {
         return std::pair{proj->getTransformer().serializeTransformation(boost::none).toBson(),
-                         proj->getType() ==
+                         proj->getTransformerType() ==
                              TransformerInterface::TransformerType::kInclusionProjection};
     }
     return std::pair{BSONObj{}, false};
@@ -1051,7 +1053,7 @@ DocumentSourceInternalUnpackBucket::pushDownComputedMetaProjection(
         return boost::none;
     }
 
-    if (auto transformType = nextTransform->getType();
+    if (auto transformType = nextTransform->getTransformerType();
         (transformType != TransformerInterface::TransformerType::kInclusionProjection &&
          transformType != TransformerInterface::TransformerType::kComputedProjection)) {
         return boost::none;
@@ -1201,11 +1203,18 @@ BucketSpec::BucketPredicate DocumentSourceInternalUnpackBucket::createPredicates
         _fixedBuckets);
 }
 
+bool DocumentSourceInternalUnpackBucket::generateBucketLevelIdPredicates(
+    MatchExpression* matchExpr) const {
+    return BucketSpec::generateBucketLevelIdPredicates(
+        *pExpCtx, _bucketUnpacker.bucketSpec(), _bucketMaxSpanSeconds, matchExpr);
+}
+
 std::pair<BSONObj, bool> DocumentSourceInternalUnpackBucket::extractProjectForPushDown(
     DocumentSource* src) const {
     if (auto nextProject = dynamic_cast<DocumentSourceSingleDocumentTransformation*>(src);
         _bucketUnpacker.bucketSpec().metaField() && nextProject &&
-        nextProject->getType() == TransformerInterface::TransformerType::kExclusionProjection) {
+        nextProject->getTransformerType() ==
+            TransformerInterface::TransformerType::kExclusionProjection) {
         return nextProject->extractProjectOnFieldAndRename(
             _bucketUnpacker.bucketSpec().metaField().value(), timeseries::kBucketMetaFieldName);
     }
@@ -1741,6 +1750,30 @@ Pipeline::SourceContainer::iterator DocumentSourceInternalUnpackBucket::doOptimi
 
     // See ../query/timeseries/README.md for a description of all the rewrites implemented in this
     // function.
+
+    if (itr != container->begin() && _checkIfNeedsIdPredicates.value_or(true)) {
+        // If we were able to push a $match stage before this unpack stage, see if the predicates
+        // are on control.(min|max).<timeField>, we may be able to augment them with a predicate on
+        // _id as well, if there are no extended range values.
+        //
+        // Note that this transformation cannot apply on mongos, because the presence of extended
+        // range values is not known there. See SERVER-73641.
+        //
+        // Unlike other rewrites for this stage, this rewrite affects a $match stage that is
+        // *before* the unpack stage. So we need to apply this rewrite first, before the others,
+        // which might cause us to return early.
+        if (auto prevMatch = dynamic_cast<DocumentSourceMatch*>(std::prev(itr)->get());
+            prevMatch && !pExpCtx->inMongos && !_bucketUnpacker.bucketSpec().usesExtendedRange()) {
+            MatchExpression* matchExpr = prevMatch->getMatchExpression();
+            bool updated = generateBucketLevelIdPredicates(matchExpr);
+            if (updated) {
+                BSONObj predObj = matchExpr->serialize();
+                prevMatch->rebuild(predObj);
+            }
+            _checkIfNeedsIdPredicates = false;
+        }
+    }
+
     if (std::next(itr) == container->end()) {
         return container->end();
     }
@@ -1964,6 +1997,10 @@ Pipeline::SourceContainer::iterator DocumentSourceInternalUnpackBucket::doOptimi
         if (predicates.loosePredicate) {
             container->insert(
                 itr, DocumentSourceMatch::create(predicates.loosePredicate->serialize(), pExpCtx));
+
+            // If we generated predicates on the control block's min or max of the time field we may
+            // be able to also generate predicates on _id.
+            _checkIfNeedsIdPredicates = true;
 
             // Give other stages a chance to optimize with the new $match.
             return std::prev(itr) == container->begin() ? std::prev(itr)

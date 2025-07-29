@@ -216,7 +216,8 @@ DocumentSourceMerge::DocumentSourceMerge(NamespaceString outputNs,
                                          boost::optional<BSONObj> letVariables,
                                          boost::optional<std::vector<BSONObj>> pipeline,
                                          std::set<FieldPath> mergeOnFields,
-                                         boost::optional<ChunkVersion> collectionPlacementVersion)
+                                         boost::optional<ChunkVersion> collectionPlacementVersion,
+                                         bool allowMergeOnNullishValues)
     : DocumentSourceWriter(kStageName.rawData(), std::move(outputNs), expCtx),
       _mergeOnFields(std::move(mergeOnFields)),
       _mergeOnFieldsIncludesId(_mergeOnFields.count("_id") == 1) {
@@ -225,7 +226,8 @@ DocumentSourceMerge::DocumentSourceMerge(NamespaceString outputNs,
                             whenNotMatched,
                             std::move(letVariables),
                             std::move(pipeline),
-                            std::move(collectionPlacementVersion));
+                            std::move(collectionPlacementVersion),
+                            allowMergeOnNullishValues);
 }
 
 boost::intrusive_ptr<DocumentSource> DocumentSourceMerge::create(
@@ -236,7 +238,8 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceMerge::create(
     boost::optional<BSONObj> letVariables,
     boost::optional<std::vector<BSONObj>> pipeline,
     std::set<FieldPath> mergeOnFields,
-    boost::optional<ChunkVersion> collectionPlacementVersion) {
+    boost::optional<ChunkVersion> collectionPlacementVersion,
+    bool allowMergeOnNullishValues) {
     uassert(51189,
             "Combination of {} modes 'whenMatched: {}' and 'whenNotMatched: {}' "
             "is not supported"_format(kStageName,
@@ -290,7 +293,8 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceMerge::create(
                                    std::move(letVariables),
                                    std::move(pipeline),
                                    std::move(mergeOnFields),
-                                   std::move(collectionPlacementVersion));
+                                   std::move(collectionPlacementVersion),
+                                   allowMergeOnNullishValues);
 }
 
 boost::intrusive_ptr<DocumentSource> DocumentSourceMerge::createFromBson(
@@ -307,10 +311,17 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceMerge::createFromBson(
     auto whenNotMatched = mergeSpec.getWhenNotMatched().value_or(kDefaultWhenNotMatched);
     auto pipeline = mergeSpec.getWhenMatched() ? mergeSpec.getWhenMatched()->pipeline : boost::none;
     auto fieldPaths = convertToFieldPaths(mergeSpec.getOn());
-    auto [mergeOnFields, collectionPlacementVersion] =
+    auto [mergeOnFields, collectionPlacementVersion, supportingUniqueIndex] =
         expCtx->mongoProcessInterface->ensureFieldsUniqueOrResolveDocumentKey(
             expCtx, std::move(fieldPaths), mergeSpec.getTargetCollectionVersion(), targetNss);
 
+    bool allowMergeOnNullishValues = false;
+    if (feature_flags::gFeatureFlagAllowMergeOnNullishValues
+            .isEnabledUseLastLTSFCVWhenUninitialized(
+                serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
+        allowMergeOnNullishValues = mergeSpec.getAllowMergeOnNullishValues().value_or(
+            supportingUniqueIndex == MongoProcessInterface::SupportingUniqueIndex::Full);
+    }
     return DocumentSourceMerge::create(std::move(targetNss),
                                        expCtx,
                                        whenMatched,
@@ -318,7 +329,8 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceMerge::createFromBson(
                                        mergeSpec.getLet(),
                                        std::move(pipeline),
                                        std::move(mergeOnFields),
-                                       collectionPlacementVersion);
+                                       collectionPlacementVersion,
+                                       allowMergeOnNullishValues);
 }
 
 StageConstraints DocumentSourceMerge::constraints(Pipeline::SplitState pipeState) const {
@@ -345,13 +357,14 @@ Value DocumentSourceMerge::serialize(const SerializationOptions& opts) const {
     spec.setTargetNss(getOutputNs());
     const auto& letVariables = _mergeProcessor->getLetVariables();
     spec.setLet([&]() -> boost::optional<BSONObj> {
-        if (!letVariables) {
+        if (letVariables.empty()) {
             return boost::none;
         }
 
         BSONObjBuilder bob;
-        for (auto&& [name, expr] : *letVariables) {
-            bob << opts.serializeFieldPathFromString(name) << expr->serialize(opts);
+        for (const auto& letVar : letVariables) {
+            bob << opts.serializeFieldPathFromString(letVar.name)
+                << letVar.expression->serialize(opts);
         }
         return bob.obj();
     }());
@@ -366,8 +379,8 @@ Value DocumentSourceMerge::serialize(const SerializationOptions& opts) const {
             auto expCtxWithLetVariables = pExpCtx->copyWith(getOutputNs());
             if (spec.getLet()) {
                 BSONObjBuilder cleanLetSpecBuilder;
-                for (auto&& [name, expr] : *letVariables) {
-                    cleanLetSpecBuilder.append(name, BSONObj{});
+                for (const auto& letVar : letVariables) {
+                    cleanLetSpecBuilder.append(letVar.name, BSONObj{});
                 }
                 expCtxWithLetVariables->variables.seedVariablesWithLetParameters(
                     expCtxWithLetVariables.get(), cleanLetSpecBuilder.obj());
@@ -382,7 +395,16 @@ Value DocumentSourceMerge::serialize(const SerializationOptions& opts) const {
         }
         return mergeOnFields;
     }());
-    spec.setTargetCollectionVersion(_mergeProcessor->getCollectionPlacementVersion());
+    // Do not serialize 'targetCollectionVersion' and 'allowMergeOnNullishValues attribute as it is
+    // not part of the query shape.
+    if (opts.literalPolicy == LiteralSerializationPolicy::kUnchanged) {
+        spec.setTargetCollectionVersion(_mergeProcessor->getCollectionPlacementVersion());
+        if (feature_flags::gFeatureFlagAllowMergeOnNullishValues
+                .isEnabledUseLastLTSFCVWhenUninitialized(
+                    serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
+            spec.setAllowMergeOnNullishValues(_mergeProcessor->getAllowMergeOnNullishValues());
+        }
+    }
     return Value(Document{{getSourceName(), spec.toBSON(opts)}});
 }
 

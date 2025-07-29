@@ -87,6 +87,7 @@
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/pipeline/query_request_conversion.h"
 #include "mongo/db/pipeline/variables.h"
+#include "mongo/db/profile_settings.h"
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/db/query/collation/collator_interface.h"
@@ -446,12 +447,12 @@ public:
             // TODO SERVER-79175: Make nicer. We need to instantiate the AutoStatsTracker before the
             // acquisition in case it would throw so we can ensure data is written to the profile
             // collection that some test may rely on.
-            AutoStatsTracker tracker{
-                opCtx,
-                _ns,
-                Top::LockType::ReadLocked,
-                AutoStatsTracker::LogMode::kUpdateTopAndCurOp,
-                CollectionCatalog::get(opCtx)->getDatabaseProfileLevel(_ns.dbName())};
+            AutoStatsTracker tracker{opCtx,
+                                     _ns,
+                                     Top::LockType::ReadLocked,
+                                     AutoStatsTracker::LogMode::kUpdateTopAndCurOp,
+                                     DatabaseProfileSettings::get(opCtx->getServiceContext())
+                                         .getDatabaseProfileLevel(_ns.dbName())};
 
             const auto acquisitionRequest = CollectionOrViewAcquisitionRequest::fromOpCtx(
                 opCtx, _ns, AcquisitionPrerequisites::kRead);
@@ -506,8 +507,6 @@ public:
                 curOp->debug().queryStatsInfo.disableForSubqueryExecution = true;
                 return runFindOnView(opCtx, *cq, verbosity, replyBuilder);
             }
-
-            cq->setUseCqfIfEligible(true);
 
             // Get the execution plan for the query.
             const auto& collection = collectionOrView->getCollection();
@@ -692,7 +691,8 @@ public:
             auto setProfileLevelOnError = ScopeGuard([&] {
                 if (nssOrUUID.isNamespaceString()) {
                     CurOp::get(opCtx)->raiseDbProfileLevel(
-                        CollectionCatalog::get(opCtx)->getDatabaseProfileLevel(nssOrUUID.dbName()));
+                        DatabaseProfileSettings::get(opCtx->getServiceContext())
+                            .getDatabaseProfileLevel(nssOrUUID.dbName()));
                 }
             });
 
@@ -703,7 +703,8 @@ public:
             // It is cheaper to raise the profiling level here, now that a CollectionCatalog
             // snapshot is stashed on the OpCtx.
             CurOp::get(opCtx)->raiseDbProfileLevel(
-                CollectionCatalog::get(opCtx)->getDatabaseProfileLevel(nss.dbName()));
+                DatabaseProfileSettings::get(opCtx->getServiceContext())
+                    .getDatabaseProfileLevel(nss.dbName()));
             setProfileLevelOnError.dismiss();
 
             if (!tracker) {
@@ -804,8 +805,6 @@ public:
                 // execution to assume read data will not be needed again and need not be cached.
                 shard_role_details::getRecoveryUnit(opCtx)->setReadOnce(true);
             }
-
-            cq->setUseCqfIfEligible(true);
 
             // Get the execution plan for the query.
             auto exec = uassertStatusOK(getExecutorFind(opCtx,

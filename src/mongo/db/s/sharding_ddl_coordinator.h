@@ -238,7 +238,7 @@ private:
 
     virtual boost::optional<Status> getAbortReason() const;
 
-    Mutex _mutex = MONGO_MAKE_LATCH("ShardingDDLCoordinator::_mutex");
+    stdx::mutex _mutex;
     SharedPromise<void> _constructionCompletionPromise;
     SharedPromise<void> _completionPromise;
 
@@ -327,7 +327,7 @@ protected:
 
     const std::string _coordinatorName;
     const BSONObj _initialState;
-    mutable Mutex _docMutex = MONGO_MAKE_LATCH("ShardingDDLCoordinator::_docMutex");
+    mutable stdx::mutex _docMutex;
     StateDoc _doc;
 };
 
@@ -446,6 +446,8 @@ protected:
     /**
      * Advances and persists the `txnNumber` to ensure causality between requests, then returns the
      * updated operation session information (OSI).
+     * This modifies the _doc with a std::move, so any reference to members of the _doc will be
+     * invalidated after this call
      */
     OperationSessionInfo getNewSession(OperationContext* opCtx) {
         _updateSession(opCtx);

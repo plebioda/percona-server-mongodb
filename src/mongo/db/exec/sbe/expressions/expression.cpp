@@ -45,8 +45,9 @@
 #include "mongo/db/exec/sbe/util/print_options.h"
 #include "mongo/db/exec/sbe/values/arith_common.h"
 #include "mongo/db/exec/sbe/values/value_printer.h"
-#include "mongo/db/exec/sbe/vm/datetime.h"
-#include "mongo/db/exec/sbe/vm/label.h"
+#include "mongo/db/exec/sbe/vm/vm_datetime.h"
+#include "mongo/db/exec/sbe/vm/vm_instruction.h"
+#include "mongo/db/exec/sbe/vm/vm_types.h"
 #include "mongo/db/query/datetime/date_time_support.h"
 #include "mongo/stdx/unordered_map.h"
 #include "mongo/util/assert_util.h"
@@ -617,6 +618,7 @@ static stdx::unordered_map<std::string, BuiltinFn> kBuiltinFunctions = {
      BuiltinFn{[](size_t n) { return n == 3; }, vm::Builtin::newArrayFromRange, false}},
     {"newObj", BuiltinFn{[](size_t n) { return n % 2 == 0; }, vm::Builtin::newObj, false}},
     {"newBsonObj", BuiltinFn{[](size_t n) { return n % 2 == 0; }, vm::Builtin::newBsonObj, false}},
+    {"makeObj", BuiltinFn{[](size_t n) { return n >= 2; }, vm::Builtin::makeObj, false}},
     {"makeBsonObj", BuiltinFn{[](size_t n) { return n >= 2; }, vm::Builtin::makeBsonObj, false}},
     {"ksToString", BuiltinFn{[](size_t n) { return n == 1; }, vm::Builtin::ksToString, false}},
     {"ks",
@@ -1255,6 +1257,7 @@ vm::CodeFragment generateTraverseCellTypes(CompileCtx& ctx,
  * The map of functions that resolve directly to instructions.
  */
 static stdx::unordered_map<std::string, InstrFn> kInstrFunctions = {
+    {"makeOwn", InstrFn{1, generator<1, &vm::CodeFragment::appendMakeOwn>, false}},
     {"getElement", InstrFn{2, generator<2, &vm::CodeFragment::appendGetElement>, false}},
     {"getField", InstrFn{2, generateGetField, false}},
     {"getArraySize", InstrFn{1, generator<1, &vm::CodeFragment::appendGetArraySize>, false}},

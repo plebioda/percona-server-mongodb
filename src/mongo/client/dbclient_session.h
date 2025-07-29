@@ -124,7 +124,7 @@ public:
      */
     virtual void connect(const HostAndPort& server,
                          StringData applicationName,
-                         boost::optional<TransientSSLParams> transientSSLParams);
+                         const boost::optional<TransientSSLParams>& transientSSLParams);
 
     /**
      * This version of connect does not run "hello" after establishing a transport::Session with the
@@ -134,7 +134,7 @@ public:
      * @param server The server to connect to.
      */
     void connectNoHello(const HostAndPort& server,
-                        boost::optional<TransientSSLParams> transientSSLParams);
+                        const boost::optional<TransientSSLParams>& transientSSLParams);
     /**
      * @return true if this client is currently known to be in a failed state.  When
      * autoreconnect is on, the client will transition back to an ok state after reconnecting.
@@ -275,8 +275,7 @@ protected:
     // rebind the handle from the owning thread. The thread that owns this DBClientSession is
     // allowed to use the _session without locking the mutex. This mutex also guards writes to
     // _stayFailed, although reads are allowed outside the mutex.
-    Mutex _sessionMutex =
-        MONGO_MAKE_LATCH(HierarchicalAcquisitionLevel(0), "DBClientSession::_sessionMutex");
+    stdx::mutex _sessionMutex;
     std::shared_ptr<transport::Session> _session;
     boost::optional<Milliseconds> _socketTimeout;
     uint64_t _sessionCreationTimeMicros = INVALID_SOCK_CREATION_TIME;
@@ -296,7 +295,7 @@ private:
         const HostAndPort& host,
         transport::ConnectSSLMode sslMode,
         Milliseconds timeout,
-        boost::optional<TransientSSLParams> transientSSLParams = boost::none) = 0;
+        const boost::optional<TransientSSLParams>& transientSSLParams = boost::none) = 0;
     virtual void _reconnectSession() = 0;
     virtual void _killSession() = 0;
 

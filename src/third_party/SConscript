@@ -66,7 +66,6 @@ thirdPartyEnvironmentModifications = {
     },
 }
 
-
 def injectMozJS(thisEnv):
     thisEnv.InjectThirdParty(libraries=['mozjs'])
 
@@ -91,7 +90,6 @@ def injectMozJS(thisEnv):
             'JS_DEBUG',
             'JS_GC_ZEAL'
         ])
-
 
 env.AddMethod(injectMozJS, 'InjectMozJS')
 
@@ -364,7 +362,6 @@ env.AddMethod(shim_library, 'ShimLibrary')
 
 if jsEngine:
     mozjsEnv = env.Clone()
-    mozjsEnv.SConscript('mozjs/SConscript', must_exist=1, exports={'env': mozjsEnv})
 
 wiredtigerEnv = env.Clone()
 if wiredtiger:

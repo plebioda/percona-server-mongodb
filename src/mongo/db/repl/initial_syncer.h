@@ -79,10 +79,6 @@
 namespace mongo {
 namespace repl {
 
-// TODO: Remove forward declares once we remove rs_initialsync.cpp and other dependents.
-// Failpoint which fails initial sync and leaves an oplog entry in the buffer.
-extern FailPoint failInitSyncWithBufferedEntriesLeft;
-
 // Failpoint which causes the initial sync function to hang before copying databases.
 extern FailPoint initialSyncHangBeforeCopyingDatabases;
 
@@ -644,7 +640,7 @@ private:
     // (MX) Must hold _mutex and be in a callback in _exec to write; must either hold
     //      _mutex or be in a callback in _exec to read.
 
-    mutable Mutex _mutex = MONGO_MAKE_LATCH("InitialSyncer::_mutex");           // (S)
+    mutable stdx::mutex _mutex;                                                 // (S)
     const InitialSyncerInterface::Options _opts;                                // (R)
     std::unique_ptr<DataReplicatorExternalState> _dataReplicatorExternalState;  // (R)
     std::shared_ptr<executor::TaskExecutor> _exec;                              // (R)

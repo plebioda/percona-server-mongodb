@@ -79,6 +79,7 @@
 #include "mongo/db/logical_time_validator.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/process_health/fault_manager.h"
+#include "mongo/db/profile_filter_impl.h"
 #include "mongo/db/query/query_settings/query_settings_manager.h"
 #include "mongo/db/read_write_concern_defaults.h"
 #include "mongo/db/server_options.h"
@@ -160,7 +161,6 @@
 #include "mongo/util/fail_point.h"
 #include "mongo/util/fast_clock_source_factory.h"
 #include "mongo/util/future.h"
-#include "mongo/util/latch_analyzer.h"
 #include "mongo/util/net/hostandport.h"
 #include "mongo/util/net/ocsp/ocsp_manager.h"
 #include "mongo/util/net/private/ssl_expiration.h"
@@ -577,9 +577,6 @@ void cleanupTask(const ShutdownTaskArgs& shutdownArgs) {
 
     audit::logShutdown(Client::getCurrent());
 
-#ifndef MONGO_CONFIG_USE_RAW_LATCHES
-    LatchAnalyzer::get(serviceContext).dump();
-#endif
 
 #ifdef MONGO_CONFIG_SSL
     {
@@ -804,6 +801,8 @@ ExitCode runMongosServer(ServiceContext* serviceContext) {
     }
     CertificateExpirationMonitor::get()->start(serviceContext);
 #endif
+
+    ProfileFilterImpl::initializeDefaults(serviceContext);
 
     serviceContext->getService(ClusterRole::RouterServer)
         ->setServiceEntryPoint(std::make_unique<ServiceEntryPointRouterRole>());

@@ -58,6 +58,7 @@
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/framework.h"
 #include "mongo/unittest/integration_test.h"
+#include "mongo/unittest/log_test.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/future.h"
 #include "mongo/util/scopeguard.h"
@@ -102,6 +103,13 @@ public:
     }
 
     std::shared_ptr<ThreadPoolTaskExecutor> _executor;
+
+private:
+    unittest::MinimumLoggedSeverityGuard networkSeverityGuard{
+        logv2::LogComponent::kNetwork,
+        logv2::LogSeverity::Debug(NetworkInterface::kDiagnosticLogLevel)};
+    unittest::MinimumLoggedSeverityGuard executorSeverityGuard{logv2::LogComponent::kExecutor,
+                                                               logv2::LogSeverity::Debug(3)};
 };
 
 class RequestHandlerUtil {
@@ -131,7 +139,7 @@ private:
     // counter of how many successful and failed responses were received.
     responseOutcomeCount _responseOutcomeCount;
 
-    Mutex _mutex = MONGO_MAKE_LATCH("ExhaustRequestHandlerUtil::_mutex");
+    stdx::mutex _mutex;
     stdx::condition_variable _cv;
 
     // called when a server sends a new isMaster exhaust response. Updates _responseOutcomeCount

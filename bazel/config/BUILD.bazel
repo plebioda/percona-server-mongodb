@@ -30,6 +30,7 @@ load(
     "pgo_profile",
     "release",
     "separate_debug",
+    "server_js",
     "shared_archive",
     "spider_monkey_dbg",
     "ssl",
@@ -37,7 +38,6 @@ load(
     "thin_lto",
     "tsan",
     "ubsan",
-    "use_diagnostic_latches",
     "use_disable_ref_track",
     "use_gdbserver",
     "use_glibcxx_debug",
@@ -703,8 +703,6 @@ config_setting(
 # Spider Monkey Debug options
 # --------------------------------------
 
-# TODO(SERVER-82800): use this flag to enable/disable SpiderMonkey debug mode in mozjs when mozjs
-# is ported over to bazel.
 spider_monkey_dbg(
     name = "spider_monkey_dbg",
     build_setting_default = False,
@@ -1396,29 +1394,6 @@ config_setting(
 )
 
 # --------------------------------------
-# use_diagnostic_latches options
-# --------------------------------------
-
-use_diagnostic_latches(
-    name = "use_diagnostic_latches",
-    build_setting_default = True,
-)
-
-config_setting(
-    name = "use_diagnostic_latches_enabled",
-    flag_values = {
-        "//bazel/config:use_diagnostic_latches": "True",
-    },
-)
-
-config_setting(
-    name = "use_diagnostic_latches_disabled",
-    flag_values = {
-        "//bazel/config:use_diagnostic_latches": "False",
-    },
-)
-
-# --------------------------------------
 # use_tracing_profiler options
 # --------------------------------------
 
@@ -2065,5 +2040,103 @@ config_setting(
     name = "js_engine_none",
     flag_values = {
         "//bazel/config:js_engine": "none",
+    },
+)
+
+# --------------------------------------
+# enterprise_features options
+# --------------------------------------
+
+ALL_ENTERPRISE_FEATURES = [
+    "audit",
+    "encryptdb",
+    "fcbis",
+    "fips",
+    "fle",
+    "hot_backups",
+    "inmemory",
+    "kerberos",
+    "ldap",
+    "live_import",
+    "magic_restore",
+    "mongohouse",
+    "queryable",
+    "sasl",
+    "streams",
+]
+
+[
+    bool_flag(
+        name = "enterprise_feature_" + feature,
+        build_setting_default = False,
+    )
+    for feature in ALL_ENTERPRISE_FEATURES
+]
+
+[
+    config_setting(
+        name = "_enterprise_feature_" + feature + "_enabled",
+        flag_values = {
+            "//bazel/config:enterprise_feature_" + feature: "True",
+        },
+    )
+    for feature in ALL_ENTERPRISE_FEATURES
+]
+
+[
+    selects.config_setting_group(
+        name = "_enterprise_feature_" + feature + "_and_enterprise_build_enabled",
+        match_all = [
+            ":_enterprise_feature_" + feature + "_enabled",
+            ":build_enterprise_enabled",
+        ],
+    )
+    for feature in ALL_ENTERPRISE_FEATURES
+]
+
+bool_flag(
+    name = "enterprise_feature_all",
+    build_setting_default = True,
+)
+
+config_setting(
+    name = "_enterprise_feature_all_enabled",
+    flag_values = {
+        "//bazel/config:enterprise_feature_all": "True",
+    },
+)
+
+selects.config_setting_group(
+    name = "enterprise_feature_all_enabled",
+    match_all = [
+        ":_enterprise_feature_all_enabled",
+        ":build_enterprise_enabled",
+    ],
+)
+
+[
+    selects.config_setting_group(
+        name = "enterprise_feature_" + feature + "_enabled",
+        match_any = [
+            ":_enterprise_feature_" + feature + "_and_enterprise_build_enabled",
+            ":enterprise_feature_all_enabled",
+        ],
+    )
+    for feature in ALL_ENTERPRISE_FEATURES
+]
+
+# --------------------------------------
+# server_js
+# --------------------------------------
+
+server_js(
+    name = "server_js",
+    build_setting_default = True,
+)
+
+config_setting(
+    name = "server_js_enabled",
+    flag_values = {
+        "//bazel/config:server_js": "True",
     },
 )

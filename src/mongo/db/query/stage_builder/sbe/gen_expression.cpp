@@ -58,7 +58,7 @@
 #include "mongo/db/exec/sbe/util/pcre.h"
 #include "mongo/db/exec/sbe/values/arith_common.h"
 #include "mongo/db/exec/sbe/values/value.h"
-#include "mongo/db/exec/sbe/vm/datetime.h"
+#include "mongo/db/exec/sbe/vm/vm_datetime.h"
 #include "mongo/db/pipeline/accumulator.h"
 #include "mongo/db/pipeline/accumulator_multi.h"
 #include "mongo/db/pipeline/accumulator_percentile.h"
@@ -4623,7 +4623,7 @@ SbExpr generateExpressionFieldPath(StageBuilderState& state,
                                   << "' (id=" << varId << ") is not available",
                     slot.has_value());
 
-            inputExpr = SbExpr{*slot};
+            inputExpr = SbExpr{SbSlot{*slot}};
         }
     } else {
         if (environment) {
@@ -4634,7 +4634,7 @@ SbExpr generateExpressionFieldPath(StageBuilderState& state,
         }
 
         if (!inputExpr) {
-            inputExpr = state.getGlobalVariableSlot(varId);
+            inputExpr = SbSlot{state.getGlobalVariableSlot(varId)};
         }
     }
 

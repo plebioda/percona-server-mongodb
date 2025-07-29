@@ -4,6 +4,10 @@ BUILD files in the "src/" subtree.
 
 load("@poetry//:dependencies.bzl", "dependency")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@com_github_grpc_grpc//bazel:generate_cc.bzl", "generate_cc")
+load("@com_github_grpc_grpc//bazel:protobuf.bzl", "well_known_proto_libs")
+load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain")
 load(
     "//bazel:header_deps.bzl",
     "HEADER_DEP_SUFFIX",
@@ -396,6 +400,17 @@ BOOST_DEFINES = [
     "//conditions:default": [],
 })
 
+ENTERPRISE_DEFINES = select({
+    "//bazel/config:build_enterprise_enabled": ["MONGO_ENTERPRISE_VERSION=1"],
+    "//conditions:default": [],
+}) + select({
+    "//bazel/config:enterprise_feature_audit_enabled": ["MONGO_ENTERPRISE_AUDIT=1"],
+    "//conditions:default": [],
+}) + select({
+    "//bazel/config:enterprise_feature_encryptdb_enabled": ["MONGO_ENTERPRISE_ENCRYPTDB=1"],
+    "//conditions:default": [],
+})
+
 # Fortify only possibly makes sense on POSIX systems, and we know that clang is
 # not a valid combination:
 # http://lists.llvm.org/pipermail/cfe-dev/2015-November/045852.html
@@ -539,6 +554,12 @@ GCC_WARNINGS_COPTS = select({
         # Disable warning about variables that may not be initialized
         # Failures are triggered in the case of boost::optional
         "-Wno-maybe-uninitialized",
+
+        # Prevents warning about unused but set variables found in boost version
+        # 1.49 in boost/date_time/format_date_parser.hpp which does not work for
+        # compilers GCC >= 4.6. Error explained in
+        # https://svn.boost.org/trac/boost/ticket/6136 .
+        "-Wno-unused-but-set-variable",
     ],
     "//conditions:default": [],
 })
@@ -1200,7 +1221,8 @@ MONGO_GLOBAL_DEFINES = (
     BOOST_DEFINES +
     ABSEIL_DEFINES +
     PCRE2_DEFINES +
-    SAFEINT_DEFINES
+    SAFEINT_DEFINES +
+    ENTERPRISE_DEFINES
 )
 
 MONGO_GLOBAL_COPTS = (
@@ -1274,17 +1296,6 @@ def force_includes_copt(package_name, name):
             "//conditions:default": ["-include", basic_h],
         })
 
-    if package_name.startswith("src/third_party/mozjs"):
-        return select({
-            "//bazel/config:linux_aarch64": ["-include", "third_party/mozjs/platform/aarch64/linux/build/js-confdefs.h"],
-            "//bazel/config:linux_ppc64le": ["-include", "third_party/mozjs/platform/ppc64le/linux/build/js-confdefs.h"],
-            "//bazel/config:linux_s390x": ["-include", "third_party/mozjs/platform/s390x/linux/build/js-confdefs.h"],
-            "//bazel/config:linux_x86_64": ["-include", "third_party/mozjs/platform/x86_64/linux/build/js-confdefs.h"],
-            "//bazel/config:macos_aarch64": ["-include", "third_party/mozjs/platform/aarch64/macOS/build/js-confdefs.h"],
-            "//bazel/config:macos_x86_64": ["-include", "third_party/mozjs/platform/x86_64/macOS/build/js-confdefs.h"],
-            "//bazel/config:windows_x86_64": ["/FI", "third_party/mozjs/platform/x86_64/windows/build/js-confdefs.h"],
-        })
-
     if name in ["scripting", "scripting_mozjs_test", "encrypted_dbclient"]:
         return select({
             "//bazel/config:linux_aarch64": ["-include", "third_party/mozjs/platform/aarch64/linux/build/js-config.h"],
@@ -1306,17 +1317,6 @@ def force_includes_hdr(package_name, name):
                 "//src/mongo/platform:windows_basic.h",
             ],
             "//conditions:default": ["//src/mongo/platform:basic.h"],
-        })
-
-    if package_name.startswith("src/third_party/mozjs"):
-        return select({
-            "//bazel/config:linux_aarch64": ["//src/third_party/mozjs:platform/aarch64/linux/build/js-confdefs.h"],
-            "//bazel/config:linux_ppc64le": ["//src/third_party/mozjs:platform/ppc64le/linux/build/js-confdefs.h"],
-            "//bazel/config:linux_s390x": ["//src/third_party/mozjs:platform/s390x/linux/build/js-confdefs.h"],
-            "//bazel/config:linux_x86_64": ["//src/third_party/mozjs:platform/x86_64/linux/build/js-confdefs.h"],
-            "//bazel/config:macos_aarch64": ["//src/third_party/mozjs:platform/aarch64/macOS/build/js-confdefs.h"],
-            "//bazel/config:macos_x86_64": ["//src/third_party/mozjs:platform/x86_64/macOS/build/js-confdefs.h"],
-            "//bazel/config:windows_x86_64": ["//src/third_party/mozjs:/platform/x86_64/windows/build/js-confdefs.h"],
         })
 
     if name in ["scripting", "scripting_mozjs_test", "encrypted_dbclient"]:
@@ -1348,7 +1348,9 @@ def mongo_cc_library(
         name,
         srcs = [],
         hdrs = [],
+        textual_hdrs = [],
         deps = [],
+        cc_deps = [],
         header_deps = [],
         testonly = False,
         visibility = None,
@@ -1372,7 +1374,10 @@ def mongo_cc_library(
       name: The name of the library the target is compiling.
       srcs: The source files to build.
       hdrs: The headers files of the target library.
+      textual_hdrs: Textual headers. Might be used to include cpp files without
+        compiling them.
       deps: The targets the library depends on.
+      cc_deps: Same as deps, but doesn't get added as shared library dep.
       header_deps: The targets the library depends on only for headers, omits
         linking.
       testonly: Whether or not the target is purely for tests.
@@ -1480,7 +1485,7 @@ def mongo_cc_library(
     create_link_deps(
         name = name + LINK_DEP_SUFFIX,
         target_name = name,
-        link_deps = [name] + deps,
+        link_deps = [name] + deps + cc_deps,
         tags = ["scons_link_lists"],
         target_compatible_with = target_compatible_with + enterprise_compatible,
     )
@@ -1490,7 +1495,8 @@ def mongo_cc_library(
         name = name + SHARED_ARCHIVE_SUFFIX,
         srcs = srcs + SANITIZER_DENYLIST_HEADERS,
         hdrs = hdrs + fincludes_hdr + MONGO_GLOBAL_ACCESSIBLE_HEADERS,
-        deps = deps + [name + HEADER_DEP_SUFFIX],
+        deps = deps + cc_deps + [name + HEADER_DEP_SUFFIX],
+        textual_hdrs = textual_hdrs,
         visibility = visibility,
         testonly = testonly,
         copts = MONGO_GLOBAL_COPTS + package_specific_copts + copts + fincludes_copt,
@@ -1512,7 +1518,8 @@ def mongo_cc_library(
         name = name + WITH_DEBUG_SUFFIX,
         srcs = srcs + SANITIZER_DENYLIST_HEADERS,
         hdrs = hdrs + fincludes_hdr + MONGO_GLOBAL_ACCESSIBLE_HEADERS,
-        deps = deps + [name + HEADER_DEP_SUFFIX],
+        deps = deps + cc_deps + [name + HEADER_DEP_SUFFIX],
+        textual_hdrs = textual_hdrs,
         visibility = visibility,
         testonly = testonly,
         copts = MONGO_GLOBAL_COPTS + package_specific_copts + copts + fincludes_copt,
@@ -1526,7 +1533,7 @@ def mongo_cc_library(
         features = MONGO_GLOBAL_FEATURES + select({
             "//bazel/config:linkstatic_disabled": ["supports_pic", "pic"],
             "//bazel/config:shared_archive_enabled": ["supports_pic", "pic"],
-            "//conditions:default": ["pie"],
+            "//conditions:default": ["-pic", "pie"],
         }) + features,
         target_compatible_with = target_compatible_with + enterprise_compatible,
         additional_linker_inputs = additional_linker_inputs + MONGO_GLOBAL_ADDITIONAL_LINKER_INPUTS,
@@ -1569,7 +1576,7 @@ def mongo_cc_library(
             "//conditions:default": None,
         }),
         visibility = visibility,
-        deps = deps + [name + HEADER_DEP_SUFFIX],
+        deps = deps + cc_deps + [name + HEADER_DEP_SUFFIX],
     )
 
 def _mongo_cc_binary_and_program(
@@ -1651,7 +1658,7 @@ def _mongo_cc_binary_and_program(
         "local_defines": MONGO_GLOBAL_DEFINES + local_defines,
         "defines": defines,
         "includes": includes,
-        "features": MONGO_GLOBAL_FEATURES + ["pie"] + features + select({
+        "features": MONGO_GLOBAL_FEATURES + ["-pic", "pie"] + features + select({
             "@platforms//os:windows": ["generate_pdb_file"],
             "//conditions:default": [],
         }),
@@ -1931,3 +1938,118 @@ symlink = rule(
         ),
     },
 )
+
+def strip_deps_impl(ctx):
+    cc_toolchain = find_cpp_toolchain(ctx)
+    feature_configuration = cc_common.configure_features(
+        ctx = ctx,
+        cc_toolchain = cc_toolchain,
+        requested_features = ctx.features,
+        unsupported_features = ctx.disabled_features,
+    )
+
+    linker_input = ctx.attr.input[CcInfo].linking_context.linker_inputs.to_list()[0]
+    linking_context = cc_common.create_linking_context(linker_inputs = depset(direct = [linker_input], transitive = []))
+
+    return [DefaultInfo(files = ctx.attr.input.files), CcInfo(
+        compilation_context = ctx.attr.input[CcInfo].compilation_context,
+        linking_context = linking_context,
+    )]
+
+strip_deps = rule(
+    strip_deps_impl,
+    attrs = {
+        "input": attr.label(
+            providers = [CcInfo],
+        ),
+    },
+    provides = [CcInfo],
+    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
+    fragments = ["cpp"],
+)
+
+def dummy_file_impl(ctx):
+    ctx.actions.write(
+        output = ctx.outputs.output,
+        content = "",
+    )
+
+    return [DefaultInfo(files = depset([ctx.outputs.output]))]
+
+dummy_file = rule(
+    dummy_file_impl,
+    attrs = {
+        "output": attr.output(
+            doc = "The output of this rule.",
+        ),
+    },
+)
+
+def mongo_proto_library(
+        name,
+        srcs,
+        **kwargs):
+    proto_library(
+        name = name,
+        srcs = srcs,
+        **kwargs
+    )
+
+    dummy_file(
+        name = name + "_dummy_debug_symbol",
+        output = "lib" + name + ".so.debug",
+    )
+
+def mongo_cc_proto_library(
+        name,
+        deps,
+        **kwargs):
+    native.cc_proto_library(
+        name = name,
+        deps = deps,
+        **kwargs
+    )
+
+    dummy_file(
+        name = name + "_dummy_debug_symbol",
+        output = "lib" + name + ".so.debug",
+    )
+
+def mongo_cc_grpc_library(
+        name,
+        srcs,
+        cc_proto,
+        deps = [],
+        grpc_only = True,
+        proto_only = False,
+        well_known_protos = False,
+        generate_mocks = False,
+        **kwargs):
+    codegen_grpc_target = "_" + name + "_grpc_codegen"
+    generate_cc(
+        name = codegen_grpc_target,
+        srcs = srcs,
+        plugin = "//src/third_party/grpc:grpc_cpp_plugin",
+        well_known_protos = well_known_protos,
+        generate_mocks = generate_mocks,
+        **kwargs
+    )
+
+    # cc_proto_library tacks on unnecessary link-time dependencies to
+    # @com_google_protobuf and @com_google_absl, forcefully remove them
+    # to avoid intefering with thin targets link line generation.
+    cc_proto_target = "_" + name + "_cc_proto_stripped_deps"
+    strip_deps(
+        name = cc_proto_target,
+        input = cc_proto,
+    )
+
+    mongo_cc_library(
+        name = name,
+        srcs = [":" + codegen_grpc_target],
+        hdrs = [":" + codegen_grpc_target],
+        deps = deps +
+               ["//src/third_party/grpc:grpc++_codegen_proto"],
+        cc_deps = [":" + cc_proto_target],
+        **kwargs
+    )

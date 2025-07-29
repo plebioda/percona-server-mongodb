@@ -34,6 +34,8 @@ wtEnv.Library(
         "wiredtiger_cursor_helpers.cpp",
         "wiredtiger_data_protector.cpp",
         "wiredtiger_encryption_hooks.cpp",
+        "wiredtiger_event_handler.cpp",
+        "wiredtiger_error_util.cpp",
         "wiredtiger_global_options.cpp",
         "wiredtiger_index.cpp",
         "wiredtiger_index_util.cpp",
@@ -187,6 +189,7 @@ wtEnv.CppUnitTest(
         "wiredtiger_session_cache_test.cpp",
         "wiredtiger_size_storer_test.cpp",
         "wiredtiger_util_test.cpp",
+        "wiredtiger_error_util_test.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/auth/authmocks",

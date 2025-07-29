@@ -135,7 +135,7 @@ public:
 
     void connect(const HostAndPort& host,
                  StringData applicationName,
-                 boost::optional<TransientSSLParams> transientSSLParams) override {
+                 const boost::optional<TransientSSLParams>& transientSSLParams) override {
         std::string errmsg;
         if (!connect(host.toString().c_str(), applicationName, errmsg)) {
             uasserted(ErrorCodes::HostUnreachable, errmsg);
@@ -215,7 +215,7 @@ private:
     uint64_t _sockCreationTime;
     boost::optional<OpMsgRequest> _lastCursorMessage;
 
-    Mutex _netMutex = MONGO_MAKE_LATCH("MockDBClientConnection");
+    stdx::mutex _netMutex;
 
     stdx::condition_variable _mockCallResponsesCV;
     Responses _mockCallResponses;

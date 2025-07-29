@@ -49,6 +49,7 @@
 #include "mongo/stdx/condition_variable.h"
 #include "mongo/transport/transport_layer.h"
 #include "mongo/unittest/framework.h"
+#include "mongo/unittest/log_test.h"
 #include "mongo/unittest/unittest.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/future.h"
@@ -151,13 +152,17 @@ private:
     void _onSchedulingCommand();
     void _onCompletingCommand();
 
+    unittest::MinimumLoggedSeverityGuard networkSeverityGuard{
+        logv2::LogComponent::kNetwork,
+        logv2::LogSeverity::Debug(NetworkInterface::kDiagnosticLogLevel)};
+
     std::unique_ptr<NetworkInterface> _fixtureNet;
     std::unique_ptr<NetworkInterface> _net;
     PseudoRandom* _rng = nullptr;
 
     size_t _workInProgress = 0;
     stdx::condition_variable _fixtureIsIdle;
-    mutable Mutex _mutex = MONGO_MAKE_LATCH("NetworkInterfaceIntegrationFixture::_mutex");
+    mutable stdx::mutex _mutex;
 };
 
 }  // namespace executor

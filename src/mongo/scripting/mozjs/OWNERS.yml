@@ -1,0 +1,10 @@
+version: 1.0.0
+filters:
+  - "*":
+    approvers:
+      - jseyster
+      - sroches
+      - banarun
+      - awagenmaker
+    metadata:
+      owning_team: 10gen/query-integration

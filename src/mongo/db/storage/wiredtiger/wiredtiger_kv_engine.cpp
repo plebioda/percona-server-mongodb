@@ -103,7 +103,6 @@
 #include "mongo/db/query/bson/dotted_path_support.h"
 #include "mongo/db/repl/member_state.h"
 #include "mongo/db/repl/repl_settings.h"
-#include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/server_parameter.h"
@@ -212,14 +211,6 @@ std::string extractIdentFromPath(const boost::filesystem::path& dbpath,
 }
 
 bool WiredTigerFileVersion::shouldDowngrade(bool hasRecoveryTimestamp) {
-    const auto replCoord = repl::ReplicationCoordinator::get(getGlobalServiceContext());
-    if (replCoord && replCoord->getMemberState().arbiter()) {
-        // SERVER-35361: Arbiters will no longer downgrade their data files. To downgrade
-        // binaries, the user must delete the dbpath. It's not particularly expensive for a
-        // replica set to re-initialize an arbiter that comes online.
-        return false;
-    }
-
     const auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
     if (!fcvSnapshot.isVersionInitialized()) {
         // If the FCV document hasn't been read, trust the WT compatibility. MongoD will
@@ -344,7 +335,7 @@ private:
     WiredTigerSessionCache* _sessionCache;
     AtomicWord<bool> _shuttingDown{false};
 
-    Mutex _mutex = MONGO_MAKE_LATCH("WiredTigerSessionSweeper::_mutex");  // protects _condvar
+    stdx::mutex _mutex;  // protects _condvar
     // The session sweeper thread idles on this condition variable for a particular time duration
     // between cleaning up expired sessions. It can be triggered early to expediate shutdown.
     stdx::condition_variable _condvar;
@@ -3057,13 +3048,7 @@ std::unique_ptr<RecordStore> WiredTigerKVEngine::getRecordStore(OperationContext
     ret = std::make_unique<WiredTigerRecordStore>(this, opCtx, params);
     ret->postConstructorInit(opCtx, nss);
 
-    // Sizes should always be checked when creating a collection during rollback or replication
-    // recovery. This is in case the size storer information is no longer accurate. This may be
-    // necessary if capped deletes are rolled-back, if rollback occurs across a collection rename,
-    // or when collection creation is not part of a stable checkpoint.
-    const auto replCoord = repl::ReplicationCoordinator::get(getGlobalServiceContext());
-    const bool inRollback = replCoord && replCoord->getMemberState().rollback();
-    if (inRollback || inReplicationRecovery(getGlobalServiceContext()).load()) {
+    if (sizeRecoveryState(opCtx->getServiceContext()).shouldRecordStoresAlwaysCheckSize()) {
         ret->checkSize(opCtx);
     }
 

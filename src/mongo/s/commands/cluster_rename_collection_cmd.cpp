@@ -27,8 +27,8 @@
  *    it in the license file.
  */
 
-
 #include <memory>
+#include <set>
 #include <string>
 #include <variant>
 
@@ -78,6 +78,10 @@ namespace {
 class RenameCollectionCmd final : public TypedCommand<RenameCollectionCmd> {
 public:
     using Request = RenameCollectionCommand;
+
+    const std::set<std::string>& apiVersions() const override {
+        return kApiVersions1;
+    }
 
     AllowedOnSecondary secondaryAllowed(ServiceContext*) const override {
         return AllowedOnSecondary::kNever;
@@ -164,11 +168,13 @@ public:
                 });
 
             generic_argument_util::setMajorityWriteConcern(renameCollRequest);
+            generic_argument_util::setDbVersionIfPresent(renameCollRequest, dbInfo->getVersion());
+
             auto cmdResponse = uassertStatusOK(shard->runCommandWithFixedRetryAttempts(
                 opCtx,
                 ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                 fromNss.dbName(),
-                appendDbVersionIfPresent(renameCollRequest.toBSON(), dbInfo->getVersion()),
+                renameCollRequest.toBSON(),
                 Shard::RetryPolicy::kNoRetry));
 
             uassertStatusOK(cmdResponse.commandStatus);

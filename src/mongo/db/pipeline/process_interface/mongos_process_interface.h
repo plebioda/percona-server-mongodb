@@ -310,9 +310,10 @@ public:
         MONGO_UNREACHABLE;
     }
 
-    bool fieldsHaveSupportingUniqueIndex(const boost::intrusive_ptr<ExpressionContext>&,
-                                         const NamespaceString&,
-                                         const std::set<FieldPath>& fieldPaths) const override;
+    SupportingUniqueIndex fieldsHaveSupportingUniqueIndex(
+        const boost::intrusive_ptr<ExpressionContext>&,
+        const NamespaceString&,
+        const std::set<FieldPath>& fieldPaths) const override;
 
     void checkRoutingInfoEpochOrThrow(const boost::intrusive_ptr<ExpressionContext>&,
                                       const NamespaceString&,
@@ -327,8 +328,7 @@ public:
         MONGO_UNREACHABLE;
     }
 
-    std::pair<std::set<FieldPath>, boost::optional<ChunkVersion>>
-    ensureFieldsUniqueOrResolveDocumentKey(
+    DocumentKeyResolutionMetadata ensureFieldsUniqueOrResolveDocumentKey(
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         boost::optional<std::set<FieldPath>> fieldPaths,
         boost::optional<ChunkVersion> targetCollectionPlacementVersion,
@@ -384,8 +384,7 @@ public:
 protected:
     BSONObj _reportCurrentOpForClient(const boost::intrusive_ptr<ExpressionContext>& expCtx,
                                       Client* client,
-                                      CurrentOpTruncateMode truncateOps,
-                                      CurrentOpBacktraceMode backtraceMode) const final;
+                                      CurrentOpTruncateMode truncateOps) const final;
 
     void _reportCurrentOpsForIdleSessions(OperationContext* opCtx,
                                           CurrentOpUserMode userMode,

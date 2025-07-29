@@ -116,8 +116,6 @@
 #include "mongo/db/query/internal_plans.h"
 #include "mongo/db/query/interval.h"
 #include "mongo/db/query/interval_evaluation_tree.h"
-#include "mongo/db/query/optimizer/defs.h"
-#include "mongo/db/query/optimizer/explain_interface.h"
 #include "mongo/db/query/plan_cache/classic_plan_cache.h"
 #include "mongo/db/query/plan_cache/plan_cache.h"
 #include "mongo/db/query/plan_cache/plan_cache_key_factory.h"
@@ -224,7 +222,7 @@ namespace {
  */
 struct PlanCacheInfo {
     boost::optional<uint32_t> planCacheKey;
-    boost::optional<uint32_t> queryHash;
+    boost::optional<uint32_t> planCacheShapeHash;
 };
 
 /**
@@ -233,8 +231,8 @@ struct PlanCacheInfo {
  */
 void setOpDebugPlanCacheInfo(OperationContext* opCtx, const PlanCacheInfo& cacheInfo) {
     OpDebug& opDebug = CurOp::get(opCtx)->debug();
-    if (!opDebug.queryHash && cacheInfo.queryHash) {
-        opDebug.queryHash = *cacheInfo.queryHash;
+    if (!opDebug.planCacheShapeHash && cacheInfo.planCacheShapeHash) {
+        opDebug.planCacheShapeHash = *cacheInfo.planCacheShapeHash;
     }
     if (!opDebug.planCacheKey && cacheInfo.planCacheKey) {
         opDebug.planCacheKey = *cacheInfo.planCacheKey;
@@ -472,7 +470,7 @@ public:
         }
 
         auto planCacheKey = buildPlanCacheKey();
-        getResult()->planCacheInfo().queryHash = planCacheKey.queryHash();
+        getResult()->planCacheInfo().planCacheShapeHash = planCacheKey.planCacheShapeHash();
         getResult()->planCacheInfo().planCacheKey = planCacheKey.planCacheKeyHash();
 
         // In each plan cache entry, we store the hash of the cached plan. We use this to indicate
@@ -507,7 +505,8 @@ public:
         }
 
         std::vector<std::unique_ptr<QuerySolution>> solutions;
-        if (planRankerMode.load()) {
+        if (_cq->getExpCtx()->getQueryKnobConfiguration().getPlanRankerMode() !=
+            QueryPlanRankerModeEnum::kMultiPlanning) {
             auto statusWithCBRSolns = QueryPlanner::planWithCostBasedRanking(*_cq, *_plannerParams);
             if (!statusWithCBRSolns.isOK()) {
                 return statusWithCBRSolns.getStatus();
@@ -914,8 +913,7 @@ public:
 
 private:
     sbe::PlanCacheKey buildPlanCacheKey() const override {
-        return plan_cache_key_factory::make(
-            *_cq, _collections, canonical_query_encoder::Optimizer::kSbeStageBuilders);
+        return plan_cache_key_factory::make(*_cq, _collections);
     }
 
     std::unique_ptr<SbeWithClassicRuntimePlanningResult> tryToBuildCachedPlanFromSbeCache(
@@ -1370,7 +1368,6 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getSearchMetada
                                        std::move(sbeYieldPolicy),
                                        false /* planIsFromCache */,
                                        boost::none /* cachedPlanHash */,
-                                       {} /* optCounterInfo */,
                                        std::move(remoteCursors));
 }
 

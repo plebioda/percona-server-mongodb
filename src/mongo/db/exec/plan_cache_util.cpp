@@ -193,8 +193,7 @@ void updateSbePlanCache(OperationContext* opCtx,
     auto isSensitive = CurOp::get(opCtx)->getShouldOmitDiagnosticInformation();
 
     uassertStatusOK(sbe::getPlanCache(opCtx).set(
-        plan_cache_key_factory::make(
-            query, collections, canonical_query_encoder::Optimizer::kSbeStageBuilders),
+        plan_cache_key_factory::make(query, collections),
         std::move(cachedPlan),
         nReads,
         opCtx->getServiceContext()->getPreciseClockSource()->now(),
@@ -257,8 +256,7 @@ void updateSbePlanCacheWithPinnedEntry(OperationContext* opCtx,
     const CollectionPtr& collection = collections.getMainCollection();
     if (collection && !query.isUncacheableSbe() && shouldCacheQuery(query) &&
         solution.isEligibleForPlanCache()) {
-        sbe::PlanCacheKey key = plan_cache_key_factory::make(
-            query, collections, canonical_query_encoder::Optimizer::kSbeStageBuilders);
+        sbe::PlanCacheKey key = plan_cache_key_factory::make(query, collections);
         // Store a copy of the root and corresponding data, as well as the hash of the QuerySolution
         // that led to this cache entry.
         auto plan = std::make_unique<sbe::CachedSbePlan>(
@@ -341,11 +339,6 @@ plan_cache_debug_info::DebugInfoSBE buildDebugInfo(const QuerySolution* solution
             case STAGE_IXSCAN: {
                 auto ixn = static_cast<const IndexScanNode*>(node);
                 debugInfo.mainStats.indexesUsed.push_back(ixn->index.identifier.catalogName);
-                break;
-            }
-            case STAGE_COLUMN_SCAN: {
-                auto cisn = static_cast<const ColumnIndexScanNode*>(node);
-                debugInfo.mainStats.indexesUsed.push_back(cisn->indexEntry.identifier.catalogName);
                 break;
             }
             case STAGE_TEXT_MATCH: {

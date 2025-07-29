@@ -266,15 +266,6 @@ public:
     }
 
     /**
-     * Get the name for a Latch
-     */
-    template <typename LatchT>
-    requires std::is_base_of_v<latch_detail::Latch, LatchT>
-    static StringData getLatchName(const stdx::unique_lock<LatchT>& lk) {
-        return lk.mutex()->getName();
-    }
-
-    /**
      * Get a placeholder name for an arbitrary type
      */
     template <typename LockT>
@@ -410,7 +401,7 @@ public:
      * Sleeps until "deadline"; throws an exception if the Interruptible is interrupted before then.
      */
     void sleepUntil(Date_t deadline) {
-        auto m = MONGO_MAKE_LATCH();
+        stdx::mutex m;
         stdx::condition_variable cv;
         stdx::unique_lock<Latch> lk(m);
         invariant(!waitForConditionOrInterruptUntil(cv, lk, deadline, [] { return false; }));
@@ -421,7 +412,7 @@ public:
      * then.
      */
     void sleepFor(Milliseconds duration) {
-        auto m = MONGO_MAKE_LATCH();
+        stdx::mutex m;
         stdx::condition_variable cv;
         stdx::unique_lock<Latch> lk(m);
         invariant(!waitForConditionOrInterruptFor(cv, lk, duration, [] { return false; }));

@@ -50,6 +50,7 @@
 #include "mongo/db/db_raii.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
+#include "mongo/db/profile_settings.h"
 #include "mongo/db/repl/member_state.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/server_feature_flags_gen.h"
@@ -59,7 +60,7 @@
 namespace mongo {
 
 namespace {
-static Mutex mutex = MONGO_MAKE_LATCH("CompactCmd::mutex");
+static stdx::mutex mutex;
 static absl::btree_set<UUID> compactsRunning;
 }  // namespace
 
@@ -175,12 +176,12 @@ public:
             compactsRunning.erase(uuid);
         });
 
-        AutoStatsTracker statsTracker(
-            opCtx,
-            collectionNss,
-            Top::LockType::NotLocked,
-            AutoStatsTracker::LogMode::kUpdateTopAndCurOp,
-            collectionCatalog->getDatabaseProfileLevel(collectionNss.dbName()));
+        AutoStatsTracker statsTracker(opCtx,
+                                      collectionNss,
+                                      Top::LockType::NotLocked,
+                                      AutoStatsTracker::LogMode::kUpdateTopAndCurOp,
+                                      DatabaseProfileSettings::get(opCtx->getServiceContext())
+                                          .getDatabaseProfileLevel(collectionNss.dbName()));
 
         CompactOptions options{.dryRun = params.getDryRun(),
                                .freeSpaceTargetMB = params.getFreeSpaceTargetMB()};

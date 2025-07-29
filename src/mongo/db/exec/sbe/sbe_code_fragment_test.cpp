@@ -36,9 +36,9 @@
 #include "mongo/db/exec/sbe/sbe_unittest.h"
 #include "mongo/db/exec/sbe/values/value.h"
 #include "mongo/db/exec/sbe/values/value_printer.h"
-#include "mongo/db/exec/sbe/vm/label.h"
 #include "mongo/db/exec/sbe/vm/vm.h"
 #include "mongo/db/exec/sbe/vm/vm_printer.h"
+#include "mongo/db/exec/sbe/vm/vm_types.h"
 #include "mongo/unittest/framework.h"
 #include "mongo/unittest/golden_test.h"
 
@@ -661,6 +661,42 @@ TEST_F(SBECodeFragmentTest, AppendLocalVal2) {
         code.appendLocalVal(frameId, 0, false);
         code.appendLocalVal(frameId, 1, false);
         code.appendSub({}, {});
+        code.removeFrame(frameId);
+
+        for (int i = 0; i < 3; i++) {
+            code.appendSwap();
+            code.appendPop();
+        }
+
+        runTest(code);
+    }
+}
+
+TEST_F(SBECodeFragmentTest, AppendMakeOwn) {
+    auto lhsValue = value::makeBigString("one not too short string");
+    value::ValueGuard lhsGuard(lhsValue);
+    auto rhsValue = value::makeBigString("another string");
+    value::ValueGuard rhsGuard(rhsValue);
+    FrameId frameId = 10;
+
+    {
+        printVariation("append code 1");
+
+        vm::CodeFragment code;
+        code.declareFrame(frameId);
+        // Create frame with 3 variables to make variable resolution less trivial.
+        code.appendConstVal(lhsValue.first, lhsValue.second);
+        code.appendConstVal(rhsValue.first, rhsValue.second);
+        code.appendConstVal(value::TypeTags::Nothing, 0);
+
+        vm::CodeFragment code2;
+        code2.appendLocalVal(frameId, 0, false);
+        code2.appendMakeOwn({});
+        code2.appendLocalVal(frameId, 1, false);
+        code2.appendMakeOwn({});
+        code2.appendFunction(vm::Builtin::concat, 2);
+
+        code.append(std::move(code2));
         code.removeFrame(frameId);
 
         for (int i = 0; i < 3; i++) {

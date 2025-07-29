@@ -186,8 +186,7 @@ private:
 
     // Serves as a source for the return value of getCacheGeneration(). Refer to this method for
     // more details.
-    Mutex _cacheGenerationMutex =
-        MONGO_MAKE_LATCH("AuthorizationManagerImpl::_cacheGenerationMutex");
+    stdx::mutex _cacheGenerationMutex;
     OID _cacheGeneration{OID::gen()};
 
     /**
@@ -208,8 +207,7 @@ private:
                              int unusedKey,
                              const ValueHandle& unusedCachedValue);
 
-        Mutex _mutex =
-            MONGO_MAKE_LATCH("AuthorizationManagerImpl::AuthSchemaVersionDistCache::_mutex");
+        stdx::mutex _mutex;
 
         AuthzManagerExternalState* const _externalState;
     } _authSchemaVersionCache;
@@ -235,7 +233,7 @@ private:
                              const UserRequest& userReq,
                              const SharedUserAcquisitionStats& userAcquisitionStats);
 
-        Mutex _mutex = MONGO_MAKE_LATCH("AuthorizationManagerImpl::UserDistCacheImpl::_mutex");
+        stdx::mutex _mutex;
 
         AuthSchemaVersionCache* const _authSchemaVersionCache;
 

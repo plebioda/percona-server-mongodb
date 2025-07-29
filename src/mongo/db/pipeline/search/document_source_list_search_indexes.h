@@ -96,6 +96,10 @@ public:
         return kStageName.rawData();
     }
 
+    DocumentSourceType getType() const override {
+        return DocumentSourceType::kListSearchIndexes;
+    }
+
     Value serialize(const SerializationOptions& opts = SerializationOptions{}) const final;
 
     void addVariableRefs(std::set<Variables::Id>* refs) const final {}
@@ -114,6 +118,9 @@ private:
 
     // Cache the collection UUID to avoid retrieving the collection UUID for each 'doGetNext' call.
     boost::optional<UUID> _collectionUUID;
+    // Cache the underlying source collection name, which is necessary for supporting running search
+    // queries on views, to avoid retrieving on each getNext.
+    boost::optional<NamespaceString> _resolvedNamespace;
 };
 
 }  // namespace mongo

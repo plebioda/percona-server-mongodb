@@ -1,5 +1,5 @@
 /**
- * Utility functions for mongot tests.
+ * Utility functions for mongotmock tests.
  */
 
 import {
@@ -375,29 +375,6 @@ export function getSearchStagesAndVerifyExplainOutput(
         explain: explainObject,
         verbosity: verbosity,
     });
-}
-
-/**
- * Checks that the explain object for a sharded search query contains the correct "metaPipeline" and
- * "protocolVersion". Checks 'sortSpec' if it's provided.
- * * @param {Object} result the results from running coll.explain().aggregate([[$search: ....],
- * ...])
- * @param {string} searchType ex. "$search", "$searchMeta"
- * @param {Object} metaPipeline
- * @param {NumberInt()} protocolVersion To check the value of the protocolVersion, the value
- *     returned from explain will be wrapped with NumberInt().
- * @param {Object} sortSpec
- */
-export function verifyShardsPartExplainOutput(
-    {result, searchType, metaPipeline, protocolVersion, sortSpec = null}) {
-    // Checks index 0 of 'shardsPart' since $search, $searchMeta need to come first in the pipeline
-    assert.eq(result.splitPipeline.shardsPart[0][searchType].mergingPipeline, metaPipeline);
-    assert.eq(
-        NumberInt(result.splitPipeline.shardsPart[0][searchType].metadataMergeProtocolVersion),
-        protocolVersion);
-    if (sortSpec != null) {
-        assert.eq(result.splitPipeline.shardsPart[0][searchType].sortSpec, sortSpec);
-    }
 }
 
 /**

@@ -284,31 +284,6 @@ void statsToBSON(const QuerySolutionNode* node,
             bob->append("scanDirection", toString(eln->scanDirection));
             break;
         }
-        case STAGE_COLUMN_SCAN: {
-            auto cisn = static_cast<const ColumnIndexScanNode*>(node);
-
-            {
-                BSONArrayBuilder fieldsBab{bob->subarrayStart("allFields")};
-                for (const auto& field : cisn->allFields) {
-                    fieldsBab.append(field);
-                }
-            }
-
-            if (!cisn->filtersByPath.empty()) {
-                BSONObjBuilder filtersBob(bob->subobjStart("filtersByPath"));
-                for (const auto& [path, matchExpr] : cisn->filtersByPath) {
-                    SerializationOptions opts;
-                    filtersBob.append(path, matchExpr->serialize(opts, false));
-                }
-            }
-
-            if (cisn->postAssemblyFilter) {
-                bob->append("residualPredicate", cisn->postAssemblyFilter->serialize());
-            }
-            bob->appendBool("extraFieldsPermitted", cisn->extraFieldsPermitted);
-
-            break;
-        }
         case STAGE_UNPACK_TS_BUCKET: {
             auto utsbn = static_cast<const UnpackTsBucketNode*>(node);
             {
@@ -537,9 +512,8 @@ PlanExplainerSBEBase::PlanExplainerSBEBase(
     bool isCachedPlan,
     boost::optional<size_t> cachedPlanHash,
     std::shared_ptr<const plan_cache_debug_info::DebugInfoSBE> debugInfo,
-    OptimizerCounterInfo optCounterInfo,
     RemoteExplainVector* remoteExplains)
-    : PlanExplainer{solution, boost::optional<OptimizerCounterInfo>(std::move(optCounterInfo))},
+    : PlanExplainer{solution},
       _root{root},
       _rootData{data},
       _isMultiPlan{isMultiPlan},
@@ -646,7 +620,6 @@ PlanExplainerSBE::PlanExplainerSBE(
     bool isCachedPlan,
     boost::optional<size_t> cachedPlanHash,
     std::shared_ptr<const plan_cache_debug_info::DebugInfoSBE> debugInfo,
-    OptimizerCounterInfo optCounterInfo,
     RemoteExplainVector* remoteExplains)
     : PlanExplainerSBEBase{root,
                            data,
@@ -655,7 +628,6 @@ PlanExplainerSBE::PlanExplainerSBE(
                            isCachedPlan,
                            cachedPlanHash,
                            std::move(debugInfo),
-                           std::move(optCounterInfo),
                            remoteExplains},
       _rejectedCandidates{std::move(rejectedCandidates)} {};
 
@@ -725,7 +697,6 @@ PlanExplainerClassicRuntimePlannerForSBE::PlanExplainerClassicRuntimePlannerForS
                            isCachedPlan,
                            cachedPlanHash,
                            std::move(debugInfo),
-                           {} /*optCounterInfo*/,
                            remoteExplains},
       _classicRuntimePlannerStage{std::move(classicRuntimePlannerStage)},
       _classicRuntimePlannerExplainer{

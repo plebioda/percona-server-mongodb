@@ -655,8 +655,7 @@ void CollectionCatalog::write(ServiceContext* svcCtx, CatalogWriteFn job) {
 
     static std::list<JobEntry> queue;
     static bool workerExists = false;
-    static Mutex mutex =
-        MONGO_MAKE_LATCH("CollectionCatalog::write");  // Protecting the two globals above
+    static stdx::mutex mutex;  // Protecting the two globals above
 
     invariant(job);
 
@@ -948,9 +947,7 @@ const Collection* CollectionCatalog::establishConsistentCollection(
 }
 
 std::vector<const Collection*> CollectionCatalog::establishConsistentCollections(
-    OperationContext* opCtx,
-    const DatabaseName& dbName,
-    boost::optional<Timestamp> readTimestamp) const {
+    OperationContext* opCtx, const DatabaseName& dbName) const {
     std::vector<const Collection*> result;
     stdx::unordered_set<const Collection*> visitedCollections;
     auto appendIfUnique = [&result, &visitedCollections](const Collection* col) {
@@ -961,17 +958,17 @@ std::vector<const Collection*> CollectionCatalog::establishConsistentCollections
     };
 
     // We iterate both already committed and uncommitted changes and validate them with
-    // the storage snapshot
+    // the storage snapshot.
     for (const auto& coll : range(dbName)) {
         const Collection* currentCollection =
-            establishConsistentCollection(opCtx, coll->ns(), readTimestamp);
+            establishConsistentCollection(opCtx, coll->ns(), boost::none);
         appendIfUnique(currentCollection);
     }
 
     for (auto const& [ns, coll] : _pendingCommitNamespaces) {
         if (ns.dbName() == dbName) {
             const Collection* currentCollection =
-                establishConsistentCollection(opCtx, ns, readTimestamp);
+                establishConsistentCollection(opCtx, ns, boost::none);
             appendIfUnique(currentCollection);
         }
     }
@@ -2136,35 +2133,6 @@ std::vector<DatabaseName> CollectionCatalog::getAllConsistentDbNamesForTenant(
     }
 
     return ret;
-}
-
-void CollectionCatalog::setAllDatabaseProfileFilters(std::shared_ptr<ProfileFilter> filter) {
-    auto dbProfileSettingsWriter = _databaseProfileSettings.transient();
-    for (const auto& [dbName, settings] : _databaseProfileSettings) {
-        ProfileSettings clone = settings;
-        clone.filter = filter;
-        dbProfileSettingsWriter.set(dbName, std::move(clone));
-    }
-    _databaseProfileSettings = dbProfileSettingsWriter.persistent();
-}
-
-void CollectionCatalog::setDatabaseProfileSettings(
-    const DatabaseName& dbName, CollectionCatalog::ProfileSettings newProfileSettings) {
-    _databaseProfileSettings = _databaseProfileSettings.set(dbName, std::move(newProfileSettings));
-}
-
-CollectionCatalog::ProfileSettings CollectionCatalog::getDatabaseProfileSettings(
-    const DatabaseName& dbName) const {
-    const ProfileSettings* settings = _databaseProfileSettings.find(dbName);
-    if (settings) {
-        return *settings;
-    }
-
-    return {serverGlobalParams.defaultProfile, ProfileFilter::getDefault()};
-}
-
-void CollectionCatalog::clearDatabaseProfileSettings(const DatabaseName& dbName) {
-    _databaseProfileSettings = _databaseProfileSettings.erase(dbName);
 }
 
 void CollectionCatalog::addDropPending(const DatabaseName& dbName) {

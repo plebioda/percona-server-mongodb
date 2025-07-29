@@ -9,21 +9,6 @@ Import(
 
 env = env.Clone()
 
-env.Library(
-    target="utils",
-    source=[
-        "query_settings_hash.cpp",
-        "query_settings_utils.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
-        "$BUILD_DIR/mongo/db/commands",
-        "$BUILD_DIR/mongo/db/query/canonical_query",
-        "$BUILD_DIR/mongo/db/query/query_shape/query_shape",
-        "manager",
-    ],
-)
-
 env.CppUnitTest(
     target="query_settings_serialization_test",
     source=[

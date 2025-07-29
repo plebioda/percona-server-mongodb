@@ -2,13 +2,7 @@ version: 1.0.0
 filters:
   - "OWNERS.yml":
     approvers:
-      - IamXander
-      - dhly-etc
-      - kaloianm
-      - anna-wawrzyniak
-      - mbroadst
-      - markbenvenuto
-      - dstorch
+      - 10gen/server-root-ownership
     metadata:
       emeritus_approvers:
         - visemet # TODO: add back to approvers once project work is finished
@@ -61,7 +55,8 @@ filters:
   - "copy.bara.sky":
     approvers:
       - IamXander
-  - "copybara.staging.sky":
+      - smcclure15
+  - "copy.bara.staging.sky":
     approvers:
       - 10gen/devprod-correctness
   - "jsconfig.json":

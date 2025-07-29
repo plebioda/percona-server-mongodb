@@ -408,7 +408,6 @@ class _AddRemoveShardThread(threading.Thread):
             all_dbs = direct_shard_conn.admin.command({"listDatabases": 1})
             for db in all_dbs["databases"]:
                 if db["name"] not in ["admin", "config", "local"] and db["empty"] is False:
-                    db_name = db["name"]
                     all_collections = direct_shard_conn.db_name.command({"listCollections": 1})
                     for coll in all_collections:
                         if len(list(direct_shard_conn.db_name.coll.find())) != 0:
@@ -477,9 +476,6 @@ class _AddRemoveShardThread(threading.Thread):
 
     def _move_all_collections_from_shard(self, collections, source):
         for collection in collections:
-            if "noBalance" in collection and collection["noBalance"]:
-                # The collection has been marked as "noBalance" so it should not be moved.
-                continue
             namespace = collection["_id"]
             destination = self._get_other_shard_id(source)
             self.logger.info("Running moveCollection for " + namespace + " to " + destination)

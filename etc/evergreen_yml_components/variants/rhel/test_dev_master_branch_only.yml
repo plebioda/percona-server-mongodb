@@ -29,7 +29,6 @@ variables:
       -j$(grep -c ^processor /proc/cpuinfo)
       --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
       --link-model=dynamic
-      --use-diagnostic-latches=on
 
   # THIS HAS COPIES IN
   # - etc/evergreen_yml_components/variants/sanitizer/test_dev.yml
@@ -131,7 +130,6 @@ variables:
         MONGO_DISTMOD=rhel88
         -j$(grep -c ^processor /proc/cpuinfo)
         --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
-        --use-diagnostic-latches=on
       crypt_task_compile_flags: >-
         SHLINKFLAGS_EXTRA="-Wl,-Bsymbolic -Wl,--no-gnu-unique"
         CCFLAGS="-fno-gnu-unique"
@@ -249,7 +247,6 @@ buildvariants:
         --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
         --link-model=dynamic
         ENABLE_GRPC_BUILD=1
-        --use-diagnostic-latches=on
       compile_variant: *linux-x86-dynamic-grpc-suggested
       clang_tidy_toolchain: v4
       large_distro_name: rhel8.8-xlarge
@@ -384,7 +381,6 @@ buildvariants:
         MONGO_DISTMOD=rhel88
         -j$(grep -c ^processor /proc/cpuinfo)
         --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
-        --use-diagnostic-latches=on
       scons_cache_scope: shared
       num_scons_link_jobs_available: 0.5
       compile_variant: *enterprise-rhel-8-benchmarks
@@ -473,7 +469,6 @@ buildvariants:
         --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
         --enterprise-features=hot_backups,magic_restore,ldap,sasl
         --link-model=dynamic
-        --use-diagnostic-latches=on
       compile_variant: *hot_backups-rhel-8-64-bit
       has_packages: false
       scons_cache_mode: all
@@ -506,7 +501,6 @@ buildvariants:
         -j$(grep -c ^processor /proc/cpuinfo)
         --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
         --link-model=dynamic
-        --use-diagnostic-latches=on
       test_flags: >-
         --mongosSetParameters="{replicaSetMonitorProtocol: sdam}"
         --mongodSetParameters="{replicaSetMonitorProtocol: sdam}"
@@ -592,7 +586,6 @@ buildvariants:
         -j$(grep -c ^processor /proc/cpuinfo)
         --variables-files=etc/scons/mongodbtoolchain_stable_gcc.vars
         --link-model=dynamic
-        --use-diagnostic-latches=on
       multiversion_platform: rhel80
       multiversion_platform_50_or_later: rhel8
       multiversion_edition: enterprise
@@ -630,7 +623,7 @@ buildvariants:
       - name: sharding_max_mirroring_opportunistic_secondary_targeting_gen
         patch_only: true
 
-  ### QO & QE Patch-Specific Build Variants ###
+  ### Query Patch-Specific Build Variants ###
 
   - name: &enterprise-rhel-8-64-bit-dynamic-classic-engine-query-patch-only enterprise-rhel-8-64-bit-dynamic-classic-engine-query-patch-only
     display_name: "~ Shared Library Enterprise RHEL 8 Query Patch Only (Classic Engine)"
@@ -645,7 +638,7 @@ buildvariants:
       max_sub_suites: 3
       test_flags: >-
         --mongodSetParameters="{internalQueryFrameworkControl: forceClassicEngine}"
-        --excludeWithAnyTags=resource_intensive,featureFlagSbeFull
+        --excludeWithAnyTags=resource_intensive
     depends_on:
       - name: archive_dist_test
         variant: *linux_x86_dynamic_compile_variant_name
@@ -659,12 +652,12 @@ buildvariants:
       - name: .auth !.suggested_excluding_required__for_devprod_mitigation_only
       - name: .causally_consistent !.sharding
       - name: .change_streams
-      - name: .concurrency !.large !.no_txns !.compute_mode !.feature_flag_guarded
-      - name: .concurrency .large !.no_txns !.compute_mode !.feature_flag_guarded
+      - name: .concurrency !.large !.cluster_scalability_only !.no_txns !.compute_mode !.feature_flag_guarded !.config_fuzzer
+      - name: .concurrency .large !.no_txns !.cluster_scalability_only !.compute_mode !.feature_flag_guarded !.config_fuzzer
         distros:
           - rhel8.8-medium
       - name: .encrypt
-      - name: .jscore .common !jsCore !.sbe_only
+      - name: .jscore .common !.cluster_scalability_only !jsCore !.sbe_only
       - name: .misc_js
       - name: .multi_shard
       - name: query_golden_classic
@@ -678,9 +671,9 @@ buildvariants:
       - name: .replica_sets !.encrypt !.auth
         distros:
           - rhel8.8-xlarge
-      - name: .sharding .common !.feature_flag_guarded !.jstestfuzz
-      - name: .sharding .jscore !.wo_snapshot !.multi_stmt !.feature_flag_guarded
-      - name: .sharding .txns
+      - name: .sharding .common !.cluster_scalability_only !.feature_flag_guarded !.jstestfuzz
+      - name: .sharding .jscore !.cluster_scalability_only !.wo_snapshot !.multi_stmt !.feature_flag_guarded
+      - name: .sharding .txns !.cluster_scalability_only
       - name: aggregation_repeat_queries_multiplan_single_solutions
       - name: audit
       - name: burn_in_tests_gen
@@ -741,9 +734,13 @@ buildvariants:
       - name: vector_search_auth
       - name: vector_search_ssl
       - name: cursor_hints_to_query_settings_replset_passthrough
+        distros:
+          - rhel8.8-medium
       - name: cursor_hints_to_query_settings_sharded_collections_passthrough_gen
       - name: cursor_hints_to_query_settings_unsharded_collections_passthrough_gen
       - name: implicit_query_settings_fallback
+        distros:
+          - rhel8.8-medium
 
   - name: enterprise-rhel-8-64-bit-dynamic-classic-engine-all-feature-flags-fuzzers
     <<: *enterprise-rhel-8-64-bit-dynamic-all-feature-flags-template
@@ -752,8 +749,6 @@ buildvariants:
     cron: "0 4 * * 0" # From the ${project_weekly_cron} parameter # This is a patch-only variant but we run on mainline to pick up task history.
     expansions:
       <<: *enterprise-rhel-8-64-bit-dynamic-all-feature-flags-expansions
-      jstestfuzz_num_generated_files: 20
-      jstestfuzz_concurrent_num_files: 5
       target_resmoke_time: 30
       max_sub_suites: 3
       test_flags: >-
@@ -797,8 +792,8 @@ buildvariants:
       - name: .release_critical .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
         distros:
           - rhel8.8-medium
-      - name: .default !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
-      - name: .default .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
+      - name: .default !.requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only !.config_fuzzer !.config_fuzzer_stress !.jstestfuzz !resharding_timeseries_fuzzer_gen !initial_sync_fuzzer_sanity_patch_gen !rollback_fuzzer_sanity_patch_gen
+      - name: .default .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only !.config_fuzzer !.config_fuzzer_stress !.jstestfuzz !resharding_timeseries_fuzzer_gen !initial_sync_fuzzer_sanity_patch_gen !rollback_fuzzer_sanity_patch_gen
         distros:
           - rhel8.8-medium
       # TODO(SERVER-90936): Remove this once streams_kafka* tests can work with the "default" tag.

@@ -156,6 +156,10 @@ public:
         return kStageName.rawData();
     }
 
+    DocumentSourceType getType() const override {
+        return DocumentSourceType::kMerge;
+    }
+
     MergeProcessor* getMergeProcessor() {
         return _mergeProcessor.get_ptr();
     }
@@ -177,7 +181,8 @@ public:
         boost::optional<BSONObj> letVariables,
         boost::optional<std::vector<BSONObj>> pipeline,
         std::set<FieldPath> mergeOnFields,
-        boost::optional<ChunkVersion> collectionPlacementVersion);
+        boost::optional<ChunkVersion> collectionPlacementVersion,
+        bool allowMergeOnNullishValues);
 
     /**
      * Parses a $merge stage from the user-supplied BSON.
@@ -205,11 +210,8 @@ public:
     void addVariableRefs(std::set<Variables::Id>* refs) const final {
         // Although $merge is not allowed in sub-pipelines and this method is used for correlation
         // analysis, the method is generic enough to be used in the future for other purposes.
-        const auto& letVariables = _mergeProcessor->getLetVariables();
-        if (letVariables) {
-            for (auto&& [name, expr] : *letVariables) {
-                expression::addVariableRefs(expr.get(), refs);
-            }
+        for (const auto& letVar : _mergeProcessor->getLetVariables()) {
+            expression::addVariableRefs(letVar.expression.get(), refs);
         }
     }
 
@@ -231,7 +233,8 @@ private:
                         boost::optional<BSONObj> letVariables,
                         boost::optional<std::vector<BSONObj>> pipeline,
                         std::set<FieldPath> mergeOnFields,
-                        boost::optional<ChunkVersion> collectionPlacementVersion);
+                        boost::optional<ChunkVersion> collectionPlacementVersion,
+                        bool allowMergeOnNullishValues);
 
     void flush(BatchedCommandRequest bcr, BatchedObjects batch) override;
 

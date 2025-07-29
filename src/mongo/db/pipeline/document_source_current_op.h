@@ -71,7 +71,6 @@ public:
     using SessionMode = MongoProcessInterface::CurrentOpSessionsMode;
     using UserMode = MongoProcessInterface::CurrentOpUserMode;
     using CursorMode = MongoProcessInterface::CurrentOpCursorMode;
-    using BacktraceMode = MongoProcessInterface::CurrentOpBacktraceMode;
 
     static constexpr StringData kStageName = "$currentOp"_sd;
 
@@ -81,7 +80,6 @@ public:
     static constexpr LocalOpsMode kDefaultLocalOpsMode = LocalOpsMode::kRemoteShardOps;
     static constexpr TruncationMode kDefaultTruncationMode = TruncationMode::kNoTruncation;
     static constexpr CursorMode kDefaultCursorMode = CursorMode::kExcludeCursors;
-    static constexpr BacktraceMode kDefaultBacktraceMode = BacktraceMode::kExcludeBacktrace;
 
     class LiteParsed final : public LiteParsedDocumentSource {
     public:
@@ -146,10 +144,13 @@ public:
         boost::optional<LocalOpsMode> showLocalOpsOnMongoS = boost::none,
         boost::optional<TruncationMode> truncateOps = boost::none,
         boost::optional<CursorMode> idleCursors = boost::none,
-        boost::optional<BacktraceMode> backtrace = boost::none,
         boost::optional<bool> targetAllNodes = boost::none);
 
     const char* getSourceName() const final;
+
+    DocumentSourceType getType() const override {
+        return DocumentSourceType::kCurrentOp;
+    }
 
     StageConstraints constraints(Pipeline::SplitState pipeState) const final {
         bool showLocalOps =
@@ -196,7 +197,6 @@ private:
                             boost::optional<LocalOpsMode> showLocalOpsOnMongoS,
                             boost::optional<TruncationMode> truncateOps,
                             boost::optional<CursorMode> idleCursors,
-                            boost::optional<BacktraceMode> backtrace,
                             boost::optional<bool> targetAllNodes)
         : DocumentSource(kStageName, pExpCtx),
           _includeIdleConnections(includeIdleConnections),
@@ -205,7 +205,6 @@ private:
           _showLocalOpsOnMongoS(showLocalOpsOnMongoS),
           _truncateOps(truncateOps),
           _idleCursors(idleCursors),
-          _backtrace(backtrace),
           _targetAllNodes(targetAllNodes) {}
 
     GetNextResult doGetNext() final;
@@ -216,7 +215,6 @@ private:
     boost::optional<LocalOpsMode> _showLocalOpsOnMongoS;
     boost::optional<TruncationMode> _truncateOps;
     boost::optional<CursorMode> _idleCursors;
-    boost::optional<BacktraceMode> _backtrace;
 
     boost::optional<bool> _targetAllNodes;
     std::string _shardName;

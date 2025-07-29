@@ -38,12 +38,12 @@ template <int level = 0>
 struct LeveledSynchronizedValueMutexPolicy {
     using mutex_type = Mutex;
     static mutex_type construct() {
-        return MONGO_MAKE_LATCH(HierarchicalAcquisitionLevel(level), "synchronized_value::_mutex");
+        return stdx::mutex();
     }
 };
 
 struct RawSynchronizedValueMutexPolicy {
-    using mutex_type = stdx::mutex;  // NOLINT
+    using mutex_type = stdx::mutex;
     static mutex_type construct() {
         return {};
     }
@@ -183,8 +183,8 @@ public:
     }
 
 private:
-    value_type _value;                                           ///< guarded by _mutex
-    mutable mutex_type _mutex = mutex_policy_type::construct();  // NOLINT(mongo-mutex-check)
+    value_type _value;  ///< guarded by _mutex
+    mutable mutex_type _mutex = mutex_policy_type::construct();
 };
 
 }  // namespace mongo

@@ -10,15 +10,6 @@ Import(
 
 env = env.Clone()
 
-env.SConscript(
-    dirs=[
-        "external",
-    ],
-    exports=[
-        "env",
-    ],
-)
-
 env.Library(
     target="auth_op_observer",
     source=[

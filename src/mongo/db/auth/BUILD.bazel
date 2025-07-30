@@ -160,10 +160,13 @@ mongo_cc_library(
         "//src/mongo/db:audit",  # audit:logLogout in AuthZSession.
         "//src/mongo/db:common",
         "//src/mongo/db:global_settings",
+        "//src/mongo/db:ldap_options",
         "//src/mongo/db:mongod_options",
         "//src/mongo/db:server_base",
+        "//src/mongo/db/ldap:ldap_manager",
         "//src/mongo/db/query/query_stats",
         "//src/mongo/db/stats:counters",
+        "//src/mongo/util:background_job",
         "//src/mongo/util:caching",
         "//src/mongo/util:icu",
         "//src/mongo/util/concurrency:spin_lock",
@@ -528,7 +531,9 @@ mongo_cc_library(
         ":user_cache_invalidator",
         "//src/mongo/db:dbdirectclient",
         "//src/mongo/db:dbhelpers",
+        "//src/mongo/db:ldap_options_init",
         "//src/mongo/db:server_base",
+        "//src/mongo/db/auth/external:externalsaslauth", # if MONGO_BUILD_SASL_CLIENT "//bazel/config:use_sasl_client_enabled"
         "//src/mongo/db/commands:authentication_commands",
         "//src/mongo/db/commands:umc_commands_idl",
         "//src/mongo/db/repl:repl_coordinator_interface",

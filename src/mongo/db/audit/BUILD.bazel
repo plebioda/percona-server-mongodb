@@ -12,3 +12,59 @@ idl_generator(
     src = "audit_options.idl",
 )
 
+mongo_cc_library(
+    name = "audit_options",
+    srcs = [
+        "audit_options.cpp",
+        ":audit_parameters_gen",
+        ":audit_options_gen",
+    ],
+    hdrs = [
+        "audit_options.h",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:service_context",
+        "//src/mongo/util/options_parser:options_parser",
+    ],
+)
+
+mongo_cc_library(
+    name = "audit_impl",
+    srcs = [
+        "audit_flusher.cpp",
+        "audit.cpp",
+    ],
+    hdrs = [
+        "audit.h",
+        "audit_flusher.h",
+        "auditlog.h",
+    ],
+    deps = [
+        ":audit_options",
+        "//src/mongo/db:audit_interface",
+        "//src/mongo/db:query_expressions",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:service_context",
+        "//src/mongo/util:background_job",
+    ],
+)
+
+# Please note that the `commands` library (@see below) depends on
+# the `audit` library and the `audit_commands` depends on `commands`.
+mongo_cc_library(
+    name = "audit_commands",
+    srcs = [
+        "audit_commands.cpp",
+    ],
+    deps = [
+        ":audit_impl",
+        ":audit_options",
+        "//src/mongo/db:audit",
+        "//src/mongo/db/auth:auth",
+        "//src/mongo/db/auth:authprivilege",
+        "//src/mongo/db:commands",
+        "//src/mongo/db/commands:test_commands_enabled",
+    ],
+)
+

@@ -119,7 +119,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
+        "$BUILD_DIR/mongo/db/audit/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/catalog/document_validation",
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/concurrency/lock_manager",

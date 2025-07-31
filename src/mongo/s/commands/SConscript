@@ -19,7 +19,7 @@ env.Library(
         "sharding_expressions.cpp",
     ],
     LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
+        "$BUILD_DIR/mongo/db/audit/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/catalog/index_key_validate",
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/fts/base_fts",
@@ -268,7 +268,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/audit",
-        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
+        "$BUILD_DIR/mongo/db/audit/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/auth/address_restriction",
         "$BUILD_DIR/mongo/db/auth/auth",
         "$BUILD_DIR/mongo/db/auth/auth_checks",

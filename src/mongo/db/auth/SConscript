@@ -18,7 +18,7 @@ env.Library(
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/base",
         "$BUILD_DIR/mongo/db/audit",
-        "$BUILD_DIR/mongo/db/audit_impl" if has_option("audit") else [],
+        "$BUILD_DIR/mongo/db/audit/audit_impl" if has_option("audit") else [],
         "$BUILD_DIR/mongo/db/catalog/collection_options",
         "$BUILD_DIR/mongo/db/index/index_access_method",
         "$BUILD_DIR/mongo/db/op_observer/op_observer",

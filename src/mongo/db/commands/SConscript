@@ -270,8 +270,9 @@ env.Library(
         "$BUILD_DIR/mongo/db/pipeline/docs_needed_bounds_visitor",
         "$BUILD_DIR/mongo/db/pipeline/process_interface/mongo_process_interface",
         "$BUILD_DIR/mongo/db/pipeline/process_interface/mongod_process_interfaces",
+        "$BUILD_DIR/mongo/db/query/client_cursor/client_cursor",
+        "$BUILD_DIR/mongo/db/query/client_cursor/cursor_response_idl",
         "$BUILD_DIR/mongo/db/query/command_request_response",
-        "$BUILD_DIR/mongo/db/query/cursor_response_idl",
         "$BUILD_DIR/mongo/db/query/query_settings/manager",
         "$BUILD_DIR/mongo/db/query/query_shape/query_shape",
         "$BUILD_DIR/mongo/db/query/query_stats/query_stats",
@@ -518,10 +519,19 @@ env.Library(
 )
 
 env.Library(
+    target="kill_operations_idl",
+    source=[
+        "kill_operations_gen.cpp",
+    ],
+    LIBDEPS=[
+        "$BUILD_DIR/mongo/db/server_base",
+    ],
+)
+
+env.Library(
     target="kill_common",
     source=[
         "kill_op_cmd_base.cpp",
-        "kill_operations_gen.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/audit",
@@ -530,6 +540,7 @@ env.Library(
         "$BUILD_DIR/mongo/db/commands",
         "$BUILD_DIR/mongo/db/operation_killer",
         "$BUILD_DIR/mongo/db/query/command_request_response",
+        "kill_operations_idl",
     ],
     LIBDEPS_PRIVATE=[
         "$BUILD_DIR/mongo/db/audit/audit_impl" if has_option("audit") else [],

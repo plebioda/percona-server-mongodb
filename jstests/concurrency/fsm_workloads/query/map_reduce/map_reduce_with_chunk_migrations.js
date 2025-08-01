@@ -13,14 +13,18 @@
  *  requires_non_retryable_writes,
  *  # mapReduce does not support afterClusterTime.
  *  does_not_support_causal_consistency,
- *   # Use mapReduce.
- *   requires_scripting,
+ *  # Use mapReduce.
+ *  requires_scripting,
+ *  # Disabled because MapReduce can lose cursors if the primary goes down during the operation.
+ *  does_not_support_stepdowns,
+ *  # TODO (SERVER-95170): Re-enable this test in txn suites.
+ *  does_not_support_transactions,
  * ]
  */
 import {extendWorkload} from "jstests/concurrency/fsm_libs/extend_workload.js";
 import {
     $config as $baseConfig
-} from "jstests/concurrency/fsm_workloads/sharded_moveChunk_partitioned.js";
+} from "jstests/concurrency/fsm_workloads/sharded_partitioned/sharded_moveChunk_partitioned.js";
 
 export const $config = extendWorkload($baseConfig, function($config, $super) {
     // The base setup will insert 'partitionSize' number of documents per thread, evenly

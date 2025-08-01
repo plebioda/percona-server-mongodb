@@ -6057,22 +6057,6 @@ export const authCommandsLib = {
           ]
         },
         {
-          testname: "_configsvrRefineCollectionShardKey",
-          command:
-            {_configsvrRefineCollectionShardKey: "test.x", key: {aKey: 1}, epoch: ObjectId()},
-          skipSharded: true,
-          testcases: [
-              {
-                runOnDb: adminDbName,
-                roles: {__system: 1},
-                privileges: [{resource: {cluster: true}, actions: ["internal"]}],
-                expectFail: true
-              },
-              {runOnDb: firstDbName, roles: {}},
-              {runOnDb: secondDbName, roles: {}}
-          ]
-        },
-        {
           testname: "_configsvrCommitRefineCollectionShardKey",
           command: {
             _configsvrCommitRefineCollectionShardKey: "test.x",
@@ -7387,6 +7371,78 @@ export const authCommandsLib = {
             expectAuthzFailure: false, // We expect the request to be authorized.
           },
       ]
+      },
+      {
+        testname: "aggregate_$rankFusion",
+        command: {
+            aggregate: "foo",
+            cursor: {},
+            pipeline: [{
+              $rankFusion: {
+                inputs: [
+                  {
+                    pipeline: [
+                      {
+                        $geoNear: {near: [50, 50], distanceField: "dist"}
+                      },
+                      {
+                        $limit: 2
+                      }
+                    ]
+                  },
+                  {
+                    pipeline: [
+                      {
+                        $match: {a: 1}
+                      },
+                      {
+                        $sort: {x: 1}
+                      },
+                    ]
+                  },
+                  {
+                    pipeline: [
+                      {
+                        $search: {
+                          // empty query
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    pipeline: [
+                      {
+                        $vectorSearch: {
+                          // empty query
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+          }]
+        },
+        setup: function(db) {
+          db.createCollection("foo");
+        },
+        skipSharded: false,
+        disableSearch: true,
+        skipTest: (conn) => {
+          return !TestData.setParameters.featureFlagSearchHybridScoring;
+        },
+        testcases: [
+          {
+            runOnDb: firstDbName,
+            roles: roles_read,
+            privileges: [{resource: {db: firstDbName, collection: "foo"}, actions: ["find"]}]
+          },
+          {
+            runOnDb: secondDbName,
+            roles: roles_readAny,
+            privileges:
+                [{resource: {db: secondDbName, collection: "foo"}, actions: ["find"]}]
+          },
+        ]
       },
     ],
 

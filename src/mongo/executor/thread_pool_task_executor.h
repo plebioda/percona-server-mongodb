@@ -40,8 +40,8 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/executor/remote_command_request.h"
 #include "mongo/executor/task_executor.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/stdx/thread.h"
 #include "mongo/transport/baton.h"
 #include "mongo/util/fail_point.h"
@@ -102,13 +102,12 @@ public:
     void waitForEvent(const EventHandle& event) override;
     StatusWith<CallbackHandle> scheduleWork(CallbackFn&& work) override;
     StatusWith<CallbackHandle> scheduleWorkAt(Date_t when, CallbackFn&& work) override;
-    StatusWith<CallbackHandle> scheduleRemoteCommandOnAny(
-        const RemoteCommandRequestOnAny& request,
-        const RemoteCommandOnAnyCallbackFn& cb,
-        const BatonHandle& baton = nullptr) override;
-    StatusWith<CallbackHandle> scheduleExhaustRemoteCommandOnAny(
-        const RemoteCommandRequestOnAny& request,
-        const RemoteCommandOnAnyCallbackFn& cb,
+    StatusWith<CallbackHandle> scheduleRemoteCommand(const RemoteCommandRequest& request,
+                                                     const RemoteCommandCallbackFn& cb,
+                                                     const BatonHandle& baton = nullptr) override;
+    StatusWith<CallbackHandle> scheduleExhaustRemoteCommand(
+        const RemoteCommandRequest& request,
+        const RemoteCommandCallbackFn& cb,
         const BatonHandle& baton = nullptr) override;
     void cancel(const CallbackHandle& cbHandle) override;
     void wait(const CallbackHandle& cbHandle,
@@ -181,13 +180,13 @@ private:
     /**
      * Signals the given event.
      */
-    void signalEvent_inlock(const EventHandle& event, stdx::unique_lock<Latch> lk);
+    void signalEvent_inlock(const EventHandle& event, stdx::unique_lock<stdx::mutex> lk);
 
     /**
      * Schedules all items from "fromQueue" into the thread pool and moves them into
      * _poolInProgressQueue.
      */
-    void scheduleIntoPool_inlock(WorkQueue* fromQueue, stdx::unique_lock<Latch> lk);
+    void scheduleIntoPool_inlock(WorkQueue* fromQueue, stdx::unique_lock<stdx::mutex> lk);
 
     /**
      * Schedules the given item from "fromQueue" into the thread pool and moves it into
@@ -195,7 +194,7 @@ private:
      */
     void scheduleIntoPool_inlock(WorkQueue* fromQueue,
                                  boost::optional<WorkQueue::iterator> iter,
-                                 stdx::unique_lock<Latch> lk);
+                                 stdx::unique_lock<stdx::mutex> lk);
 
     /**
      * Schedules entries from "begin" through "end" in "fromQueue" into the thread pool
@@ -204,14 +203,14 @@ private:
     void scheduleIntoPool_inlock(WorkQueue* fromQueue,
                                  boost::optional<WorkQueue::iterator>& begin,
                                  boost::optional<WorkQueue::iterator>& end,
-                                 stdx::unique_lock<Latch> lk);
+                                 stdx::unique_lock<stdx::mutex> lk);
 
     /**
      * Schedules cbState into the thread pool and places it into _poolInProgressQueue. Does not
      * remove the entry from the original queue.
      */
     void scheduleExhaustIntoPool_inlock(std::shared_ptr<CallbackState> cbState,
-                                        stdx::unique_lock<Latch> lk);
+                                        stdx::unique_lock<stdx::mutex> lk);
     /**
      * Executes the callback specified by "cbState".
      */
@@ -225,7 +224,7 @@ private:
 
     bool _inShutdown_inlock() const;
     void _setState_inlock(State newState);
-    stdx::unique_lock<Latch> _join(stdx::unique_lock<Latch> lk);
+    stdx::unique_lock<stdx::mutex> _join(stdx::unique_lock<stdx::mutex> lk);
 
     // The network interface used for remote command execution and waiting.
     std::shared_ptr<NetworkInterface> _net;

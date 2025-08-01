@@ -225,7 +225,7 @@ void createCollection(OperationContext* opCtx, ShardsvrCreateCollection request)
                 ReadPreferenceSetting(ReadPreference::PrimaryOnly),
                 Shard::RetryPolicy::kIdempotent);
         else {
-            return executeDDLCoordinatorCommandAgainstDatabasePrimary(
+            return executeCommandAgainstDatabasePrimaryOnlyAttachingDbVersion(
                 opCtx,
                 nss.dbName(),
                 dbInfo,
@@ -242,8 +242,7 @@ void createCollection(OperationContext* opCtx, ShardsvrCreateCollection request)
         CreateCollectionResponse::parse(IDLParserContext("createCollection"), remoteResponse.data);
 
     auto catalogCache = Grid::get(opCtx)->catalogCache();
-    catalogCache->invalidateShardOrEntireCollectionEntryForShardedCollection(
-        nss, createCollResp.getCollectionVersion(), dbInfo->getPrimary());
+    catalogCache->onStaleCollectionVersion(nss, createCollResp.getCollectionVersion());
 }
 
 void createCollectionWithRouterLoop(OperationContext* opCtx,

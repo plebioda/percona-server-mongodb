@@ -177,9 +177,8 @@ void handleActionResult(OperationContext* opCtx,
 
     if (status == ErrorCodes::StaleConfig) {
         if (auto staleInfo = status.extraInfo<StaleConfigInfo>()) {
-            RoutingInformationCache::get(opCtx)
-                ->invalidateShardOrEntireCollectionEntryForShardedCollection(
-                    nss, staleInfo->getVersionWanted(), staleInfo->getShardId());
+            RoutingInformationCache::get(opCtx)->onStaleCollectionVersion(
+                nss, staleInfo->getVersionWanted());
         }
     }
 
@@ -556,174 +555,172 @@ public:
     void applyActionResult(OperationContext* opCtx,
                            const BalancerStreamAction& action,
                            const BalancerStreamActionResponse& response) override {
-        visit(OverloadedVisitor{
-                  [&](const MigrateInfo& migrationAction) {
-                      auto& migrationResponse = get<Status>(response);
-                      auto match =
-                          std::find_if(_outstandingMigrations.begin(),
-                                       _outstandingMigrations.end(),
-                                       [&migrationAction](const MoveAndMergeRequest& request) {
-                                           return (migrationAction.minKey.woCompare(
-                                                       request.getMigrationMinKey()) == 0);
-                                       });
-                      tassert(8245214,
-                              "MigrationAction not found",
-                              match != _outstandingMigrations.end());
-                      MoveAndMergeRequest moveRequest(std::move(*match));
-                      _outstandingMigrations.erase(match);
+        visit(
+            OverloadedVisitor{
+                [&](const MigrateInfo& migrationAction) {
+                    auto& migrationResponse = get<Status>(response);
+                    auto match =
+                        std::find_if(_outstandingMigrations.begin(),
+                                     _outstandingMigrations.end(),
+                                     [&migrationAction](const MoveAndMergeRequest& request) {
+                                         return (migrationAction.minKey.woCompare(
+                                                     request.getMigrationMinKey()) == 0);
+                                     });
+                    tassert(8245214,
+                            "MigrationAction not found",
+                            match != _outstandingMigrations.end());
+                    MoveAndMergeRequest moveRequest(std::move(*match));
+                    _outstandingMigrations.erase(match);
 
-                      if (_aborted) {
-                          return;
-                      }
+                    if (_aborted) {
+                        return;
+                    }
 
-                      if (migrationResponse.isOK()) {
-                          RoutingInformationCache::get(opCtx)
-                              ->invalidateShardOrEntireCollectionEntryForShardedCollection(
-                                  _nss, boost::none, moveRequest.getDestinationShard());
+                    if (migrationResponse.isOK()) {
+                        RoutingInformationCache::get(opCtx)->onStaleCollectionVersion(_nss,
+                                                                                      boost::none);
 
-                          auto transferredAmount = moveRequest.getMovedDataSizeBytes();
-                          tassert(8245215,
-                                  "Unexpected amount of transferred data during chunk migration",
-                                  transferredAmount <= _smallChunkSizeThresholdBytes);
-                          _shardInfos.at(moveRequest.getSourceShard()).currentSizeBytes -=
-                              transferredAmount;
-                          _shardInfos.at(moveRequest.getDestinationShard()).currentSizeBytes +=
-                              transferredAmount;
-                          _shardProcessingOrder.sort(
-                              [this](const ShardId& lhs, const ShardId& rhs) {
-                                  return _shardInfos.at(lhs).currentSizeBytes >
-                                      _shardInfos.at(rhs).currentSizeBytes;
-                              });
-                          _actionableMerges.push_back(std::move(moveRequest));
-                          return;
-                      }
+                        auto transferredAmount = moveRequest.getMovedDataSizeBytes();
+                        tassert(8245215,
+                                "Unexpected amount of transferred data during chunk migration",
+                                transferredAmount <= _smallChunkSizeThresholdBytes);
+                        _shardInfos.at(moveRequest.getSourceShard()).currentSizeBytes -=
+                            transferredAmount;
+                        _shardInfos.at(moveRequest.getDestinationShard()).currentSizeBytes +=
+                            transferredAmount;
+                        _shardProcessingOrder.sort([this](const ShardId& lhs, const ShardId& rhs) {
+                            return _shardInfos.at(lhs).currentSizeBytes >
+                                _shardInfos.at(rhs).currentSizeBytes;
+                        });
+                        _actionableMerges.push_back(std::move(moveRequest));
+                        return;
+                    }
 
-                      LOGV2_DEBUG(6290000,
-                                  1,
-                                  "Migration failed during collection defragmentation",
-                                  logAttrs(_nss),
-                                  "uuid"_attr = _uuid,
-                                  "currentPhase"_attr = getType(),
-                                  "error"_attr = redact(migrationResponse));
+                    LOGV2_DEBUG(6290000,
+                                1,
+                                "Migration failed during collection defragmentation",
+                                logAttrs(_nss),
+                                "uuid"_attr = _uuid,
+                                "currentPhase"_attr = getType(),
+                                "error"_attr = redact(migrationResponse));
 
-                      moveRequest.chunkToMove->busyInOperation = false;
-                      moveRequest.chunkToMergeWith->busyInOperation = false;
+                    moveRequest.chunkToMove->busyInOperation = false;
+                    moveRequest.chunkToMergeWith->busyInOperation = false;
 
-                      if (migrationResponse.code() == ErrorCodes::ChunkTooBig ||
-                          migrationResponse.code() == ErrorCodes::ExceededMemoryLimit) {
-                          // Never try moving this chunk again, it isn't actually small
-                          _removeIteratorFromSmallChunks(moveRequest.chunkToMove,
-                                                         moveRequest.chunkToMove->shard);
-                          return;
-                      }
+                    if (migrationResponse.code() == ErrorCodes::ChunkTooBig ||
+                        migrationResponse.code() == ErrorCodes::ExceededMemoryLimit) {
+                        // Never try moving this chunk again, it isn't actually small
+                        _removeIteratorFromSmallChunks(moveRequest.chunkToMove,
+                                                       moveRequest.chunkToMove->shard);
+                        return;
+                    }
 
-                      if (isRetriableForDefragmentation(migrationResponse)) {
-                          // The migration will be eventually retried
-                          return;
-                      }
+                    if (isRetriableForDefragmentation(migrationResponse)) {
+                        // The migration will be eventually retried
+                        return;
+                    }
 
-                      const auto exceededTimeLimit = [&] {
-                          // All errors thrown by the migration destination shard are converted
-                          // into OperationFailed. Thus we need to inspect the error message to
-                          // match the real error code.
+                    const auto exceededTimeLimit = [&] {
+                        // All errors thrown by the migration destination shard are converted
+                        // into OperationFailed. Thus we need to inspect the error message to
+                        // match the real error code.
 
-                          // TODO SERVER-62990 introduce and propagate specific error code for
-                          // migration failed due to range deletion pending
-                          return migrationResponse == ErrorCodes::OperationFailed &&
-                              migrationResponse.reason().find(ErrorCodes::errorString(
-                                  ErrorCodes::ExceededTimeLimit)) != std::string::npos;
-                      };
+                        // TODO SERVER-62990 introduce and propagate specific error code for
+                        // migration failed due to range deletion pending
+                        return migrationResponse == ErrorCodes::OperationFailed &&
+                            migrationResponse.reason().find(ErrorCodes::errorString(
+                                ErrorCodes::ExceededTimeLimit)) != std::string::npos;
+                    };
 
-                      if (exceededTimeLimit()) {
-                          // The migration failed because there is still a range deletion
-                          // pending on the recipient.
-                          moveRequest.chunkToMove->shardsToAvoid.emplace(
-                              moveRequest.getDestinationShard());
-                          return;
-                      }
+                    if (exceededTimeLimit()) {
+                        // The migration failed because there is still a range deletion
+                        // pending on the recipient.
+                        moveRequest.chunkToMove->shardsToAvoid.emplace(
+                            moveRequest.getDestinationShard());
+                        return;
+                    }
 
-                      LOGV2_ERROR(6290001,
-                                  "Encountered non-retriable error on migration during "
-                                  "collection defragmentation",
-                                  logAttrs(_nss),
-                                  "uuid"_attr = _uuid,
-                                  "currentPhase"_attr = getType(),
-                                  "error"_attr = redact(migrationResponse));
-                      _abort(DefragmentationPhaseEnum::kMergeAndMeasureChunks);
-                  },
-                  [&](const MergeInfo& mergeAction) {
-                      auto& mergeResponse = get<Status>(response);
-                      auto match = std::find_if(_outstandingMerges.begin(),
-                                                _outstandingMerges.end(),
-                                                [&mergeAction](const MoveAndMergeRequest& request) {
-                                                    return mergeAction.chunkRange.containsKey(
-                                                        request.getMigrationMinKey());
-                                                });
-                      tassert(8245216, "MergeAction not found", match != _outstandingMerges.end());
-                      MoveAndMergeRequest mergeRequest(std::move(*match));
-                      _outstandingMerges.erase(match);
+                    LOGV2_ERROR(6290001,
+                                "Encountered non-retriable error on migration during "
+                                "collection defragmentation",
+                                logAttrs(_nss),
+                                "uuid"_attr = _uuid,
+                                "currentPhase"_attr = getType(),
+                                "error"_attr = redact(migrationResponse));
+                    _abort(DefragmentationPhaseEnum::kMergeAndMeasureChunks);
+                },
+                [&](const MergeInfo& mergeAction) {
+                    auto& mergeResponse = get<Status>(response);
+                    auto match = std::find_if(_outstandingMerges.begin(),
+                                              _outstandingMerges.end(),
+                                              [&mergeAction](const MoveAndMergeRequest& request) {
+                                                  return mergeAction.chunkRange.containsKey(
+                                                      request.getMigrationMinKey());
+                                              });
+                    tassert(8245216, "MergeAction not found", match != _outstandingMerges.end());
+                    MoveAndMergeRequest mergeRequest(std::move(*match));
+                    _outstandingMerges.erase(match);
 
-                      auto onSuccess = [&] {
-                          // The sequence is complete; update the state of the merged chunk...
-                          auto& mergedChunk = mergeRequest.chunkToMergeWith;
+                    auto onSuccess = [&] {
+                        // The sequence is complete; update the state of the merged chunk...
+                        auto& mergedChunk = mergeRequest.chunkToMergeWith;
 
-                          RoutingInformationCache::get(opCtx)
-                              ->invalidateShardOrEntireCollectionEntryForShardedCollection(
-                                  _nss, boost::none, mergedChunk->shard);
+                        RoutingInformationCache::get(opCtx)->onStaleCollectionVersion(_nss,
+                                                                                      boost::none);
 
-                          auto& chunkToDelete = mergeRequest.chunkToMove;
-                          mergedChunk->range = mergeRequest.asMergedRange();
-                          if (mergedChunk->estimatedSizeBytes != kBigChunkMarker &&
-                              chunkToDelete->estimatedSizeBytes != kBigChunkMarker) {
-                              mergedChunk->estimatedSizeBytes += chunkToDelete->estimatedSizeBytes;
-                          } else {
-                              mergedChunk->estimatedSizeBytes = kBigChunkMarker;
-                          }
+                        auto& chunkToDelete = mergeRequest.chunkToMove;
+                        mergedChunk->range = mergeRequest.asMergedRange();
+                        if (mergedChunk->estimatedSizeBytes != kBigChunkMarker &&
+                            chunkToDelete->estimatedSizeBytes != kBigChunkMarker) {
+                            mergedChunk->estimatedSizeBytes += chunkToDelete->estimatedSizeBytes;
+                        } else {
+                            mergedChunk->estimatedSizeBytes = kBigChunkMarker;
+                        }
 
-                          mergedChunk->busyInOperation = false;
-                          auto deletedChunkShard = chunkToDelete->shard;
-                          // the lookup data structures...
-                          _removeIteratorFromSmallChunks(chunkToDelete, deletedChunkShard);
-                          if (mergedChunk->estimatedSizeBytes > _smallChunkSizeThresholdBytes) {
-                              _removeIteratorFromSmallChunks(mergedChunk, mergedChunk->shard);
-                          } else {
-                              // Keep the list of small chunk iterators in the recipient sorted
-                              auto match = _smallChunksByShard.find(mergedChunk->shard);
-                              if (match != _smallChunksByShard.end()) {
-                                  auto& [_, smallChunksInRecipient] = *match;
-                                  smallChunksInRecipient.sort(compareChunkRangeInfoIterators);
-                              }
-                          }
-                          //... and the collection
-                          _collectionChunks.erase(chunkToDelete);
-                      };
+                        mergedChunk->busyInOperation = false;
+                        auto deletedChunkShard = chunkToDelete->shard;
+                        // the lookup data structures...
+                        _removeIteratorFromSmallChunks(chunkToDelete, deletedChunkShard);
+                        if (mergedChunk->estimatedSizeBytes > _smallChunkSizeThresholdBytes) {
+                            _removeIteratorFromSmallChunks(mergedChunk, mergedChunk->shard);
+                        } else {
+                            // Keep the list of small chunk iterators in the recipient sorted
+                            auto match = _smallChunksByShard.find(mergedChunk->shard);
+                            if (match != _smallChunksByShard.end()) {
+                                auto& [_, smallChunksInRecipient] = *match;
+                                smallChunksInRecipient.sort(compareChunkRangeInfoIterators);
+                            }
+                        }
+                        //... and the collection
+                        _collectionChunks.erase(chunkToDelete);
+                    };
 
-                      auto onRetriableError = [&] {
-                          _actionableMerges.push_back(std::move(mergeRequest));
-                      };
+                    auto onRetriableError = [&] {
+                        _actionableMerges.push_back(std::move(mergeRequest));
+                    };
 
-                      auto onNonRetriableError = [&]() {
-                          _abort(DefragmentationPhaseEnum::kMergeAndMeasureChunks);
-                      };
+                    auto onNonRetriableError = [&]() {
+                        _abort(DefragmentationPhaseEnum::kMergeAndMeasureChunks);
+                    };
 
-                      if (!_aborted) {
-                          handleActionResult(opCtx,
-                                             _nss,
-                                             _uuid,
-                                             getType(),
-                                             mergeResponse,
-                                             onSuccess,
-                                             onRetriableError,
-                                             onNonRetriableError);
-                      }
-                  },
-                  [](const DataSizeInfo& dataSizeAction) {
-                      uasserted(ErrorCodes::BadValue, "Unexpected action type");
-                  },
-                  [](const MergeAllChunksOnShardInfo& _) {
-                      uasserted(ErrorCodes::BadValue, "Unexpected action type");
-                  }},
-              action);
+                    if (!_aborted) {
+                        handleActionResult(opCtx,
+                                           _nss,
+                                           _uuid,
+                                           getType(),
+                                           mergeResponse,
+                                           onSuccess,
+                                           onRetriableError,
+                                           onNonRetriableError);
+                    }
+                },
+                [](const DataSizeInfo& dataSizeAction) {
+                    uasserted(ErrorCodes::BadValue, "Unexpected action type");
+                },
+                [](const MergeAllChunksOnShardInfo& _) {
+                    uasserted(ErrorCodes::BadValue, "Unexpected action type");
+                }},
+            action);
     }
 
     bool isComplete() const override {
@@ -1269,7 +1266,7 @@ private:
 }  // namespace
 
 void BalancerDefragmentationPolicy::startCollectionDefragmentations(OperationContext* opCtx) {
-    stdx::lock_guard<Latch> lk(_stateMutex);
+    stdx::lock_guard<stdx::mutex> lk(_stateMutex);
 
     // Fetch all collections with `defragmentCollection` flag enabled
     static const auto query =
@@ -1299,7 +1296,7 @@ void BalancerDefragmentationPolicy::startCollectionDefragmentations(OperationCon
 
 void BalancerDefragmentationPolicy::abortCollectionDefragmentation(OperationContext* opCtx,
                                                                    const NamespaceString& nss) {
-    stdx::lock_guard<Latch> lk(_stateMutex);
+    stdx::lock_guard<stdx::mutex> lk(_stateMutex);
     auto coll =
         ShardingCatalogManager::get(opCtx)->localCatalogClient()->getCollection(opCtx, nss, {});
     if (coll.getDefragmentCollection()) {
@@ -1313,17 +1310,17 @@ void BalancerDefragmentationPolicy::abortCollectionDefragmentation(OperationCont
 }
 
 void BalancerDefragmentationPolicy::interruptAllDefragmentations() {
-    stdx::lock_guard<Latch> lk(_stateMutex);
+    stdx::lock_guard<stdx::mutex> lk(_stateMutex);
     _defragmentationStates.clear();
 }
 
 bool BalancerDefragmentationPolicy::isDefragmentingCollection(const UUID& uuid) {
-    stdx::lock_guard<Latch> lk(_stateMutex);
+    stdx::lock_guard<stdx::mutex> lk(_stateMutex);
     return _defragmentationStates.contains(uuid);
 }
 
 BSONObj BalancerDefragmentationPolicy::reportProgressOn(const UUID& uuid) {
-    stdx::lock_guard<Latch> lk(_stateMutex);
+    stdx::lock_guard<stdx::mutex> lk(_stateMutex);
     auto match = _defragmentationStates.find(uuid);
     if (match == _defragmentationStates.end() || !match->second) {
         return BSON(kCurrentPhase << kNoPhase);
@@ -1339,7 +1336,7 @@ MigrateInfoVector BalancerDefragmentationPolicy::selectChunksToMove(
 
     MigrateInfoVector chunksToMove;
     {
-        stdx::lock_guard<Latch> lk(_stateMutex);
+        stdx::lock_guard<stdx::mutex> lk(_stateMutex);
 
         std::vector<UUID> collectionUUIDs;
         collectionUUIDs.reserve(_defragmentationStates.size());
@@ -1419,7 +1416,7 @@ StringData BalancerDefragmentationPolicy::getName() const {
 
 boost::optional<BalancerStreamAction> BalancerDefragmentationPolicy::getNextStreamingAction(
     OperationContext* opCtx) {
-    stdx::lock_guard<Latch> lk(_stateMutex);
+    stdx::lock_guard<stdx::mutex> lk(_stateMutex);
     // Visit the defrag state in round robin fashion starting from a random one
     auto stateIt = [&] {
         auto it = _defragmentationStates.begin();
@@ -1488,7 +1485,7 @@ void BalancerDefragmentationPolicy::applyActionResult(
     const BalancerStreamAction& action,
     const BalancerStreamActionResponse& response) {
     {
-        stdx::lock_guard<Latch> lk(_stateMutex);
+        stdx::lock_guard<stdx::mutex> lk(_stateMutex);
         DefragmentationPhase* targetState = nullptr;
         visit(OverloadedVisitor{[&](const MergeInfo& act) {
                                     if (_defragmentationStates.contains(act.uuid)) {

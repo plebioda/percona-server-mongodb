@@ -50,14 +50,15 @@
 #include "mongo/db/auth/user.h"
 #include "mongo/db/auth/user_acquisition_stats.h"
 #include "mongo/db/auth/user_name.h"
+#include "mongo/db/client.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/tenant_id.h"
 #include "mongo/platform/atomic_word.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/stdx/unordered_map.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/concurrency/thread_pool.h"
@@ -72,16 +73,12 @@ namespace mongo {
  */
 class AuthorizationManagerImpl : public AuthorizationManager {
 public:
-    struct InstallMockForTestingOrAuthImpl {
-        explicit InstallMockForTestingOrAuthImpl() = default;
-    };
-
     AuthorizationManagerImpl(Service* service,
                              std::unique_ptr<AuthzManagerExternalState> externalState);
     ~AuthorizationManagerImpl() override;
 
 
-    std::unique_ptr<AuthorizationSession> makeAuthorizationSession() override;
+    std::unique_ptr<AuthorizationSession> makeAuthorizationSession(Client* client) override;
 
     void setShouldValidateAuthSchemaOnStartup(bool validate) override;
 
@@ -95,15 +92,11 @@ public:
 
     OID getCacheGeneration() override;
 
-    Status hasValidAuthSchemaVersionDocumentForInitialSync(OperationContext* opCtx) override;
-
     bool hasAnyPrivilegeDocuments(OperationContext* opCtx) override;
 
     Status getUserDescription(OperationContext* opCtx,
                               const UserName& userName,
                               BSONObj* result) override;
-
-    bool hasUser(OperationContext* opCtx, const boost::optional<TenantId>& tenantId) override;
 
     Status rolesExist(OperationContext* opCtx, const std::vector<RoleName>& roleNames) override;
 
@@ -121,13 +114,6 @@ public:
                                   const std::vector<RoleName>& roleName,
                                   AuthenticationRestrictionsFormat,
                                   BSONObj* result) override;
-
-    Status getRoleDescriptionsForDB(OperationContext* opCtx,
-                                    const DatabaseName& dbname,
-                                    PrivilegeFormat privilegeFormat,
-                                    AuthenticationRestrictionsFormat,
-                                    bool showBuiltinRoles,
-                                    std::vector<BSONObj>* result) override;
 
     StatusWith<UserHandle> acquireUser(OperationContext* opCtx,
                                        std::unique_ptr<UserRequest> userRequest) override;
@@ -155,13 +141,13 @@ public:
      */
     void invalidateUserCache() override;
 
-    void logOp(OperationContext* opCtx,
-               StringData opstr,
-               const NamespaceString& nss,
-               const BSONObj& obj,
-               const BSONObj* patt) override;
-
     std::vector<CachedUserInfo> getUserCacheInfo() const override;
+
+    void logOp(OperationContext* opCtx,
+               StringData op,
+               const NamespaceString& ns,
+               const BSONObj& o,
+               const BSONObj* o2) override;
 
 private:
     /**

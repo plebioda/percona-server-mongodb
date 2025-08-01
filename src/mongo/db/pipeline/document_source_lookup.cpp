@@ -558,9 +558,16 @@ boost::optional<ShardId> DocumentSourceLookUp::computeMergeShardId() const {
     // involved shard). When this stage is part of a deeply nested pipeline, it  prevents creating
     // an exponential explosion of cursors/resources (proportional to the level of pipeline
     // nesting).
-    if (!(pExpCtx->inMongos && pExpCtx->mongoProcessInterface->isSharded(pExpCtx->opCtx, _fromNs) &&
+    if (!(pExpCtx->inRouter && pExpCtx->mongoProcessInterface->isSharded(pExpCtx->opCtx, _fromNs) &&
           foreignShardedLookupAllowed())) {
-        return ShardingState::get(pExpCtx->opCtx)->shardId();
+        auto shardId = ShardingState::get(pExpCtx->opCtx)->shardId();
+        // If the command is executed on a mongos, we might get an empty shardId. We should return a
+        // shardId only if it is valid (non-empty).
+        if (shardId.isValid()) {
+            return shardId;
+        } else {
+            return boost::none;
+        }
     }
 
     return boost::none;
@@ -686,7 +693,7 @@ PipelinePtr DocumentSourceLookUp::buildPipeline(
         expectUnshardedCollectionInScope;
 
     const auto allowForeignShardedColl = foreignShardedLookupAllowed();
-    if (!allowForeignShardedColl && !fromExpCtx->inMongos) {
+    if (!allowForeignShardedColl && !fromExpCtx->inRouter) {
         // Enforce that the foreign collection must be unsharded for lookup.
         expectUnshardedCollectionInScope =
             fromExpCtx->mongoProcessInterface->expectUnshardedCollectionInScope(

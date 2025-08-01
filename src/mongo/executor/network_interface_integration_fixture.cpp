@@ -123,62 +123,31 @@ void NetworkInterfaceIntegrationFixture::resetIsInternalClient(bool isInternalCl
     WireSpec::getWireSpec(getGlobalServiceContext()).reset(std::move(newSpec));
 }
 
-void NetworkInterfaceIntegrationFixture::startCommand(const TaskExecutor::CallbackHandle& cbHandle,
-                                                      RemoteCommandRequest& request,
-                                                      StartCommandCB onFinish) {
-    RemoteCommandRequestOnAny rcroa{request};
-
-    auto cb = [onFinish = std::move(onFinish)](const TaskExecutor::ResponseOnAnyStatus& rs) {
-        onFinish(rs);
-    };
-    invariant(net().startCommand(cbHandle, rcroa, std::move(cb)));
-}
-
 Future<RemoteCommandResponse> NetworkInterfaceIntegrationFixture::runCommand(
-    const TaskExecutor::CallbackHandle& cbHandle, RemoteCommandRequestOnAny rcroa) {
+    const TaskExecutor::CallbackHandle& cbHandle,
+    RemoteCommandRequest request,
+    const std::shared_ptr<Baton>& baton) {
 
     _onSchedulingCommand();
 
     return net()
-        .startCommand(cbHandle, rcroa)
-        .then([rcroa](TaskExecutor::ResponseOnAnyStatus roa) {
-            auto res = RemoteCommandResponse(roa);
-            if (res.isOK()) {
+        .startCommand(cbHandle, request, baton)
+        .unsafeToInlineFuture()
+        .then([request](TaskExecutor::ResponseStatus resStatus) {
+            if (resStatus.isOK()) {
                 LOGV2(4820500,
                       "Got command result",
-                      "request"_attr = rcroa.toString(),
-                      "response"_attr = res.toString());
+                      "request"_attr = request.toString(),
+                      "response"_attr = resStatus.toString());
             } else {
                 LOGV2(4820501,
                       "Command failed",
-                      "request"_attr = rcroa.toString(),
-                      "error"_attr = res.status);
+                      "request"_attr = request.toString(),
+                      "error"_attr = resStatus.status);
             }
-            return res;
+            return resStatus;
         })
         .onCompletion([this](StatusOrStatusWith<RemoteCommandResponse> status) {
-            _onCompletingCommand();
-            return status;
-        });
-}
-
-Future<RemoteCommandOnAnyResponse> NetworkInterfaceIntegrationFixture::runCommandOnAny(
-    const TaskExecutor::CallbackHandle& cbHandle, RemoteCommandRequestOnAny request) {
-    RemoteCommandRequestOnAny rcroa{request};
-
-    _onSchedulingCommand();
-
-    return net()
-        .startCommand(cbHandle, rcroa)
-        .then([](TaskExecutor::ResponseOnAnyStatus roa) {
-            if (roa.isOK()) {
-                LOGV2(4820502, "Got command result", "response"_attr = roa.toString());
-            } else {
-                LOGV2(4820503, "Command failed", "error"_attr = roa.status);
-            }
-            return roa;
-        })
-        .onCompletion([this](StatusOrStatusWith<TaskExecutor::ResponseOnAnyStatus> status) {
             _onCompletingCommand();
             return status;
         });
@@ -189,14 +158,13 @@ Future<void> NetworkInterfaceIntegrationFixture::startExhaustCommand(
     RemoteCommandRequest request,
     std::function<void(const RemoteCommandResponse&)> exhaustUtilCB,
     const BatonHandle& baton) {
-    RemoteCommandRequestOnAny rcroa{request};
     auto pf = makePromiseFuture<void>();
 
     auto status = net().startExhaustCommand(
         cbHandle,
-        rcroa,
-        [p = std::move(pf.promise), exhaustUtilCB = std::move(exhaustUtilCB)](
-            const TaskExecutor::ResponseOnAnyStatus& rs) mutable {
+        request,
+        [p = std::move(pf.promise),
+         exhaustUtilCB = std::move(exhaustUtilCB)](const TaskExecutor::ResponseStatus& rs) mutable {
             exhaustUtilCB(rs);
 
             if (!rs.status.isOK()) {
@@ -217,15 +185,43 @@ Future<void> NetworkInterfaceIntegrationFixture::startExhaustCommand(
     return std::move(pf.future);
 }
 
-void NetworkInterfaceIntegrationFixture::runSetupCommandSync(const DatabaseName& db,
-                                                             BSONObj cmdObj) {
-    RemoteCommandRequestOnAny request(
-        {fixture().getServers()[0]}, db, std::move(cmdObj), BSONObj(), nullptr, Minutes(1));
+BSONObj NetworkInterfaceIntegrationFixture::runSetupCommandSync(const DatabaseName& db,
+                                                                BSONObj cmdObj) {
+    RemoteCommandRequest request(
+        fixture().getServers()[0], db, std::move(cmdObj), BSONObj(), nullptr, Minutes(1));
     request.sslMode = transport::kGlobalSSLMode;
 
     auto res = _fixtureNet->startCommand(makeCallbackHandle(), request).get();
     ASSERT_OK(res.status);
     ASSERT_OK(getStatusFromCommandResult(res.data));
+    return res.data;
+}
+
+NetworkInterfaceIntegrationFixture::FailPointGuard
+NetworkInterfaceIntegrationFixture::configureFailPoint(StringData fp, BSONObj data) {
+    auto resp = runSetupCommandSync(DatabaseName::kAdmin,
+                                    BSON("configureFailPoint" << fp << "mode"
+                                                              << "alwaysOn"
+                                                              << "data" << data));
+    return FailPointGuard(fp, this, resp.getField("count").Int());
+}
+
+NetworkInterfaceIntegrationFixture::FailPointGuard
+NetworkInterfaceIntegrationFixture::configureFailCommand(
+    StringData failCommand,
+    boost::optional<ErrorCodes::Error> errorCode,
+    boost::optional<Milliseconds> blockTime) {
+    auto data = BSON("failCommands" << BSON_ARRAY(failCommand));
+
+    if (errorCode) {
+        data = data.addField(BSON("errorCode" << *errorCode).firstElement());
+    }
+
+    if (blockTime) {
+        data =
+            data.addFields(BSON("blockConnection" << true << "blockTimeMS" << blockTime->count()));
+    }
+    return configureFailPoint("failCommand", data);
 }
 
 RemoteCommandResponse NetworkInterfaceIntegrationFixture::runCommandSync(

@@ -100,7 +100,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/server_base",
         "$BUILD_DIR/mongo/rpc/command_status",
         "async_rpc_error_info",
-        "hedge_options_util",
         "remote_command",
         "task_executor_interface",
     ],
@@ -159,8 +158,6 @@ env.CppUnitTest(
         "async_rpc",
         "connection_pool_executor",
         "egress_connection_closer_manager",
-        "hedge_options_util",
-        "hedging_metrics",
         "inline_executor",
         "network_interface_mock",
         "network_interface_tl",
@@ -176,6 +173,7 @@ env.CppUnitTest(
 env.CppIntegrationTest(
     target="executor_integration_test",
     source=[
+        "exhaust_response_reader_integration_test.cpp",
         "network_interface_integration_test.cpp",
         "task_executor_cursor_integration_test.cpp",
         "thread_pool_task_executor_integration_test.cpp",
@@ -183,6 +181,9 @@ env.CppIntegrationTest(
     LIBDEPS=[
         "$BUILD_DIR/mongo/client/async_client",
         "$BUILD_DIR/mongo/client/clientdriver_network",
+        "$BUILD_DIR/mongo/db/commands/kill_operations_idl",
+        "$BUILD_DIR/mongo/db/query/client_cursor/cursor_response_idl",
+        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_parsers",
         "$BUILD_DIR/mongo/db/wire_version",
         "$BUILD_DIR/mongo/executor/network_interface_factory",
         "$BUILD_DIR/mongo/executor/network_interface_thread_pool",
@@ -192,6 +193,7 @@ env.CppIntegrationTest(
         "$BUILD_DIR/mongo/util/concurrency/thread_pool",
         "$BUILD_DIR/mongo/util/version_impl",
         "network_interface_fixture",
+        "network_interface_tl",
         "task_executor_cursor",
     ],
 )

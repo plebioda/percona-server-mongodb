@@ -223,7 +223,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/vector_clock",
         "$BUILD_DIR/mongo/db/windows_options" if env.TargetOSIs("windows") else [],
         "$BUILD_DIR/mongo/executor/async_rpc_error_info",
-        "$BUILD_DIR/mongo/executor/hedging_metrics",
         "$BUILD_DIR/mongo/idl/cluster_server_parameter_server_status",
         "$BUILD_DIR/mongo/transport/grpc/grpc_transport_server_options"
         if shouldBuildGRPC(env)
@@ -380,7 +379,10 @@ env.Program(
         "integration-tests",
         "servers",
     ],
-    SYSLIBDEPS=env.get("MONGO_LDAP_LIB", []),
+    # TODO(SERVER-95322) Remove sysdeps after converted to Bazel
+    SYSLIBDEPS=env.get("MONGO_LDAP_LIB", [])
+    + env.get("MONGO_GSSAPI_LIB", [])
+    + (["sasl2"] if "sasl" in env.get("MONGO_ENTERPRISE_FEATURES", []) else []),
 )
 
 env.Library(

@@ -512,8 +512,6 @@ private:
     void magicTraverseF(const CodeFragment* code);
 
     bool runLambdaPredicate(const CodeFragment* code, int64_t position);
-    void traverseCsiCellValues(const CodeFragment* code, int64_t position);
-    void traverseCsiCellTypes(const CodeFragment* code, int64_t position);
     void valueBlockApplyLambda(const CodeFragment* code);
 
     FastTuple<bool, value::TypeTags, value::Value> setField();
@@ -912,6 +910,9 @@ private:
     FastTuple<bool, value::TypeTags, value::Value> builtinCollAddToSetCapped(ArityType arity);
     FastTuple<bool, value::TypeTags, value::Value> builtinSetToArray(ArityType arity);
 
+    FastTuple<bool, value::TypeTags, value::Value> builtinSetUnionCapped(ArityType arity);
+    FastTuple<bool, value::TypeTags, value::Value> builtinCollSetUnionCapped(ArityType arity);
+
     /**
      * If the BSON type of the value at stack[0] matches the BSON type mask at stack[1] (see
      * value::getBSONTypeMask()), returns true, else returns false. (Returns Nothing if stack[0] is
@@ -989,6 +990,24 @@ private:
         value::Value valNewElem,
         int32_t sizeCap,
         CollatorInterface* collator);
+
+    /**
+     * Given an array of new values via 'valNewElem' and a set accumulator via 'valAcc', add the new
+     * values into the set accumulator. Note that the accumulator is an array of two elements where
+     * the first element is the set of values in the accumulator and the second element is the size
+     * of the current accumulated values.
+     * IMPORTANT: this function does NOT create a ValueGuard over 'tagNewElem' and 'valNewElem'. It
+     * is the responsibility of callers of this function to manage the memory associated with
+     * 'tag/valNewElem'.
+     */
+    FastTuple<bool, value::TypeTags, value::Value> setUnionAccumImpl(value::TypeTags tagNewElem,
+                                                                     value::Value valNewElem,
+                                                                     int32_t sizeCap,
+                                                                     bool ownAcc,
+                                                                     value::TypeTags tagAcc,
+                                                                     value::Value valAcc,
+                                                                     CollatorInterface* collator);
+
     FastTuple<bool, value::TypeTags, value::Value> builtinIsMember(ArityType arity);
     FastTuple<bool, value::TypeTags, value::Value> builtinCollIsMember(ArityType arity);
     FastTuple<bool, value::TypeTags, value::Value> builtinIndexOfBytes(ArityType arity);

@@ -44,8 +44,8 @@
 #include "mongo/executor/remote_command_response.h"
 #include "mongo/executor/scoped_task_executor.h"
 #include "mongo/executor/task_executor.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/transport/transport_layer.h"
 #include "mongo/util/concurrency/with_lock.h"
 #include "mongo/util/duration.h"
@@ -134,14 +134,13 @@ public:
     StatusWith<CallbackHandle> scheduleWorkAt(Date_t when, CallbackFn&& work) override;
 
     // This type provides special connection-pinning behavior for RPC functionality here.
-    StatusWith<CallbackHandle> scheduleRemoteCommandOnAny(
-        const RemoteCommandRequestOnAny& request,
-        const RemoteCommandOnAnyCallbackFn& cb,
-        const BatonHandle& baton = nullptr) override;
+    StatusWith<CallbackHandle> scheduleRemoteCommand(const RemoteCommandRequest& request,
+                                                     const RemoteCommandCallbackFn& cb,
+                                                     const BatonHandle& baton = nullptr) override;
 
-    StatusWith<CallbackHandle> scheduleExhaustRemoteCommandOnAny(
-        const RemoteCommandRequestOnAny& request,
-        const RemoteCommandOnAnyCallbackFn& cb,
+    StatusWith<CallbackHandle> scheduleExhaustRemoteCommand(
+        const RemoteCommandRequest& request,
+        const RemoteCommandCallbackFn& cb,
         const BatonHandle& baton = nullptr) override;
 
     // When cancel() is passed a CallbackHandle that was returned from schedule{Work}()/onEvent(),
@@ -172,7 +171,7 @@ private:
                                        transport::ConnectSSLMode sslMode);
 
     // Start processing pending/queued RPCs.
-    void _doNetworking(stdx::unique_lock<Latch>&&);
+    void _doNetworking(stdx::unique_lock<stdx::mutex>&&);
 
     // CallbackState for RPCs. Non-RPC callbacks use the CallbackState from the _underlyingExecutor.
     class CallbackState;
@@ -191,11 +190,11 @@ private:
 
     // Helper that walks the _requestQueue in-order, completing any canceled callbacks, until
     // it finds the first uncanceled one (if any), which it returns.
-    boost::optional<RequestAndCallback> _getFirstUncanceledRequest(stdx::unique_lock<Latch>&);
+    boost::optional<RequestAndCallback> _getFirstUncanceledRequest(stdx::unique_lock<stdx::mutex>&);
 
     // Synchronizes access to the _requestQueue, _stream, and _isDoingNetworking variables, as well
     // as all CallbackState members.
-    mutable Mutex _mutex;
+    mutable stdx::mutex _mutex;
 
     ScopedTaskExecutor _executor;
     // Owned by the TaskExecutor backing _executor above. Since ScopedTaskExecutor keeps a

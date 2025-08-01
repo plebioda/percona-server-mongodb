@@ -364,15 +364,13 @@ export class ReplSetTest {
      * @param options - The options passed to {@link MongoRunner.runMongod}
      * @param restart - Boolean indicating whether we are restarting the set (if true,
      *     then `forRestart` should have been passed as true to `stopSet()`.) Defaults to false.
-     * @param isMixedVersionCluster - Boolean indicating whether this is a mixed version replica
-     *     set. Defaults to false.
      * @param skipStepUpOnRestart - Boolean indicating that this method should skip attempting to
      *     step up a new primary after restarting the set. Defaults to false. This must be set to
      *     true when using the in-memory storage engine, as the replica set must be re-initiated
      *     by the test on restart before a node can be elected.
      *     This option has no effect if `restart` is not also passed as true.
      */
-    startSet(options, restart, isMixedVersionCluster, skipStepUpOnRestart) {
+    startSet(options, restart, skipStepUpOnRestart) {
         // If the caller has explicitly specified 'waitForConnect:false', then we will start up all
         // replica set nodes and return without waiting to connect to any of them.
         const skipWaitingForAllConnections = (options && options.waitForConnect === false);
@@ -381,7 +379,7 @@ export class ReplSetTest {
         this.startSetOptions = options;
 
         // Start up without waiting for connections.
-        this.startSetAsync(options, restart, isMixedVersionCluster);
+        this.startSetAsync(options, restart);
 
         // Avoid waiting for connections to each node.
         if (skipWaitingForAllConnections) {
@@ -422,7 +420,7 @@ export class ReplSetTest {
      *
      * @param options - The options passed to {@link MongoRunner.runMongod}
      */
-    startSetAsync(options, restart, isMixedVersionCluster) {
+    startSetAsync(options, restart) {
         print("ReplSetTest starting set '" + this.name + "'");
         this.startSetStartTime = new Date();  // Measure the execution time of node startup.
 
@@ -458,7 +456,7 @@ export class ReplSetTest {
                 options.waitForConnect = true;
             }
 
-            this.start(n, options, restart, false, isMixedVersionCluster);
+            this.start(n, options, restart, false);
         }
         return this.nodes;
     }
@@ -2438,10 +2436,8 @@ export class ReplSetTest {
      *     server starts.
      * @param {boolean} [waitForHealth=false] If true, wait for the health indicator of the replica
      *     set node after waiting for a connection.
-     * @param {boolean} [isMixedVersionCluster=false] If true, it tells mongorunner that this node
-     *     is part of a mixed version cluster, and will add --upgradeBackCompat when appropriate.
      */
-    start(n, options, restart, waitForHealth, isMixedVersionCluster) {
+    start(n, options, restart, waitForHealth) {
         n = resolveToNodeId(this, n);
         print("ReplSetTest n is : " + n);
 
@@ -2514,17 +2510,10 @@ export class ReplSetTest {
                 // Our documented upgrade/downgrade paths for a sharded cluster lets us assume that
                 // config server nodes will always be fully upgraded before the shard nodes.
                 options.binVersion = "latest";
-                options.upgradeBackCompat = '';
             } else {
-                if (Random.rand() < 0.5) {
-                    options.binVersion = "latest";
-                    options.upgradeBackCompat = '';
-                } else {
-                    options.binVersion = jsTest.options().useRandomBinVersionsWithinReplicaSet;
-                    options.removeOptions = (options.removeOptions ? options.removeOptions : [])
-                                                .concat("upgradeBackCompat");
-                    delete options.upgradeBackCompat;
-                }
+                const rand = Random.rand();
+                options.binVersion =
+                    rand < 0.5 ? "latest" : jsTest.options().useRandomBinVersionsWithinReplicaSet;
             }
             print("Randomly assigned binary version: " + options.binVersion + " to node: " + n);
         }
@@ -2587,9 +2576,6 @@ export class ReplSetTest {
             options.setParameter.featureFlagAllMongodsAreSharded = true;
         }
 
-        if (jsTest.options().nonClusteredConfigTransactions) {
-            options.setParameter.featureFlagClusteredConfigTransactions = false;
-        }
         if (typeof TestData !== "undefined" && TestData.replicaSetEndpointIncompatible) {
             options.setParameter.featureFlagReplicaSetEndpoint = false;
         }
@@ -2640,7 +2626,7 @@ export class ReplSetTest {
 
         // Never wait for a connection inside runMongod. We will do so below if needed.
         options.waitForConnect = false;
-        var conn = MongoRunner.runMongod(options, isMixedVersionCluster === true);
+        var conn = MongoRunner.runMongod(options);
         if (!conn) {
             throw new Error("Failed to start node " + n);
         }
@@ -3202,11 +3188,15 @@ function _constructStartNewInstances(rst, opts) {
     }
 }
 
+function _newMongo(host) {
+    return new Mongo(host, undefined, {gRPC: false});
+}
+
 /**
  * Constructor, which instantiates the ReplSetTest object from an existing set.
  */
 function _constructFromExistingSeedNode(rst, seedNode) {
-    const conn = new Mongo(seedNode);
+    const conn = _newMongo(seedNode);
     if (jsTest.options().keyFile) {
         rst.keyFile = jsTest.options().keyFile;
     }
@@ -3218,7 +3208,7 @@ function _constructFromExistingSeedNode(rst, seedNode) {
     rst.nodes = existingNodes.map(node => {
         // Note: the seed node is required to be operational in order for the Mongo
         // shell to connect to it. In this code there is no fallback to other nodes.
-        let conn = new Mongo(node);
+        let conn = _newMongo(node);
         conn.name = conn.host;
         return conn;
     });
@@ -3249,7 +3239,7 @@ function _constructFromExistingNodes(rst, {
 
     let i = 0;
     rst.nodes = nodeHosts.map((node) => {
-        const conn = Mongo(node);
+        const conn = _newMongo(node);
         conn.name = conn.host;
         conn.port = node.split(':')[1];
         if (pidValue !== undefined && pidValue[i] !== undefined) {

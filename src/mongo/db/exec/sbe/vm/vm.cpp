@@ -31,7 +31,6 @@
 
 #include "mongo/config.h"  // IWYU pragma: keep
 #include "mongo/db/exec/sbe/accumulator_sum_value_enum.h"
-#include "mongo/db/exec/sbe/columnar.h"
 #include "mongo/db/exec/sbe/values/arith_common.h"
 #include "mongo/db/exec/sbe/values/util.h"
 
@@ -444,122 +443,6 @@ void ByteCode::traverseFInArray(const CodeFragment* code, int64_t position, bool
     pushStack(false, value::TypeTags::Boolean, value::bitcastFrom<bool>(false));
 }
 
-void ByteCode::traverseCsiCellValues(const CodeFragment* code, int64_t position) {
-    auto [ownCsiCell, tagCsiCell, valCsiCell] = getFromStack(0);
-    invariant(!ownCsiCell);
-    popStack();
-
-    invariant(tagCsiCell == value::TypeTags::csiCell);
-    auto csiCell = value::getCsiCellView(valCsiCell);
-    bool isTrue = false;
-
-    // If there are no doubly-nested arrays, we can avoid parsing the array info and use the simple
-    // cursor over all values in the cell.
-    if (!csiCell->splitCellView->hasDoubleNestedArrays) {
-        SplitCellView::Cursor<ColumnStoreEncoder> cellCursor =
-            csiCell->splitCellView->subcellValuesGenerator<ColumnStoreEncoder>(csiCell->encoder);
-
-        while (cellCursor.hasNext() && !isTrue) {
-            const auto& val = cellCursor.nextValue();
-            pushStack(false, val->first, val->second);
-            isTrue = runLambdaPredicate(code, position);
-        }
-    } else {
-        SplitCellView::CursorWithArrayDepth<ColumnStoreEncoder> cellCursor{
-            csiCell->pathDepth,
-            csiCell->splitCellView->firstValuePtr,
-            csiCell->splitCellView->arrInfo,
-            csiCell->encoder};
-
-        while (cellCursor.hasNext() && !isTrue) {
-            const auto& val = cellCursor.nextValue();
-
-            if (val.depthWithinDirectlyNestedArraysOnPath > 0 || val.depthAtLeaf > 1) {
-                // The value is too deep.
-                continue;
-            }
-
-            if (val.isObject) {
-                continue;
-            } else {
-                pushStack(false, val.value->first, val.value->second);
-                isTrue = runLambdaPredicate(code, position);
-            }
-        }
-    }
-    pushStack(false, value::TypeTags::Boolean, value::bitcastFrom<bool>(isTrue));
-}
-
-void ByteCode::traverseCsiCellTypes(const CodeFragment* code, int64_t position) {
-    using namespace value;
-
-    auto [ownCsiCell, tagCsiCell, valCsiCell] = getFromStack(0);
-    invariant(!ownCsiCell);
-    popStack();
-
-    invariant(tagCsiCell == TypeTags::csiCell);
-    auto csiCell = getCsiCellView(valCsiCell);
-
-    // When traversing cell types cannot use the simple cursor even if the cell doesn't contain
-    // doubly-nested arrays because must report types of objects and arrays and for that need to
-    // parse the array info.
-    SplitCellView::CursorWithArrayDepth<ColumnStoreEncoder> cellCursor{
-        csiCell->pathDepth,
-        csiCell->splitCellView->firstValuePtr,
-        csiCell->splitCellView->arrInfo,
-        csiCell->encoder};
-
-    // The dummy array/object are needed when running lambda on the type on non-empty arrays and
-    // objects. We allocate them on the stack because these values are only used in the scope of
-    // this traversal and discarded after evaluating the lambda.
-    const auto dummyArray = Array{};
-    const auto dummyObject = Object{};
-
-    bool shouldProcessArray = true;
-    bool isTrue = false;
-    while (cellCursor.hasNext() && !isTrue) {
-        const auto& val = cellCursor.nextValue();
-
-        if (val.depthWithinDirectlyNestedArraysOnPath > 0) {
-            // There is nesting on the path.
-            continue;
-        }
-
-        if (val.depthAtLeaf > 0) {
-            // Empty arrays are stored in columnstore cells as values and don't require special
-            // handling. All other arrays can be detected when their first value is seen. To apply
-            // the lambda to the leaf array type we inject a "fake" array here as the caller should
-            // only look at the returned type. Note, that we might still need to process the values
-            // inside the array.
-            if (shouldProcessArray) {
-                shouldProcessArray = false;
-
-                pushStack(false, TypeTags::Array, bitcastFrom<const Array*>(&dummyArray));
-                isTrue = runLambdaPredicate(code, position);
-                if (isTrue) {
-                    break;
-                }
-            }
-
-            if (val.depthAtLeaf > 1) {
-                // The value is inside a nested array at the leaf.
-                continue;
-            }
-        } else {
-            shouldProcessArray = true;
-        }
-
-        // Apply lambda to the types of values at the leaf.
-        if (val.isObject) {
-            pushStack(false, TypeTags::Object, bitcastFrom<const Object*>(&dummyObject));
-        } else {
-            pushStack(false, val.value->first, val.value->second);
-        }
-        isTrue = runLambdaPredicate(code, position);
-    }
-    pushStack(false, TypeTags::Boolean, bitcastFrom<bool>(isTrue));
-}
-
 FastTuple<bool, value::TypeTags, value::Value> ByteCode::setField() {
     auto [newOwn, newTag, newVal] = moveFromStack(0);
     value::ValueGuard guardNewElem{newTag, newVal};
@@ -915,23 +798,16 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::addToSetCappedImpl(
     return {ownArr, tagArr, valArr};
 }
 
-FastTuple<bool, value::TypeTags, value::Value> ByteCode::aggSetUnionCappedImpl(
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::setUnionAccumImpl(
     value::TypeTags tagNewElem,
     value::Value valNewElem,
     int32_t sizeCap,
+    bool ownAcc,
+    value::TypeTags tagAcc,
+    value::Value valAcc,
     CollatorInterface* collator) {
-    value::ValueGuard guardNewElem{tagNewElem, valNewElem};
-    auto [ownAcc, tagAcc, valAcc] = getFromStack(0);
 
-    // We expect the new value we are adding to the accumulator to be a two-element array where
-    // the first element is the new set of values and the second value is the corresponding size.
-    tassert(7039526, "expected value of type 'Array'", tagNewElem == value::TypeTags::Array);
-    auto newArr = value::getArrayView(valNewElem);
-    tassert(7039528,
-            "array had unexpected size",
-            newArr->size() == static_cast<size_t>(AggArrayWithSize::kLast));
-
-    // Create a new array is it does not exist yet.
+    // Create a new array as it does not exist yet.
     if (tagAcc == value::TypeTags::Nothing) {
         ownAcc = true;
         std::tie(tagAcc, valAcc) = value::makeNewArray();
@@ -949,8 +825,19 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::aggSetUnionCappedImpl(
         topStack(false, value::TypeTags::Nothing, 0);
     }
 
+    // If the field resolves to Nothing (e.g. if it is missing in the document), then we want to
+    // leave the accumulator as is.
+    if (tagNewElem == value::TypeTags::Nothing) {
+        return {ownAcc, tagAcc, valAcc};
+    }
+
     tassert(7039520, "expected accumulator value to be owned", ownAcc);
     value::ValueGuard guardArr{tagAcc, valAcc};
+
+    // We expect the field to be an array. Thus, we return Nothing on an unexpected input type.
+    if (!value::isArray(tagNewElem)) {
+        return {false, value::TypeTags::Nothing, 0};
+    }
 
     tassert(
         7039521, "expected accumulator to be of type 'Array'", tagAcc == value::TypeTags::Array);
@@ -973,14 +860,8 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::aggSetUnionCappedImpl(
     tassert(7039524, "expected 64-bit int", tagAccSize == value::TypeTags::NumberInt64);
     int64_t currentSize = value::bitcastTo<int64_t>(valAccSize);
 
-    auto [tagNewValSet, valNewValSet] =
-        newArr->getAt(static_cast<size_t>(AggArrayWithSize::kValues));
-    tassert(
-        7039525, "expected value of type 'ArraySet'", tagNewValSet == value::TypeTags::ArraySet);
-
-
     value::arrayForEach<true>(
-        tagNewValSet, valNewValSet, [&](value::TypeTags elTag, value::Value elVal) {
+        tagNewElem, valNewElem, [&](value::TypeTags elTag, value::Value elVal) {
             int elemSize = value::getApproximateSize(elTag, elVal);
             bool inserted = accArrSet->push_back(elTag, elVal);
 
@@ -1003,6 +884,33 @@ FastTuple<bool, value::TypeTags, value::Value> ByteCode::aggSetUnionCappedImpl(
 
     guardArr.reset();
     return {ownAcc, tagAcc, valAcc};
+}
+
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::aggSetUnionCappedImpl(
+    value::TypeTags tagNewElem,
+    value::Value valNewElem,
+    int32_t sizeCap,
+    CollatorInterface* collator) {
+    // Note that we do not call 'reset()' on the guard below, as 'setUnionAccumImpl' assumes that
+    // callers will manage the memory associated with 'tag/valNewElem'. See the comment on
+    // 'setUnionAccumImpl' for more details.
+    value::ValueGuard guardNewElem{tagNewElem, valNewElem};
+    auto [ownAcc, tagAcc, valAcc] = getFromStack(0);
+
+    // We expect the new value we are adding to the accumulator to be a two-element array where
+    // the first element is the new set of values and the second value is the corresponding size.
+    tassert(7039526, "expected value of type 'Array'", tagNewElem == value::TypeTags::Array);
+    auto newArr = value::getArrayView(valNewElem);
+    tassert(7039528,
+            "array had unexpected size",
+            newArr->size() == static_cast<size_t>(AggArrayWithSize::kLast));
+
+    auto [tagNewValSet, valNewValSet] =
+        newArr->getAt(static_cast<size_t>(AggArrayWithSize::kValues));
+    tassert(
+        7039525, "expected value of type 'ArraySet'", tagNewValSet == value::TypeTags::ArraySet);
+
+    return setUnionAccumImpl(tagNewValSet, valNewValSet, sizeCap, ownAcc, tagAcc, valAcc, collator);
 }
 
 ByteCode::MultiAccState ByteCode::getMultiAccState(value::TypeTags stateTag,

@@ -48,7 +48,6 @@
 #include "mongo/bson/timestamp.h"
 #include "mongo/db/catalog/collection_options.h"
 #include "mongo/db/client.h"
-#include "mongo/db/cursor_id.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/exec/document_value/value.h"
 #include "mongo/db/feature_compatibility_version_document_gen.h"
@@ -56,6 +55,7 @@
 #include "mongo/db/index_builds_coordinator.h"
 #include "mongo/db/index_builds_coordinator_mongod.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/query/client_cursor/cursor_id.h"
 #include "mongo/db/repl/collection_cloner.h"
 #include "mongo/db/repl/data_replicator_external_state_mock.h"
 #include "mongo/db/repl/initial_syncer.h"
@@ -102,9 +102,9 @@
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
 #include "mongo/logv2/log_component.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/rpc/metadata/oplog_query_metadata.h"
 #include "mongo/rpc/metadata/repl_set_metadata.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/stdx/type_traits.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/bson_test_util.h"
@@ -156,9 +156,9 @@ using executor::NetworkInterfaceMock;
 using executor::RemoteCommandRequest;
 using executor::RemoteCommandResponse;
 
-using LockGuard = stdx::lock_guard<Latch>;
+using LockGuard = stdx::lock_guard<stdx::mutex>;
 using NetworkGuard = executor::NetworkInterfaceMock::InNetworkGuard;
-using UniqueLock = stdx::unique_lock<Latch>;
+using UniqueLock = stdx::unique_lock<stdx::mutex>;
 
 const BSONObj kListDatabasesFailPointData = BSON("cloner"
                                                  << "AllDatabaseCloner"
@@ -1224,8 +1224,8 @@ TEST_F(InitialSyncerTest, InitialSyncerPassesThroughGetRollbackIdScheduleError) 
     // creating the oplog collection.
     executor::RemoteCommandRequest request;
     _executorProxy->shouldFailScheduleRemoteCommandRequest =
-        [&request](const executor::RemoteCommandRequestOnAny& requestToSend) {
-            request = {requestToSend, 0};
+        [&request](const executor::RemoteCommandRequest& requestToSend) {
+            request = requestToSend;
             return true;
         };
 
@@ -1333,8 +1333,8 @@ TEST_F(InitialSyncerTest, InitialSyncerPassesThroughDefaultBeginFetchingOpTimeSc
     // this test case.
     executor::RemoteCommandRequest request;
     _executorProxy->shouldFailScheduleRemoteCommandRequest =
-        [&request](const executor::RemoteCommandRequestOnAny& requestToSend) {
-            request = {requestToSend, 0};
+        [&request](const executor::RemoteCommandRequest& requestToSend) {
+            request = requestToSend;
             auto elem = requestToSend.cmdObj.firstElement();
             return (("find" == elem.fieldNameStringData()) &&
                     ("oplog.rs" == elem.valueStringData()));
@@ -1418,8 +1418,8 @@ TEST_F(InitialSyncerTest, InitialSyncerPassesThroughGetBeginFetchingOpTimeSchedu
     // inspection at the end of this test case.
     executor::RemoteCommandRequest request;
     _executorProxy->shouldFailScheduleRemoteCommandRequest =
-        [&request](const executor::RemoteCommandRequestOnAny& requestToSend) {
-            request = {requestToSend, 0};
+        [&request](const executor::RemoteCommandRequest& requestToSend) {
+            request = requestToSend;
             auto elem = requestToSend.cmdObj.firstElement();
             return (("find" == elem.fieldNameStringData()) &&
                     (NamespaceString::kSessionTransactionsTableNamespace.coll() ==
@@ -1532,8 +1532,8 @@ TEST_F(InitialSyncerTest, InitialSyncerPassesThroughLastOplogEntryFetcherSchedul
         processSuccessfulLastOplogEntryFetcherResponse({makeOplogEntryObj(1)});
 
         _executorProxy->shouldFailScheduleRemoteCommandRequest =
-            [&request](const executor::RemoteCommandRequestOnAny& requestToSend) {
-                request = {requestToSend, 0};
+            [&request](const executor::RemoteCommandRequest& requestToSend) {
+                request = requestToSend;
                 auto elem = requestToSend.cmdObj.firstElement();
                 return (("find" == elem.fieldNameStringData()) &&
                         ("oplog.rs" == elem.valueStringData()));
@@ -1775,8 +1775,8 @@ TEST_F(InitialSyncerTest, InitialSyncerPassesThroughFCVFetcherScheduleError) {
     // We reject the first find command that is on the fCV collection.
     executor::RemoteCommandRequest request;
     _executorProxy->shouldFailScheduleRemoteCommandRequest =
-        [&request](const executor::RemoteCommandRequestOnAny& requestToSend) {
-            request = {requestToSend, 0};
+        [&request](const executor::RemoteCommandRequest& requestToSend) {
+            request = requestToSend;
             return "find" == requestToSend.cmdObj.firstElement().fieldNameStringData() &&
                 NamespaceString::kServerConfigurationNamespace.coll() ==
                 requestToSend.cmdObj.firstElement().str();
@@ -2438,7 +2438,7 @@ TEST_F(InitialSyncerTest,
     executor::RemoteCommandRequest request;
     int count = 0;
     _executorProxy->shouldFailScheduleRemoteCommandRequest =
-        [&count, &request](const executor::RemoteCommandRequestOnAny& requestToSend) {
+        [&count, &request](const executor::RemoteCommandRequest& requestToSend) {
             auto elem = requestToSend.cmdObj.firstElement();
             if (("find" == elem.fieldNameStringData()) && (requestToSend.cmdObj.hasField("sort")) &&
                 (1 == requestToSend.cmdObj.getIntField("limit")) &&
@@ -2447,7 +2447,7 @@ TEST_F(InitialSyncerTest,
                     count++;
                     return false;
                 }
-                request = {requestToSend, 0};
+                request = requestToSend;
                 return true;
             }
             return false;
@@ -3043,13 +3043,13 @@ TEST_F(
     executor::RemoteCommandRequest request;
     bool first = true;
     _executorProxy->shouldFailScheduleRemoteCommandRequest =
-        [&first, &request](const executor::RemoteCommandRequestOnAny& requestToSend) {
+        [&first, &request](const executor::RemoteCommandRequest& requestToSend) {
             if ("replSetGetRBID" == requestToSend.cmdObj.firstElement().fieldNameStringData()) {
                 if (first) {
                     first = false;
                     return false;
                 }
-                request = {requestToSend, 0};
+                request = requestToSend;
                 return true;
             }
             return false;

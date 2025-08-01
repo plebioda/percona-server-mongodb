@@ -40,8 +40,8 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/encryption/key.h"
 #include "mongo/db/storage/storage_engine.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_session_cache.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/platform/random.h"
+#include "mongo/stdx/mutex.h"
 
 namespace mongo {
 

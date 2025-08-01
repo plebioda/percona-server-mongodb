@@ -67,9 +67,9 @@
 #include "mongo/db/pipeline/document_source_project.h"
 #include "mongo/db/pipeline/document_source_sort.h"
 #include "mongo/db/pipeline/expression_context.h"
+#include "mongo/db/query/client_cursor/cursor_response.h"
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/db/query/collation/collator_interface.h"
-#include "mongo/db/query/cursor_response.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/query/sort_pattern.h"
 #include "mongo/db/query/write_ops/update_request.h"
@@ -380,6 +380,7 @@ ParsedCommandInfo parseWriteRequest(OperationContext* opCtx, const OpMsgRequest&
         if ((parsedInfo.upsert = findAndModifyRequest.getUpsert().get_value_or(false))) {
             parsedInfo.updateRequest = UpdateRequest{};
             parsedInfo.updateRequest->setNamespaceString(findAndModifyRequest.getNamespace());
+            parsedInfo.updateRequest->setYieldPolicy(PlanYieldPolicy::YieldPolicy::INTERRUPT_ONLY);
             update::makeUpdateRequest(
                 opCtx, findAndModifyRequest, boost::none, parsedInfo.updateRequest.get_ptr());
         }

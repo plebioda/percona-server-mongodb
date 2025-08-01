@@ -46,12 +46,12 @@
 #include "mongo/db/client.h"
 #include "mongo/db/cluster_role.h"
 #include "mongo/db/curop.h"
-#include "mongo/db/generic_cursor_gen.h"
 #include "mongo/db/logical_time.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/operation_time_tracker.h"
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/pipeline/process_interface/common_process_interface.h"
+#include "mongo/db/query/client_cursor/generic_cursor_gen.h"
 #include "mongo/db/repl/repl_client_info.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/service_context.h"
@@ -89,7 +89,7 @@ std::vector<BSONObj> CommonProcessInterface::getCurrentOps(
     auto reportCurrentOpForService = [&](Service* service) {
         for (Service::LockedClientsCursor cursor(service); ClientLock lc = cursor.next();) {
             Client* client = &*lc;
-            if (ctxAuth->getAuthorizationManager().isAuthEnabled()) {
+            if (AuthorizationManager::get(opCtx->getService())->isAuthEnabled()) {
                 // If auth is disabled, ignore the allUsers parameter.
                 if (userMode == CurrentOpUserMode::kExcludeOthers &&
                     !ctxAuth->isCoauthorizedWithClient(client, lc)) {
@@ -170,7 +170,7 @@ std::vector<BSONObj> CommonProcessInterface::getCurrentOps(
         _reportCurrentOpsForIdleSessions(opCtx, userMode, &ops);
     }
 
-    if (!ctxAuth->getAuthorizationManager().isAuthEnabled() ||
+    if (!AuthorizationManager::get(opCtx->getService())->isAuthEnabled() ||
         userMode == CurrentOpUserMode::kIncludeAll) {
         _reportCurrentOpsForTransactionCoordinators(
             opCtx, sessionMode == MongoProcessInterface::CurrentOpSessionsMode::kIncludeIdle, &ops);

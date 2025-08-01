@@ -30,6 +30,8 @@
 
 #include <vector>
 
+#include "mongo/db/auth/authorization_backend_interface.h"
+#include "mongo/db/auth/authorization_backend_mock.h"
 #include "mongo/db/auth/authorization_manager_impl.h"
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/authorization_session_for_test.h"
@@ -71,7 +73,7 @@ public:
     void setUp() override;
 
     void tearDown() override {
-        authzSession->logoutAllDatabases(_client.get(), "Ending AuthorizationSessionTest");
+        authzSession->logoutAllDatabases("Ending AuthorizationSessionTest");
         ServiceContextMongoDTest::tearDown();
         gMultitenancySupport = false;
     }
@@ -126,6 +128,7 @@ protected:
     ServiceContext::UniqueOperationContext _opCtx;
     AuthzSessionExternalStateMock* sessionState;
     AuthorizationManager* authzManager;
+    auth::AuthorizationBackendMock* backendMock;
     std::unique_ptr<AuthorizationSessionForTest> authzSession;
     BSONObj credentials;
 };

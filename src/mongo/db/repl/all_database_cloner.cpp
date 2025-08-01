@@ -39,6 +39,7 @@
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonmisc.h"
+#include "mongo/db/auth/authorization_backend_interface.h"
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/client.h"
 #include "mongo/db/feature_flag.h"
@@ -59,8 +60,8 @@
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
 #include "mongo/logv2/log_component.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/rpc/get_status_from_command_result.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/database_name_util.h"
 #include "mongo/util/net/ssl_options.h"
@@ -236,7 +237,7 @@ void AllDatabaseCloner::handleAdminDbNotValid(const Status& errorStatus) {
 
 void AllDatabaseCloner::postStage() {
     {
-        stdx::lock_guard<Latch> lk(_mutex);
+        stdx::lock_guard<stdx::mutex> lk(_mutex);
         _stats.databasesCloned = 0;
         _stats.databasesToClone = _databases.size();
         _stats.databaseStats.reserve(_databases.size());
@@ -271,7 +272,7 @@ void AllDatabaseCloner::postStage() {
     bool foundUser = false;
     for (const auto& dbName : _databases) {
         {
-            stdx::lock_guard<Latch> lk(_mutex);
+            stdx::lock_guard<stdx::mutex> lk(_mutex);
             _currentDatabaseCloner = std::make_unique<DatabaseCloner>(dbName,
                                                                       getSharedData(),
                                                                       getSource(),
@@ -306,12 +307,23 @@ void AllDatabaseCloner::postStage() {
                     opCtxPtr = cc().makeOperationContext();
                     opCtx = opCtxPtr.get();
                 }
-                auto authzManager = AuthorizationManager::get(opCtx->getService());
+
+                // To use the AuthorizationBackendInterface we need to be in a shard
+                // or config role.
+                auto authBackend = auth::AuthorizationBackendInterface::get(opCtx->getService());
+                if (!authBackend) {
+                    LOGV2_WARNING(8366000,
+                                  "Database clone failed, running from invalid cluster role");
+                    setSyncFailedStatus(
+                        Status(ErrorCodes::InitialSyncFailure,
+                               "Database clone failed, running from invalid cluster role"));
+                    return;
+                }
 
                 // Check if global admin has a valid auth schema version document.
                 if (!dbName.tenantId() && !foundAuthSchemaDoc) {
                     auto status =
-                        authzManager->hasValidAuthSchemaVersionDocumentForInitialSync(opCtx);
+                        authBackend->hasValidAuthSchemaVersionDocumentForInitialSync(opCtx);
                     if (status == ErrorCodes::AuthSchemaIncompatible) {
                         handleAdminDbNotValid(status);
                         return;
@@ -322,7 +334,9 @@ void AllDatabaseCloner::postStage() {
 
                 // We haven't yet found a user document, look for one. In a multitenant environment,
                 // user documents will live in tenant-specific admin collections.
-                foundUser = authzManager->hasUser(opCtx, dbName.tenantId());
+                foundUser = auth::AuthorizationBackendInterface::get(opCtx->getService())
+                                ->hasAnyUserDocuments(opCtx, dbName.tenantId())
+                                .isOK();
             }
 
             // The global admin db sorts first even in a multitenant environemnt, so if we've found
@@ -345,7 +359,7 @@ void AllDatabaseCloner::postStage() {
             }
         }
         {
-            stdx::lock_guard<Latch> lk(_mutex);
+            stdx::lock_guard<stdx::mutex> lk(_mutex);
             _stats.databaseStats[_stats.databasesCloned] = _currentDatabaseCloner->getStats();
             _currentDatabaseCloner = nullptr;
             _stats.databasesCloned++;
@@ -355,7 +369,7 @@ void AllDatabaseCloner::postStage() {
 }
 
 AllDatabaseCloner::Stats AllDatabaseCloner::getStats() const {
-    stdx::lock_guard<Latch> lk(_mutex);
+    stdx::lock_guard<stdx::mutex> lk(_mutex);
     AllDatabaseCloner::Stats stats = _stats;
     if (_currentDatabaseCloner) {
         stats.databaseStats[_stats.databasesCloned] = _currentDatabaseCloner->getStats();
@@ -364,7 +378,7 @@ AllDatabaseCloner::Stats AllDatabaseCloner::getStats() const {
 }
 
 std::string AllDatabaseCloner::toString() const {
-    stdx::lock_guard<Latch> lk(_mutex);
+    stdx::lock_guard<stdx::mutex> lk(_mutex);
     return str::stream() << "initial sync --"
                          << " active:" << isActive(lk) << " status:" << getStatus(lk).toString()
                          << " source:" << getSource()

@@ -44,18 +44,18 @@
 #include "mongo/base/status_with.h"
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonobj.h"
-#include "mongo/db/cursor_id.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/query/cursor_response.h"
+#include "mongo/db/query/client_cursor/cursor_id.h"
+#include "mongo/db/query/client_cursor/cursor_response.h"
 #include "mongo/db/query/query_stats/data_bearing_node_metrics.h"
 #include "mongo/db/query/tailable_mode_gen.h"
 #include "mongo/db/shard_id.h"
 #include "mongo/executor/task_executor.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/s/query/exec/async_results_merger_params_gen.h"
 #include "mongo/s/query/exec/cluster_query_result.h"
 #include "mongo/stdx/future.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/util/concurrency/with_lock.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/net/hostandport.h"
@@ -266,7 +266,7 @@ public:
      * Returns remote metrics aggregated in this ARM without reseting the local counts.
      */
     const query_stats::DataBearingNodeMetrics& peekMetrics_forTest() const {
-        stdx::lock_guard<Latch> lk(_mutex);
+        stdx::lock_guard<stdx::mutex> lk(_mutex);
         return _metrics;
     }
 

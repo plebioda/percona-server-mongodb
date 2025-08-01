@@ -43,7 +43,6 @@
 #include "mongo/bson/bsonobj.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/executor/hedge_options_util.h"
 #include "mongo/rpc/metadata.h"
 #include "mongo/transport/transport_layer.h"
 #include "mongo/util/duration.h"
@@ -55,17 +54,6 @@ namespace mongo {
 namespace executor {
 
 struct RemoteCommandRequestBase {
-    struct Options {
-        Options() = default;
-        // Allow implicit conversion from HedgeOptions
-        Options(HedgeOptions opts) : hedgeOptions{opts} {}
-
-        void resetHedgeOptions();
-
-        HedgeOptions hedgeOptions = {};
-        bool fireAndForget = false;
-    };
-
     // Indicates that there is no timeout for the request to complete
     static constexpr Milliseconds kNoTimeout{-1};
 
@@ -79,7 +67,7 @@ struct RemoteCommandRequestBase {
                              const BSONObj& metadataObj,
                              OperationContext* opCtx,
                              Milliseconds timeoutMillis,
-                             Options options,
+                             bool fireAndForget,
                              boost::optional<UUID> operationKey = boost::none);
 
     // Internal id of this request. Not interpreted and used for tracing purposes only.
@@ -103,7 +91,7 @@ struct RemoteCommandRequestBase {
     // metadata attachment (i.e., replication).
     OperationContext* opCtx{nullptr};
 
-    Options options;
+    bool fireAndForget = false;
 
     boost::optional<UUID> operationKey;
 
@@ -140,19 +128,6 @@ template <typename Target>
 struct RemoteCommandRequestImpl : RemoteCommandRequestBase {
     RemoteCommandRequestImpl();
 
-    // Allow implicit conversion from RemoteCommandRequest to RemoteCommandRequestOnAny
-    template <int...>
-    requires std::is_same_v<Target, std::vector<HostAndPort>> RemoteCommandRequestImpl(
-        const RemoteCommandRequestImpl<HostAndPort>& other)
-        : RemoteCommandRequestBase(other), target({other.target}) {}
-
-    // Allow conversion from RemoteCommandRequestOnAny to RemoteCommandRequest with the index of a
-    // particular host
-    template <int...>
-    requires std::is_same_v<Target, HostAndPort> RemoteCommandRequestImpl(
-        const RemoteCommandRequestImpl<std::vector<HostAndPort>>& other, size_t idx)
-        : RemoteCommandRequestBase(other), target(other.target[idx]) {}
-
     RemoteCommandRequestImpl(RequestId requestId,
                              const Target& theTarget,
                              const DatabaseName& theDbName,
@@ -160,7 +135,7 @@ struct RemoteCommandRequestImpl : RemoteCommandRequestBase {
                              const BSONObj& metadataObj,
                              OperationContext* opCtx,
                              Milliseconds timeoutMillis = kNoTimeout,
-                             Options options = {},
+                             bool fireAndForget = false,
                              boost::optional<UUID> operationKey = boost::none);
 
     RemoteCommandRequestImpl(const Target& theTarget,
@@ -169,7 +144,7 @@ struct RemoteCommandRequestImpl : RemoteCommandRequestBase {
                              const BSONObj& metadataObj,
                              OperationContext* opCtx,
                              Milliseconds timeoutMillis = kNoTimeout,
-                             Options options = {},
+                             bool fireAndForget = false,
                              boost::optional<UUID> operationKey = boost::none);
 
     RemoteCommandRequestImpl(const Target& theTarget,
@@ -177,7 +152,7 @@ struct RemoteCommandRequestImpl : RemoteCommandRequestBase {
                              const BSONObj& theCmdObj,
                              const BSONObj& metadataObj,
                              OperationContext* opCtx,
-                             Options options,
+                             bool fireAndForget,
                              boost::optional<UUID> operationKey = boost::none)
         : RemoteCommandRequestImpl(theTarget,
                                    theDbName,
@@ -185,16 +160,15 @@ struct RemoteCommandRequestImpl : RemoteCommandRequestBase {
                                    metadataObj,
                                    opCtx,
                                    kNoTimeout,
-                                   options,
+                                   fireAndForget,
                                    operationKey) {}
-
 
     RemoteCommandRequestImpl(const Target& theTarget,
                              const DatabaseName& theDbName,
                              const BSONObj& theCmdObj,
                              OperationContext* opCtx,
                              Milliseconds timeoutMillis = kNoTimeout,
-                             Options options = {},
+                             bool fireAndForget = false,
                              boost::optional<UUID> operationKey = boost::none)
         : RemoteCommandRequestImpl(theTarget,
                                    theDbName,
@@ -202,7 +176,7 @@ struct RemoteCommandRequestImpl : RemoteCommandRequestBase {
                                    rpc::makeEmptyMetadata(),
                                    opCtx,
                                    timeoutMillis,
-                                   options,
+                                   fireAndForget,
                                    operationKey) {}
 
     std::string toString() const;
@@ -221,7 +195,6 @@ extern template struct RemoteCommandRequestImpl<HostAndPort>;
 extern template struct RemoteCommandRequestImpl<std::vector<HostAndPort>>;
 
 using RemoteCommandRequest = RemoteCommandRequestImpl<HostAndPort>;
-using RemoteCommandRequestOnAny = RemoteCommandRequestImpl<std::vector<HostAndPort>>;
 
 }  // namespace executor
 }  // namespace mongo

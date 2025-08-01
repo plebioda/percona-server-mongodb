@@ -9,29 +9,20 @@ selector:
     # These workloads sometimes trigger 'Could not lock auth data update lock'
     # errors because the AuthorizationManager currently waits for only five
     # seconds to acquire the lock for authorization documents
-    - jstests/concurrency/fsm_workloads/auth_create_role.js
-    - jstests/concurrency/fsm_workloads/auth_create_user.js
-    - jstests/concurrency/fsm_workloads/auth_drop_role.js
-    - jstests/concurrency/fsm_workloads/auth_drop_user.js
 
     # uses >100MB of data, which can overwhelm test hosts
 
     # compact can only be run against a standalone mongod
-    - jstests/concurrency/fsm_workloads/compact_while_creating_indexes.js
 
     # can cause OOM kills on test hosts
 
     # cannot createIndex after dropDatabase without sharding first
-    - jstests/concurrency/fsm_workloads/query/plan_cache_drop_database.js
 
     # The WTWriteConflictException failpoint is not supported on mongos.
-    - jstests/concurrency/fsm_workloads/collmod_writeconflict.js
 
     # TODO Undenylist (SERVER-38852).
-    - jstests/concurrency/fsm_workloads/query/agg/agg_out_interrupt_cleanup.js
 
     # serverStatus does not include transaction metrics on mongos.
-    - jstests/concurrency/fsm_workloads/multi_statement_transaction_atomicity_isolation_metrics_test.js
 
     # Uses the same transaction id across different routers, which is not allowed because when either
     # router tries to commit, it may not know the full participant list.
@@ -65,7 +56,6 @@ selector:
     - requires_standalone
     - assumes_balancer_off
     - assumes_against_mongod_not_mongos
-    - does_not_support_causal_consistency
     - requires_replication
     # Snapshot reads in transactions are banned on capped collections.
     - requires_capped

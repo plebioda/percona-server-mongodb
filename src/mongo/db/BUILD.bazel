@@ -278,7 +278,6 @@ mongo_cc_library(
         "server_options_base_gen",
         "server_options_general_gen",
         "server_options_nongeneral_gen",
-        "server_options_upgrade_downgrade_gen",
     ],
     hdrs = [
         "server_options_base.h",
@@ -319,11 +318,6 @@ idl_generator(
 idl_generator(
     name = "server_options_nongeneral_gen",
     src = "server_options_nongeneral.idl",
-)
-
-idl_generator(
-    name = "server_options_upgrade_downgrade_gen",
-    src = "server_options_upgrade_downgrade.idl",
 )
 
 idl_generator(
@@ -986,7 +980,6 @@ mongo_cc_library(
         ":api_parameters",  # TODO(SERVER-93876): Remove.
         ":audit",
         ":coll_mod_command_idl",
-        ":generic_cursor",
         ":index_commands_idl",  # TODO(SERVER-93876): Remove.
         ":prepare_conflict_tracker",
         ":profile_settings",
@@ -1005,7 +998,8 @@ mongo_cc_library(
         "//src/mongo/db/commands:test_commands_enabled",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db/concurrency:lock_manager",
         "//src/mongo/db/query:common_query_enums_and_helpers",
-        "//src/mongo/db/query:cursor_response_idl",
+        "//src/mongo/db/query/client_cursor:cursor_response_idl",
+        "//src/mongo/db/query/client_cursor:generic_cursor",
         "//src/mongo/db/repl:read_concern_args",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db/stats:resource_consumption_metrics",
         "//src/mongo/db/stats:timer_stats",
@@ -1103,8 +1097,6 @@ mongo_cc_library(
 mongo_cc_library(
     name = "query_exec",
     srcs = [
-        "clientcursor.cpp",
-        "cursor_manager.cpp",
         "//src/mongo/db/exec:and_hash.cpp",
         "//src/mongo/db/exec:and_sorted.cpp",
         "//src/mongo/db/exec:batched_delete_stage.cpp",
@@ -1226,8 +1218,6 @@ mongo_cc_library(
         "//src/mongo/db/query/write_ops:update_result.cpp",
     ],
     hdrs = [
-        "clientcursor.h",
-        "cursor_manager.h",
         "service_context_test_fixture.h",
         "//src/mongo/db/catalog:external_data_source_scope_guard.h",
         "//src/mongo/db/exec:and_common.h",
@@ -1357,7 +1347,6 @@ mongo_cc_library(
     deps = [
         "audit",
         "commands",
-        "cursor_server_params",
         "dbdirectclient",
         "disk_use_options_idl",
         "internal_transactions_feature_flag",
@@ -1388,7 +1377,6 @@ mongo_cc_library(
         "//src/mongo/db/fts:base_fts",
         "//src/mongo/db/matcher:expressions_mongod_only",
         "//src/mongo/db/pipeline",
-        "//src/mongo/db/pipeline:abt_translation",
         "//src/mongo/db/pipeline:change_stream_pipeline",
         "//src/mongo/db/pipeline:document_source_internal_apply_oplog_update",
         "//src/mongo/db/pipeline:pipeline_visitor",
@@ -1397,6 +1385,7 @@ mongo_cc_library(
         "//src/mongo/db/query:query_common",
         "//src/mongo/db/query:query_planner",
         "//src/mongo/db/query/bson:dotted_path_support",
+        "//src/mongo/db/query/client_cursor",
         "//src/mongo/db/query/optimizer:optimizer_rewrites",
         "//src/mongo/db/query/plan_cache:query_plan_cache",
         "//src/mongo/db/query/query_settings",
@@ -1728,38 +1717,6 @@ mongo_cc_library(
     ],
 )
 
-idl_generator(
-    name = "cursor_server_params_gen",
-    src = "cursor_server_params.idl",
-)
-
-idl_generator(
-    name = "generic_cursor_gen",
-    src = "generic_cursor.idl",
-    deps = [
-        ":basic_types_gen",
-        "//src/mongo/db/repl:replication_types_gen",
-        "//src/mongo/db/session:logical_session_id_gen",
-    ],
-)
-
-mongo_cc_library(
-    name = "generic_cursor",
-    srcs = [
-        "allocate_cursor_id.cpp",
-        ":generic_cursor_gen",
-    ],
-    hdrs = [
-        "allocate_cursor_id.h",
-        "cursor_id.h",
-    ],
-    deps = [
-        ":server_base",
-        ":service_context",  # TODO(SERVER-93876): Remove.
-        "//src/mongo/db/repl:optime",  # TODO(SERVER-93876): Remove.
-    ],
-)
-
 mongo_cc_library(
     name = "ttl_collection_cache",
     srcs = [
@@ -1866,7 +1823,7 @@ mongo_cc_library(
         "//src/mongo/db:wire_version.h",
     ],
     header_deps = [
-        "//src/mongo/bson/util:bson_column",
+        "//src/mongo/bson/column",
         "//src/mongo/db/auth:cluster_auth_mode",
         "//src/mongo/db/concurrency:flow_control_ticketholder",
         "//src/mongo/db/fts:fts_query_noop",
@@ -2127,20 +2084,6 @@ mongo_cc_library(
         "//src/mongo/db/catalog:cannot_convert_index_to_unique_info",
         "//src/mongo/db/catalog:collection_uuid_mismatch_info",
         "//src/mongo/db/repl:tenant_migration_errors",
-    ],
-)
-
-mongo_cc_library(
-    name = "cursor_server_params",
-    srcs = [
-        "cursor_server_params.cpp",
-        ":cursor_server_params_gen",
-    ],
-    hdrs = [
-        "cursor_server_params.h",
-    ],
-    deps = [
-        ":server_base",
     ],
 )
 
@@ -2433,7 +2376,7 @@ mongo_cc_library(
     ],
     deps = [
         "//src/mongo:base",
-        "//src/mongo/bson/util:bson_column",  # TODO(SERVER-93876): Remove.
+        "//src/mongo/bson/column",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db/exec:js_function",
         "//src/mongo/db/query/collation:collator_interface",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db/query/datetime:date_time_support",  # TODO(SERVER-93876): Remove.

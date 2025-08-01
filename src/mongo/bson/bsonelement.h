@@ -57,7 +57,6 @@
 #include "mongo/bson/util/builder_fwd.h"
 #include "mongo/config.h"  // IWYU pragma: keep
 #include "mongo/platform/decimal128.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/platform/strnlen.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/str.h"
@@ -793,6 +792,13 @@ public:
         }
     }
 
+    /**
+     * Returns BSON types Timestamp and Date as Timestamp.
+     *
+     * This can be dangerous if the result is used for comparisons as Timestamp is an unsigned type
+     * where Date is signed. Instead, consider using date() when a timestamp before the unix epoch
+     * is possible.
+     */
     Timestamp timestamp() const {
         if (type() == mongo::Date || type() == bsonTimestamp) {
             return Timestamp(ConstDataView(value()).read<LittleEndian<unsigned long long>>().value);

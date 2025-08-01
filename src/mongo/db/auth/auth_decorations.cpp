@@ -35,6 +35,7 @@
 
 
 #include "mongo/base/string_data.h"
+#include "mongo/db/auth/authorization_backend_interface.h"
 #include "mongo/db/auth/authorization_client_handle.h"
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/auth/authorization_session.h"
@@ -55,12 +56,12 @@ namespace {
 const auto getAuthorizationManager =
     Service::declareDecoration<std::unique_ptr<AuthorizationManager>>();
 
-const auto getAuthorizationSession =
-    Client::declareDecoration<std::unique_ptr<AuthorizationSession>>();
-
 struct DisabledAuthMechanisms {
     bool x509 = false;
 };
+
+const auto getAuthorizationSession =
+    Client::declareDecoration<std::unique_ptr<AuthorizationSession>>();
 
 const auto getDisabledAuthMechanisms = Service::declareDecoration<DisabledAuthMechanisms>();
 
@@ -69,11 +70,14 @@ const auto getClusterAuthMode = ServiceContext::declareDecoration<AtomicWord<Clu
 const auto getAuthorizationClientHandle =
     Service::declareDecoration<std::unique_ptr<AuthorizationClientHandle>>();
 
+const auto getAuthorizationBackendInterface =
+    Service::declareDecoration<std::unique_ptr<auth::AuthorizationBackendInterface>>();
+
 class AuthzClientObserver final : public ServiceContext::ClientObserver {
 public:
     void onCreateClient(Client* client) override {
         if (auto authzManager = AuthorizationManager::get(client->getService())) {
-            AuthorizationSession::set(client, authzManager->makeAuthorizationSession());
+            AuthorizationSession::set(client, authzManager->makeAuthorizationSession(client));
         }
     }
 
@@ -81,7 +85,7 @@ public:
         // Logout before the client is destroyed.
         auto& authzSession = getAuthorizationSession(client);
         if (authzSession) {
-            authzSession->logoutAllDatabases(client, "Client has disconnected");
+            authzSession->logoutAllDatabases("Client has disconnected");
         }
     }
 
@@ -107,6 +111,15 @@ AuthorizationManager* AuthorizationManager::get(Service& service) {
 
 AuthorizationClientHandle* AuthorizationClientHandle::get(Service* service) {
     return getAuthorizationClientHandle(service).get();
+}
+
+auth::AuthorizationBackendInterface* auth::AuthorizationBackendInterface::get(Service* service) {
+    return getAuthorizationBackendInterface(service).get();
+}
+
+void auth::AuthorizationBackendInterface::set(
+    Service* service, std::unique_ptr<AuthorizationBackendInterface> backendInterface) {
+    getAuthorizationBackendInterface(service) = std::move(backendInterface);
 }
 
 void AuthorizationManager::set(Service* service,
@@ -137,7 +150,6 @@ void AuthorizationSession::set(Client* client,
                                std::unique_ptr<AuthorizationSession> authorizationSession) {
     auto& authzSession = getAuthorizationSession(client);
     invariant(authorizationSession);
-    invariant(!authzSession);
     authzSession = std::move(authorizationSession);
 }
 

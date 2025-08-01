@@ -46,7 +46,7 @@ imports:
     - "mongo/s/sharding_types.idl"
     - "mongo/s/resharding/common_types.idl"
     - "mongo/db/timeseries/timeseries.idl"
-    - "mongo/db/query/cursor_response.idl"
+    - "mongo/db/query/client_cursor/cursor_response.idl"
     - "mongo/db/metadata_consistency_types.idl"
 
 types:
@@ -427,6 +427,12 @@ structs:
                     gte: 1
                     lte: 256
                 optional: true
+            relaxed:
+                type: optionalBool
+                description: >-
+                    "Runs the cloner aggregation without specifying a collection
+                    uuid to avoid errors in a scenario where the collection UUIDs
+                    are inconsistent among shards."
 
     SetAllowMigrationsRequest:
         description: "Parameters sent for the set allow migrations command"
@@ -615,30 +621,6 @@ commands:
                 description: >-
                     Verifies that the shard key index has the same unique setting as the command.
                 type: optionalBool
-
-    _configsvrRefineCollectionShardKey:
-        command_name: _configsvrRefineCollectionShardKey
-        cpp_name: ConfigsvrRefineCollectionShardKey
-        description: "The internal refineCollectionShardKey command on the config server"
-        strict: false
-        namespace: type
-        api_version: ""
-        type: namespacestring
-        fields:
-            key:
-                type: object
-                description: "The index specification document to use as the new shard key."
-                optional: false
-            epoch:
-                type: objectid
-                description: "The expected epoch of the namespace provided to
-                              refineCollectionShardKey."
-                optional: false
-            enforceUniquenessCheck:
-                description: >-
-                    Verifies that the shard key index has the same unique setting as the command.
-                type: optionalBool
-        reply_type: OkReply
 
     _configsvrCommitRefineCollectionShardKey:
         command_name: _configsvrCommitRefineCollectionShardKey

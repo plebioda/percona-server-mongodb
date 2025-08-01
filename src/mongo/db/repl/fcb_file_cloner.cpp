@@ -49,7 +49,6 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/repl/read_concern_args.h"
 #include "mongo/db/storage/storage_options.h"
 #include "mongo/db/write_concern_options.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/stdx/mutex.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/clock_source.h"
@@ -107,7 +106,7 @@ BaseCloner::ClonerStages FCBFileCloner::getStages() {
 }
 
 void FCBFileCloner::preStage() {
-    stdx::lock_guard<Latch> lk(_mutex);
+    stdx::lock_guard<stdx::mutex> lk(_mutex);
     _stats.start = getSharedData()->getClock()->now();
 
     // Construct local path name from the relative path and the temp dbpath.
@@ -152,7 +151,7 @@ void FCBFileCloner::preStage() {
 
 void FCBFileCloner::postStage() {
     _localFile.close();
-    stdx::lock_guard<Latch> lk(_mutex);
+    stdx::lock_guard<stdx::mutex> lk(_mutex);
     _stats.end = getSharedData()->getClock()->now();
 }
 
@@ -173,7 +172,7 @@ BaseCloner::AfterStageBehavior FCBFileCloner::queryStage() {
 }
 
 size_t FCBFileCloner::getFileOffset() {
-    stdx::lock_guard<Latch> lk(_mutex);
+    stdx::lock_guard<stdx::mutex> lk(_mutex);
     return _fileOffset;
 }
 
@@ -234,7 +233,7 @@ void FCBFileCloner::handleNextBatch(DBClientCursor& cursor) {
         }
     }
     {
-        stdx::lock_guard<Latch> lk(_mutex);
+        stdx::lock_guard<stdx::mutex> lk(_mutex);
         _stats.receivedBatches++;
         while (cursor.moreInCurrentBatch()) {
             _dataToWrite.emplace_back(cursor.nextSafe());
@@ -265,7 +264,7 @@ void FCBFileCloner::writeDataToFilesystemCallback(const executor::TaskExecutor::
                 "fileOffset"_attr = getFileOffset());
     uassertStatusOK(cbd.status);
     {
-        stdx::lock_guard<Latch> lk(_mutex);
+        stdx::lock_guard<stdx::mutex> lk(_mutex);
         if (_dataToWrite.empty()) {
             LOGV2_WARNING(6113310,
                           "writeDataToFilesystemCallback, but no data to write",

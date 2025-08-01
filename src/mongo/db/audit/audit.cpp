@@ -68,9 +68,8 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/namespace_string.h"
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_util.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/rpc/metadata/impersonated_user_metadata.h"
-#include "mongo/util/concurrency/mutex.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/util/database_name_util.h"
 #include "mongo/util/errno_util.h"
 #include "mongo/util/exit_code.h"
@@ -199,7 +198,7 @@ protected:
         //
         // We don't need the mutex around fsync, except to protect against concurrent
         // logRotate destroying our pointer.  Welp.
-        stdx::lock_guard<SimpleMutex> lck(_mutex);
+        stdx::lock_guard<stdx::mutex> lck(_mutex);
 
         _dirty = true;
         if (affects_durable_state)
@@ -211,7 +210,7 @@ protected:
     virtual Status rotate(bool rename,
                           StringData renameSuffix,
                           std::function<void(Status)> onMinorError) override {
-        stdx::lock_guard<SimpleMutex> lck(_mutex);
+        stdx::lock_guard<stdx::mutex> lck(_mutex);
 
         // Close the current file.
         _file.reset();
@@ -243,7 +242,7 @@ protected:
     }
 
     virtual void flush() override {
-        stdx::lock_guard<SimpleMutex> lck(_mutex);
+        stdx::lock_guard<stdx::mutex> lck(_mutex);
 
         if (_dirty) {
             flush_inlock();
@@ -252,7 +251,7 @@ protected:
     }
 
     virtual void fsync() override {
-        stdx::lock_guard<SimpleMutex> lck(_mutex);
+        stdx::lock_guard<stdx::mutex> lck(_mutex);
 
         if (_fsync_pending) {
             if (_dirty) {
@@ -269,7 +268,7 @@ private:
     std::ostringstream _membuf;
     boost::scoped_ptr<Sink> _file;
     const std::string _fileName;
-    SimpleMutex _mutex;
+    stdx::mutex _mutex;
     bool _dirty = false;
     bool _fsync_pending = false;
 
@@ -569,12 +568,12 @@ std::string getIpByHost(const std::string& host) {
 
     std::string ip;
     {
-        stdx::lock_guard<Latch> lk(cacheMutex);
+        stdx::lock_guard<stdx::mutex> lk(cacheMutex);
         ip = hostToIpCache[host];
     }
     if (ip.empty()) {
         ip = hostbyname(host.c_str());
-        stdx::lock_guard<Latch> lk(cacheMutex);
+        stdx::lock_guard<stdx::mutex> lk(cacheMutex);
         hostToIpCache[host] = ip;
     }
     return ip;

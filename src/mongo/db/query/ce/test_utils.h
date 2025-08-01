@@ -29,23 +29,17 @@
 
 #pragma once
 
-#include <cstdlib>
-#include <functional>
-#include <memory>
-#include <string>
-#include <vector>
+#include "mongo/bson/json.h"
+#include "mongo/db/exec/docval_to_sbeval.h"
+#include "mongo/db/query/ce/histogram_estimator.h"
+#include "mongo/db/query/stats/max_diff.h"
+#include "mongo/db/query/stats/maxdiff_test_utils.h"
+#include "mongo/db/query/stats/rand_utils_new.h"
+#include "mongo/logv2/log.h"
+#include "mongo/unittest/assert.h"
 
-#include <absl/container/node_hash_map.h>
-#include <boost/optional/optional.hpp>
+namespace mongo::ce {
 
-#include "mongo/db/exec/document_value/value.h"
-#include "mongo/db/query/ce/histogram_predicate_estimation.h"
-#include "mongo/db/query/optimizer/defs.h"
-#include "mongo/db/query/optimizer/node.h"  // IWYU pragma: keep
-#include "mongo/db/query/optimizer/syntax/syntax.h"
-#include "mongo/db/query/stats/scalar_histogram.h"
-
-namespace mongo::optimizer::ce {
 // Enable this flag to log all estimates, and let all tests pass.
 constexpr bool kCETestLogOnly = false;
 
@@ -125,6 +119,8 @@ struct BucketData {
 };
 
 stats::ScalarHistogram createHistogram(const std::vector<BucketData>& data);
-double estimateIntValCard(const stats::ScalarHistogram& hist, int v, EstimationType type);
+double estimateCardinalityScalarHistogramInteger(const stats::ScalarHistogram& hist,
+                                                 int v,
+                                                 EstimationType type);
 
-}  // namespace mongo::optimizer::ce
+}  // namespace mongo::ce

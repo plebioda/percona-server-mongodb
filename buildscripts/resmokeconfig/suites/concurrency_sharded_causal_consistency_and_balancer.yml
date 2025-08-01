@@ -12,31 +12,23 @@ selector:
     # These workloads sometimes trigger 'Could not lock auth data update lock'
     # errors because the AuthorizationManager currently waits for only five
     # seconds to acquire the lock for authorization documents
-    - jstests/concurrency/fsm_workloads/auth_create_role.js
-    - jstests/concurrency/fsm_workloads/auth_create_user.js
-    - jstests/concurrency/fsm_workloads/auth_drop_role.js
-    - jstests/concurrency/fsm_workloads/auth_drop_user.js
 
     # uses >100MB of data, which can overwhelm test hosts
 
     # compact can only be run against a standalone mongod
-    - jstests/concurrency/fsm_workloads/compact.js
-    - jstests/concurrency/fsm_workloads/compact_while_creating_indexes.js
 
     # can cause OOM kills on test hosts
 
     # cannot createIndex after dropDatabase without sharding first
-    - jstests/concurrency/fsm_workloads/query/plan_cache_drop_database.js
 
     # The WTWriteConflictException failpoint is not supported on mongos.
-    - jstests/concurrency/fsm_workloads/collmod_writeconflict.js
 
     # SERVER-20361 Improve the behaviour of multi-update/delete against a sharded collection
     - jstests/concurrency/fsm_workloads/query/update/update_where.js
 
     # This test runs a large number of inserts, which can cause moveCollection to take a long time
     # to finish. This can cause the CheckMetadataConsistency hook to hit LockBusy errors.
-    - jstests/concurrency/fsm_workloads/timeseries_insert_idle_bucket_expiration.js
+    - jstests/concurrency/fsm_workloads/timeseries/timeseries_insert_idle_bucket_expiration.js
 
   exclude_with_any_tags:
     - requires_standalone

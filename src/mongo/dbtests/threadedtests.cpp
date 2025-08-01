@@ -39,13 +39,12 @@
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
 #include "mongo/platform/atomic_word.h"
-#include "mongo/platform/mutex.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/stdx/thread.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/framework.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/concurrency/admission_context.h"
-#include "mongo/util/concurrency/mutex.h"
 #include "mongo/util/concurrency/priority_ticketholder.h"
 #include "mongo/util/concurrency/semaphore_ticketholder.h"
 #include "mongo/util/concurrency/thread_pool.h"
@@ -268,7 +267,7 @@ private:
         Hotel(int nRooms) : _nRooms(nRooms), _checkedIn(0), _maxRooms(0) {}
 
         void checkIn() {
-            stdx::lock_guard<Latch> lk(_frontDesk);
+            stdx::lock_guard<stdx::mutex> lk(_frontDesk);
             _checkedIn++;
             MONGO_verify(_checkedIn <= _nRooms);
             if (_checkedIn > _maxRooms)
@@ -276,7 +275,7 @@ private:
         }
 
         void checkOut() {
-            stdx::lock_guard<Latch> lk(_frontDesk);
+            stdx::lock_guard<stdx::mutex> lk(_frontDesk);
             _checkedIn--;
             MONGO_verify(_checkedIn >= 0);
         }
@@ -335,7 +334,7 @@ public:
         // Slack is a test to see how long it takes for another thread to pick up
         // and begin work after another relinquishes the lock.  e.g. a spin lock
         // would have very little slack.
-        add<Slack<SimpleMutex, stdx::lock_guard<SimpleMutex>>>();
+        add<Slack<stdx::mutex, stdx::lock_guard<stdx::mutex>>>();
 
         add<IsAtomicWordAtomic<AtomicWord<unsigned>>>();
         add<IsAtomicWordAtomic<AtomicWord<unsigned long long>>>();

@@ -40,7 +40,6 @@
 #include "mongo/bson/bsonelement.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/service_context.h"
-#include "mongo/executor/hedge_options_util.h"
 #include "mongo/executor/remote_command_request.h"
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
@@ -261,7 +260,7 @@ SemiFuture<std::shared_ptr<Shard>> AsyncRequestsSender::RemoteData::getShard() n
 void AsyncRequestsSender::RemoteData::executeRequest() {
     scheduleRequest()
         .thenRunOn(*_ars->_subBaton)
-        .getAsync([this](StatusWith<RemoteCommandOnAnyCallbackArgs> rcr) {
+        .getAsync([this](StatusWith<RemoteCommandCallbackArgs> rcr) {
             _done = true;
             if (rcr.isOK()) {
                 _ars->_responseQueue.push(
@@ -273,8 +272,7 @@ void AsyncRequestsSender::RemoteData::executeRequest() {
         });
 }
 
-auto AsyncRequestsSender::RemoteData::scheduleRequest()
-    -> SemiFuture<RemoteCommandOnAnyCallbackArgs> {
+auto AsyncRequestsSender::RemoteData::scheduleRequest() -> SemiFuture<RemoteCommandCallbackArgs> {
     return getShard()
         .thenRunOn(*_ars->_subBaton)
         .then([this](auto&& shard) -> SemiFuture<std::vector<HostAndPort>> {
@@ -301,31 +299,29 @@ auto AsyncRequestsSender::RemoteData::scheduleRequest()
 }
 
 auto AsyncRequestsSender::RemoteData::scheduleRemoteCommand(std::vector<HostAndPort>&& hostAndPorts)
-    -> SemiFuture<RemoteCommandOnAnyCallbackArgs> {
-    HedgeOptions options =
-        getHedgeOptions(_cmdObj.firstElementFieldNameStringData(), _ars->_readPreference);
-    executor::RemoteCommandRequestOnAny request(
-        std::move(hostAndPorts), _ars->_db, _cmdObj, _ars->_metadataObj, _ars->_opCtx, options);
+    -> SemiFuture<RemoteCommandCallbackArgs> {
+    executor::RemoteCommandRequest request(
+        hostAndPorts[0], _ars->_db, _cmdObj, _ars->_metadataObj, _ars->_opCtx);
 
     // We have to make a promise future pair because the TaskExecutor doesn't currently support a
     // future returning variant of scheduleRemoteCommand
-    auto [p, f] = makePromiseFuture<RemoteCommandOnAnyCallbackArgs>();
+    auto [p, f] = makePromiseFuture<RemoteCommandCallbackArgs>();
 
     // Failures to schedule skip the retry loop
-    uassertStatusOK(_ars->_subExecutor->scheduleRemoteCommandOnAny(
+    uassertStatusOK(_ars->_subExecutor->scheduleRemoteCommand(
         request,
         // We have to make a shared_ptr<Promise> here because scheduleRemoteCommand requires
         // copyable callbacks
-        [p = std::make_shared<Promise<RemoteCommandOnAnyCallbackArgs>>(std::move(p))](
-            const RemoteCommandOnAnyCallbackArgs& cbData) { p->emplaceValue(cbData); },
+        [p = std::make_shared<Promise<RemoteCommandCallbackArgs>>(std::move(p))](
+            const RemoteCommandCallbackArgs& cbData) { p->emplaceValue(cbData); },
         *_ars->_subBaton));
 
     return std::move(f).semi();
 }
 
 
-auto AsyncRequestsSender::RemoteData::handleResponse(RemoteCommandOnAnyCallbackArgs&& rcr)
-    -> SemiFuture<RemoteCommandOnAnyCallbackArgs> {
+auto AsyncRequestsSender::RemoteData::handleResponse(RemoteCommandCallbackArgs&& rcr)
+    -> SemiFuture<RemoteCommandCallbackArgs> {
     if (rcr.response.target) {
         _shardHostAndPort = rcr.response.target;
     }
@@ -379,7 +375,7 @@ auto AsyncRequestsSender::RemoteData::handleResponse(RemoteCommandOnAnyCallbackA
             uassertStatusOK(rcr.response.status);
 
             // We're not okay (on the remote), but still not going to retry
-            return Future<RemoteCommandOnAnyCallbackArgs>::makeReady(std::move(rcr)).semi();
+            return Future<RemoteCommandCallbackArgs>::makeReady(std::move(rcr)).semi();
         })
         .semi();
 };

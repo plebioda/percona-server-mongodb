@@ -275,6 +275,19 @@ env.Library(
     ],
 )
 
+env.Library(
+    target="change_stream_pre_image_test_helpers",
+    source=[
+        "change_stream_pre_image_test_helpers.cpp",
+    ],
+    LIBDEPS_PRIVATE=[
+        "change_stream_pre_image_util",
+        "change_stream_pre_images_collection_manager",
+        "server_base",
+        "shard_role",
+    ],
+)
+
 env.CppUnitTest(
     target="change_stream_pre_images_manager_test",
     source=[
@@ -288,6 +301,7 @@ env.CppUnitTest(
         "catalog/collection_crud",
         "change_stream_options",
         "change_stream_options_manager",
+        "change_stream_pre_image_test_helpers",
         "change_stream_pre_image_util",
         "change_stream_pre_images_collection_manager",
         "change_stream_serverless_helpers",
@@ -1193,6 +1207,7 @@ env.Library(
         "periodic_runner_job_abort_expired_transactions",
         "pipeline/change_stream_expired_pre_image_remover",
         "pipeline/process_interface/mongod_process_interface_factory",
+        "query/client_cursor/client_cursor",
         "query/query_settings/manager",
         "query/stats/stats",
         "repl/drop_pending_collection_reaper",
@@ -1285,7 +1300,10 @@ env.Program(
         "serverless-test",
         "servers",
     ],
-    SYSLIBDEPS=env.get("MONGO_LDAP_LIB", []),
+    # TODO(SERVER-95322) Remove sysdeps after converted to Bazel
+    SYSLIBDEPS=env.get("MONGO_LDAP_LIB", [])
+    + env.get("MONGO_GSSAPI_LIB", [])
+    + (["sasl2"] if "sasl" in env.get("MONGO_ENTERPRISE_FEATURES", []) else []),
 )
 
 env.Library(
@@ -1516,7 +1534,6 @@ if wiredtiger:
         target="query_test",
         source=[
             "collection_index_usage_tracker_test.cpp",
-            "cursor_manager_test.cpp",
             "keypattern_test.cpp",
             "multi_key_path_tracker_test.cpp",
             "update_index_data_test.cpp",
@@ -1598,6 +1615,7 @@ if wiredtiger:
             "catalog_raii_test.cpp",
         ],
         LIBDEPS=[
+            "$BUILD_DIR/mongo/db/query/client_cursor/client_cursor",
             "$BUILD_DIR/mongo/util/concurrency/ticketholder",
             "$BUILD_DIR/mongo/util/progress_meter",
             "admission/ticketholder_manager",
@@ -1680,7 +1698,7 @@ asioEnv.CppIntegrationTest(
     target="db_integration_test",
     source=[
         "nesting_depth_test.cpp",
-        "exhaust_cursor_currentop_integration_test.cpp",
+        "$BUILD_DIR/mongo/db/query/client_cursor/exhaust_cursor_currentop_integration_test.cpp",
     ],
     LIBDEPS=[
         "$BUILD_DIR/mongo/client/clientdriver_network",

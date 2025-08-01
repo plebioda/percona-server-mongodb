@@ -688,6 +688,14 @@ def auto_install_bazel(env, libdep, shlib_suffix):
         with open(os.path.join(env.Dir("#").abspath, linkfile)) as f:
             query_results = f.read()
 
+        filtered_results = ""
+        for lib in query_results.splitlines():
+            bazel_out_path = lib.replace(f"{env['BAZEL_OUT_DIR']}/src", "bazel-bin/src")
+            if os.path.exists(env.File("#/" + bazel_out_path + ".exclude_lib").abspath):
+                continue
+            filtered_results += lib + "\n"
+        query_results = filtered_results
+
         env.AddBazelDepsCache(bazel_target, query_results)
 
     for line in query_results.splitlines():
@@ -828,6 +836,7 @@ def generate(env: SCons.Environment.Environment) -> None:
         f'--//bazel/config:use_disable_ref_track={False if env.GetOption("disable-ref-track") is None else True}',
         f'--//bazel/config:use_wiredtiger={True if env.GetOption("wiredtiger") == "on" else False}',
         f'--//bazel/config:use_glibcxx_debug={env.GetOption("use-glibcxx-debug") is not None}',
+        f'--//bazel/config:use_tracing_profiler={env.GetOption("use-tracing-profiler") == "on"}',
         f'--//bazel/config:build_grpc={True if env["ENABLE_GRPC_BUILD"] else False}',
         f'--//bazel/config:use_libcxx={env.GetOption("libc++") is not None}',
         f'--//bazel/config:detect_odr_violations={env.GetOption("detect-odr-violations") is not None}',
@@ -865,6 +874,9 @@ def generate(env: SCons.Environment.Environment) -> None:
                 f"--//bazel/config:enterprise_feature_{feature}=True"
                 for feature in enterprise_features.split(",")
             ]
+
+    if env.GetOption("gcov") is not None:
+        bazel_internal_flags += ["--collect_code_coverage"]
 
     if env["DWARF_VERSION"]:
         bazel_internal_flags.append(f"--//bazel/config:dwarf_version={env['DWARF_VERSION']}")

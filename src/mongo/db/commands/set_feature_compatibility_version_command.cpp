@@ -667,15 +667,6 @@ private:
                     opCtx, DDLCoordinatorTypeEnum::kRenameCollection);
         }
 
-        // TODO SERVER-79064: Remove once 8.0 becomes last LTS.
-        if (isDowngrading &&
-            feature_flags::gAuthoritativeRefineCollectionShardKey
-                .isDisabledOnTargetFCVButEnabledOnOriginalFCV(requestedVersion, originalVersion)) {
-            ShardingDDLCoordinatorService::getService(opCtx)
-                ->waitForCoordinatorsOfGivenTypeToComplete(
-                    opCtx, DDLCoordinatorTypeEnum::kRefineCollectionShardKey);
-        }
-
         // TODO SERVER-79304 Remove once shardCollection authoritative version becomes LTS
         // TODO (SERVER-77915): Remove once 8.0 (trackUnshardedCollections) becomes lastLTS.
         if (isDowngrading &&
@@ -759,23 +750,6 @@ private:
 
         const auto& [originalVersion, _] = getTransitionFCVFromAndTo(
             serverGlobalParams.featureCompatibility.acquireFCVSnapshot().getVersion());
-
-        if (gFeatureFlagQERangeV2.isEnabledOnTargetFCVButDisabledOnOriginalFCV(requestedVersion,
-                                                                               originalVersion)) {
-            collValidationFunctions.emplace_back([](const Collection* collection) -> void {
-                const auto& encryptedFields =
-                    collection->getCollectionOptions().encryptedFieldConfig;
-                if (encryptedFields) {
-                    uassert(ErrorCodes::CannotUpgrade,
-                            fmt::format("Collection {} has an encrypted field with query type "
-                                        "rangePreview, which is deprecated. Please drop this "
-                                        "collection before upgrading FCV.",
-                                        collection->ns().toStringForErrorMsg()),
-                            !hasQueryType(encryptedFields.get(),
-                                          QueryTypeEnum::RangePreviewDeprecated));
-                }
-            });
-        }
 
         if (gFeatureFlagDisallowBucketCollectionWithoutTimeseriesOptions
                 .isEnabledOnTargetFCVButDisabledOnOriginalFCV(requestedVersion, originalVersion)) {
@@ -1204,26 +1178,6 @@ private:
                     [&](const Collection* collection) {
                         return collection->areRecordIdsReplicated();
                     });
-            }
-        }
-
-        if (!gFeatureFlagQERangeV2.isEnabledOnVersion(requestedVersion)) {
-            auto checkForNewRangeQueryType = [](const Collection* collection) {
-                const auto& encryptedFields =
-                    collection->getCollectionOptions().encryptedFieldConfig;
-                if (encryptedFields) {
-                    uassert(ErrorCodes::CannotDowngrade,
-                            str::stream() << "Collection " << collection->ns().toStringForErrorMsg()
-                                          << " has an encrypted field with query type range, "
-                                             "which is new in 8.0. Please drop this collection "
-                                             "before trying to downgrade FCV.",
-                            !hasQueryType(encryptedFields.get(), QueryTypeEnum::Range));
-                }
-                return true;
-            };
-            for (const auto& dbName : DatabaseHolder::get(opCtx)->getNames()) {
-                Lock::DBLock dbLock(opCtx, dbName, MODE_IS);
-                catalog::forEachCollectionFromDb(opCtx, dbName, MODE_IS, checkForNewRangeQueryType);
             }
         }
 
@@ -1770,15 +1724,6 @@ private:
     void _finalizeUpgrade(OperationContext* opCtx,
                           const multiversion::FeatureCompatibilityVersion requestedVersion) {
         auto role = ShardingState::get(opCtx)->pollClusterRole();
-        // TODO SERVER-79064: Remove once 8.0 becomes last LTS.
-        if (role && role->has(ClusterRole::ShardServer) &&
-            feature_flags::gAuthoritativeRefineCollectionShardKey.isEnabledOnVersion(
-                requestedVersion)) {
-            ShardingDDLCoordinatorService::getService(opCtx)
-                ->waitForCoordinatorsOfGivenTypeToComplete(
-                    opCtx, DDLCoordinatorTypeEnum::kRefineCollectionShardKeyPre71Compatible);
-        }
-
         // TODO SERVER-79304 Remove once shardCollection authoritative version becomes LTS
         if (role && role->has(ClusterRole::ShardServer) &&
             feature_flags::gAuthoritativeShardCollection.isEnabledOnVersion(requestedVersion)) {

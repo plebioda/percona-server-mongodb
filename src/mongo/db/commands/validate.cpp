@@ -62,9 +62,9 @@
 #include "mongo/logv2/log_truncation.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/platform/compiler.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/rpc/get_status_from_command_result.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/scopeguard.h"
@@ -82,7 +82,7 @@ MONGO_FAIL_POINT_DEFINE(validateCmdCollectionNotValid);
 namespace {
 
 // Protects the state below.
-Mutex _validationMutex;
+stdx::mutex _validationMutex;
 
 // Holds the set of full `databaseName.collectionName` namespace strings in progress. Validation
 // commands register themselves in this data structure so that subsequent commands on the same
@@ -194,6 +194,7 @@ public:
             << "\tAdd {full: true} option to do a more thorough check.\n"
             << "\tAdd {background: true} to validate in the background.\n"
             << "\tAdd {repair: true} to run repair mode.\n"
+            << "\tAdd {fixMultikey: true} to fix the multi key.\n"
             << "\tAdd {checkBSONConformance: true} to validate BSON documents more thoroughly.\n"
             << "\tAdd {metadata: true} to only check collection metadata.\n"
             << "Cannot specify both {full: true, background: true}.";
@@ -302,6 +303,21 @@ public:
                           << " performed in standalone mode.");
         }
 
+        const auto rawFixMultikey = cmdObj["fixMultikey"];
+        const bool fixMultikey = cmdObj["fixMultikey"].trueValue();
+        if (fixMultikey && replCoord->getSettings().isReplSet()) {
+            uasserted(ErrorCodes::InvalidOptions,
+                      str::stream()
+                          << "Running the validate command with { fixMultikey: true } can only be"
+                          << " performed in standalone mode.");
+        }
+        if (rawFixMultikey && !fixMultikey && repair) {
+            uasserted(ErrorCodes::InvalidOptions,
+                      str::stream()
+                          << "Running the validate command with both { fixMultikey: false }"
+                          << " and { repair: true } is not supported.");
+        }
+
         const bool metadata = cmdObj["metadata"].trueValue();
         if (metadata &&
             (background || fullValidate || enforceFastCount || checkBSONConformance || repair)) {
@@ -377,8 +393,10 @@ public:
                     if (repair) {
                         return CollectionValidation::RepairMode::kFixErrors;
                     }
-                    // Foreground validation will adjust multikey metadata by default.
-                    return CollectionValidation::RepairMode::kAdjustMultikey;
+                    if (fixMultikey) {
+                        return CollectionValidation::RepairMode::kAdjustMultikey;
+                    }
+                    return CollectionValidation::RepairMode::kNone;
                 default:
                     return CollectionValidation::RepairMode::kNone;
             }
@@ -400,12 +418,13 @@ public:
                   "full"_attr = options.isFullValidation(),
                   "enforceFastCount"_attr = options.enforceFastCountRequested(),
                   "checkBSONConformance"_attr = options.isBSONConformanceValidation(),
+                  "fixMultiKey"_attr = options.adjustMultikey(),
                   "repair"_attr = options.fixErrors());
         }
 
         // Only one validation per collection can be in progress, the rest wait.
         {
-            stdx::unique_lock<Latch> lock(_validationMutex);
+            stdx::unique_lock<stdx::mutex> lock(_validationMutex);
             try {
                 opCtx->waitForConditionOrInterrupt(_validationNotifier, lock, [&] {
                     return _validationsInProgress.find(nss) == _validationsInProgress.end();
@@ -422,7 +441,7 @@ public:
         }
 
         ON_BLOCK_EXIT([&] {
-            stdx::lock_guard<Latch> lock(_validationMutex);
+            stdx::lock_guard<stdx::mutex> lock(_validationMutex);
             _validationsInProgress.erase(nss);
             _validationNotifier.notify_all();
         });

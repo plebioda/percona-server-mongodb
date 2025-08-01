@@ -72,12 +72,9 @@
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/change_stream_serverless_helpers.h"
 #include "mongo/db/client.h"
-#include "mongo/db/clientcursor.h"
 #include "mongo/db/cluster_role.h"
 #include "mongo/db/commands/query_cmd/aggregation_execution_state.h"
 #include "mongo/db/curop.h"
-#include "mongo/db/cursor_id.h"
-#include "mongo/db/cursor_manager.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/db_raii.h"
 #include "mongo/db/exec/disk_use_options_gen.h"
@@ -100,10 +97,13 @@
 #include "mongo/db/pipeline/visitors/document_source_visitor_docs_needed_bounds.h"
 #include "mongo/db/profile_settings.h"
 #include "mongo/db/query/canonical_query.h"
+#include "mongo/db/query/client_cursor/clientcursor.h"
+#include "mongo/db/query/client_cursor/cursor_id.h"
+#include "mongo/db/query/client_cursor/cursor_manager.h"
+#include "mongo/db/query/client_cursor/cursor_response.h"
 #include "mongo/db/query/collation/collation_spec.h"
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/collection_query_info.h"
-#include "mongo/db/query/cursor_response.h"
 #include "mongo/db/query/explain.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/query/find_common.h"
@@ -1189,11 +1189,11 @@ Status _runAggregate(AggExState& aggExState, rpc::ReplyBuilderInterface* result)
                 "https://www.mongodb.com/docs/manual/reference/operator/aggregation/function/");
         }
 
-        // Only allow the use of runtime constants when from Mongos is true.
+        // Only allow the use of runtime constants when 'fromRouter' is true.
         uassert(463840,
                 "Manually setting 'runtimeConstants' is not supported. Use 'let' for user-defined "
                 "constants.",
-                expCtx->fromMongos || !aggExState.getRequest().getLegacyRuntimeConstants());
+                expCtx->fromRouter || !aggExState.getRequest().getLegacyRuntimeConstants());
 
         // This prevents opening a new change stream in the critical section of a serverless shard
         // split or merge operation to prevent resuming on the recipient with a resume token higher

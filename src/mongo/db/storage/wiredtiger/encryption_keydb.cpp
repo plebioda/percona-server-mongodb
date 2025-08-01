@@ -138,7 +138,7 @@ void EncryptionKeyDB::close_handles() {
 }
 
 void EncryptionKeyDB::generate_secure_key(unsigned char* key) {
-    stdx::lock_guard<Latch> lk(_lock_key);
+    stdx::lock_guard<stdx::mutex> lk(_lock_key);
     _srng->fill(key, encryption::Key::kLength);
 }
 
@@ -332,7 +332,7 @@ int EncryptionKeyDB::get_key_by_id(const char *keyid, size_t len, unsigned char 
     // open cursor
     WT_CURSOR *cursor;
     // search/write of db encryption key should be atomic
-    stdx::lock_guard<Latch> lk(_lock_sess);
+    stdx::lock_guard<stdx::mutex> lk(_lock_sess);
     res = _sess->open_cursor(_sess, "table:key", nullptr, nullptr, &cursor);
     if (res) {
         LOGV2_ERROR(29040,
@@ -392,7 +392,7 @@ int EncryptionKeyDB::delete_key_by_id(const std::string&  keyid) {
     int res;
     // open cursor
     WT_CURSOR *cursor;
-    stdx::lock_guard<Latch> lk(_lock_sess);
+    stdx::lock_guard<stdx::mutex> lk(_lock_sess);
     res = _sess->open_cursor(_sess, "table:key", nullptr, nullptr, &cursor);
     if (res) {
         LOGV2_ERROR(29045,
@@ -435,7 +435,7 @@ int EncryptionKeyDB::store_gcm_iv_reserved() {
     int res;
     // open cursor
     WT_CURSOR *cursor;
-    stdx::lock_guard<Latch> lk(_lock_sess);
+    stdx::lock_guard<stdx::mutex> lk(_lock_sess);
     res = _sess->open_cursor(_sess, "table:parameters", nullptr, nullptr, &cursor);
     if (res) {
         LOGV2_ERROR(29047,

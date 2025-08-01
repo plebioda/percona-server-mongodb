@@ -29,8 +29,6 @@ mongo_cc_library(
 mongo_cc_library(
     name = "query_sbe",
     srcs = [
-        "column_store_encoder.cpp",
-        "columnar.cpp",
         "extended_types.cpp",
         "sbe_pattern_value_cmp.cpp",
         "sort_spec.cpp",
@@ -68,8 +66,6 @@ mongo_cc_library(
         "//src/mongo/db/exec/sbe/vm:vm_printer.cpp",
     ],
     hdrs = [
-        "column_store_encoder.h",
-        "columnar.h",
         "sbe_pattern_value_cmp.h",
         "sort_spec.h",
         "//src/mongo/db/exec/sbe:accumulator_sum_value_enum.h",
@@ -188,8 +184,6 @@ mongo_cc_library(
         "//src/mongo/db/exec/sbe/stages:plan_stats.h",
         "//src/mongo/db/index:multikey_paths.h",
         "//src/mongo/db/pipeline:field_path.h",
-        "//src/mongo/db/query:cursor_idl_validator.h",
-        "//src/mongo/db/query:cursor_response_gen",
         "//src/mongo/db/query:eof_node_type.h",
         "//src/mongo/db/query:explain_options.h",
         "//src/mongo/db/query:explain_verbosity_gen",
@@ -198,6 +192,8 @@ mongo_cc_library(
         "//src/mongo/db/query:record_id_bound.h",
         "//src/mongo/db/query:stage_types.h",
         "//src/mongo/db/query:tree_walker.h",
+        "//src/mongo/db/query/client_cursor:cursor_idl_validator.h",
+        "//src/mongo/db/query/client_cursor:cursor_response_gen",
         "//src/mongo/db/query/collation:collation_spec.h",
         "//src/mongo/db/query/collation:collator_interface.h",
         "//src/mongo/db/query/datetime:date_time_support.h",
@@ -255,7 +251,7 @@ mongo_cc_library(
         "//src/mongo/util/version:releases_header",
     ],
     header_deps = [
-        "//src/mongo/bson/util:bson_column",
+        "//src/mongo/bson/column",
         "//src/mongo/db/auth:cluster_auth_mode",
         "//src/mongo/db/fts:fts_query_noop",
         "//src/mongo/platform:visibility_test_libcommon",
@@ -392,7 +388,6 @@ mongo_cc_library(
     name = "query_sbe_abt",
     srcs = [
         "//src/mongo/db/exec/sbe/abt:abt_lower.cpp",
-        "//src/mongo/db/pipeline/abt:match_expression_visitor.h",
     ],
     hdrs = [
         "//src/mongo/db/exec/sbe/abt:abt_lower.h",

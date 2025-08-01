@@ -95,7 +95,7 @@ bool cursorCommandPassthroughPrimaryShard(OperationContext* opCtx,
                                           const NamespaceString& nss,
                                           BSONObjBuilder* out,
                                           const PrivilegeVector& privileges) {
-    auto response = executeCommandAgainstDatabasePrimary(
+    auto response = executeCommandAgainstDatabasePrimaryOnlyAttachingDbVersion(
         opCtx,
         dbName,
         dbInfo,
@@ -272,8 +272,8 @@ public:
         BSONObj newCmd = cmdObj;
 
         const bool authorizedCollections = requestParser.request().getAuthorizedCollections();
-        AuthorizationSession* authzSession = AuthorizationSession::get(opCtx->getClient());
-        if (authzSession->getAuthorizationManager().isAuthEnabled() && authorizedCollections) {
+        if (AuthorizationManager::get(opCtx->getService())->isAuthEnabled() &&
+            authorizedCollections) {
             newCmd = rewriteCommandForListingOwnCollections(opCtx, dbName, cmdObj);
         }
 

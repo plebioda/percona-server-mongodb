@@ -190,7 +190,7 @@ boost::intrusive_ptr<ExpressionContext> makeExpressionContext(OperationContext* 
 
     return make_intrusive<ExpressionContext>(opCtx,
                                              boost::none, /* explain */
-                                             false,       /* fromMongos */
+                                             false,       /* fromRouter */
                                              false,       /* needsMerge */
                                              true,        /* allowDiskUse */
                                              true,        /* bypassDocumentValidation */
@@ -1014,7 +1014,7 @@ void ShardMergeRecipientService::Instance::_killBackupCursor() {
             BSON("killCursors" << donorBackupCursorInfo.nss.coll().toString() << "cursors"
                                << BSON_ARRAY(cursorId)),
             nullptr);
-        killCursorsRequest.options.fireAndForget = true;
+        killCursorsRequest.fireAndForget = true;
     }
 
     _backupCursorExecutor
@@ -1225,7 +1225,7 @@ void ShardMergeRecipientService::Instance::_keepBackupCursorAlive(const Cancella
         nss.dbName(),
         BSON("getMore" << cursorId << "collection" << nss.coll().toString()),
         nullptr);
-    getMoreRequest.options.fireAndForget = true;
+    getMoreRequest.fireAndForget = true;
 
     _backupCursorKeepAliveFuture =
         AsyncTry([this,
@@ -2339,7 +2339,7 @@ SemiFuture<void> ShardMergeRecipientService::Instance::_durablyPersistCommitAbor
     MigrationDecisionEnum decision) {
     _stopOrHangOnFailPoint(&fpAfterReceivingRecipientForgetMigration);
     {
-        stdx::lock_guard<Latch> lk(_mutex);
+        stdx::lock_guard<stdx::mutex> lk(_mutex);
         if (_isCommitOrAbortState(lk)) {
             return SemiFuture<void>::makeReady();
         }
@@ -2368,7 +2368,7 @@ SemiFuture<void> ShardMergeRecipientService::Instance::_durablyPersistCommitAbor
             Helpers::findById(opCtx, collection.getCollectionPtr(), BSON("_id" << _migrationUuid));
 
         auto stateDoc = [&]() {
-            stdx::lock_guard<Latch> lg(_mutex);
+            stdx::lock_guard<stdx::mutex> lg(_mutex);
             switch (decision) {
                 case MigrationDecisionEnum::kCommitted:
                     LOGV2_DEBUG(7339760,
@@ -2598,7 +2598,7 @@ SemiFuture<void> ShardMergeRecipientService::Instance::_removeStateDoc(
 SemiFuture<void>
 ShardMergeRecipientService::Instance::_waitForGarbageCollectionDelayThenDeleteStateDoc(
     const CancellationToken& token) {
-    stdx::lock_guard<Latch> lg(_mutex);
+    stdx::lock_guard<stdx::mutex> lg(_mutex);
     LOGV2(7339717,
           "Waiting for garbage collection delay before deleting state document",
           "migrationId"_attr = _migrationUuid,

@@ -57,7 +57,10 @@
 #include "mongo/crypto/mechanism_scram.h"
 #include "mongo/crypto/sha1_block.h"
 #include "mongo/crypto/sha256_block.h"
+#include "mongo/db/auth/authorization_backend_interface.h"
+#include "mongo/db/auth/authorization_backend_local.h"
 #include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/authorization_manager_factory_mock.h"
 #include "mongo/db/auth/authorization_manager_impl.h"
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/authorization_session_impl.h"
@@ -220,10 +223,15 @@ protected:
         auto newManager = std::make_unique<AuthorizationManagerImpl>(
             serviceContext->getService(), std::move(uniqueAuthzManagerExternalStateMock));
         authzSession = std::make_unique<AuthorizationSessionImpl>(
-            std::make_unique<AuthzSessionExternalStateMock>(newManager.get()),
-            AuthorizationSessionImpl::InstallMockForTestingOrAuthImpl{});
+            std::make_unique<AuthzSessionExternalStateMock>(client.get()), client.get());
         authzManager = newManager.get();
         AuthorizationManager::set(serviceContext->getService(), std::move(newManager));
+
+        auto globalAuthzManagerFactory = std::make_unique<AuthorizationManagerFactoryMock>();
+        auth::AuthorizationBackendInterface::set(
+            serviceContext->getService(),
+            globalAuthzManagerFactory->createBackendInterface(serviceContext->getService()));
+
 
         saslClientSession = std::make_unique<NativeSaslClientSession>();
         saslClientSession->setParameter(NativeSaslClientSession::parameterMechanism,

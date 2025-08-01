@@ -51,9 +51,9 @@
 #include "mongo/executor/remote_command_response.h"
 #include "mongo/executor/task_executor.h"
 #include "mongo/platform/atomic_word.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/rpc/metadata/metadata_hook.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/stdx/unordered_map.h"
 #include "mongo/stdx/unordered_set.h"
 #include "mongo/transport/transport_layer.h"
@@ -137,12 +137,12 @@ public:
     void signalWorkAvailable() override;
     Date_t now() override;
     std::string getHostName() override;
-    Status startCommand(const TaskExecutor::CallbackHandle& cbHandle,
-                        RemoteCommandRequestOnAny& request,
-                        RemoteCommandCompletionFn&& onFinish,
-                        const BatonHandle& baton = nullptr) override;
+    SemiFuture<TaskExecutor::ResponseStatus> startCommand(
+        const TaskExecutor::CallbackHandle& cbHandle,
+        RemoteCommandRequest& request,
+        const BatonHandle& baton = nullptr) override;
     Status startExhaustCommand(const TaskExecutor::CallbackHandle& cbHandle,
-                               RemoteCommandRequestOnAny& request,
+                               RemoteCommandRequest& request,
                                RemoteCommandOnReplyFn&& onReply,
                                const BatonHandle& baton = nullptr) override;
 
@@ -416,11 +416,10 @@ private:
      */
     void _runReadyNetworkOperations_inlock(stdx::unique_lock<stdx::mutex>* lk);
 
-    template <typename CallbackFn>
-    Status _startCommand(const TaskExecutor::CallbackHandle& cbHandle,
-                         RemoteCommandRequestOnAny& request,
-                         CallbackFn&& onReply,
-                         const BatonHandle& baton = nullptr);
+    SemiFuture<TaskExecutor::ResponseStatus> _startCommand(
+        const TaskExecutor::CallbackHandle& cbHandle,
+        RemoteCommandRequest& request,
+        const BatonHandle& baton = nullptr);
 
     // Mutex that synchronizes access to mutable data in this class and its subclasses.
     // Fields guarded by the mutex are labled (M), below, and those that are read-only
@@ -498,14 +497,14 @@ private:
  * Representation of an in-progress network operation.
  */
 class NetworkInterfaceMock::NetworkOperation {
-    using ResponseCallback = unique_function<void(const TaskExecutor::ResponseOnAnyStatus&)>;
+    using ResponseCallback = unique_function<void(const TaskExecutor::ResponseStatus&)>;
 
 public:
     NetworkOperation();
     NetworkOperation(const TaskExecutor::CallbackHandle& cbHandle,
-                     const RemoteCommandRequestOnAny& theRequest,
+                     const RemoteCommandRequest& theRequest,
                      Date_t theRequestDate,
-                     ResponseCallback onResponse);
+                     Promise<TaskExecutor::ResponseStatus> promise);
 
     /**
      * Mark the operation as observed by the networking thread. This is equivalent to a remote node
@@ -524,11 +523,9 @@ public:
     }
 
     /**
-     * Process a response to an ongoing operation.
-     *
-     * This invokes the _onResponse callback and may throw.
+     * Fulfills a response to an ongoing operation.
      */
-    bool processResponse(NetworkResponse response);
+    bool fulfillResponse(NetworkResponse response);
 
     /**
      * Predicate that returns true if cbHandle equals the executor's handle for this network
@@ -540,13 +537,6 @@ public:
 
     const TaskExecutor::CallbackHandle& getCallbackHandle() const {
         return _cbHandle;
-    }
-
-    /**
-     * Gets the request that initiated this operation.
-     */
-    const RemoteCommandRequestOnAny& getRequestOnAny() const {
-        return _requestOnAny;
     }
 
     /**
@@ -590,14 +580,13 @@ public:
 private:
     Date_t _requestDate;
     TaskExecutor::CallbackHandle _cbHandle;
-    RemoteCommandRequestOnAny _requestOnAny;
     RemoteCommandRequest _request;
 
     bool _isProcessing = false;
     bool _isBlackholed = false;
     bool _isFinished = false;
 
-    ResponseCallback _onResponse;
+    Promise<TaskExecutor::ResponseStatus> _respPromise;
 };
 
 /**

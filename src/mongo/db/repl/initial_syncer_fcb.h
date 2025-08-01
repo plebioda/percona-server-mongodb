@@ -64,8 +64,8 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/executor/scoped_task_executor.h"
 #include "mongo/executor/task_executor.h"
 #include "mongo/platform/atomic_word.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/util/concurrency/thread_pool.h"
 #include "mongo/util/concurrency/with_lock.h"
 #include "mongo/util/duration.h"
@@ -203,13 +203,13 @@ private:
     class ChangeStorageGuard {
     public:
         ChangeStorageGuard(InitialSyncerFCB* initialSyncer) : _initialSyncer(initialSyncer) {
-            stdx::lock_guard<Latch> lk(_initialSyncer->_mutex);
+            stdx::lock_guard<stdx::mutex> lk(_initialSyncer->_mutex);
             _initialSyncer->_inStorageChange = true;
         }
 
         ~ChangeStorageGuard() {
             {
-                stdx::lock_guard<Latch> lk(_initialSyncer->_mutex);
+                stdx::lock_guard<stdx::mutex> lk(_initialSyncer->_mutex);
                 _initialSyncer->_inStorageChange = false;
             }
             _initialSyncer->_inStorageChangeCondition.notify_all();

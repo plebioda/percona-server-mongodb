@@ -85,11 +85,10 @@
 #include "mongo/base/parse_number.h"
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonmisc.h"
-#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/audit/audit.h"
 #include "mongo/db/catalog/collection_options_gen.h"
 #include "mongo/db/client.h"
-#include "mongo/db/concurrency/exception_util.h"
+#include "mongo/db/curop.h"
 #include "mongo/db/encryption/encryption_options.h"
 #include "mongo/db/encryption/error.h"
 #include "mongo/db/encryption/error_builder.h"
@@ -101,7 +100,6 @@
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/index_names.h"
 #include "mongo/db/query/bson/dotted_path_support.h"
-#include "mongo/db/repl/member_state.h"
 #include "mongo/db/repl/repl_settings.h"
 #include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/server_options.h"
@@ -140,7 +138,6 @@
 #include "mongo/logv2/log_attr.h"
 #include "mongo/logv2/log_component.h"
 #include "mongo/logv2/log_severity.h"
-#include "mongo/platform/atomic_proxy.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/platform/compiler.h"
 #include "mongo/stdx/mutex.h"
@@ -151,9 +148,9 @@
 #include "mongo/util/debug_util.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/exit.h"
-#include "mongo/util/exit_code.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/log_and_backoff.h"
+#include "mongo/util/progress_meter.h"
 #include "mongo/util/quick_exit.h"
 #include "mongo/util/scopeguard.h"
 #include "mongo/util/str.h"
@@ -308,7 +305,7 @@ public:
 
         while (!_shuttingDown.load()) {
             {
-                stdx::unique_lock<Latch> lock(_mutex);
+                stdx::unique_lock<stdx::mutex> lock(_mutex);
                 MONGO_IDLE_THREAD_BLOCK;
                 // Check every 10 seconds or sooner in the debug builds
                 _condvar.wait_for(lock, stdx::chrono::seconds(kDebugBuild ? 1 : 10));
@@ -323,7 +320,7 @@ public:
     void shutdown() {
         _shuttingDown.store(true);
         {
-            stdx::unique_lock<Latch> lock(_mutex);
+            stdx::unique_lock<stdx::mutex> lock(_mutex);
             // Wake up the session sweeper thread early, we do not want the shutdown
             // to wait for us too long.
             _condvar.notify_one();
@@ -1027,7 +1024,7 @@ WiredTigerKVEngine::WiredTigerKVEngine(
             // 2) This temporary pinning lasts long enough for the catalog to be loaded and
             //    accessed.
             {
-                stdx::lock_guard<Latch> lk(_oldestTimestampPinRequestsMutex);
+                stdx::lock_guard<stdx::mutex> lk(_oldestTimestampPinRequestsMutex);
                 uassertStatusOK(_pinOldestTimestamp(lk,
                                                     kPinOldestTimestampAtStartupName,
                                                     Timestamp(_oldestTimestamp.load()),
@@ -1558,9 +1555,9 @@ public:
         int wtRet = 0;
         std::deque<BackupBlock> backupBlocks;
 
-        stdx::lock_guard<Latch> backupCursorLk(_wtBackup->wtBackupCursorMutex);
+        stdx::lock_guard<stdx::mutex> backupCursorLk(_wtBackup->wtBackupCursorMutex);
         while (backupBlocks.size() < batchSize) {
-            stdx::lock_guard<Latch> backupDupCursorLk(_wtBackup->wtBackupDupCursorMutex);
+            stdx::lock_guard<stdx::mutex> backupDupCursorLk(_wtBackup->wtBackupDupCursorMutex);
 
             // We may still have backup blocks to retrieve for the existing file that
             // _wtBackup->cursor is open on if _wtBackup->dupCursor exists. In this case, do not
@@ -1792,14 +1789,14 @@ WiredTigerKVEngine::beginNonBlockingBackup(OperationContext* opCtx,
         ss << ")";
     }
 
-    stdx::lock_guard<Latch> backupCursorLk(_wtBackup.wtBackupCursorMutex);
+    stdx::lock_guard<stdx::mutex> backupCursorLk(_wtBackup.wtBackupCursorMutex);
 
     // Create ongoingBackup.lock file to signal recovery that it should delete WiredTiger.backup if
     // we have an unclean shutdown with the cursor still open.
     { boost::filesystem::ofstream ongoingBackup(getOngoingBackupPath()); }
 
     // Oplog truncation thread won't remove oplog since the checkpoint pinned by the backup cursor.
-    stdx::lock_guard<Latch> lock(_oplogPinnedByBackupMutex);
+    stdx::lock_guard<stdx::mutex> lock(_oplogPinnedByBackupMutex);
     _oplogPinnedByBackup = Timestamp(_oplogNeededForCrashRecovery.load());
     ScopeGuard pinOplogGuard([&] { _oplogPinnedByBackup = boost::none; });
 
@@ -1820,7 +1817,7 @@ WiredTigerKVEngine::beginNonBlockingBackup(OperationContext* opCtx,
     }
 
     // A nullptr indicates that no duplicate cursor is open during an incremental backup.
-    stdx::lock_guard<Latch> backupDupCursorLk(_wtBackup.wtBackupDupCursorMutex);
+    stdx::lock_guard<stdx::mutex> backupDupCursorLk(_wtBackup.wtBackupDupCursorMutex);
     _wtBackup.dupCursor = nullptr;
 
     invariant(_wtBackup.logFilePathsSeenByExtendBackupCursor.empty());
@@ -1837,14 +1834,14 @@ WiredTigerKVEngine::beginNonBlockingBackup(OperationContext* opCtx,
 }
 
 void WiredTigerKVEngine::endNonBlockingBackup(OperationContext* opCtx) {
-    stdx::lock_guard<Latch> backupCursorLk(_wtBackup.wtBackupCursorMutex);
+    stdx::lock_guard<stdx::mutex> backupCursorLk(_wtBackup.wtBackupCursorMutex);
     _backupSession.reset();
     {
         // Oplog truncation thread can now remove the pinned oplog.
-        stdx::lock_guard<Latch> lock(_oplogPinnedByBackupMutex);
+        stdx::lock_guard<stdx::mutex> lock(_oplogPinnedByBackupMutex);
         _oplogPinnedByBackup = boost::none;
     }
-    stdx::lock_guard<Latch> backupDupCursorLk(_wtBackup.wtBackupDupCursorMutex);
+    stdx::lock_guard<stdx::mutex> backupDupCursorLk(_wtBackup.wtBackupDupCursorMutex);
     _wtBackup.cursor = nullptr;
     _wtBackup.dupCursor = nullptr;
     _wtBackup.logFilePathsSeenByExtendBackupCursor = {};
@@ -1857,7 +1854,7 @@ StatusWith<std::deque<std::string>> WiredTigerKVEngine::extendBackupCursor(
     OperationContext* opCtx) {
     uassert(51033, "Cannot extend backup cursor with in-memory mode.", !isEphemeral());
     invariant(_wtBackup.cursor);
-    stdx::unique_lock<Latch> backupDupCursorLk(_wtBackup.wtBackupDupCursorMutex);
+    stdx::unique_lock<stdx::mutex> backupDupCursorLk(_wtBackup.wtBackupDupCursorMutex);
 
     MONGO_IDLE_THREAD_BLOCK;
     _wtBackup.wtBackupDupCursorCV.wait(backupDupCursorLk, [&] { return !_wtBackup.dupCursor; });
@@ -2851,7 +2848,7 @@ void WiredTigerKVEngine::syncSizeInfo(bool sync) const {
 
 void WiredTigerKVEngine::setOldestActiveTransactionTimestampCallback(
     StorageEngine::OldestActiveTransactionTimestampCallback callback) {
-    stdx::lock_guard<Latch> lk(_oldestActiveTransactionTimestampCallbackMutex);
+    stdx::lock_guard<stdx::mutex> lk(_oldestActiveTransactionTimestampCallbackMutex);
     _oldestActiveTransactionTimestampCallback = std::move(callback);
 };
 
@@ -3611,7 +3608,7 @@ void WiredTigerKVEngine::_ensureIdentPath(StringData ident) {
 }
 
 void WiredTigerKVEngine::setJournalListener(JournalListener* jl) {
-    stdx::unique_lock<Latch> lk(_journalListenerMutex);
+    stdx::unique_lock<stdx::mutex> lk(_journalListenerMutex);
 
     // A JournalListener can only be set once. Otherwise, accessing a copy of the _journalListener
     // pointer without a mutex would be unsafe.
@@ -3699,7 +3696,7 @@ void WiredTigerKVEngine::setOldestTimestamp(Timestamp newOldestTimestamp, bool f
 
     // This mutex is not intended to synchronize updates to the oldest timestamp, but to ensure that
     // there are no races with pinning the oldest timestamp.
-    stdx::lock_guard<Latch> lock(_oldestTimestampPinRequestsMutex);
+    stdx::lock_guard<stdx::mutex> lock(_oldestTimestampPinRequestsMutex);
     const Timestamp currOldestTimestamp = Timestamp(_oldestTimestamp.load());
     for (const auto& it : _oldestTimestampPinRequests) {
         invariant(it.second >= currOldestTimestamp);
@@ -3932,7 +3929,7 @@ StatusWith<Timestamp> WiredTigerKVEngine::getOplogNeededForRollback() const {
     auto stableTimestamp = _stableTimestamp.load();
 
     // Only one thread can set or execute this callback.
-    stdx::lock_guard<Latch> lk(_oldestActiveTransactionTimestampCallbackMutex);
+    stdx::lock_guard<stdx::mutex> lk(_oldestActiveTransactionTimestampCallbackMutex);
     boost::optional<Timestamp> oldestActiveTransactionTimestamp;
     if (_oldestActiveTransactionTimestampCallback) {
         auto status = _oldestActiveTransactionTimestampCallback(Timestamp(stableTimestamp));
@@ -3967,7 +3964,7 @@ Timestamp WiredTigerKVEngine::getPinnedOplog() const {
     Timestamp pinned = Timestamp(_pinnedOplogTimestamp.load());
 
     {
-        stdx::lock_guard<Latch> lock(_oplogPinnedByBackupMutex);
+        stdx::lock_guard<stdx::mutex> lock(_oplogPinnedByBackupMutex);
         if (!storageGlobalParams.allowOplogTruncation) {
             // If oplog truncation is not allowed, then return the min timestamp so that no history
             // is ever allowed to be deleted.
@@ -3999,7 +3996,7 @@ StatusWith<Timestamp> WiredTigerKVEngine::pinOldestTimestamp(
     const std::string& requestingServiceName,
     Timestamp requestedTimestamp,
     bool roundUpIfTooOld) {
-    stdx::lock_guard<Latch> lock(_oldestTimestampPinRequestsMutex);
+    stdx::lock_guard<stdx::mutex> lock(_oldestTimestampPinRequestsMutex);
     Timestamp oldest = getOldestTimestamp();
     LOGV2(5380104,
           "Pin oldest timestamp request",
@@ -4028,7 +4025,7 @@ StatusWith<Timestamp> WiredTigerKVEngine::pinOldestTimestamp(
                 if (previousTimestamp.isNull()) {
                     unpinOldestTimestamp(svcName);
                 } else {
-                    stdx::lock_guard<Latch> lock(_oldestTimestampPinRequestsMutex);
+                    stdx::lock_guard<stdx::mutex> lock(_oldestTimestampPinRequestsMutex);
                     // When a write is updating the value from an earlier pin to a later one, use
                     // rounding to make a best effort to repin the earlier value.
                     invariant(
@@ -4062,7 +4059,7 @@ StatusWith<Timestamp> WiredTigerKVEngine::_pinOldestTimestamp(
 }
 
 void WiredTigerKVEngine::unpinOldestTimestamp(const std::string& requestingServiceName) {
-    stdx::lock_guard<Latch> lock(_oldestTimestampPinRequestsMutex);
+    stdx::lock_guard<stdx::mutex> lock(_oldestTimestampPinRequestsMutex);
     auto it = _oldestTimestampPinRequests.find(requestingServiceName);
     if (it == _oldestTimestampPinRequests.end()) {
         LOGV2_DEBUG(5380105,
@@ -4079,7 +4076,7 @@ void WiredTigerKVEngine::unpinOldestTimestamp(const std::string& requestingServi
 }
 
 std::map<std::string, Timestamp> WiredTigerKVEngine::getPinnedTimestampRequests() {
-    stdx::lock_guard<Latch> lock(_oldestTimestampPinRequestsMutex);
+    stdx::lock_guard<stdx::mutex> lock(_oldestTimestampPinRequestsMutex);
     return _oldestTimestampPinRequests;
 }
 
@@ -4097,7 +4094,7 @@ bool WiredTigerKVEngine::supportsOplogTruncateMarkers() const {
 
 void WiredTigerKVEngine::startOplogManager(OperationContext* opCtx,
                                            WiredTigerRecordStore* oplogRecordStore) {
-    stdx::lock_guard<Latch> lock(_oplogManagerMutex);
+    stdx::lock_guard<stdx::mutex> lock(_oplogManagerMutex);
     // Halt visibility thread if running on previous record store
     if (_oplogRecordStore) {
         _oplogManager->haltVisibilityThread();
@@ -4109,7 +4106,7 @@ void WiredTigerKVEngine::startOplogManager(OperationContext* opCtx,
 
 void WiredTigerKVEngine::haltOplogManager(WiredTigerRecordStore* oplogRecordStore,
                                           bool shuttingDown) {
-    stdx::unique_lock<Latch> lock(_oplogManagerMutex);
+    stdx::unique_lock<stdx::mutex> lock(_oplogManagerMutex);
     // Halt the visibility thread if we're in shutdown or the request matches the current record
     // store.
     if (shuttingDown || _oplogRecordStore == oplogRecordStore) {
@@ -4248,7 +4245,7 @@ void WiredTigerKVEngine::waitUntilDurable(OperationContext* opCtx,
     uint32_t start = _lastSyncTime.load();
     // Do the remainder in a critical section that ensures only a single thread at a time
     // will attempt to synchronize.
-    stdx::unique_lock<Latch> lk(_lastSyncMutex);
+    stdx::unique_lock<stdx::mutex> lk(_lastSyncMutex);
     uint32_t current = _lastSyncTime.loadRelaxed();  // synchronized with writes through mutex
     if (current != start) {
         // Someone else synced already since we read lastSyncTime, so we're done!
@@ -4318,7 +4315,7 @@ WiredTigerKVEngine::_getJournalListenerWithToken(OperationContext* opCtx,
         // The JournalListener may not be set immediately, so we must check under a mutex so
         // as not to access the variable while setting a JournalListener. A JournalListener
         // is only allowed to be set once, so using the pointer outside of a mutex is safe.
-        stdx::unique_lock<Latch> lk(_journalListenerMutex);
+        stdx::unique_lock<stdx::mutex> lk(_journalListenerMutex);
         return _journalListener;
     }();
     boost::optional<JournalListener::Token> token;
@@ -4413,7 +4410,7 @@ BSONObj WiredTigerKVEngine::getSanitizedStorageOptionsForSecondaryReplication(
 void WiredTigerKVEngine::sizeStorerPeriodicFlush() {
     bool needSyncSizeInfo = false;
     {
-        stdx::lock_guard<Mutex> lock(_sizeStorerSyncTrackerMutex);
+        stdx::lock_guard<stdx::mutex> lock(_sizeStorerSyncTrackerMutex);
         needSyncSizeInfo = _sizeStorerSyncTracker.intervalHasElapsed();
     }
 

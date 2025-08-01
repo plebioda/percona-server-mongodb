@@ -48,13 +48,12 @@ std::once_flag checkShouldAllowLocalhostOnceFlag;
 // NOTE: we default _allowLocalhost to true under the assumption that _checkShouldAllowLocalhost
 // will always be called before any calls to shouldAllowLocalhost.  If this is not the case,
 // it could cause a security hole.
-AuthzSessionExternalStateServerCommon::AuthzSessionExternalStateServerCommon(
-    AuthorizationManager* authzManager)
-    : AuthzSessionExternalState(authzManager), _allowLocalhost(enableLocalhostAuthBypass) {}
+AuthzSessionExternalStateServerCommon::AuthzSessionExternalStateServerCommon(Client* client)
+    : AuthzSessionExternalState(client), _allowLocalhost(enableLocalhostAuthBypass) {}
 AuthzSessionExternalStateServerCommon::~AuthzSessionExternalStateServerCommon() {}
 
 void AuthzSessionExternalStateServerCommon::_checkShouldAllowLocalhost(OperationContext* opCtx) {
-    if (!_authzManager->isAuthEnabled())
+    if (!AuthorizationManager::get(opCtx->getService())->isAuthEnabled())
         return;
     // If we know that an admin user exists, don't re-check.
     if (!_allowLocalhost)
@@ -65,7 +64,8 @@ void AuthzSessionExternalStateServerCommon::_checkShouldAllowLocalhost(Operation
         return;
     }
 
-    _allowLocalhost = !_authzManager->hasAnyPrivilegeDocuments(opCtx);
+    _allowLocalhost =
+        !AuthorizationManager::get(opCtx->getService())->hasAnyPrivilegeDocuments(opCtx);
     if (_allowLocalhost) {
         std::call_once(checkShouldAllowLocalhostOnceFlag, []() {
             LOGV2(20248,
@@ -88,7 +88,7 @@ bool AuthzSessionExternalStateServerCommon::shouldAllowLocalhost() const {
 }
 
 bool AuthzSessionExternalStateServerCommon::shouldIgnoreAuthChecks() const {
-    return !_authzManager->isAuthEnabled();
+    return !AuthorizationManager::get(_client->getService())->isAuthEnabled();
 }
 
 }  // namespace mongo

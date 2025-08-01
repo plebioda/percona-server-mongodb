@@ -30,7 +30,6 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/meta/type_traits.h>
-#include <mutex>
 #include <utility>
 #include <wiredtiger.h>
 
@@ -38,18 +37,16 @@
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/bsonobj.h"
-#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/concurrency/exception_util.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_begin_transaction_block.h"
-#include "mongo/db/storage/wiredtiger/wiredtiger_cursor.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_customization_hooks.h"
+#include "mongo/db/storage/wiredtiger/wiredtiger_error_util.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_session_cache.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_size_storer.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_util.h"
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
-#include "mongo/logv2/log_component.h"
 #include "mongo/logv2/redaction.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/scopeguard.h"
@@ -77,7 +74,7 @@ void WiredTigerSizeStorer::store(StringData uri, std::shared_ptr<SizeInfo> sizeI
         return;
 
     // Ordering is important: as the entry may be flushed concurrently, set the dirty flag last.
-    stdx::lock_guard<Latch> lk(_bufferMutex);
+    stdx::lock_guard<stdx::mutex> lk(_bufferMutex);
     auto& entry = _buffer[uri];
     // During rollback it is possible to get a new SizeInfo. In that case clear the dirty flag,
     // so the SizeInfo can be destructed without triggering the dirty check invariant.
@@ -97,7 +94,7 @@ void WiredTigerSizeStorer::store(StringData uri, std::shared_ptr<SizeInfo> sizeI
 std::shared_ptr<WiredTigerSizeStorer::SizeInfo> WiredTigerSizeStorer::load(StringData uri) const {
     {
         // Check if we can satisfy the read from the buffer.
-        stdx::lock_guard<Latch> bufferLock(_bufferMutex);
+        stdx::lock_guard<stdx::mutex> bufferLock(_bufferMutex);
         Buffer::const_iterator it = _buffer.find(uri);
         if (it != _buffer.end())
             return it->second ? it->second : std::make_shared<SizeInfo>();
@@ -126,7 +123,7 @@ std::shared_ptr<WiredTigerSizeStorer::SizeInfo> WiredTigerSizeStorer::load(Strin
 }
 
 void WiredTigerSizeStorer::remove(StringData uri) {
-    stdx::lock_guard<Latch> bufferLock{_bufferMutex};
+    stdx::lock_guard<stdx::mutex> bufferLock{_bufferMutex};
 
     // Insert a new nullptr entry into the buffer, or set the existing one to nullptr if there
     // already is one.
@@ -139,7 +136,7 @@ void WiredTigerSizeStorer::remove(StringData uri) {
 void WiredTigerSizeStorer::flush(bool syncToDisk) {
     Buffer buffer;
     {
-        stdx::lock_guard<Latch> bufferLock(_bufferMutex);
+        stdx::lock_guard<stdx::mutex> bufferLock(_bufferMutex);
         _buffer.swap(buffer);
     }
 
@@ -150,7 +147,7 @@ void WiredTigerSizeStorer::flush(bool syncToDisk) {
 
     // We serialize flushing to disk to avoid running into write conflicts from having multiple
     // threads try to flush at the same time.
-    stdx::lock_guard<Latch> flushLock(_flushMutex);
+    stdx::lock_guard<stdx::mutex> flushLock(_flushMutex);
 
     // When the session is destructed, it closes any cursors that remain open.
     WiredTigerSession session(_conn);
@@ -160,7 +157,7 @@ void WiredTigerSizeStorer::flush(bool syncToDisk) {
         // On failure, place entries back into the map, unless a newer value already exists.
         ON_BLOCK_EXIT([this, &buffer]() {
             if (!buffer.empty()) {
-                stdx::lock_guard<Latch> bufferLock(this->_bufferMutex);
+                stdx::lock_guard<stdx::mutex> bufferLock(this->_bufferMutex);
                 for (auto& it : buffer)
                     this->_buffer.try_emplace(it.first, it.second);
             }

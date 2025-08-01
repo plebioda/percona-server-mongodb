@@ -97,8 +97,8 @@ AuthzManagerExternalStateMongos::AuthzManagerExternalStateMongos() = default;
 AuthzManagerExternalStateMongos::~AuthzManagerExternalStateMongos() = default;
 
 std::unique_ptr<AuthzSessionExternalState>
-AuthzManagerExternalStateMongos::makeAuthzSessionExternalState(AuthorizationManager* authzManager) {
-    return std::make_unique<AuthzSessionExternalStateMongos>(authzManager);
+AuthzManagerExternalStateMongos::makeAuthzSessionExternalState(Client* client) {
+    return std::make_unique<AuthzSessionExternalStateMongos>(client);
 }
 
 Status AuthzManagerExternalStateMongos::getStoredAuthorizationVersion(OperationContext* opCtx,
@@ -127,12 +127,7 @@ StatusWith<User> AuthzManagerExternalStateMongos::getUserObject(
         return status;
     }
 
-    auto swReq = userReq.clone();
-    if (!swReq.isOK()) {
-        return swReq.getStatus();
-    }
-
-    User user(std::move(swReq.getValue()));
+    User user(userReq.clone());
     V2UserDocumentParser dp;
     dp.setTenantId(getActiveTenant(opCtx));
     status = dp.initializeUserFromUserDocument(userDoc, &user);

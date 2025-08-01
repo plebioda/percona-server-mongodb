@@ -59,9 +59,9 @@
 #include "mongo/executor/remote_command_response.h"
 #include "mongo/executor/task_executor.h"
 #include "mongo/executor/thread_pool_task_executor.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/rpc/get_status_from_command_result.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/framework.h"
 #include "mongo/unittest/integration_test.h"
@@ -134,12 +134,7 @@ public:
      * Runs the given remote command request, and returns the response.
      */
     RemoteCommandResponse runCommand(RemoteCommandRequest request) {
-        RemoteCommandRequestOnAny rcroa{request};
-        auto deferred = net->startCommand(makeCallbackHandle(), rcroa)
-                            .then([](TaskExecutor::ResponseOnAnyStatus roa) {
-                                return RemoteCommandResponse(roa);
-                            });
-        return deferred.get();
+        return net->startCommand(makeCallbackHandle(), request).get();
     }
 
 

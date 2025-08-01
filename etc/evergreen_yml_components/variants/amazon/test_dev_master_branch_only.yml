@@ -212,14 +212,16 @@ buildvariants:
     tasks:
       - name: .aggfuzzer
       - name: .change_stream_fuzzer
+      - name: .config_fuzzer .suggested_excluding_required__for_devprod_mitigation_only
+      - name: .config_fuzzer_stress .suggested_excluding_required__for_devprod_mitigation_only
       - name: .query_fuzzer
       - name: .updatefuzzer
       - name: .jstestfuzz
 
-  - &enterprise-amazon-linux2-arm64-cluster-scalability-only
+  - &enterprise-amazon-linux2-arm64-all-feature-flags-cluster-scalability-only
     <<: *enterprise-amazon-linux2-arm64-all-feature-flags-template
-    name: enterprise-amazon-linux2-arm64-cluster-scalability-only
-    display_name: "*| Amazon Linux 2 arm64 Cluster Scalability Patch Only"
+    name: enterprise-amazon-linux2-arm64-all-feature-flags-cluster-scalability-only
+    display_name: "*| Amazon Linux 2 arm64 Enterprise (all feature flags) Cluster Scalability Patch Only"
     tags: ["cluster_scalability_only", "suggested"]
     tasks:
       - name: .cluster_scalability_only

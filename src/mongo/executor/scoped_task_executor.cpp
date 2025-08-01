@@ -46,8 +46,8 @@
 #include "mongo/executor/remote_command_request.h"
 #include "mongo/executor/scoped_task_executor.h"
 #include "mongo/platform/compiler.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/stdx/unordered_map.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/concurrency/with_lock.h"
@@ -173,24 +173,23 @@ public:
             std::move(work));
     }
 
-    StatusWith<CallbackHandle> scheduleRemoteCommandOnAny(
-        const RemoteCommandRequestOnAny& request,
-        const RemoteCommandOnAnyCallbackFn& cb,
-        const BatonHandle& baton = nullptr) override {
+    StatusWith<CallbackHandle> scheduleRemoteCommand(const RemoteCommandRequest& request,
+                                                     const RemoteCommandCallbackFn& cb,
+                                                     const BatonHandle& baton = nullptr) override {
         return _wrapCallback(
             [&](auto&& x) {
-                return _executor->scheduleRemoteCommandOnAny(request, std::move(x), baton);
+                return _executor->scheduleRemoteCommand(request, std::move(x), baton);
             },
             cb);
     }
 
-    StatusWith<CallbackHandle> scheduleExhaustRemoteCommandOnAny(
-        const RemoteCommandRequestOnAny& request,
-        const RemoteCommandOnAnyCallbackFn& cb,
+    StatusWith<CallbackHandle> scheduleExhaustRemoteCommand(
+        const RemoteCommandRequest& request,
+        const RemoteCommandCallbackFn& cb,
         const BatonHandle& baton = nullptr) override {
         return _wrapCallback(
             [&](auto&& x) {
-                return _executor->scheduleExhaustRemoteCommandOnAny(request, std::move(x), baton);
+                return _executor->scheduleExhaustRemoteCommand(request, std::move(x), baton);
             },
             cb);
     }
@@ -302,7 +301,7 @@ private:
             [id, work = std::forward<Work>(work), self = shared_self()](const auto& cargs) {
                 using ArgsT = std::decay_t<decltype(cargs)>;
 
-                stdx::unique_lock<Latch> lk(self->_mutex);
+                stdx::unique_lock<stdx::mutex> lk(self->_mutex);
 
                 auto doWorkAndNotify = [&](const ArgsT& x) noexcept {
                     lk.unlock();
@@ -326,9 +325,9 @@ private:
                 if constexpr (std::is_same_v<ArgsT, CallbackArgs>) {
                     args.status = self->_shutdownStatus;
                 } else {
-                    static_assert(std::is_same_v<ArgsT, RemoteCommandOnAnyCallbackArgs>,
+                    static_assert(std::is_same_v<ArgsT, RemoteCommandCallbackArgs>,
                                   "_wrapCallback only supports CallbackArgs and "
-                                  "RemoteCommandOnAnyCallbackArgs");
+                                  "RemoteCommandCallbackArgs");
                     args.response.status = self->_shutdownStatus;
                 }
 

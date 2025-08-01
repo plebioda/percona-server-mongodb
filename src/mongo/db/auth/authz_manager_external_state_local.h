@@ -54,7 +54,6 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/tenant_id.h"
 #include "mongo/platform/atomic_word.h"
-#include "mongo/platform/mutex.h"
 
 namespace mongo {
 
@@ -98,9 +97,6 @@ public:
                                     AuthenticationRestrictionsFormat,
                                     bool showBuiltinRoles,
                                     std::vector<BSONObj>* result) override;
-
-    Status hasAnyUserDocuments(OperationContext* opCtx,
-                               const boost::optional<TenantId>& tenantId) final;
 
     bool hasAnyPrivilegeDocuments(OperationContext* opCtx) final;
 
@@ -176,15 +172,6 @@ protected:
      * virtual to allow Mock to not lock anything.
      */
     virtual RolesLocks _lockRoles(OperationContext* opCtx, const boost::optional<TenantId>&);
-
-private:
-    /**
-     * Once *any* privilege document is observed we cache the state forever,
-     * even if these collections are emptied/dropped.
-     * This ensures that the only way to recover localHostAuthBypass is to
-     * is to clear that in-memory cache by restarting the server.
-     */
-    AtomicWord<bool> _hasAnyPrivilegeDocuments{false};
 };
 
 }  // namespace mongo

@@ -46,6 +46,7 @@
 #include "mongo/db/auth/role_name.h"
 #include "mongo/db/auth/user.h"
 #include "mongo/db/auth/user_name.h"
+#include "mongo/db/client.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/db/namespace_string.h"
@@ -84,7 +85,7 @@ public:
      * AuthorizationManager uses this object as its own external state manipulator.
      */
     virtual std::unique_ptr<AuthzSessionExternalState> makeAuthzSessionExternalState(
-        AuthorizationManager* authzManager) = 0;
+        Client* client) = 0;
 
     /**
      * Retrieves the schema version of the persistent data describing users and roles.
@@ -184,13 +185,6 @@ public:
                                             AuthenticationRestrictionsFormat,
                                             bool showBuiltinRoles,
                                             std::vector<BSONObj>* result) = 0;
-
-    /**
-     * Returns true if there exists at least one user document in the system. If `tenantId` is
-     * set, checks whether a doc associated with this tenantId exists.
-     */
-    virtual Status hasAnyUserDocuments(OperationContext* opCtx,
-                                       const boost::optional<TenantId>& tenantId) = 0;
 
     /**
      * Returns true if there exists at least one privilege document in the system. If `tenantId` is

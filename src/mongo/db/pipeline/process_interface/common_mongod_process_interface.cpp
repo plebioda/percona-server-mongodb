@@ -61,7 +61,6 @@
 #include "mongo/db/concurrency/flow_control_ticketholder.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/curop.h"
-#include "mongo/db/cursor_manager.h"
 #include "mongo/db/db_raii.h"
 #include "mongo/db/dbhelpers.h"
 #include "mongo/db/exec/document_value/value.h"
@@ -75,6 +74,7 @@
 #include "mongo/db/pipeline/search/search_helper.h"
 #include "mongo/db/pipeline/stage_constraints.h"
 #include "mongo/db/pipeline/variables.h"
+#include "mongo/db/query/client_cursor/cursor_manager.h"
 #include "mongo/db/query/collection_index_usage_tracker_decoration.h"
 #include "mongo/db/query/collection_query_info.h"
 #include "mongo/db/query/explain.h"
@@ -752,21 +752,20 @@ CommonMongodProcessInterface::fieldsHaveSupportingUniqueIndex(
     const std::set<FieldPath>& fieldPaths) const {
     auto* opCtx = expCtx->opCtx;
 
-    // We purposefully avoid a helper like AutoGetCollection here because we don't want to check the
-    // db version or do anything else. We simply want to protect against concurrent modifications to
-    // the catalog.
-    Lock::DBLock dbLock(opCtx, nss.dbName(), MODE_IS);
-    Lock::CollectionLock collLock(opCtx, nss, MODE_IS);
-    auto databaseHolder = DatabaseHolder::get(opCtx);
-    auto db = databaseHolder->getDb(opCtx, nss.dbName());
-    auto collection =
-        db ? CollectionCatalog::get(opCtx)->lookupCollectionByNamespace(opCtx, nss) : nullptr;
-    if (!collection) {
+    // This method just checks metadata of the collection, which should be consistent across all
+    // shards therefore it's safe to ignore placement concern when locking the collection for read
+    // and acquiring a reference to it.
+    const auto collection = acquireCollectionMaybeLockFree(
+        opCtx,
+        CollectionAcquisitionRequest(nss,
+                                     AcquisitionPrerequisites::kPretendUnsharded,
+                                     repl::ReadConcernArgs::get(opCtx),
+                                     AcquisitionPrerequisites::kRead));
+    if (!collection.exists()) {
         return fieldPaths == std::set<FieldPath>{"_id"} ? SupportingUniqueIndex::Full
                                                         : SupportingUniqueIndex::None;
     }
-
-    auto indexIterator = collection->getIndexCatalog()->getIndexIterator(
+    auto indexIterator = collection.getCollectionPtr()->getIndexCatalog()->getIndexIterator(
         opCtx, IndexCatalog::InclusionPolicy::kReady);
     auto result = SupportingUniqueIndex::None;
     while (indexIterator->more()) {
@@ -836,8 +835,7 @@ void CommonMongodProcessInterface::_reportCurrentOpsForIdleSessions(
     OperationContext* opCtx, CurrentOpUserMode userMode, std::vector<BSONObj>* ops) const {
     auto sessionCatalog = SessionCatalog::get(opCtx);
 
-    const bool authEnabled =
-        AuthorizationSession::get(opCtx->getClient())->getAuthorizationManager().isAuthEnabled();
+    const bool authEnabled = AuthorizationManager::get(opCtx->getService())->isAuthEnabled();
 
     // If the user is listing only their own ops, we use makeSessionFilterForAuthenticatedUsers to
     // create a pattern that will match against all authenticated usernames for the current client.
@@ -894,19 +892,19 @@ CommonMongodProcessInterface::ensureFieldsUniqueOrResolveDocumentKey(
     const NamespaceString& outputNs) const {
     uassert(51123,
             "Unexpected target chunk version specified",
-            !targetCollectionPlacementVersion || expCtx->fromMongos);
+            !targetCollectionPlacementVersion || expCtx->fromRouter);
 
     if (!fieldPaths) {
-        uassert(51124, "Expected fields to be provided from mongos", !expCtx->fromMongos);
+        uassert(51124, "Expected fields to be provided from router", !expCtx->fromRouter);
         return {std::set<FieldPath>{"_id"},
                 targetCollectionPlacementVersion,
                 SupportingUniqueIndex::Full};
     }
 
     // Make sure the 'fields' array has a supporting index. Skip this check if the command is sent
-    // from mongos since the 'fields' check would've happened already.
+    // from router since the 'fields' check would've happened already.
     auto supportingUniqueIndex = fieldsHaveSupportingUniqueIndex(expCtx, outputNs, *fieldPaths);
-    if (!expCtx->fromMongos) {
+    if (!expCtx->fromRouter) {
         uassert(51183,
                 "Cannot find index to verify that join fields will be unique",
                 supportingUniqueIndex != SupportingUniqueIndex::None);

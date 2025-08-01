@@ -89,14 +89,13 @@
 #include "mongo/logv2/redaction.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/platform/compiler.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/stdx/thread.h"
 #include "mongo/stdx/unordered_map.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/clock_source.h"
 #include "mongo/util/concurrency/admission_context.h"
-#include "mongo/util/concurrency/mutex.h"
 #include "mongo/util/decorable.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/fail_point.h"
@@ -418,7 +417,7 @@ private:
 };
 
 ApplyBatchFinalizerForJournal::~ApplyBatchFinalizerForJournal() {
-    stdx::unique_lock<Latch> lock(_mutex);
+    stdx::unique_lock<stdx::mutex> lock(_mutex);
     _shutdownSignaled = true;
     _cond.notify_all();
     lock.unlock();
@@ -429,7 +428,7 @@ ApplyBatchFinalizerForJournal::~ApplyBatchFinalizerForJournal() {
 void ApplyBatchFinalizerForJournal::record(const OpTimeAndWallTime& newOpTimeAndWallTime) {
     _recordApplied(newOpTimeAndWallTime);
 
-    stdx::unique_lock<Latch> lock(_mutex);
+    stdx::unique_lock<stdx::mutex> lock(_mutex);
     _latestOpTimeAndWallTime = newOpTimeAndWallTime;
     _cond.notify_all();
 }
@@ -445,7 +444,7 @@ void ApplyBatchFinalizerForJournal::_run() {
 
     while (true) {
         {
-            stdx::unique_lock<Latch> lock(_mutex);
+            stdx::unique_lock<stdx::mutex> lock(_mutex);
             while (_latestOpTimeAndWallTime.opTime.isNull() && !_shutdownSignaled) {
                 _cond.wait(lock);
             }
@@ -576,7 +575,7 @@ void OplogApplierImpl::_run(OplogBuffer* oplogBuffer) {
         }
 
         // Don't allow the fsync+lock thread to see intermediate states of batch application.
-        stdx::lock_guard<SimpleMutex> fsynclk(oplogApplierLockedFsync);
+        stdx::lock_guard<stdx::mutex> fsynclk(oplogApplierLockedFsync);
 
         // Apply the operations in this batch. '_applyOplogBatch' returns the optime of the
         // last op that was applied, which should be the last optime in the batch.

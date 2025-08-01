@@ -83,7 +83,7 @@ int timeNetworkTestMillis(std::size_t operations, NetworkInterface* net) {
         if (--remainingOps) {
             return func();
         }
-        stdx::unique_lock<Latch> lk(mtx);
+        stdx::unique_lock<stdx::mutex> lk(mtx);
         cv.notify_one();
     };
 
@@ -95,7 +95,7 @@ int timeNetworkTestMillis(std::size_t operations, NetworkInterface* net) {
 
     func();
 
-    stdx::unique_lock<Latch> lk(mtx);
+    stdx::unique_lock<stdx::mutex> lk(mtx);
     cv.wait(lk, [&] { return remainingOps.load() == 0; });
 
     return t.millis();

@@ -53,10 +53,10 @@
 #include "mongo/db/commands/query_cmd/bulk_write_crud_op.h"
 #include "mongo/db/commands/query_cmd/bulk_write_gen.h"
 #include "mongo/db/commands/query_cmd/bulk_write_parser.h"
-#include "mongo/db/cursor_server_params_gen.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/error_labels.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/query/client_cursor/cursor_server_params_gen.h"
 #include "mongo/db/query/write_ops/write_ops.h"
 #include "mongo/db/query/write_ops/write_ops_parsers.h"
 #include "mongo/db/session/logical_session_id_helpers.h"
@@ -1823,8 +1823,8 @@ void BulkWriteOp::noteStaleResponses(
                             "Noting stale config response.",
                             "shardId"_attr = error.endpoint.shardName,
                             "status"_attr = error.error.getStatus());
-                targeter->noteStaleShardResponse(
-                    _opCtx, error.endpoint, *error.error.getStatus().extraInfo<StaleConfigInfo>());
+                targeter->noteStaleCollVersionResponse(
+                    _opCtx, *error.error.getStatus().extraInfo<StaleConfigInfo>());
                 setTargeterHasStaleShardResponse(true);
             }
             for (const auto& error : errors->second.getErrors(ErrorCodes::StaleDbVersion)) {
@@ -1833,10 +1833,8 @@ void BulkWriteOp::noteStaleResponses(
                             "Noting stale database response.",
                             "shardId"_attr = error.endpoint.shardName,
                             "status"_attr = error.error.getStatus());
-                targeter->noteStaleDbResponse(
-                    _opCtx,
-                    error.endpoint,
-                    *error.error.getStatus().extraInfo<StaleDbRoutingVersion>());
+                targeter->noteStaleDbVersionResponse(
+                    _opCtx, *error.error.getStatus().extraInfo<StaleDbRoutingVersion>());
                 setTargeterHasStaleShardResponse(true);
             }
             for (const auto& error :

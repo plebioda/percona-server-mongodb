@@ -52,8 +52,8 @@
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/client.h"
 #include "mongo/db/cluster_role.h"
-#include "mongo/db/cursor_manager.h"
 #include "mongo/db/dbdirectclient.h"
+#include "mongo/db/query/client_cursor/cursor_manager.h"
 #include "mongo/db/query/internal_plans.h"
 #include "mongo/db/repl/member_state.h"
 #include "mongo/db/repl/oplog.h"
@@ -1102,7 +1102,7 @@ TEST_F(ShardRoleTest, AcquireCollectionByUUIDInCommitPendingCollection) {
 
     unsigned int numCalls = 0;
     stdx::condition_variable cv;
-    Mutex mutex;
+    stdx::mutex mutex;
 
     stdx::thread parallelThread([&] {
         ThreadClient client(operationContext()->getService());
@@ -1180,7 +1180,7 @@ TEST_F(ShardRoleTest, AcquireCollectionByUUIDInCommitPendingCollectionAfterDurab
 
     unsigned int numCalls = 0;
     stdx::condition_variable cv;
-    Mutex mutex;
+    stdx::mutex mutex;
 
     stdx::thread parallelThread([&] {
         ThreadClient client(operationContext()->getService());

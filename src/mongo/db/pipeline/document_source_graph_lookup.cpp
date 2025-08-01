@@ -247,16 +247,23 @@ void DocumentSourceGraphLookUp::doDispose() {
 }
 
 boost::optional<ShardId> DocumentSourceGraphLookUp::computeMergeShardId() const {
-    // Note that we can only check sharding state when we're on mongos as we may be holding
+    // Note that we can only check sharding state when we're on router as we may be holding
     // locks on mongod (which would inhibit looking up sharding state in the catalog cache).
-    if (pExpCtx->inMongos) {
+    if (pExpCtx->inRouter) {
         // Only nominate a merging shard if the outer collection is unsharded.
         if (!pExpCtx->mongoProcessInterface->isSharded(pExpCtx->opCtx, pExpCtx->ns)) {
             return pExpCtx->mongoProcessInterface->determineSpecificMergeShard(pExpCtx->opCtx,
                                                                                _from);
         }
     } else {
-        return ShardingState::get(pExpCtx->opCtx)->shardId();
+        auto shardId = ShardingState::get(pExpCtx->opCtx)->shardId();
+        // If the command is executed on a mongos, we might get an empty shardId. We should return a
+        // shardId only if it is valid (non-empty).
+        if (shardId.isValid()) {
+            return shardId;
+        } else {
+            return boost::none;
+        }
     }
     return boost::none;
 }
@@ -290,7 +297,7 @@ void DocumentSourceGraphLookUp::doBreadthFirstSearch() {
             expectUnshardedCollectionInScope;
 
         const auto allowForeignSharded = foreignShardedGraphLookupAllowed();
-        if (!allowForeignSharded && !_fromExpCtx->inMongos) {
+        if (!allowForeignSharded && !_fromExpCtx->inRouter) {
             // Enforce that the foreign collection must be unsharded for $graphLookup.
             expectUnshardedCollectionInScope =
                 _fromExpCtx->mongoProcessInterface->expectUnshardedCollectionInScope(

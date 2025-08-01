@@ -52,9 +52,9 @@
 #include "mongo/executor/remote_command_request.h"
 #include "mongo/executor/task_executor.h"
 #include "mongo/executor/thread_pool_task_executor.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/rpc/topology_version_gen.h"
 #include "mongo/stdx/condition_variable.h"
+#include "mongo/stdx/mutex.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/framework.h"
 #include "mongo/unittest/integration_test.h"
@@ -125,7 +125,7 @@ public:
     }
 
     RequestHandlerUtil::responseOutcomeCount getCountersWhenReady() {
-        stdx::unique_lock<Latch> lk(_mutex);
+        stdx::unique_lock<stdx::mutex> lk(_mutex);
         _cv.wait(_mutex, [&] { return _replyUpdated; });
         _replyUpdated = false;
         return _responseOutcomeCount;
@@ -147,7 +147,7 @@ private:
     std::function<void(const executor::TaskExecutor::RemoteCommandCallbackArgs&)> _callbackFn =
         [&](const executor::TaskExecutor::RemoteCommandCallbackArgs& result) {
             {
-                stdx::unique_lock<Latch> lk(_mutex);
+                stdx::unique_lock<stdx::mutex> lk(_mutex);
                 if (result.response.isOK()) {
                     _responseOutcomeCount._success++;
                 } else {
@@ -308,9 +308,10 @@ TEST_F(TaskExecutorFixture, RunExhaustShouldStopOnFailure) {
 
         auto counters = exhaustRequestHandler.getCountersWhenReady();
 
-        // The response should be marked as failed
-        ASSERT_EQ(counters._success, 0);
-        ASSERT_EQ(counters._failed, 1);
+        // The response should be marked as succeeded, since in terms of networking it was
+        // successful.
+        ASSERT_EQ(counters._success, 1);
+        ASSERT_EQ(counters._failed, 0);
 
         // The tasks should be removed after 'isMaster' fails
         ASSERT_TRUE(waitUntilNoTasksOrDeadline(Date_t::now() + Seconds(5)));

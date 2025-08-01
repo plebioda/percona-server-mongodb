@@ -239,7 +239,7 @@ public:
             MONGO_IDLE_THREAD_BLOCK;
             std::vector<pollfd> fds;
             {
-                stdx::unique_lock<Latch> lock{_mutex};
+                stdx::unique_lock<stdx::mutex> lock{_mutex};
                 _condvar.wait(lock, [this] { return !_poll_fds.empty() || _shuttingDown.load(); });
 
                 fds.reserve(_poll_fds.size());
@@ -275,7 +275,7 @@ public:
                 LOGV2_WARNING(29064, "poll() error name", "errname"_attr = errname);
                 //restart all LDAP connections... but why?
                 {
-                    stdx::unique_lock<Latch> lock{_mutex};
+                    stdx::unique_lock<stdx::mutex> lock{_mutex};
                     for (auto& fd : _poll_fds) {
                         fd.second.safe_close();
                     }
@@ -311,7 +311,7 @@ public:
                         }
                     }
                 }
-                stdx::unique_lock<Latch> lock{_mutex};
+                stdx::unique_lock<stdx::mutex> lock{_mutex};
                 for (auto const& fd: fds) {
                     if (fd.revents & (POLLRDHUP | POLLERR | POLLHUP | POLLNVAL)) {
                         auto it = _poll_fds.find(fd.fd);
@@ -336,7 +336,7 @@ public:
     void start_poll(LDAP* ldap, int fd) {
         bool changed = false;
         {
-            stdx::unique_lock<Latch> lock{_mutex};
+            stdx::unique_lock<stdx::mutex> lock{_mutex};
             auto it = _poll_fds.find(fd);
             if(it == _poll_fds.end()) {
                 it = _poll_fds.insert({fd, {.conn = ldap, .borrowed = true}}).first;
@@ -379,7 +379,7 @@ public:
     LDAP* borrow_or_create() {
         // create scope block to ensure that _mutex is released before call to create_connection
         {
-            stdx::unique_lock<Latch> lock{_mutex};
+            stdx::unique_lock<stdx::mutex> lock{_mutex};
             while (true) {
                 if (_shuttingDown.load()) {
                     // return nullptr if shutdown is in progress
@@ -405,7 +405,7 @@ public:
     }
 
     void return_ldap_connection(LDAP* ldap) {
-        stdx::unique_lock<Latch> lock{_mutex};
+        stdx::unique_lock<stdx::mutex> lock{_mutex};
         auto it = std::find_if(_poll_fds.begin(), _poll_fds.end(), [&](auto const& e) {
             return e.second.conn == ldap;
         });

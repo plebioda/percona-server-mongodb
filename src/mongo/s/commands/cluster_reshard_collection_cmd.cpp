@@ -120,6 +120,7 @@ public:
             reshardCollectionRequest.setShardDistribution(request().getShardDistribution());
             reshardCollectionRequest.setForceRedistribution(request().getForceRedistribution());
             reshardCollectionRequest.setReshardingUUID(request().getReshardingUUID());
+            reshardCollectionRequest.setRelaxed(request().getRelaxed());
             if (resharding::gFeatureFlagMoveCollection.isEnabled(
                     serverGlobalParams.featureCompatibility.acquireFCVSnapshot()) ||
                 resharding::gFeatureFlagUnshardCollection.isEnabled(
@@ -136,7 +137,7 @@ public:
 
             generic_argument_util::setMajorityWriteConcern(shardsvrReshardCollection,
                                                            &opCtx->getWriteConcern());
-            auto cmdResponse = executeDDLCoordinatorCommandAgainstDatabasePrimary(
+            auto cmdResponse = executeCommandAgainstDatabasePrimaryOnlyAttachingDbVersion(
                 opCtx,
                 DatabaseName::kAdmin,
                 dbInfo,

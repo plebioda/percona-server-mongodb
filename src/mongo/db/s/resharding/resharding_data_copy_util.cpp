@@ -373,6 +373,7 @@ int insertBatchTransactionally(OperationContext* opCtx,
                 updateRequest.setQuery(resumeDataBSON["_id"].wrap());
                 updateRequest.setUpdateModification(resumeDataBSON);
                 updateRequest.setUpsert(true);
+                updateRequest.setYieldPolicy(PlanYieldPolicy::YieldPolicy::INTERRUPT_ONLY);
                 UpdateResult ur = update(opCtx, resumeDataColl, updateRequest);
                 // When we have new data we always expect to make progress.  If we don't,
                 // we just inserted duplicate documents, so fail.
@@ -493,7 +494,7 @@ void runWithTransactionFromOpCtx(OperationContext* opCtx,
     auto* const client = opCtx->getClient();
     opCtx->setAlwaysInterruptAtStepDownOrUp_UNSAFE();
 
-    AuthorizationSession::get(client)->grantInternalAuthorization(client);
+    AuthorizationSession::get(client)->grantInternalAuthorization();
     TxnNumber txnNumber = *opCtx->getTxnNumber();
     opCtx->setInMultiDocumentTransaction();
 

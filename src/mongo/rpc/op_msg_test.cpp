@@ -52,6 +52,7 @@
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/auth_name.h"
 #include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/authorization_manager_factory_mock.h"
 #include "mongo/db/auth/authorization_manager_impl.h"
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/authorization_session_impl.h"
@@ -97,7 +98,7 @@ public:
             {Privilege(ResourcePattern::forClusterResource(boost::none), ActionType::useTenant)});
         auto* as = dynamic_cast<AuthorizationSessionImpl*>(AuthorizationSession::get(client));
         if (as->_authenticatedUser != boost::none) {
-            as->logoutAllDatabases(&client, "AuthorizationSessionImplTestHelper"_sd);
+            as->logoutAllDatabases("AuthorizationSessionImplTestHelper"_sd);
         }
         as->_authenticatedUser = std::move(user);
         as->_authenticationMode = AuthorizationSession::AuthenticationMode::kConnection;
@@ -832,6 +833,9 @@ protected:
             getServiceContext()->getService(), std::move(authzManagerState));
         authzManager->setAuthEnabled(true);
         AuthorizationManager::set(getService(), std::move(authzManager));
+        auto globalAuthzManagerFactory = std::make_unique<AuthorizationManagerFactoryMock>();
+        auth::AuthorizationBackendInterface::set(
+            getService(), globalAuthzManagerFactory->createBackendInterface(getService()));
 
         client = getServiceContext()->getService()->makeClient("test");
     }

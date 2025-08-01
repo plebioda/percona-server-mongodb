@@ -18,35 +18,26 @@ selector:
     # These workloads sometimes trigger 'Could not lock auth data update lock'
     # errors because the AuthorizationManager currently waits for only five
     # seconds to acquire the lock for authorization documents
-    - jstests/concurrency/fsm_workloads/auth_create_role.js
-    - jstests/concurrency/fsm_workloads/auth_create_user.js
-    - jstests/concurrency/fsm_workloads/auth_drop_role.js
-    - jstests/concurrency/fsm_workloads/auth_drop_user.js
 
     # uses >100MB of data, which can overwhelm test hosts
 
     # compact can only be run against a standalone mongod
-    - jstests/concurrency/fsm_workloads/compact_while_creating_indexes.js
 
     # test creates too many collections for ContinuousAddRemoveShard
-    - jstests/concurrency/fsm_workloads/create_collection.js
+    - jstests/concurrency/fsm_workloads/ddl/create_collection/create_collection.js
 
     # can cause OOM kills on test hosts
 
     # cannot createIndex after dropDatabase without sharding first
-    - jstests/concurrency/fsm_workloads/query/plan_cache_drop_database.js
 
     # The WTWriteConflictException failpoint is not supported on mongos.
-    - jstests/concurrency/fsm_workloads/collmod_writeconflict.js
 
     # SERVER-20361 Improve the behaviour of multi-update/delete against a sharded collection
     - jstests/concurrency/fsm_workloads/query/update/update_where.js
 
     # TODO Undenylist (SERVER-38852).
-    - jstests/concurrency/fsm_workloads/query/agg/agg_out_interrupt_cleanup.js
 
     # serverStatus does not include transaction metrics on mongos.
-    - jstests/concurrency/fsm_workloads/multi_statement_transaction_atomicity_isolation_metrics_test.js
 
     # Uses the same transaction id across different routers, which is not allowed because when either
     # router tries to commit, it may not know the full participant list.
@@ -79,14 +70,14 @@ selector:
     # TODO SERVER-90609: Enable these tests.
 
     # TODO SERVER-92349: Re-enable this test once completed.
-    - jstests/concurrency/fsm_workloads/indexed_insert_ttl.js
+    - jstests/concurrency/fsm_workloads/crud/indexed_insert/indexed_insert_ttl.js
 
     # This test runs a large number of inserts, which can cause moveCollection to take a long time
     # to finish. This can cause the CheckMetadataConsistency hook to hit LockBusy errors.
 
     # Exclude tests that run cleanupOrphaned, which can fail running on a config shard if a
     # concurrent migration fails due to the config shard transitioning to dedicated.
-    - jstests/concurrency/fsm_workloads/cleanupOrphanedWhileMigrating.js
+    - jstests/concurrency/fsm_workloads/cleanup_orphaned_while_migrating.js
 
   exclude_with_any_tags:
     - requires_standalone
@@ -99,7 +90,6 @@ selector:
 
     # Snapshot reads in transactions are banned on capped collections.
     - requires_capped
-    - does_not_support_causal_consistency
     # Sharing cursors between state functions will fail in this suite because it will attempt to use
     # the same cursor in multiple transactions.
     - state_functions_share_cursor

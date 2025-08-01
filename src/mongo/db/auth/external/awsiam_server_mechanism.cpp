@@ -53,7 +53,6 @@ Copyright (C) 2023-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/auth/sasl_mechanism_registry.h"
 #include "mongo/db/auth/sasl_options.h"
 #include "mongo/logv2/log.h"
-#include "mongo/platform/mutex.h"
 #include "mongo/platform/random.h"
 #include "mongo/stdx/mutex.h"
 #include "mongo/util/base64.h"
@@ -112,7 +111,7 @@ StatusWith<std::tuple<bool, std::string>> ServerMechanism::_firstStep(StringData
     _serverNonce.resize(kServerFirstNonceLength);
     std::copy(clientNonce.data(), clientNonce.data() + clientNonce.length(), _serverNonce.begin());
     {
-        stdx::lock_guard<Latch> lk(saslAWSServerMutex);
+        stdx::lock_guard<stdx::mutex> lk(saslAWSServerMutex);
         saslAWSServerGen.fill(_serverNonce.data() + clientNonce.length(),
                               kServerFirstNoncePieceLength);
     }

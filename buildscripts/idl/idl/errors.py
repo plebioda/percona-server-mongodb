@@ -35,7 +35,7 @@ Common error handling code for IDL compiler.
 import inspect
 import os
 import sys
-from typing import List, Union
+
 import yaml
 
 from . import common

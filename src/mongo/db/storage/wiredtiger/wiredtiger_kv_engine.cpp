@@ -1278,6 +1278,13 @@ void WiredTigerKVEngine::cleanShutdown() {
         LOGV2(4795903, "Reconfigure complete", "duration"_attr = Date_t::now() - startTime);
     }
 
+    if (gWiredTigerVerboseShutdownCheckpointLogs) {
+        logv2::LogManager::global().getGlobalSettings().setMinimumLoggedSeverity(
+            logv2::LogComponent::kWiredTigerCheckpoint,
+            logv2::LogSeverity::Debug(logv2::LogSeverity::kMaxDebugLevel));
+        reconfigureLogging().ignore();  // Best-effort.
+    }
+
     auto startTime = Date_t::now();
     LOGV2(4795902, "Closing WiredTiger", "closeConfig"_attr = closeConfig);
     invariantWTOK(_conn->close(_conn, closeConfig.c_str()), nullptr);
@@ -1612,6 +1619,15 @@ public:
                 // are the initial incremental backup.
                 const std::uint64_t length = options.incrementalBackup ? fileSize : 0;
                 auto nsAndUUID = _getNsAndUUID(filePath);
+
+                LOGV2_DEBUG(9538603,
+                            2,
+                            "File to copy for backup",
+                            "nss"_attr = nsAndUUID.first,
+                            "uuid"_attr = nsAndUUID.second,
+                            "filePath"_attr = filePath.string(),
+                            "offset"_attr = 0,
+                            "size"_attr = fileSize);
                 backupBlocks.push_back(BackupBlock(opCtx,
                                                    nsAndUUID.first,
                                                    nsAndUUID.second,
@@ -1657,6 +1673,7 @@ private:
         if (!_wtBackup->dupCursor) {
             size_t attempt = 0;
             do {
+                LOGV2_DEBUG(9538604, 2, "Opening duplicate backup cursor", "config"_attr = config);
                 wtRet = _session->open_cursor(
                     _session, nullptr, _wtBackup->cursor, config.c_str(), &_wtBackup->dupCursor);
 
@@ -1686,15 +1703,16 @@ private:
             invariantWTOK(
                 (_wtBackup->dupCursor)->get_key(_wtBackup->dupCursor, &offset, &size, &type),
                 _wtBackup->dupCursor->session);
+            auto nsAndUUID = _getNsAndUUID(filePath);
             LOGV2_DEBUG(22311,
                         2,
-                        "Block to copy for incremental backup: filename: {filePath_string}, "
-                        "offset: {offset}, size: {size}, type: {type}",
-                        "filePath_string"_attr = filePath.string(),
+                        "Block to copy for incremental backup",
+                        "nss"_attr = nsAndUUID.first,
+                        "uuid"_attr = nsAndUUID.second,
+                        "filePath"_attr = filePath.string(),
                         "offset"_attr = offset,
                         "size"_attr = size,
                         "type"_attr = type);
-            auto nsAndUUID = _getNsAndUUID(filePath);
             backupBlocks->push_back(BackupBlock(opCtx,
                                                 nsAndUUID.first,
                                                 nsAndUUID.second,
@@ -3857,6 +3875,11 @@ StatusWith<Timestamp> WiredTigerKVEngine::recoverToStableTimestamp(OperationCont
             6398900, 0, "Retrying rollback to stable due to EBUSY", "attempts"_attr = ++attempts);
         opCtx->sleepFor(Seconds(1));
     } while (ret == EBUSY);
+
+    LOGV2_FOR_ROLLBACK(9529900,
+                       0,
+                       "Rolling back to the stable timestamp completed by storage engine",
+                       "attempts"_attr = attempts);
 
     if (ret) {
         // Dump the storage engine's internal state to assist in diagnosis.

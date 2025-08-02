@@ -73,6 +73,7 @@
 #include "mongo/db/auth/auth_op_observer.h"
 #include "mongo/db/auth/authorization_backend_interface.h"
 #include "mongo/db/auth/authorization_manager.h"
+#include "mongo/db/auth/authorization_manager_factory.h"
 #include "mongo/db/auth/user_cache_invalidator_job.h"
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/catalog/collection_catalog.h"
@@ -167,8 +168,6 @@
 #include "mongo/db/repl/replication_coordinator_impl_gen.h"
 #include "mongo/db/repl/replication_process.h"
 #include "mongo/db/repl/replication_recovery.h"
-#include "mongo/db/repl/shard_merge_recipient_op_observer.h"
-#include "mongo/db/repl/shard_merge_recipient_service.h"
 #include "mongo/db/repl/storage_interface.h"
 #include "mongo/db/repl/storage_interface_impl.h"
 #include "mongo/db/repl/tenant_migration_access_blocker_registry.h"
@@ -203,9 +202,8 @@
 #include "mongo/db/s/sharding_initialization_mongod.h"
 #include "mongo/db/s/sharding_ready.h"
 #include "mongo/db/s/transaction_coordinator_service.h"
+#include "mongo/db/server_lifecycle_monitor.h"
 #include "mongo/db/server_options.h"
-#include "mongo/db/serverless/shard_split_donor_op_observer.h"
-#include "mongo/db/serverless/shard_split_donor_service.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/service_entry_point_rs_endpoint.h"
 #include "mongo/db/service_entry_point_shard_role.h"
@@ -239,7 +237,7 @@
 #include "mongo/db/timeseries/timeseries_op_observer.h"
 #include "mongo/db/transaction/session_catalog_mongod_transaction_interface_impl.h"
 #include "mongo/db/transaction/transaction_participant.h"
-#include "mongo/db/ttl.h"
+#include "mongo/db/ttl/ttl.h"
 #include "mongo/db/vector_clock_metadata_hook.h"
 #include "mongo/db/wire_version.h"
 #include "mongo/executor/network_connection_hook.h"
@@ -454,8 +452,6 @@ void registerPrimaryOnlyServices(ServiceContext* serviceContext) {
     if (getGlobalReplSettings().isServerless()) {
         services.push_back(std::make_unique<TenantMigrationDonorService>(serviceContext));
         services.push_back(std::make_unique<repl::TenantMigrationRecipientService>(serviceContext));
-        services.push_back(std::make_unique<ShardSplitDonorService>(serviceContext));
-        services.push_back(std::make_unique<repl::ShardMergeRecipientService>(serviceContext));
     }
 
     if (change_stream_serverless_helpers::canInitializeServices()) {
@@ -724,6 +720,14 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
             "Wrong mongod version",
             "error"_attr = error.toStatus().reason());
         exitCleanly(ExitCode::needDowngrade);
+    } catch (const ExceptionFor<ErrorCodes::OfflineValidationFailedToComplete>& e) {
+        LOGV2_ERROR(9437300, "Offline validation failed", "error"_attr = e.toString());
+        exitCleanly(ExitCode::fail);
+    }
+
+    if (storageGlobalParams.validate) {
+        LOGV2(9437302, "Finished validating collections");
+        exitCleanly(ExitCode::clean);
     }
 
     // If we are on standalone, load cluster parameters from disk. If we are replicated, this is not
@@ -804,17 +808,11 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
         globalLDAPManager->start_threads();
     }
 
-    auto const authzManagerShard =
-        AuthorizationManager::get(serviceContext->getService(ClusterRole::ShardServer));
-
-    auto authzBackend = auth::AuthorizationBackendInterface::get(
-        serviceContext->getService(ClusterRole::ShardServer));
     {
         TimeElapsedBuilderScopedTimer scopedTimer(serviceContext->getFastClockSource(),
                                                   "Build user and roles graph",
                                                   &startupTimeElapsedBuilder);
-        uassertStatusOK(authzManagerShard->initialize(startupOpCtx.get()));
-        uassertStatusOK(authzBackend->initialize(startupOpCtx.get()));
+        uassertStatusOK(globalAuthzManagerFactory->initialize(startupOpCtx.get()));
     }
 
     if (audit::initializeManager) {
@@ -823,6 +821,9 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
 
     // This is for security on certain platforms (nonce generation)
     srand((unsigned)(curTimeMicros64()) ^ (unsigned(uintptr_t(&startupOpCtx))));  // NOLINT
+
+    auto const authzManagerShard =
+        AuthorizationManager::get(serviceContext->getService(ClusterRole::ShardServer));
 
     if (authzManagerShard->shouldValidateAuthSchemaOnStartup()) {
         Status status = verifySystemIndexes(startupOpCtx.get(), &startupTimeElapsedBuilder);
@@ -836,32 +837,6 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
             } else {
                 quickExit(ExitCode::fail);
             }
-        }
-
-        // SERVER-14090: Verify that auth schema version is schemaVersion26Final.
-        int foundSchemaVersion;
-        status =
-            authzManagerShard->getAuthorizationVersion(startupOpCtx.get(), &foundSchemaVersion);
-        if (!status.isOK()) {
-            LOGV2_ERROR(20539,
-                        "Failed to verify auth schema version",
-                        "minSchemaVersion"_attr = AuthorizationManager::schemaVersion26Final,
-                        "error"_attr = status);
-            LOGV2(20540,
-                  "To manually repair the 'authSchema' document in the admin.system.version "
-                  "collection, start up with --setParameter "
-                  "startupAuthSchemaValidation=false to disable validation");
-            exitCleanly(ExitCode::needUpgrade);
-        }
-
-        if (foundSchemaVersion <= AuthorizationManager::schemaVersion26Final) {
-            LOGV2_ERROR(
-                20541,
-                "This server is using MONGODB-CR, an authentication mechanism which has been "
-                "removed from MongoDB 4.0. In order to upgrade the auth schema, first downgrade "
-                "MongoDB binaries to version 3.6 and then run the authSchemaUpgrade command. See "
-                "http://dochub.mongodb.org/core/3.0-upgrade-to-scram-sha-1");
-            exitCleanly(ExitCode::needUpgrade);
         }
     } else if (authzManagerShard->isAuthEnabled()) {
         LOGV2_ERROR(20569, "Auth must be disabled when starting without auth schema validation");
@@ -1261,6 +1236,8 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
         return getMagicRestoreMain()(serviceContext);
     }
 
+    globalServerLifecycleMonitor().onFinishingStartup();
+
     logStartupStats.dismiss();
     logMongodStartupTimeElapsedStatistics(serviceContext,
                                           beginInitAndListen,
@@ -1541,9 +1518,6 @@ void setUpObservers(ServiceContext* serviceContext) {
                 std::make_unique<repl::TenantMigrationDonorOpObserver>());
             opObserverRegistry->addObserver(
                 std::make_unique<repl::TenantMigrationRecipientOpObserver>());
-            opObserverRegistry->addObserver(std::make_unique<ShardSplitDonorOpObserver>());
-            opObserverRegistry->addObserver(
-                std::make_unique<repl::ShardMergeRecipientOpObserver>());
         }
         if (!gMultitenancySupport) {
             opObserverRegistry->addObserver(
@@ -1571,9 +1545,6 @@ void setUpObservers(ServiceContext* serviceContext) {
                 std::make_unique<repl::TenantMigrationDonorOpObserver>());
             opObserverRegistry->addObserver(
                 std::make_unique<repl::TenantMigrationRecipientOpObserver>());
-            opObserverRegistry->addObserver(std::make_unique<ShardSplitDonorOpObserver>());
-            opObserverRegistry->addObserver(
-                std::make_unique<repl::ShardMergeRecipientOpObserver>());
         }
 
         auto replCoord = repl::ReplicationCoordinator::get(serviceContext);

@@ -53,6 +53,7 @@
 #include "mongo/db/timeseries/bucket_catalog/bucket_state_registry.h"
 #include "mongo/db/timeseries/bucket_catalog/closed_bucket.h"
 #include "mongo/db/timeseries/bucket_catalog/execution_stats.h"
+#include "mongo/db/timeseries/bucket_catalog/global_bucket_catalog.h"
 #include "mongo/db/timeseries/bucket_catalog/rollover.h"
 #include "mongo/db/timeseries/bucket_catalog/write_batch.h"
 #include "mongo/db/timeseries/timeseries_gen.h"
@@ -66,7 +67,7 @@
 namespace mongo::timeseries::bucket_catalog {
 namespace {
 
-class BucketStateRegistryTest : public BucketCatalog, public CatalogTestFixture {
+class BucketStateRegistryTest : public GlobalBucketCatalog, public CatalogTestFixture {
 public:
     BucketStateRegistryTest() {}
 
@@ -91,9 +92,21 @@ public:
                      *state);
     }
 
+    ExecutionStatsController& stats(Bucket& bucket) {
+        if (bucket.bucketId.collectionUUID == uuid1)
+            return info1.stats;
+        else if (bucket.bucketId.collectionUUID == uuid2)
+            return info2.stats;
+        else if (bucket.bucketId.collectionUUID == uuid3)
+            return info3.stats;
+        else {
+            MONGO_UNREACHABLE;
+        }
+    }
+
     Bucket& createBucket(InsertContext& info, Date_t time) {
-        auto ptr = &internal::allocateBucket(
-            operationContext(), *this, *stripes[info.stripeNumber], withLock, info, time);
+        auto ptr =
+            &internal::allocateBucket(*this, *stripes[info.stripeNumber], withLock, info, time);
         ASSERT_FALSE(hasBeenCleared(*ptr));
         return *ptr;
     }
@@ -104,6 +117,7 @@ public:
                                    *stripes[internal::getStripeNumber(*this, bucket.key)],
                                    withLock,
                                    bucket,
+                                   stats(bucket),
                                    internal::RemovalMode::kAbort);
             return true;
         } else {
@@ -128,6 +142,7 @@ public:
                                *stripes[internal::getStripeNumber(*this, bucket.key)],
                                withLock,
                                bucket,
+                               stats(bucket),
                                internal::RemovalMode::kAbort);
     }
 
@@ -164,13 +179,18 @@ public:
     BucketKey bucketKey3{uuid3, bucketMetadata};
     Date_t date = Date_t::now();
     TimeseriesOptions options;
-    ExecutionStatsController stats = internal::getOrInitializeExecutionStats(*this, uuid1);
-    InsertContext info1{
-        std::move(bucketKey1), internal::getStripeNumber(*this, bucketKey1), options, stats};
-    InsertContext info2{
-        std::move(bucketKey2), internal::getStripeNumber(*this, bucketKey2), options, stats};
-    InsertContext info3{
-        std::move(bucketKey3), internal::getStripeNumber(*this, bucketKey3), options, stats};
+    InsertContext info1{std::move(bucketKey1),
+                        internal::getStripeNumber(*this, bucketKey1),
+                        options,
+                        internal::getOrInitializeExecutionStats(*this, uuid1)};
+    InsertContext info2{std::move(bucketKey2),
+                        internal::getStripeNumber(*this, bucketKey2),
+                        options,
+                        internal::getOrInitializeExecutionStats(*this, uuid2)};
+    InsertContext info3{std::move(bucketKey3),
+                        internal::getStripeNumber(*this, bucketKey3),
+                        options,
+                        internal::getOrInitializeExecutionStats(*this, uuid3)};
 };
 
 
@@ -721,11 +741,11 @@ TEST_F(BucketStateRegistryTest, ArchivingBucketPreservesState) {
     auto bucketId = bucket.bucketId;
 
     ClosedBuckets closedBuckets;
-    internal::archiveBucket(operationContext(),
-                            *this,
+    internal::archiveBucket(*this,
                             *stripes[info1.stripeNumber],
                             WithLock::withoutLock(),
                             bucket,
+                            stats(bucket),
                             closedBuckets);
     auto state = getBucketState(bucketStateRegistry, bucketId);
     ASSERT_TRUE(doesBucketStateMatch(bucketId, BucketState::kNormal));
@@ -771,7 +791,7 @@ TEST_F(BucketStateRegistryTest, ClosingBucketGoesThroughPendingCompressionState)
                                      stats,
                                      StringData{bucket.timeField.data(), bucket.timeField.size()});
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*this, ns, batch));
+    ASSERT_OK(prepareCommit(*this, batch));
     ASSERT_TRUE(doesBucketStateMatch(bucketId, BucketState::kPrepared));
 
     {
@@ -779,7 +799,7 @@ TEST_F(BucketStateRegistryTest, ClosingBucketGoesThroughPendingCompressionState)
         // this and closes the bucket.
         bucket.rolloverAction = RolloverAction::kHardClose;
         CommitInfo commitInfo{};
-        auto closedBucket = finish(operationContext(), *this, ns, batch, commitInfo);
+        auto closedBucket = finish(*this, batch, commitInfo);
         ASSERT(closedBucket.has_value());
         ASSERT_EQ(closedBucket.value().bucketId.oid, bucketId.oid);
 

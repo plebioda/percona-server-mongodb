@@ -237,6 +237,7 @@ env.Benchmark(
         "$BUILD_DIR/mongo/db/query/canonical_query",
         "$BUILD_DIR/mongo/db/query/query_test_service_context",
     ],
+    CONSOLIDATED_TARGET="query_bm",
 )
 
 env.Benchmark(
@@ -248,6 +249,7 @@ env.Benchmark(
         "query_planner",
         "query_test_service_context",
     ],
+    CONSOLIDATED_TARGET="query_bm",
 )
 
 env.Benchmark(
@@ -262,4 +264,5 @@ env.Benchmark(
         "$BUILD_DIR/mongo/db/repl/storage_interface_impl",
         "$BUILD_DIR/mongo/db/service_context_d",
     ],
+    CONSOLIDATED_TARGET="query_bm",
 )

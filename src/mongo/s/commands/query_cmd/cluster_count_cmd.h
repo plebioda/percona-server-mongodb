@@ -50,6 +50,7 @@
 #include "mongo/s/commands/strategy.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/query/exec/cluster_cursor_manager.h"
+#include "mongo/s/query/exec/collect_query_stats_mongos.h"
 #include "mongo/s/query/planner/cluster_aggregate.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/timer.h"
@@ -147,7 +148,7 @@ public:
                     processFLECountS(opCtx, nss, &countRequest);
                 }
                 stdx::lock_guard<Client> lk(*opCtx->getClient());
-                CurOp::get(opCtx)->setShouldOmitDiagnosticInformation_inlock(lk, true);
+                CurOp::get(opCtx)->setShouldOmitDiagnosticInformation(lk, true);
             }
 
             const auto cri = uassertStatusOK(
@@ -325,7 +326,7 @@ public:
             processFLECountS(opCtx, nss, &countRequest);
 
             stdx::lock_guard<Client> lk(*opCtx->getClient());
-            CurOp::get(opCtx)->setShouldOmitDiagnosticInformation_inlock(lk, true);
+            CurOp::get(opCtx)->setShouldOmitDiagnosticInformation(lk, true);
         }
 
         BSONObj targetingQuery = countRequest.getQuery();

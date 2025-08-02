@@ -614,10 +614,6 @@ Status MigrationDestinationManager::start(OperationContext* opCtx,
     _sessionMigration = std::make_unique<SessionCatalogMigrationDestination>(
         _nss, _fromShard, *_sessionId, _cancellationSource.token());
     ShardingStatistics::get(opCtx).countRecipientMoveChunkStarted.addAndFetch(1);
-    // (Ignore FCV check): This feature flag doesn't have any upgrade/downgrade concerns.
-    if (mongo::feature_flags::gConcurrencyInChunkMigration.isEnabledAndIgnoreFCVUnsafe())
-        ShardingStatistics::get(opCtx).chunkMigrationConcurrencyCnt.store(
-            chunkMigrationConcurrency.load());
 
     _migrateThreadHandle = stdx::thread([this, cancellationToken = _cancellationSource.token()]() {
         _migrateThread(cancellationToken);
@@ -2032,7 +2028,7 @@ void MigrationDestinationManager::awaitCriticalSectionReleaseSignalAndCompleteMi
             uasserted(ErrorCodes::InternalError, "skipShardFilteringMetadataRefresh failpoint");
         }
 
-        forceShardFilteringMetadataRefresh(opCtx, _nss);
+        FilteringMetadataCache::get(opCtx)->forceShardFilteringMetadataRefresh(opCtx, _nss);
     } catch (const DBException& ex) {
         LOGV2_DEBUG(5899103,
                     2,

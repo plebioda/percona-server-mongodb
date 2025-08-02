@@ -1,8 +1,9 @@
 """Script to be invoked by GDB for testing optimizer pretty printers."""
 
-import gdb
-import string
 import difflib
+import string
+
+import gdb
 
 
 def output_diff(actual, expected):
@@ -52,15 +53,6 @@ if __name__ == "__main__":
             + "|   PathCompare[Eq]\n"
             + '|   Constant["1"], \n'
             + 'Scan["coll", "root"]\n',
-        )
-
-        assertPrintedOutput(
-            "testInterval",
-            "{\n"
-            + "    {[Const [1], Const [3]]}\n"
-            + " U \n"
-            + "    {[Const [4], Const [5]]}\n"
-            + "}\n",
         )
 
         assertPrintedOutput("emptyProjectionMap", "{std::map with 0 elements}\n")

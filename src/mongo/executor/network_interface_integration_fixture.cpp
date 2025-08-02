@@ -126,12 +126,11 @@ void NetworkInterfaceIntegrationFixture::resetIsInternalClient(bool isInternalCl
 Future<RemoteCommandResponse> NetworkInterfaceIntegrationFixture::runCommand(
     const TaskExecutor::CallbackHandle& cbHandle,
     RemoteCommandRequest request,
-    const std::shared_ptr<Baton>& baton) {
-
+    const CancellationToken& token) {
     _onSchedulingCommand();
 
     return net()
-        .startCommand(cbHandle, request, baton)
+        .startCommand(cbHandle, request, baton(), token)
         .unsafeToInlineFuture()
         .then([request](TaskExecutor::ResponseStatus resStatus) {
             if (resStatus.isOK()) {
@@ -153,36 +152,9 @@ Future<RemoteCommandResponse> NetworkInterfaceIntegrationFixture::runCommand(
         });
 }
 
-Future<void> NetworkInterfaceIntegrationFixture::startExhaustCommand(
-    const TaskExecutor::CallbackHandle& cbHandle,
-    RemoteCommandRequest request,
-    std::function<void(const RemoteCommandResponse&)> exhaustUtilCB,
-    const BatonHandle& baton) {
-    auto pf = makePromiseFuture<void>();
-
-    auto status = net().startExhaustCommand(
-        cbHandle,
-        request,
-        [p = std::move(pf.promise),
-         exhaustUtilCB = std::move(exhaustUtilCB)](const TaskExecutor::ResponseStatus& rs) mutable {
-            exhaustUtilCB(rs);
-
-            if (!rs.status.isOK()) {
-                invariant(!rs.moreToCome);
-                p.setError(rs.status);
-                return;
-            }
-
-            if (!rs.moreToCome) {
-                p.emplaceValue();
-            }
-        },
-        baton);
-
-    if (!status.isOK()) {
-        return status;
-    }
-    return std::move(pf.future);
+void NetworkInterfaceIntegrationFixture::cancelCommand(
+    const TaskExecutor::CallbackHandle& cbHandle) {
+    net().cancelCommand(cbHandle, baton());
 }
 
 BSONObj NetworkInterfaceIntegrationFixture::runSetupCommandSync(const DatabaseName& db,
@@ -197,38 +169,9 @@ BSONObj NetworkInterfaceIntegrationFixture::runSetupCommandSync(const DatabaseNa
     return res.data;
 }
 
-NetworkInterfaceIntegrationFixture::FailPointGuard
-NetworkInterfaceIntegrationFixture::configureFailPoint(StringData fp, BSONObj data) {
-    auto resp = runSetupCommandSync(DatabaseName::kAdmin,
-                                    BSON("configureFailPoint" << fp << "mode"
-                                                              << "alwaysOn"
-                                                              << "data" << data));
-    return FailPointGuard(fp, this, resp.getField("count").Int());
-}
-
-NetworkInterfaceIntegrationFixture::FailPointGuard
-NetworkInterfaceIntegrationFixture::configureFailCommand(
-    StringData failCommand,
-    boost::optional<ErrorCodes::Error> errorCode,
-    boost::optional<Milliseconds> blockTime) {
-    auto data = BSON("failCommands" << BSON_ARRAY(failCommand));
-
-    if (errorCode) {
-        data = data.addField(BSON("errorCode" << *errorCode).firstElement());
-    }
-
-    if (blockTime) {
-        data =
-            data.addFields(BSON("blockConnection" << true << "blockTimeMS" << blockTime->count()));
-    }
-    return configureFailPoint("failCommand", data);
-}
-
 RemoteCommandResponse NetworkInterfaceIntegrationFixture::runCommandSync(
     RemoteCommandRequest& request) {
-    auto deferred = runCommand(makeCallbackHandle(), request);
-    auto& res = deferred.get();
-    return res;
+    return runCommand(makeCallbackHandle(), request).get(interruptible());
 }
 
 void NetworkInterfaceIntegrationFixture::assertCommandOK(const DatabaseName& db,

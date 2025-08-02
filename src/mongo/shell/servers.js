@@ -12,6 +12,7 @@ var shellVersion = version;
 // port. This map is cleared when MongoRunner._startWithArgs and MongoRunner.stopMongod/s are
 // called.
 var serverExitCodeMap = {};
+var grpcToMongoRpcPortMap = {};
 
 var _parsePath = function() {
     var dbpath = "";
@@ -96,9 +97,13 @@ MongoRunner.getMongoShellPath = function() {
 
 MongoRunner.parsePort = function() {
     var port = "";
-    for (var i = 0; i < arguments.length; ++i)
-        if (arguments[i] == "--port")
+    const portKey = jsTestOptions().shellGRPC ? "--grpcPort" : "--port";
+
+    for (var i = 0; i < arguments.length; ++i) {
+        if (arguments[i] == portKey) {
             port = arguments[i + 1];
+        }
+    }
 
     if (port == "")
         throw Error("No port specified");
@@ -625,6 +630,9 @@ MongoRunner.mongoOptions = function(opts) {
         opts.tlsMode = jsTestOptions().tlsMode;
         if (opts.tlsMode != "disabled") {
             opts.tlsAllowInvalidHostnames = "";
+            if (!jsTestOptions().shellTlsCertificateKeyFile) {
+                opts.tlsAllowConnectionsWithoutCertificates = "";
+            }
         }
     }
     if (jsTestOptions().tlsCAFile && !opts.tlsCAFile) {
@@ -636,6 +644,7 @@ MongoRunner.mongoOptions = function(opts) {
         (opts.sslMode && opts.sslMode != "disabled");
     if (setParameters.featureFlagGRPC && tlsEnabled) {
         opts.grpcPort = opts.grpcPort || allocatePort();
+        grpcToMongoRpcPortMap[opts.grpcPort] = opts.port;
     }
 
     opts.pathOpts =
@@ -982,10 +991,12 @@ MongoRunner.runMongod = function(opts) {
     }
 
     mongod.commandLine = MongoRunner.arrToOpts(opts);
+    let connectPort =
+        (jsTestOptions().shellGRPC ? mongod.commandLine.grpcPort : mongod.commandLine.port);
     mongod.hostNoPort = useHostName ? getHostName() : "localhost";
     mongod.name = mongod.hostNoPort + ":" + mongod.commandLine.port;
-    mongod.host = mongod.name;
-    mongod.port = parseInt(mongod.commandLine.port);
+    mongod.host = mongod.hostNoPort + ":" + connectPort;
+    mongod.port = parseInt(connectPort);
     mongod.routerPort =
         mongod.commandLine.routerPort ? parseInt(mongod.commandLine.routerPort) : undefined;
     // Connect to the router port of this mongod, if open, with `new Mongo(conn.routerHost)`;
@@ -1029,9 +1040,11 @@ MongoRunner.runMongos = function(opts) {
     }
 
     mongos.commandLine = MongoRunner.arrToOpts(opts);
+    let connectPort =
+        (jsTestOptions().shellGRPC ? mongos.commandLine.grpcPort : mongos.commandLine.port);
     mongos.name = MongoRunner.getMongosName(mongos.commandLine.port, useHostName);
-    mongos.host = mongos.name;
-    mongos.port = parseInt(mongos.commandLine.port);
+    mongos.host = MongoRunner.getMongosName(connectPort, useHostName);
+    mongos.port = parseInt(connectPort);
     mongos.runId = runId || ObjectId();
     mongos.savedOptions = MongoRunner.savedOptions[mongos.runId];
     mongos.fullOptions = fullOptions;
@@ -1126,7 +1139,10 @@ var stopMongoProgram = function(conn, signal, opts, waitpid) {
 
     var port = parseInt(conn.port);
 
-    var pid = conn.pid;
+    if (grpcToMongoRpcPortMap[port]) {
+        port = grpcToMongoRpcPortMap[port];
+    }
+
     // If the return code is in the serverExitCodeMap, it means the server crashed on startup.
     // We just use the recorded return code instead of stopping the program.
     var returnCode;
@@ -1338,6 +1354,25 @@ function appendSetParameterArgs(argArray) {
                 const backtraceLogFilePath =
                     MongoRunner.dataDir + "/" + randomName + Date.now() + ".stacktrace";
                 argArray.push(...["--setParameter", "backtraceLogFile=" + backtraceLogFilePath]);
+            }
+
+            // TODO(SERVER-95610): update once this change is backported and in 8.0 versions
+            if ((programMajorMinorVersion < 800 && programMajorMinorVersion >= 600) ||
+                programMajorMinorVersion > 810) {
+                const parameters = jsTest.options().setParameters;
+                const reshardingDefaults = {
+                    'reshardingDelayBeforeRemainingOperationTimeQueryMillis': 0
+                };
+
+                Object.entries(reshardingDefaults).forEach(([key, value]) => {
+                    const keyIsNotParameter =
+                        (parameters === undefined || parameters[key] === undefined);
+                    const keyIsNotArgument = !argArrayContainsSetParameterValue(`${key}=`);
+
+                    if (keyIsNotParameter && keyIsNotArgument) {
+                        argArray.push('--setParameter', `${key}=${value}`);
+                    }
+                });
             }
 
             // New mongod-specific option in 4.9.x.
@@ -1555,6 +1590,12 @@ var _stopUndoLiveRecord = function(undoLiveRecordPid) {
 MongoRunner._startWithArgs = function(argArray, env, waitForConnect) {
     // TODO: Make there only be one codepath for starting mongo processes
 
+    // The config fuzzer does not apply all fuzzed configurations to mongo binaries executed via
+    // MongoRunner (See SERVER-92148 and SERVER-92894). To avoid a situation where programmers
+    // develop tests believing otherwise, we make doing so an explicit error.
+    assert(!jsTest.options().fuzzMongodConfigs,
+           "runMongo*() cannot be used with a fuzzed configuration, use standalone.py instead.");
+
     argArray = appendSetParameterArgs(argArray);
     var port = MongoRunner.parsePort.apply(null, argArray);
     var pid = -1;
@@ -1658,10 +1699,16 @@ function _getMongoProgramArguments(args) {
             !args.includes('--tlsCertificateKeyFile')) {
             newArgs.push('--tlsCertificateKeyFile', jsTestOptions().shellTlsCertificateKeyFile);
         }
+        if (jsTestOptions().shellGRPC && !args.includes('--gRPC')) {
+            newArgs.push('--gRPC');
+        }
     } else {
         if (jsTestOptions().tlsMode && !args.includes('--tlsMode')) {
             newArgs.push('--tlsMode', jsTestOptions().tlsMode);
             newArgs.push('--tlsAllowInvalidHostnames');
+            if (!jsTestOptions().shellTlsCertificateKeyFile) {
+                newArgs.push('--tlsAllowConnectionsWithoutCertificates');
+            }
         }
 
         if (!args.includes('--tlsCertificateKeyFile')) {

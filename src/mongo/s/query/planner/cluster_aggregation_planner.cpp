@@ -108,6 +108,7 @@
 #include "mongo/s/query/exec/cluster_client_cursor_impl.h"
 #include "mongo/s/query/exec/cluster_cursor_manager.h"
 #include "mongo/s/query/exec/cluster_query_result.h"
+#include "mongo/s/query/exec/collect_query_stats_mongos.h"
 #include "mongo/s/query/exec/document_source_merge_cursors.h"
 #include "mongo/s/query/exec/establish_cursors.h"
 #include "mongo/s/query/exec/owned_remote_cursor.h"
@@ -939,7 +940,6 @@ Status runPipelineOnSpecificShardOnly(const boost::intrusive_ptr<ExpressionConte
                                       Document serializedCommand,
                                       const PrivilegeVector& privileges,
                                       ShardId shardId,
-                                      bool eligibleForSampling,
                                       BSONObjBuilder* out,
                                       bool requestQueryStatsFromRemotes) {
     auto opCtx = expCtx->opCtx;
@@ -961,15 +961,6 @@ Status runPipelineOnSpecificShardOnly(const boost::intrusive_ptr<ExpressionConte
                                                               boost::none,
                                                               overrideBatchSize,
                                                               requestQueryStatsFromRemotes);
-
-    if (eligibleForSampling) {
-        if (auto sampleId = analyze_shard_key::tryGenerateSampleId(
-                opCtx,
-                namespaces.executionNss,
-                analyze_shard_key::SampledCommandNameEnum::kAggregate)) {
-            cmdObj = analyze_shard_key::appendSampleId(std::move(cmdObj), std::move(*sampleId));
-        }
-    }
 
     MultiStatementTransactionRequestsSender ars(
         opCtx,

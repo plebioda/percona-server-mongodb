@@ -133,6 +133,23 @@ def _impl(ctx):
         ],
     )
 
+    thin_archive_feature = feature(
+        name = "thin_archive",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [ACTION_NAMES.cpp_link_static_library],
+                flag_groups = [
+                    flag_group(
+                        flags = [
+                            "-T",
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
     default_compile_flags_feature = feature(
         name = "default_compile_flags",
         enabled = True,
@@ -657,6 +674,7 @@ def _impl(ctx):
         sysroot_feature,
         unfiltered_compile_flags_feature,
         omitted_timestamps_feature,
+        thin_archive_feature,
         extra_cflags_feature,
         extra_cxxflags_feature,
         extra_ldflags_feature,

@@ -253,6 +253,7 @@ enum class DocumentSourceType {
     kReshardingOwnershipMatch,              // DocumentSourceReshardingOwnershipMatch
     kSample,                                // DocumentSourceSample
     kSampleFromRandomCursor,                // DocumentSourceSampleFromRandomCursor
+    kScore,                                 // DocumentSourceScore
     kSearch,                                // DocumentSourceSearch
     kSearchMeta,                            // DocumentSourceSearchMeta
     kSequentialDocumentCache,               // DocumentSourceSequentialDocumentCache
@@ -268,6 +269,7 @@ enum class DocumentSourceType {
     kValidateStub,                          // DocumentSourceValidateStub
     kVectorSearch,                          // DocumentSourceVectorSearch
     kWindowStub,                            // DocumentSourceWindowStub
+    kExternalApi,                           // DocumentSourceExternalApiStub
 };
 
 class DocumentSource : public RefCountable {

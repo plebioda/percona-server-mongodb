@@ -2,22 +2,24 @@
 which case it is transitioned in/out of config shard mode.
 """
 
-import bson
-import time
-import threading
+import os.path
 import random
 import re
+import threading
+import time
+
+import bson
 import pymongo.errors
 
 from buildscripts.resmokelib import errors
+from buildscripts.resmokelib.testing.fixtures import interface as fixture_interface
+from buildscripts.resmokelib.testing.fixtures import shardedcluster
 from buildscripts.resmokelib.testing.hooks import interface
 from buildscripts.resmokelib.testing.hooks import lifecycle as lifecycle_interface
-from buildscripts.resmokelib.testing.fixtures import shardedcluster
-from buildscripts.resmokelib.testing.fixtures import interface as fixture_interface
-from buildscripts.resmokelib.testing.retry import retryable_codes as retryable_network_errs
 from buildscripts.resmokelib.testing.retry import (
     retryable_code_names as retryable_network_err_names,
 )
+from buildscripts.resmokelib.testing.retry import retryable_codes as retryable_network_errs
 
 # The possible number of seconds to wait before initiating a transition.
 TRANSITION_INTERVALS = [10]
@@ -37,6 +39,7 @@ class ContinuousAddRemoveShard(interface.Hook):
         self,
         hook_logger,
         fixture,
+        is_fsm_workload=False,
         auth_options=None,
         random_balancer_on=True,
         transition_configsvr=False,
@@ -54,9 +57,32 @@ class ContinuousAddRemoveShard(interface.Hook):
         self._move_primary_comment = move_primary_comment
         self._transition_intervals = transition_intervals
 
+        # The action file names need to match the same construction as found in
+        # jstests/concurrency/fsm_libs/resmoke_runner.js.
+        dbpath_prefix = fixture.get_dbpath_prefix()
+
+        # When running an FSM workload, we use the file-based lifecycle protocol
+        # in which a file is used as a form of communication between the hook and
+        # the FSM workload to decided when the hook is allowed to run.
+        if is_fsm_workload:
+            # Each hook uses a unique set of action files - the uniqueness is brought
+            # about by using the hook's name as a suffix.
+            self.__action_files = lifecycle_interface.ActionFiles._make(
+                [
+                    os.path.join(dbpath_prefix, field + "_" + self.__class__.__name__)
+                    for field in lifecycle_interface.ActionFiles._fields
+                ]
+            )
+        else:
+            self.__action_files = None
+
     def before_suite(self, test_report):
         """Before suite."""
-        lifecycle = lifecycle_interface.FlagBasedThreadLifecycle()
+
+        if self.__action_files is not None:
+            lifecycle = lifecycle_interface.FileBasedThreadLifecycle(self.__action_files)
+        else:
+            lifecycle = lifecycle_interface.FlagBasedThreadLifecycle()
 
         if not isinstance(self._fixture, shardedcluster.ShardedClusterFixture):
             msg = "Can only add and remove shards for sharded cluster fixtures."
@@ -129,7 +155,7 @@ class _AddRemoveShardThread(threading.Thread):
     def __init__(
         self,
         logger,
-        stepdown_lifecycle,
+        life_cycle,
         fixture,
         auth_options,
         random_balancer_on,
@@ -140,7 +166,7 @@ class _AddRemoveShardThread(threading.Thread):
     ):
         threading.Thread.__init__(self, name="AddRemoveShardThread")
         self.logger = logger
-        self.__lifecycle = stepdown_lifecycle
+        self.__lifecycle = life_cycle
         self._fixture = fixture
         self._auth_options = auth_options
         self._random_balancer_on = random_balancer_on
@@ -222,16 +248,14 @@ class _AddRemoveShardThread(threading.Thread):
 
                 self._run_post_remove_shard_checks(removed_shard_fixture, shard_id)
 
-                # Wait a random interval before transitioning back, unless the test already ended.
-                if not self.__lifecycle.poll_for_idle_request():
-                    wait_secs = random.choice(self._transition_intervals)
-                    msg = (
-                        "transition to config shard."
-                        if shard_id == "config"
-                        else "adding shard " + shard_id + "."
-                    )
-                    self.logger.info(f"Waiting {wait_secs} seconds before " + msg)
-                    self.__lifecycle.wait_for_action_interval(wait_secs)
+                wait_secs = random.choice(self._transition_intervals)
+                msg = (
+                    "transition to config shard."
+                    if shard_id == "config"
+                    else "adding shard " + shard_id + "."
+                )
+                self.logger.info(f"Waiting {wait_secs} seconds before " + msg)
+                self.__lifecycle.wait_for_action_interval(wait_secs)
 
                 # Always end with with same shard list at the test end as at startup.
 
@@ -243,6 +267,9 @@ class _AddRemoveShardThread(threading.Thread):
                 self._transition_to_config_shard_or_add_shard(shard_id, shard_host)
                 if shard_id == "config":
                     self._current_config_mode = self.CONFIG_SHARD
+
+                if self.__lifecycle.poll_for_idle_request():
+                    self.__lifecycle.send_idle_acknowledgement()
 
         except Exception:  # pylint: disable=W0703
             # Proactively log the exception when it happens so it will be

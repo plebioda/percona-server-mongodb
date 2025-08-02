@@ -23,7 +23,6 @@ load(
     "libunwind",
     "linker",
     "linkstatic",
-    "local_build",
     "lsan",
     "msan",
     "opt",
@@ -121,6 +120,16 @@ config_setting(
     flag_values = {
         "//bazel/config:compiler_type": "gcc",
     },
+)
+
+selects.config_setting_group(
+    name = "suse15_gcc_linkstatic",
+    match_all = [
+        "@platforms//os:linux",
+        "//bazel/platforms:suse15",
+        ":compiler_type_gcc",
+        ":linkstatic_enabled",
+    ],
 )
 
 selects.config_setting_group(
@@ -262,6 +271,22 @@ selects.config_setting_group(
     match_any = [
         "@platforms//os:macos",
         "@platforms//os:linux",
+    ],
+)
+
+selects.config_setting_group(
+    name = "gcc_x86_64",
+    match_all = [
+        ":compiler_type_gcc",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+selects.config_setting_group(
+    name = "gcc_aarch64",
+    match_all = [
+        ":compiler_type_gcc",
+        "@platforms//cpu:aarch64",
     ],
 )
 
@@ -869,14 +894,6 @@ selects.config_setting_group(
     match_all = [
         ":non_system_allocator_enabled",
         ":dbg_enabled",
-    ],
-)
-
-selects.config_setting_group(
-    name = "tcmalloc_google_local_build",
-    match_all = [
-        ":local_build_enabled",
-        "//bazel/platforms:kernel_version_4_4_or_greater",
     ],
 )
 
@@ -1625,22 +1642,6 @@ selects.config_setting_group(
 )
 
 # --------------------------------------
-# local_build
-# --------------------------------------
-
-local_build(
-    name = "local_build",
-    build_setting_default = False,
-)
-
-config_setting(
-    name = "local_build_enabled",
-    flag_values = {
-        "//bazel/config:local_build": "True",
-    },
-)
-
-# --------------------------------------
 # dwarf_version
 # --------------------------------------
 
@@ -2151,5 +2152,21 @@ config_setting(
     name = "server_js_enabled",
     flag_values = {
         "//bazel/config:server_js": "True",
+    },
+)
+
+# --------------------------------------
+# xray
+# --------------------------------------
+
+bool_flag(
+    name = "xray",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "xray_enabled",
+    flag_values = {
+        "//bazel/config:xray": "True",
     },
 )

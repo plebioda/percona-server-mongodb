@@ -80,6 +80,7 @@
 #include "mongo/db/service_context.h"
 #include "mongo/db/storage/recovery_unit.h"
 #include "mongo/db/timeseries/bucket_catalog/bucket_catalog.h"
+#include "mongo/db/timeseries/bucket_catalog/global_bucket_catalog.h"
 #include "mongo/db/transaction_resources.h"
 #include "mongo/db/write_concern.h"
 #include "mongo/logv2/log.h"
@@ -231,7 +232,8 @@ MigrationSourceManager::MigrationSourceManager(OperationContext* opCtx,
 
     // Make sure the latest placement version is recovered as of the time of the invocation of the
     // command.
-    onCollectionPlacementVersionMismatch(_opCtx, nss(), boost::none);
+    FilteringMetadataCache::get(opCtx)->onCollectionPlacementVersionMismatch(
+        _opCtx, nss(), boost::none);
 
     const auto shardId = ShardingState::get(opCtx)->shardId();
 
@@ -672,7 +674,7 @@ void MigrationSourceManager::commitChunkMetadataOnConfig() {
                             "migrationId"_attr = _coordinator->getMigrationId(),
                             logAttrs(nss()));
 
-        forceShardFilteringMetadataRefresh(_opCtx, nss());
+        FilteringMetadataCache::get(_opCtx)->forceShardFilteringMetadataRefresh(_opCtx, nss());
 
         LOGV2_DEBUG_OPTIONS(4817405,
                             2,
@@ -698,7 +700,9 @@ void MigrationSourceManager::commitChunkMetadataOnConfig() {
         scopedGuard.dismiss();
         _cleanup(false);
         // Best-effort recover of the chunk version.
-        onCollectionPlacementVersionMismatchNoExcept(_opCtx, nss(), boost::none).ignore();
+        FilteringMetadataCache::get(_opCtx)
+            ->onCollectionPlacementVersionMismatchNoExcept(_opCtx, nss(), boost::none)
+            .ignore();
         throw;
     }
 
@@ -722,7 +726,8 @@ void MigrationSourceManager::commitChunkMetadataOnConfig() {
     // If the migration has succeeded, clear the BucketCatalog so that the buckets that got migrated
     // out are no longer updatable.
     if (nss().isTimeseriesBucketsCollection()) {
-        auto& bucketCatalog = timeseries::bucket_catalog::BucketCatalog::get(_opCtx);
+        auto& bucketCatalog =
+            timeseries::bucket_catalog::GlobalBucketCatalog::get(_opCtx->getServiceContext());
         clear(bucketCatalog, _collectionUUID.get());
     }
 

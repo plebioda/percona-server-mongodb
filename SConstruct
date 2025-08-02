@@ -6,26 +6,23 @@ import errno
 import functools
 import json
 import os
-import re
 import pathlib
 import platform
+import re
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 import textwrap
-import threading
-import time
 import uuid
 from datetime import datetime
 from glob import glob
 
-from pkg_resources import parse_version
-
 import SCons
 import SCons.Script
 from mongo_tooling_metrics.lib.top_level_metrics import SConsToolingMetrics
+from pkg_resources import parse_version
+
 from site_scons.mongo import build_profiles
 
 # This must be first, even before EnsureSConsVersion, if
@@ -35,10 +32,10 @@ DefaultEnvironment(tools=[])
 # These come from site_scons/mongo. Import these things
 # after calling DefaultEnvironment, for the sake of paranoia.
 import mongo
-import mongo.platform as mongo_platform
-import mongo.toolchain as mongo_toolchain
 import mongo.generators as mongo_generators
 import mongo.install_actions as install_actions
+import mongo.platform as mongo_platform
+import mongo.toolchain as mongo_toolchain
 
 EnsurePythonVersion(3, 10)
 EnsureSConsVersion(3, 1, 1)
@@ -54,9 +51,9 @@ def release_target_info_noop(self):
 
 SCons.Node.FS.File.release_target_info = release_target_info_noop
 
-from buildscripts import utils
-from buildscripts import moduleconfig
 import psutil
+
+from buildscripts import moduleconfig, utils
 
 scons_invocation = "{} {}".format(sys.executable, " ".join(sys.argv))
 print("scons: running with args {}".format(scons_invocation))
@@ -145,6 +142,16 @@ add_option(
     the 'san' (sanitizer) profile to identify bugs as soon as possible. Check out
     site_scons/mongo/build_profiles.py to see each profile.""",
 )
+
+add_option(
+    "evergreen-tmp-dir",
+    help="Configures the path to the evergreen configured tmp directory.",
+    default=None,
+)
+# Preload to perform early fetch fo repositories
+tool = Tool("integrate_bazel")
+tool.exists(DefaultEnvironment())
+mongo_toolchain_execroot = DefaultEnvironment().PrefetchToolchain()
 
 build_profile = build_profiles.get_build_profile(get_option("build-profile"))
 
@@ -529,6 +536,14 @@ add_option(
 )
 
 add_option(
+    "consolidated-test-bins",
+    choices=["on", "off"],
+    default="off",
+    help="Test binaries should build consolidated versions of themselves as defined by CONSOLIDATED_TARGET",
+    type="choice",
+)
+
+add_option(
     "use-sasl-client",
     help="Support SASL authentication in the client library",
     nargs=0,
@@ -744,7 +759,7 @@ add_option(
 
 add_option(
     "toolchain-root",
-    default=None,
+    default=mongo_toolchain_execroot if mongo_toolchain_execroot else "",
     help="Name a toolchain root for use with toolchain selection Variables files in etc/scons",
 )
 
@@ -837,11 +852,6 @@ add_option(
     help="Bypass link-model=dynamic check for macos versions <12.",
 )
 
-add_option(
-    "evergreen-tmp-dir",
-    help="Configures the path to the evergreen configured tmp directory.",
-    default=None,
-)
 
 # --build-mongot is a compile flag used by the evergreen build variants that run end-to-end search
 # suites, as it downloads the necessary mongot binary.
@@ -972,6 +982,7 @@ def variable_tools_converter(val):
     return tool_list + [
         "distsrc",
         "gziptool",
+        "mongo_consolidated_targets",
         "mongo_test_execution",
         "mongo_test_list",
         "mongo_benchmark",
@@ -1075,8 +1086,20 @@ env_vars.Add(
 )
 
 env_vars.Add(
+    "TOOLCHAIN_CCFLAGS",
+    help="Sets flags for the C and C++ compiler specific to the toolchain",
+    converter=variable_shlex_converter,
+)
+
+env_vars.Add(
     "NON_CONF_LINKFLAGS",
     help="Sets flags for the C and C++ linker that are not used in configure checks",
+    converter=variable_shlex_converter,
+)
+
+env_vars.Add(
+    "TOOLCHAIN_LINKFLAGS",
+    help="Sets flags for the C and C++ linker specific to the toolchain",
     converter=variable_shlex_converter,
 )
 
@@ -1686,6 +1709,7 @@ SConsignFile(str(sconsDataDir.File("sconsign.py3")))
 
 def printLocalInfo():
     import sys
+
     import SCons
 
     print(("scons version: " + SCons.__version__))
@@ -1754,7 +1778,15 @@ env = Environment(variables=env_vars, **envDict)
 del envDict
 env.AddMethod(lambda env, name, **kwargs: add_option(name, **kwargs), "AddOption")
 
-# Preload to perform early fetch fo repositories
+env.Prepend(CCFLAGS="$TOOLCHAIN_CCFLAGS")
+env.Prepend(LINKFLAGS="$TOOLCHAIN_LINKFLAGS")
+
+if ARGUMENTS.get("CC") and ARGUMENTS.get("CXX"):
+    os.environ["CC"] = env.get("CC")
+    os.environ["CXX"] = env.get("CXX")
+    os.environ["USE_NATIVE_TOOLCHAIN"] = "1"
+
+# Early load to setup env functions
 tool = Tool("integrate_bazel")
 tool.exists(env)
 
@@ -6669,6 +6701,18 @@ if get_option("bazel-includes-info"):
 
 env.WaitForBazel()
 
+if str(env["LIBDEPS_GRAPH_ALIAS"]) in COMMAND_LINE_TARGETS:
+    # The find_symbols binary is a small fast C binary which will extract the missing
+    # symbols from the target library, and discover what linked libraries supply it. This
+    # setups the binary to be built.
+    find_symbols_env = env.Clone()
+    find_symbols_env.VariantDir("${BUILD_DIR}/libdeps", "buildscripts/libdeps", duplicate=0)
+    find_symbols_env.Program(
+        target="${BUILD_DIR}/libdeps/find_symbols",
+        source=["${BUILD_DIR}/libdeps/find_symbols.c"],
+        CFLAGS=["-O3"],
+    )
+
 env.SConscript(
     must_exist=1,
     dirs=[
@@ -6735,6 +6779,8 @@ env.AlwaysBuild(cachePrune)
 # and all the other setup that happens before we begin a real graph
 # walk.
 env.Alias("configure", None)
+
+env.CreateConsolidatedTargets()
 
 # We have finished all SConscripts and targets, so we can ask
 # auto_install_binaries to finalize the installation setup.

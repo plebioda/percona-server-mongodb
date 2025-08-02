@@ -55,6 +55,7 @@
 #include "mongo/db/timeseries/bucket_catalog/bucket_catalog.h"
 #include "mongo/db/timeseries/bucket_catalog/bucket_catalog_internal.h"
 #include "mongo/db/timeseries/bucket_catalog/bucket_metadata.h"
+#include "mongo/db/timeseries/bucket_catalog/global_bucket_catalog.h"
 #include "mongo/db/timeseries/bucket_compression.h"
 #include "mongo/db/timeseries/timeseries_constants.h"
 #include "mongo/db/timeseries/timeseries_options.h"
@@ -72,12 +73,15 @@
 
 namespace mongo::timeseries::bucket_catalog {
 namespace {
+constexpr StringData kNumActiveBuckets = "numActiveBuckets"_sd;
 constexpr StringData kNumSchemaChanges = "numBucketsClosedDueToSchemaChange"_sd;
 constexpr StringData kNumBucketsReopened = "numBucketsReopened"_sd;
 constexpr StringData kNumArchivedDueToMemoryThreshold = "numBucketsArchivedDueToMemoryThreshold"_sd;
 constexpr StringData kNumClosedDueToReopening = "numBucketsClosedDueToReopening"_sd;
 constexpr StringData kNumClosedDueToTimeForward = "numBucketsClosedDueToTimeForward"_sd;
 constexpr StringData kNumClosedDueToMemoryThreshold = "numBucketsClosedDueToMemoryThreshold"_sd;
+
+static constexpr uint64_t kStorageCacheSize = 1024 * 1024 * 1024;
 
 class BucketCatalogTest : public CatalogTestFixture {
 protected:
@@ -91,6 +95,7 @@ protected:
     };
 
     void setUp() override;
+    void tearDown() override;
     virtual void preSetUp();
     virtual std::vector<NamespaceString> getNamespaceStrings();
 
@@ -179,7 +184,7 @@ void BucketCatalogTest::setUp() {
     CatalogTestFixture::setUp();
 
     _opCtx = operationContext();
-    _bucketCatalog = &BucketCatalog::get(_opCtx);
+    _bucketCatalog = &GlobalBucketCatalog::get(_opCtx->getServiceContext());
 
     for (auto&& [ns, uuid] : std::initializer_list<std::pair<NamespaceString*, UUID*>>{
              {&_ns1, &_uuid1}, {&_ns2, &_uuid2}, {&_ns3, &_uuid3}}) {
@@ -190,6 +195,32 @@ void BucketCatalogTest::setUp() {
         AutoGetCollection autoColl(_opCtx, ns->makeTimeseriesBucketsNamespace(), MODE_IS);
         *uuid = autoColl.getCollection()->uuid();
     }
+}
+
+void BucketCatalogTest::tearDown() {
+    // Validate that all tracked execution stats adds up to what is being tracked globally.
+    ExecutionStats accumulated;
+    for (auto&& execStats : _bucketCatalog->executionStats) {
+
+        addCollectionExecutionGauges(accumulated, *execStats.second);
+    }
+
+    // Compare as BSON, this allows us to avoid enumerating all the individual stats in this
+    // function and makes it robust to adding further stats in the future.
+    auto execStatsToBSON = [](const ExecutionStats& stats) {
+        BSONObjBuilder builder;
+        appendExecutionStatsToBuilder(stats, builder);
+        return builder.obj();
+    };
+
+    ExecutionStats global;
+
+    // Filter out the guages only
+    addCollectionExecutionGauges(global, _bucketCatalog->globalExecutionStats);
+
+    ASSERT_EQ(0, execStatsToBSON(global).woCompare(execStatsToBSON(accumulated)));
+
+    CatalogTestFixture::tearDown();
 }
 
 BucketCatalogTest::RunBackgroundTaskAndWaitForFailpoint::RunBackgroundTaskAndWaitForFailpoint(
@@ -239,11 +270,11 @@ void BucketCatalogTest::_commit(const NamespaceString& ns,
                                 uint16_t numPreviouslyCommittedMeasurements,
                                 size_t expectedBatchSize) {
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, ns, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), expectedBatchSize);
     ASSERT_EQ(batch->numPreviouslyCommittedMeasurements, numPreviouslyCommittedMeasurements);
 
-    finish(_opCtx, *_bucketCatalog, ns, batch, {});
+    finish(*_bucketCatalog, batch, {});
 }
 
 void BucketCatalogTest::_insertOneAndCommit(const NamespaceString& ns,
@@ -256,14 +287,14 @@ void BucketCatalogTest::_insertOneAndCommit(const NamespaceString& ns,
                                                               _getTimeseriesOptions(ns),
                                                               BSON(_timeField << time)));
 
-    auto result = insert(_opCtx,
-                         *_bucketCatalog,
-                         ns,
+    auto result = insert(*_bucketCatalog,
                          _getCollator(ns),
                          BSON(_timeField << time),
+                         _opCtx->getOpID(),
                          CombineWithInsertsFromOtherClients::kAllow,
                          std::get<bucket_catalog::InsertContext>(insertContextAndTime),
-                         std::get<Date_t>(insertContextAndTime));
+                         std::get<Date_t>(insertContextAndTime),
+                         kStorageCacheSize);
     auto& batch = get<SuccessfulInsertion>(result.getValue()).batch;
     _commit(ns, batch, numPreviouslyCommittedMeasurements);
 }
@@ -279,14 +310,14 @@ StatusWith<mongo::timeseries::bucket_catalog::InsertResult> BucketCatalogTest::_
     auto insertContextAndTime = uassertStatusOK(
         prepareInsert(catalog, uuid, _getCollator(nss), _getTimeseriesOptions(nss), doc));
 
-    return insert(opCtx,
-                  catalog,
-                  nss,
+    return insert(catalog,
                   _getCollator(nss),
                   doc,
+                  opCtx->getOpID(),
                   combine,
                   std::get<bucket_catalog::InsertContext>(insertContextAndTime),
-                  std::get<Date_t>(insertContextAndTime));
+                  std::get<Date_t>(insertContextAndTime),
+                  kStorageCacheSize);
 }
 
 StatusWith<mongo::timeseries::bucket_catalog::InsertResult> BucketCatalogTest::_tryInsertOneHelper(
@@ -300,14 +331,14 @@ StatusWith<mongo::timeseries::bucket_catalog::InsertResult> BucketCatalogTest::_
     auto insertContextAndTime = uassertStatusOK(
         prepareInsert(catalog, uuid, _getCollator(nss), _getTimeseriesOptions(nss), doc));
 
-    return tryInsert(opCtx,
-                     catalog,
-                     nss,
+    return tryInsert(catalog,
                      _getCollator(nss),
                      doc,
+                     _opCtx->getOpID(),
                      combine,
                      std::get<bucket_catalog::InsertContext>(insertContextAndTime),
-                     std::get<Date_t>(insertContextAndTime));
+                     std::get<Date_t>(insertContextAndTime),
+                     kStorageCacheSize);
 }
 
 StatusWith<mongo::timeseries::bucket_catalog::InsertResult>
@@ -323,21 +354,24 @@ BucketCatalogTest::_insertOneWithReopeningContextHelper(
     auto insertContextAndTime = uassertStatusOK(
         prepareInsert(catalog, uuid, _getCollator(nss), _getTimeseriesOptions(nss), doc));
 
-    return insertWithReopeningContext(opCtx,
-                                      catalog,
-                                      nss,
+    return insertWithReopeningContext(catalog,
                                       _getCollator(nss),
                                       doc,
+                                      _opCtx->getOpID(),
                                       combine,
                                       reopeningContext,
                                       std::get<bucket_catalog::InsertContext>(insertContextAndTime),
-                                      std::get<Date_t>(insertContextAndTime));
+                                      std::get<Date_t>(insertContextAndTime),
+                                      kStorageCacheSize);
 }
 
 long long BucketCatalogTest::_getExecutionStat(const UUID& uuid, StringData stat) {
     BSONObjBuilder builder;
     appendExecutionStats(*_bucketCatalog, uuid, builder);
-    return builder.obj().getIntField(stat);
+
+    BSONObj obj = builder.obj();
+    BSONElement e = obj.getField(stat);
+    return e.isNumber() ? (int)e.number() : 0;
 }
 
 void BucketCatalogTest::_testMeasurementSchema(
@@ -399,14 +433,13 @@ Status BucketCatalogTest::_reopenBucket(const CollectionPtr& coll, const BSONObj
                                         metaFieldName}};
 
     // Validate the bucket document against the schema.
-    auto validator = [&](OperationContext * opCtx, const BSONObj& bucketDoc) -> auto {
+    auto validator = [ opCtx = _opCtx, &coll ](const BSONObj& bucketDoc) -> auto {
         return coll->checkValidation(opCtx, bucketDoc);
     };
 
     auto stats = internal::getOrInitializeExecutionStats(*_bucketCatalog, uuid);
 
-    auto res = internal::rehydrateBucket(_opCtx,
-                                         *_bucketCatalog,
+    auto res = internal::rehydrateBucket(*_bucketCatalog,
                                          stats,
                                          uuid,
                                          coll->getDefaultCollator(),
@@ -426,8 +459,7 @@ Status BucketCatalogTest::_reopenBucket(const CollectionPtr& coll, const BSONObj
     stdx::lock_guard stripeLock{stripe.mutex};
 
     ClosedBuckets closedBuckets;
-    return internal::reopenBucket(_opCtx,
-                                  *_bucketCatalog,
+    return internal::reopenBucket(*_bucketCatalog,
                                   stripe,
                                   stripeLock,
                                   stats,
@@ -457,7 +489,7 @@ TEST_F(BucketCatalogTest, InsertIntoSameBucket) {
     // The batch hasn't actually been committed yet.
     ASSERT(!isWriteBatchFinished(*batch1));
 
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
 
     // Still not finished.
     ASSERT(!isWriteBatchFinished(*batch1));
@@ -468,7 +500,7 @@ TEST_F(BucketCatalogTest, InsertIntoSameBucket) {
     ASSERT_EQ(batch1->numPreviouslyCommittedMeasurements, 0);
 
     // Once the commit has occurred, the waiter should be notified.
-    finish(_opCtx, *_bucketCatalog, _ns1, batch1, {});
+    finish(*_bucketCatalog, batch1, {});
     ASSERT(isWriteBatchFinished(*batch2));
     auto result3 = getWriteBatchResult(*batch2);
     ASSERT_OK(result3.getStatus());
@@ -542,16 +574,16 @@ TEST_F(BucketCatalogTest, InsertThroughDifferentCatalogsIntoDifferentBuckets) {
     // Committing one bucket should only return the one document in that bucket and should not
     // affect the other bucket.
     ASSERT(claimWriteBatchCommitRights(*batch1));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
     ASSERT_EQ(batch1->measurements.size(), 1);
     ASSERT_EQ(batch1->numPreviouslyCommittedMeasurements, 0);
-    finish(_opCtx, *_bucketCatalog, _ns1, batch1, {});
+    finish(*_bucketCatalog, batch1, {});
 
     ASSERT(claimWriteBatchCommitRights(*batch2));
-    ASSERT_OK(prepareCommit(temporaryBucketCatalog, _ns1, batch2));
+    ASSERT_OK(prepareCommit(temporaryBucketCatalog, batch2));
     ASSERT_EQ(batch2->measurements.size(), 1);
     ASSERT_EQ(batch2->numPreviouslyCommittedMeasurements, 0);
-    finish(_opCtx, temporaryBucketCatalog, _ns1, batch2, {});
+    finish(temporaryBucketCatalog, batch2, {});
 }
 
 TEST_F(BucketCatalogTest, InsertIntoSameBucketArray) {
@@ -656,16 +688,38 @@ TEST_F(BucketCatalogTest, NumCommittedMeasurementsAccumulates) {
     // the bucket are committed.
     _insertOneAndCommit(_ns1, _uuid1, 0);
     _insertOneAndCommit(_ns1, _uuid1, 1);
+
+    ASSERT_EQ(1, _getExecutionStat(_uuid1, kNumActiveBuckets));
 }
 
 TEST_F(BucketCatalogTest, ClearNamespaceBuckets) {
     _insertOneAndCommit(_ns1, _uuid1, 0);
     _insertOneAndCommit(_ns2, _uuid2, 0);
+    ASSERT_EQ(1, _getExecutionStat(_uuid1, kNumActiveBuckets));
+    ASSERT_EQ(1, _getExecutionStat(_uuid2, kNumActiveBuckets));
 
+    // Clearing the UUID does not immediately remove tracking from the bucket catalog as this is
+    // async.
     clear(*_bucketCatalog, _uuid1);
+    ASSERT_EQ(1, _getExecutionStat(_uuid1, kNumActiveBuckets));
+    ASSERT_EQ(1, _getExecutionStat(_uuid2, kNumActiveBuckets));
 
     _insertOneAndCommit(_ns1, _uuid1, 0);
     _insertOneAndCommit(_ns2, _uuid2, 1);
+    ASSERT_EQ(1, _getExecutionStat(_uuid1, kNumActiveBuckets));
+    ASSERT_EQ(1, _getExecutionStat(_uuid2, kNumActiveBuckets));
+}
+
+TEST_F(BucketCatalogTest, DropNamespaceBuckets) {
+    _insertOneAndCommit(_ns1, _uuid1, 0);
+    _insertOneAndCommit(_ns2, _uuid2, 0);
+    ASSERT_EQ(1, _getExecutionStat(_uuid1, kNumActiveBuckets));
+    ASSERT_EQ(1, _getExecutionStat(_uuid2, kNumActiveBuckets));
+
+    // Dropping the UUID immediately remove tracking from the bucket catalog.
+    drop(*_bucketCatalog, _uuid1);
+    ASSERT_EQ(0, _getExecutionStat(_uuid1, kNumActiveBuckets));
+    ASSERT_EQ(1, _getExecutionStat(_uuid2, kNumActiveBuckets));
 }
 
 TEST_F(BucketCatalogTest, InsertBetweenPrepareAndFinish) {
@@ -673,7 +727,7 @@ TEST_F(BucketCatalogTest, InsertBetweenPrepareAndFinish) {
         _insertOneHelper(_opCtx, *_bucketCatalog, _ns1, _uuid1, BSON(_timeField << Date_t::now()));
     auto batch1 = get<SuccessfulInsertion>(result1.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch1));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
     ASSERT_EQ(batch1->measurements.size(), 1);
     ASSERT_EQ(batch1->numPreviouslyCommittedMeasurements, 0);
 
@@ -683,7 +737,7 @@ TEST_F(BucketCatalogTest, InsertBetweenPrepareAndFinish) {
     auto batch2 = get<SuccessfulInsertion>(result2.getValue()).batch;
     ASSERT_NE(batch1, batch2);
 
-    finish(_opCtx, *_bucketCatalog, _ns1, batch1, {});
+    finish(*_bucketCatalog, batch1, {});
     ASSERT(isWriteBatchFinished(*batch1));
 
     // Verify the second batch still commits one doc, and that the first batch only commited one.
@@ -694,7 +748,7 @@ DEATH_TEST_F(BucketCatalogTest, CannotCommitWithoutRights, "invariant") {
     auto result =
         _insertOneHelper(_opCtx, *_bucketCatalog, _ns1, _uuid1, BSON(_timeField << Date_t::now()));
     auto& batch = get<SuccessfulInsertion>(result.getValue()).batch;
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
 
     // BucketCatalog::prepareCommit uses dassert, so it will only invariant in debug mode. Ensure we
     // die here in non-debug mode as well.
@@ -774,7 +828,7 @@ TEST_F(BucketCatalogTest, AbortBatchOnBucketWithPreparedCommit) {
         _insertOneHelper(_opCtx, *_bucketCatalog, _ns1, _uuid1, BSON(_timeField << Date_t::now()));
     auto batch1 = get<SuccessfulInsertion>(result1.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch1));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
     ASSERT_EQ(batch1->measurements.size(), 1);
     ASSERT_EQ(batch1->numPreviouslyCommittedMeasurements, 0);
 
@@ -789,7 +843,7 @@ TEST_F(BucketCatalogTest, AbortBatchOnBucketWithPreparedCommit) {
     ASSERT(isWriteBatchFinished(*batch2));
     ASSERT_EQ(getWriteBatchResult(*batch2).getStatus(), ErrorCodes::TimeseriesBucketCleared);
 
-    finish(_opCtx, *_bucketCatalog, _ns1, batch1, {});
+    finish(*_bucketCatalog, batch1, {});
     ASSERT(isWriteBatchFinished(*batch1));
     ASSERT_OK(getWriteBatchResult(*batch1).getStatus());
 }
@@ -802,7 +856,7 @@ TEST_F(BucketCatalogTest, ClearNamespaceWithConcurrentWrites) {
 
     clear(*_bucketCatalog, _uuid1);
 
-    ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT(isWriteBatchFinished(*batch));
     ASSERT_EQ(getWriteBatchResult(*batch).getStatus(), ErrorCodes::TimeseriesBucketCleared);
 
@@ -810,7 +864,7 @@ TEST_F(BucketCatalogTest, ClearNamespaceWithConcurrentWrites) {
         _insertOneHelper(_opCtx, *_bucketCatalog, _ns1, _uuid1, BSON(_timeField << Date_t::now()));
     batch = get<SuccessfulInsertion>(result.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
     ASSERT_EQ(batch->numPreviouslyCommittedMeasurements, 0);
 
@@ -821,7 +875,7 @@ TEST_F(BucketCatalogTest, ClearNamespaceWithConcurrentWrites) {
     // operation got the collection lock. So the write did actually happen, but is has since been
     // removed, and that's fine for our purposes. The finish just records the result to the batch
     // and updates some statistics.
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
     ASSERT(isWriteBatchFinished(*batch));
     ASSERT_OK(getWriteBatchResult(*batch).getStatus());
 }
@@ -832,7 +886,7 @@ TEST_F(BucketCatalogTest, ClearBucketWithPreparedBatchThrowsConflict) {
         _insertOneHelper(_opCtx, *_bucketCatalog, _ns1, _uuid1, BSON(_timeField << Date_t::now()));
     auto batch = get<SuccessfulInsertion>(result.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
     ASSERT_EQ(batch->numPreviouslyCommittedMeasurements, 0);
 
@@ -849,7 +903,7 @@ TEST_F(BucketCatalogTest, PrepareCommitOnClearedBatchWithAlreadyPreparedBatch) {
         _insertOneHelper(_opCtx, *_bucketCatalog, _ns1, _uuid1, BSON(_timeField << Date_t::now()));
     auto batch1 = get<SuccessfulInsertion>(result1.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch1));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
     ASSERT_EQ(batch1->measurements.size(), 1);
     ASSERT_EQ(batch1->numPreviouslyCommittedMeasurements, 0);
 
@@ -865,7 +919,7 @@ TEST_F(BucketCatalogTest, PrepareCommitOnClearedBatchWithAlreadyPreparedBatch) {
 
     // Now try to prepare the second batch. Ensure it aborts the batch.
     ASSERT(claimWriteBatchCommitRights(*batch2));
-    ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, _ns1, batch2));
+    ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, batch2));
     ASSERT(isWriteBatchFinished(*batch2));
     ASSERT_EQ(getWriteBatchResult(*batch2).getStatus(), ErrorCodes::TimeseriesBucketCleared);
 
@@ -885,7 +939,7 @@ TEST_F(BucketCatalogTest, PrepareCommitOnClearedBatchWithAlreadyPreparedBatch) {
     abort(*_bucketCatalog, batch3, {ErrorCodes::TimeseriesBucketCleared, ""});
 
     // Make sure we can finish the cleanly prepared batch.
-    finish(_opCtx, *_bucketCatalog, _ns1, batch1, {});
+    finish(*_bucketCatalog, batch1, {});
     ASSERT(isWriteBatchFinished(*batch1));
     ASSERT_OK(getWriteBatchResult(*batch1).getStatus());
 }
@@ -900,7 +954,7 @@ TEST_F(BucketCatalogTest, PrepareCommitOnAlreadyAbortedBatch) {
     ASSERT(isWriteBatchFinished(*batch));
     ASSERT_EQ(getWriteBatchResult(*batch).getStatus(), ErrorCodes::TimeseriesBucketCleared);
 
-    ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT(isWriteBatchFinished(*batch));
     ASSERT_EQ(getWriteBatchResult(*batch).getStatus(), ErrorCodes::TimeseriesBucketCleared);
 }
@@ -970,20 +1024,20 @@ TEST_F(BucketCatalogTest, CannotConcurrentlyCommitBatchesForSameBucket) {
     ASSERT(claimWriteBatchCommitRights(*batch2));
 
     // Batch 2 will not be able to commit until batch 1 has finished.
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
 
     {
         auto task = RunBackgroundTaskAndWaitForFailpoint{
             "hangTimeSeriesBatchPrepareWaitingForConflictingOperation", [&]() {
-                ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch2));
+                ASSERT_OK(prepareCommit(*_bucketCatalog, batch2));
             }};
 
         // Finish the first batch.
-        finish(_opCtx, *_bucketCatalog, _ns1, batch1, {});
+        finish(*_bucketCatalog, batch1, {});
         ASSERT(isWriteBatchFinished(*batch1));
     }
 
-    finish(_opCtx, *_bucketCatalog, _ns1, batch2, {});
+    finish(*_bucketCatalog, batch2, {});
     ASSERT(isWriteBatchFinished(*batch2));
 }
 
@@ -1020,12 +1074,12 @@ TEST_F(BucketCatalogTest, AbortingBatchEnsuresBucketIsEventuallyClosed) {
     ASSERT(claimWriteBatchCommitRights(*batch3));
 
     // Batch 2 will not be able to commit until batch 1 has finished.
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
 
     {
         auto task = RunBackgroundTaskAndWaitForFailpoint{
             "hangTimeSeriesBatchPrepareWaitingForConflictingOperation", [&]() {
-                ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, _ns1, batch2));
+                ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, batch2));
             }};
 
         // If we abort the third batch, it should abort the second one too, as it isn't prepared.
@@ -1033,13 +1087,13 @@ TEST_F(BucketCatalogTest, AbortingBatchEnsuresBucketIsEventuallyClosed) {
         // can then finish the first batch, which will allow the second batch to proceed. It should
         // recognize it has been aborted and clean up the bucket.
         abort(*_bucketCatalog, batch3, Status{ErrorCodes::TimeseriesBucketCleared, "cleared"});
-        finish(_opCtx, *_bucketCatalog, _ns1, batch1, {});
+        finish(*_bucketCatalog, batch1, {});
         ASSERT(isWriteBatchFinished(*batch1));
     }
     // Wait for the batch 2 task to finish preparing commit. Since batch 1 finished, batch 2 should
     // be unblocked. Note that after aborting batch 3, batch 2 was not in a prepared state, so we
     // expect the prepareCommit() call to fail.
-    ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, _ns1, batch2));
+    ASSERT_NOT_OK(prepareCommit(*_bucketCatalog, batch2));
     ASSERT(isWriteBatchFinished(*batch2));
 
     // Make sure a new batch ends up in a new bucket.
@@ -1074,12 +1128,12 @@ TEST_F(BucketCatalogTest, AbortingBatchEnsuresNewInsertsGoToNewBucket) {
     ASSERT_EQ(batch1->bucketId, batch2->bucketId);
     ASSERT(claimWriteBatchCommitRights(*batch1));
     ASSERT(claimWriteBatchCommitRights(*batch2));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
 
     // Batch 1 will be in a prepared state now. Abort the second batch so that bucket 1 will be
     // closed after batch 1 finishes.
     abort(*_bucketCatalog, batch2, Status{ErrorCodes::TimeseriesBucketCleared, "cleared"});
-    finish(_opCtx, *_bucketCatalog, _ns1, batch1, {});
+    finish(*_bucketCatalog, batch1, {});
     ASSERT(isWriteBatchFinished(*batch1));
     ASSERT(isWriteBatchFinished(*batch2));
 
@@ -1114,17 +1168,17 @@ TEST_F(BucketCatalogTest, DuplicateNewFieldNamesAcrossConcurrentBatches) {
 
     // Batch 2 is the first batch to commit the time field.
     ASSERT(claimWriteBatchCommitRights(*batch2));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch2));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch2));
     ASSERT_EQ(batch2->newFieldNamesToBeInserted.size(), 1);
     ASSERT_EQ(batch2->newFieldNamesToBeInserted.begin()->first, _timeField);
-    finish(_opCtx, *_bucketCatalog, _ns1, batch2, {});
+    finish(*_bucketCatalog, batch2, {});
 
     // Batch 1 was the first batch to insert the time field, but by commit time it was already
     // committed by batch 2.
     ASSERT(claimWriteBatchCommitRights(*batch1));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
     ASSERT(batch1->newFieldNamesToBeInserted.empty());
-    finish(_opCtx, *_bucketCatalog, _ns1, batch1, {});
+    finish(*_bucketCatalog, batch1, {});
 }
 
 TEST_F(BucketCatalogTest, SchemaChanges) {
@@ -1269,7 +1323,7 @@ TEST_F(BucketCatalogTest, ReopenMixedSchemaDataBucket) {
 
     ASSERT_NOT_OK(_reopenBucket(autoColl.getCollection(), bucketDoc));
 
-    auto stats = internal::getExecutionStats(*_bucketCatalog, _uuid1);
+    auto stats = internal::getCollectionExecutionStats(*_bucketCatalog, _uuid1);
     ASSERT_EQ(1, stats->numBucketReopeningsFailed.load());
 }
 
@@ -1359,7 +1413,7 @@ TEST_F(BucketCatalogTest, ReopenUncompressedBucketAndInsertCompatibleMeasurement
 
     auto batch = get<SuccessfulInsertion>(result.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
 
     // The reopened bucket already contains three committed measurements.
@@ -1371,7 +1425,7 @@ TEST_F(BucketCatalogTest, ReopenUncompressedBucketAndInsertCompatibleMeasurement
         batch->max,
         BSON("u" << BSON("time" << Date_t::fromMillisSinceEpoch(1654529680000) << "b" << 100)));
 
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
 }
 
 TEST_F(BucketCatalogTest, ReopenUncompressedBucketAndInsertCompatibleMeasurementWithMeta) {
@@ -1406,7 +1460,7 @@ TEST_F(BucketCatalogTest, ReopenUncompressedBucketAndInsertCompatibleMeasurement
 
     auto batch = get<SuccessfulInsertion>(result.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
 
     // The reopened bucket already contains three committed measurements.
@@ -1418,7 +1472,7 @@ TEST_F(BucketCatalogTest, ReopenUncompressedBucketAndInsertCompatibleMeasurement
         batch->max,
         BSON("u" << BSON("time" << Date_t::fromMillisSinceEpoch(1654529680000) << "b" << 100)));
 
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
 }
 
 TEST_F(BucketCatalogTest, ReopenUncompressedBucketAndInsertIncompatibleMeasurement) {
@@ -1459,13 +1513,13 @@ TEST_F(BucketCatalogTest, ReopenUncompressedBucketAndInsertIncompatibleMeasureme
 
     auto batch = get<SuccessfulInsertion>(result.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
 
     // Since the reopened bucket was incompatible, we opened a new one.
     ASSERT_EQ(batch->numPreviouslyCommittedMeasurements, 0);
 
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
 }
 
 TEST_F(BucketCatalogTest, ReopenCompressedBucketAndInsertCompatibleMeasurement) {
@@ -1512,7 +1566,7 @@ TEST_F(BucketCatalogTest, ReopenCompressedBucketAndInsertCompatibleMeasurement) 
 
     auto batch = get<SuccessfulInsertion>(result.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
 
     // The reopened bucket already contains three committed measurements.
@@ -1524,7 +1578,7 @@ TEST_F(BucketCatalogTest, ReopenCompressedBucketAndInsertCompatibleMeasurement) 
         batch->max,
         BSON("u" << BSON("time" << Date_t::fromMillisSinceEpoch(1654529680000) << "b" << 100)));
 
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
 }
 
 TEST_F(BucketCatalogTest, ReopenCompressedBucketAndInsertIncompatibleMeasurement) {
@@ -1573,13 +1627,13 @@ TEST_F(BucketCatalogTest, ReopenCompressedBucketAndInsertIncompatibleMeasurement
 
     auto batch = get<SuccessfulInsertion>(result.getValue()).batch;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
 
     // Since the reopened bucket was incompatible, we opened a new one.
     ASSERT_EQ(batch->numPreviouslyCommittedMeasurements, 0);
 
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
 }
 
 TEST_F(BucketCatalogTest, ReopenCompressedBucketFails) {
@@ -1616,7 +1670,7 @@ TEST_F(BucketCatalogTest, ArchivingUnderMemoryPressure) {
         "featureFlagTimeseriesAlwaysUseCompressedBuckets", false};
 
     RAIIServerParameterControllerForTest memoryLimit{
-        "timeseriesIdleBucketExpiryMemoryUsageThreshold", 10000};
+        "timeseriesIdleBucketExpiryMemoryUsageThreshold", 20'000};
 
     // Insert a measurement with a unique meta value, guaranteeing we will open a new bucket but not
     // close an old one except under memory pressure.
@@ -1630,20 +1684,22 @@ TEST_F(BucketCatalogTest, ArchivingUnderMemoryPressure) {
         ASSERT_OK(result.getStatus());
         auto batch = get<SuccessfulInsertion>(result.getValue()).batch;
         ASSERT(claimWriteBatchCommitRights(*batch));
-        ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
-        finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+        ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
+        finish(*_bucketCatalog, batch, {});
 
         return std::move(get<SuccessfulInsertion>(result.getValue()).closedBuckets);
     };
 
     // Ensure we start out with no buckets archived or closed due to memory pressure.
+    ASSERT_EQ(0, _getExecutionStat(_uuid1, kNumActiveBuckets));
     ASSERT_EQ(0, _getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold));
     ASSERT_EQ(0, _getExecutionStat(_uuid1, kNumClosedDueToMemoryThreshold));
 
-    // With a memory limit of 10000 bytes, we should be guaranteed to hit the memory limit with no
-    // more than 1000 buckets since an open bucket takes up at least 10 bytes (in reality,
+    // With a memory limit of 20,000 bytes, we should be guaranteed to hit the memory limit with no
+    // more than 1000 buckets since an open bucket takes up at least 20 bytes (in reality,
     // significantly more, but this is definitely a safe assumption).
-    for (int i = 0; i < 1000; ++i) {
+    int bucketsCreated;
+    for (bucketsCreated = 1; bucketsCreated <= 1000; ++bucketsCreated) {
         [[maybe_unused]] auto closedBuckets = insertDocument();
 
         if (0 < _getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold)) {
@@ -1659,15 +1715,18 @@ TEST_F(BucketCatalogTest, ArchivingUnderMemoryPressure) {
     ASSERT_LT(0, _getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold));
     auto numClosedInFirstRound = _getExecutionStat(_uuid1, kNumClosedDueToMemoryThreshold);
     ASSERT_LTE(numClosedInFirstRound, _getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold));
+    ASSERT_EQ(_getExecutionStat(_uuid1, kNumActiveBuckets), bucketsCreated - numClosedInFirstRound);
 
     // If we continue to open more new buckets with distinct meta values, eventually we'll run out
     // of open buckets to archive and have to start closing archived buckets to relieve memory
-    // pressure. Again, an archived bucket should take up more than 10 bytes in the catalog, so we
+    // pressure. Again, an archived bucket should take up more than 20 bytes in the catalog, so we
     // should be fine with a maximum of 1000 iterations.
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 1; i <= 1000; ++i) {
         auto closedBuckets = insertDocument();
 
         if (numClosedInFirstRound < _getExecutionStat(_uuid1, kNumClosedDueToMemoryThreshold)) {
+            ASSERT_EQ(_getExecutionStat(_uuid1, kNumActiveBuckets),
+                      bucketsCreated + i - numClosedInFirstRound - closedBuckets.size());
             ASSERT_FALSE(closedBuckets.empty());
             break;
         }
@@ -1675,6 +1734,92 @@ TEST_F(BucketCatalogTest, ArchivingUnderMemoryPressure) {
 
     // We should have closed some (additional) buckets by now.
     ASSERT_LT(numClosedInFirstRound, _getExecutionStat(_uuid1, kNumClosedDueToMemoryThreshold));
+}
+
+TEST_F(BucketCatalogTest, ExpireBucketsForDroppedCollections) {
+    // ClosedBuckets are not generated when using the always compressed feature.
+    RAIIServerParameterControllerForTest featureFlagController{
+        "featureFlagTimeseriesAlwaysUseCompressedBuckets", false};
+
+    // Use same stripe so we would clean up buckets from different collections.
+    FailPointEnableBlock failPoint("alwaysUseSameBucketCatalogStripe");
+
+    // Insert a measurement with a unique meta value, guaranteeing we will open a new bucket but
+    // not close an old one except under memory pressure.
+    long long meta = 0;
+    auto insertDocument = [&meta, this](NamespaceString& ns, UUID uuid) -> ClosedBuckets {
+        auto result = _insertOneHelper(_opCtx,
+                                       *_bucketCatalog,
+                                       ns,
+                                       uuid,
+                                       BSON(_timeField << Date_t::now() << _metaField << meta++));
+        ASSERT_OK(result.getStatus());
+        auto batch = get<SuccessfulInsertion>(result.getValue()).batch;
+        ASSERT(claimWriteBatchCommitRights(*batch));
+        ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
+        finish(*_bucketCatalog, batch, {});
+
+        return std::move(get<SuccessfulInsertion>(result.getValue()).closedBuckets);
+    };
+
+    {
+        RAIIServerParameterControllerForTest memoryLimit{
+            "timeseriesIdleBucketExpiryMemoryUsageThreshold", 20'000};
+
+        // Ensure we start out with no buckets archived or closed due to memory pressure.
+        ASSERT_EQ(0, _getExecutionStat(_uuid1, kNumActiveBuckets));
+        ASSERT_EQ(0, _getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold));
+        ASSERT_EQ(0, _getExecutionStat(_uuid1, kNumClosedDueToMemoryThreshold));
+
+        // With a memory limit of 20,000 bytes, we should be guaranteed to hit the memory limit with
+        // no more than 1000 buckets since an open bucket takes up at least 20 bytes (in reality,
+        // significantly more, but this is definitely a safe assumption).
+        int bucketsCreated;
+        for (bucketsCreated = 1; bucketsCreated <= 1000; ++bucketsCreated) {
+            [[maybe_unused]] auto closedBuckets = insertDocument(_ns1, _uuid1);
+
+            if (0 < _getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold)) {
+                break;
+            }
+        }
+
+        // When we first hit the limit, we should try to archive some buckets prior to closing
+        // anything.
+        ASSERT_LT(0, _getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold));
+        auto numClosedInFirstRound = _getExecutionStat(_uuid1, kNumClosedDueToMemoryThreshold);
+        ASSERT_LTE(numClosedInFirstRound,
+                   _getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold));
+        ASSERT_EQ(_getExecutionStat(_uuid1, kNumActiveBuckets),
+                  bucketsCreated - numClosedInFirstRound);
+    }
+
+    // Drop the collection for which we have buckets that are both open and archived state. This
+    // should immedietly adjust the stats and globally we now track 0 buckets even though the
+    // buckets are going to be asynchronously cleaned up later.
+    drop(*_bucketCatalog, _uuid1);
+    ASSERT_EQ(_getExecutionStat(_uuid1, kNumActiveBuckets), 0);
+    ASSERT_EQ(_getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold), 0);
+    ASSERT_EQ(_getExecutionStat(_uuid1, kNumClosedDueToMemoryThreshold), 0);
+
+    // Set the memory limit very low and allow all buckets to expire. We can then insert one bucket
+    // in a new collection which causes all existing open and archived buckets from the old
+    // collection to close.
+    RAIIServerParameterControllerForTest memoryLimit{
+        "timeseriesIdleBucketExpiryMemoryUsageThreshold", 1};
+
+    RAIIServerParameterControllerForTest maxExpiryPerAttempt{
+        "timeseriesIdleBucketExpiryMaxCountPerAttempt", 1000};
+
+    [[maybe_unused]] auto closedBuckets = insertDocument(_ns2, _uuid2);
+
+    // We should have a single active bucket and no double accounting for the buckets from the old
+    // collection that expired when we inserted above.
+    ASSERT_EQ(_getExecutionStat(_uuid1, kNumActiveBuckets), 0);
+    ASSERT_EQ(_getExecutionStat(_uuid1, kNumArchivedDueToMemoryThreshold), 0);
+    ASSERT_EQ(_getExecutionStat(_uuid1, kNumClosedDueToMemoryThreshold), 0);
+    ASSERT_EQ(_getExecutionStat(_uuid2, kNumActiveBuckets), 1);
+    ASSERT_EQ(_getExecutionStat(_uuid2, kNumArchivedDueToMemoryThreshold), 0);
+    ASSERT_EQ(_getExecutionStat(_uuid2, kNumClosedDueToMemoryThreshold), 0);
 }
 
 TEST_F(BucketCatalogTest, TryInsertWillNotCreateBucketWhenWeShouldTryToReopen) {
@@ -1710,9 +1855,9 @@ TEST_F(BucketCatalogTest, TryInsertWillNotCreateBucketWhenWeShouldTryToReopen) {
         ASSERT(batch);
         bucketId = batch->bucketId;
         ASSERT(claimWriteBatchCommitRights(*batch));
-        ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+        ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
         ASSERT_EQ(batch->measurements.size(), 1);
-        finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+        finish(*_bucketCatalog, batch, {});
     }
 
     // Time backwards should hint to re-open.
@@ -1764,9 +1909,9 @@ TEST_F(BucketCatalogTest, TryInsertWillNotCreateBucketWhenWeShouldTryToReopen) {
         ASSERT_NE(batch->bucketId, bucketId);
         ASSERT(batch);
         ASSERT(claimWriteBatchCommitRights(*batch));
-        ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+        ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
         ASSERT_EQ(batch->measurements.size(), 1);
-        finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+        finish(*_bucketCatalog, batch, {});
     }
 
     // If we try to insert something that could fit in the archived bucket, we should get it back as
@@ -1800,9 +1945,9 @@ TEST_F(BucketCatalogTest, TryInsertWillCreateBucketIfWeWouldCloseExistingBucket)
     ASSERT(batch);
     auto bucketId = batch->bucketId;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
 
     // Incompatible schema would close the existing bucket, so we should expect to open a new bucket
     // and proceed to insert the document.
@@ -1817,9 +1962,9 @@ TEST_F(BucketCatalogTest, TryInsertWillCreateBucketIfWeWouldCloseExistingBucket)
     ASSERT(batch);
     ASSERT_NE(batch->bucketId, bucketId);
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
 }
 
 TEST_F(BucketCatalogTest, InsertIntoReopenedUncompressedBucket) {
@@ -1841,9 +1986,9 @@ TEST_F(BucketCatalogTest, InsertIntoReopenedUncompressedBucket) {
     ASSERT(batch);
     auto oldBucketId = batch->bucketId;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
 
     BSONObj bucketDoc = ::mongo::fromjson(
         R"({"_id":{"$oid":"629e1e680958e279dc29a517"},
@@ -1851,7 +1996,7 @@ TEST_F(BucketCatalogTest, InsertIntoReopenedUncompressedBucket) {
                                    "max":{"time":{"$date":"2022-06-06T15:34:30.000Z"}}},
             "data":{"time":{"0":{"$date":"2022-06-06T15:34:30.000Z"}}}})");
     ASSERT_NE(bucketDoc["_id"].OID(), oldBucketId.oid);
-    auto validator = [&](OperationContext * opCtx, const BSONObj& bucketDoc) -> auto {
+    auto validator = [ opCtx = _opCtx, &autoColl ](const BSONObj& bucketDoc) -> auto {
         return autoColl->checkValidation(opCtx, bucketDoc);
     };
 
@@ -1877,9 +2022,9 @@ TEST_F(BucketCatalogTest, InsertIntoReopenedUncompressedBucket) {
     ASSERT(batch);
     ASSERT_EQ(batch->bucketId.oid, bucketDoc["_id"].OID());
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
     // Verify the old bucket was soft-closed
     ASSERT_EQ(1, _getExecutionStat(_uuid1, kNumClosedDueToReopening));
     ASSERT_EQ(1, _getExecutionStat(_uuid1, kNumBucketsReopened));
@@ -1918,9 +2063,9 @@ TEST_F(BucketCatalogTest, CannotInsertIntoOutdatedBucket) {
     ASSERT(batch);
     auto oldBucketId = batch->bucketId;
     ASSERT(claimWriteBatchCommitRights(*batch));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
     ASSERT_EQ(batch->measurements.size(), 1);
-    finish(_opCtx, *_bucketCatalog, _ns1, batch, {});
+    finish(*_bucketCatalog, batch, {});
 
     BSONObj bucketDoc = ::mongo::fromjson(
         R"({"_id":{"$oid":"629e1e680958e279dc29a517"},
@@ -1928,7 +2073,7 @@ TEST_F(BucketCatalogTest, CannotInsertIntoOutdatedBucket) {
                                    "max":{"time":{"$date":"2022-06-06T15:34:30.000Z"}}},
             "data":{"time":{"0":{"$date":"2022-06-06T15:34:30.000Z"}}}})");
     ASSERT_NE(bucketDoc["_id"].OID(), oldBucketId.oid);
-    auto validator = [&](OperationContext * opCtx, const BSONObj& bucketDoc) -> auto {
+    auto validator = [ opCtx = _opCtx, &autoColl ](const BSONObj& bucketDoc) -> auto {
         return autoColl->checkValidation(opCtx, bucketDoc);
     };
 
@@ -2001,7 +2146,7 @@ TEST_F(BucketCatalogTest, ReopeningConflictsWithPreparedBatch) {
     auto batch1 = get<SuccessfulInsertion>(result1.getValue()).batch;
     ASSERT(batch1);
     ASSERT(claimWriteBatchCommitRights(*batch1));
-    ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch1));
+    ASSERT_OK(prepareCommit(*_bucketCatalog, batch1));
     ASSERT_EQ(batch1->measurements.size(), 1);
 
     // Stage and abort another insert on the same bucket, so that new inserts can't land without
@@ -2060,7 +2205,7 @@ TEST_F(BucketCatalogTest, PreparingBatchConflictsWithQueryBasedReopening) {
     // Ensure it blocks until we resolve the reopening request.
     auto task = RunBackgroundTaskAndWaitForFailpoint{
         "hangTimeSeriesBatchPrepareWaitingForConflictingOperation", [&]() {
-            ASSERT_OK(prepareCommit(*_bucketCatalog, _ns1, batch));
+            ASSERT_OK(prepareCommit(*_bucketCatalog, batch));
         }};
     result1 = boost::none;
 }
@@ -2081,14 +2226,10 @@ TEST_F(BucketCatalogTest, ArchiveBasedReopeningConflictsWithArchiveBasedReopenin
                                  nullptr,
                                  options.getMetaField()}};
     auto minTime = roundTimestampToGranularity(doc["time"].Date(), options);
-    BucketId id{_uuid1, OID::gen(), 0};
+    BucketId id{_uuid1, OID::gen(), BucketKey::signature(key.hash)};
     ASSERT_OK(initializeBucketState(_bucketCatalog->bucketStateRegistry, id));
-    _bucketCatalog->stripes[0]->archivedBuckets[key.hash].emplace(
-        minTime,
-        ArchivedBucket{id,
-                       make_tracked_string(getTrackingContext(_bucketCatalog->trackingContexts,
-                                                              TrackingScope::kArchivedBuckets),
-                                           options.getTimeField().toString())});
+    _bucketCatalog->stripes[0]->archivedBuckets[std::make_tuple(_uuid1, key.hash, minTime)] =
+        ArchivedBucket{id.oid};
 
     // Should try to reopen archived bucket.
     boost::optional<StatusWith<InsertResult>> result1 =
@@ -2124,14 +2265,12 @@ TEST_F(BucketCatalogTest,
                                  nullptr,
                                  options.getMetaField()}};
     auto minTime1 = roundTimestampToGranularity(doc1["time"].Date(), options);
-    BucketId id1{_uuid1, OID::gen(), 0};
+    BucketId id1{_uuid1, OID::gen(), BucketKey::signature(key.hash)};
     ASSERT_OK(initializeBucketState(_bucketCatalog->bucketStateRegistry, id1));
-    _bucketCatalog->stripes[0]->archivedBuckets[key.hash].emplace(
-        minTime1,
-        ArchivedBucket{id1,
-                       make_tracked_string(getTrackingContext(_bucketCatalog->trackingContexts,
-                                                              TrackingScope::kArchivedBuckets),
-                                           options.getTimeField().toString())});
+    _bucketCatalog->stripes[0]->archivedBuckets[std::make_tuple(_uuid1, key.hash, minTime1)] =
+        ArchivedBucket{
+            id1.oid,
+        };
 
     // Should try to reopen archived bucket.
     boost::optional<StatusWith<InsertResult>> result1 =
@@ -2146,14 +2285,12 @@ TEST_F(BucketCatalogTest,
     // Inject another archived record on the same series, but a different bucket.
     BSONObj doc2 = ::mongo::fromjson(R"({"time":{"$date":"2022-06-06T15:34:40.000Z"},"tag":"c"})");
     auto minTime2 = roundTimestampToGranularity(doc2["time"].Date(), options);
-    BucketId id2{_uuid1, OID::gen(), 0};
+    BucketId id2{_uuid1, OID::gen(), BucketKey::signature(key.hash)};
     ASSERT_OK(initializeBucketState(_bucketCatalog->bucketStateRegistry, id2));
-    _bucketCatalog->stripes[0]->archivedBuckets[key.hash].emplace(
-        minTime2,
-        ArchivedBucket{id2,
-                       make_tracked_string(getTrackingContext(_bucketCatalog->trackingContexts,
-                                                              TrackingScope::kArchivedBuckets),
-                                           options.getTimeField().toString())});
+    _bucketCatalog->stripes[0]->archivedBuckets[std::make_tuple(_uuid1, key.hash, minTime2)] =
+        ArchivedBucket{
+            id2.oid,
+        };
 
     // A second attempt should block.
     boost::optional<StatusWith<InsertResult>> result2 =
@@ -2232,12 +2369,8 @@ TEST_F(BucketCatalogTest, ArchivingAndClosingUnderSideBucketCatalogMemoryPressur
     // to close archived buckets, until we hit the global expiry max count limit (or if we run out
     // of idle buckets in this stripe). Then, we try to close any archived buckets. In this
     // particular execution we should expect not to close any buckets, but we should archive one.
-    internal::expireIdleBuckets(_makeOperationContext().second.get(),
-                                *sideBucketCatalog,
-                                stripe,
-                                stripeLock,
-                                statsController,
-                                closedBuckets);
+    internal::expireIdleBuckets(
+        *sideBucketCatalog, stripe, stripeLock, dummyUUID, statsController, closedBuckets);
 
     ASSERT_EQ(1, collectionStats->numBucketsArchivedDueToMemoryThreshold.load());
     ASSERT_EQ(
@@ -2256,12 +2389,8 @@ TEST_F(BucketCatalogTest, ArchivingAndClosingUnderSideBucketCatalogMemoryPressur
     // previously archived.
     sideContext.stats().bytesAllocated(getTimeseriesSideBucketCatalogMemoryUsageThresholdBytes() -
                                        getMemoryUsage(*sideBucketCatalog) + +1);
-    internal::expireIdleBuckets(_makeOperationContext().second.get(),
-                                *sideBucketCatalog,
-                                stripe,
-                                stripeLock,
-                                statsController,
-                                closedBuckets);
+    internal::expireIdleBuckets(
+        *sideBucketCatalog, stripe, stripeLock, dummyUUID, statsController, closedBuckets);
 
     ASSERT_EQ(1, collectionStats->numBucketsArchivedDueToMemoryThreshold.load());
     ASSERT_EQ(

@@ -129,7 +129,7 @@ PyKMIP = "0.10.0"
 evergreen-py = "^3.9.0"
 jinja2 = "^3.1.4"
 mock = "^5.1.0"
-shrub-py = "^1.1.4"
+shrub-py = "^3.1.4"
 ocspresponder = "^0.5.0"
 flask = "^2.3.3"
 ocspbuilder = "^0.10.2"
@@ -193,12 +193,12 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
+select = ["I"]
 ignore = [
     "E402", # module-import-not-at-top-of-file
     "E721", # type-comparison
     "E722", # bare-except
     "E741", # ambiguous-variable-name
-    "F401", # unused-import
     "F402", # import-shadowed-by-loop-var
     "F403", # undefined-local-with-import-star
     "F405", # undefined-local-with-import-star-usage

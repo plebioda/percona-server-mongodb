@@ -12,7 +12,7 @@ import {
     generateTimeValue,
     makeBucketFilter
 } from "jstests/core/timeseries/libs/timeseries_writes_util.js";
-import {getExecutionStages} from "jstests/libs/analyze_plan.js";
+import {getExecutionStages} from "jstests/libs/query/analyze_plan.js";
 import {ShardingTest} from "jstests/libs/shardingtest.js";
 import {TimeseriesMultiUpdateUtil} from "jstests/sharding/libs/timeseries_update_multi_util.js";
 
@@ -111,32 +111,26 @@ const requestConfigurations = {
             [primaryShardName]: {
                 bucketFilter: makeBucketFilter({
                     "$and": [
+                        {"_id": {"$lte": ObjectId("386d4380ffffffffffffffff")}},
+                        {"_id": {"$gte": ObjectId("386d35700000000000000000")}},
+                        {"control.max.f": {"$_internalExprGte": 0}},
                         {
-                            "$and": [
-                                {
-                                    "control.min.time":
-                                        {"$_internalExprLte": ISODate("2000-01-01T00:00:00Z")}
-                                },
-                                {
-                                    "control.min.time":
-                                        {"$_internalExprGte": ISODate("1999-12-31T23:00:00Z")}
-                                },
-                                {
-                                    "control.max.time":
-                                        {"$_internalExprGte": ISODate("2000-01-01T00:00:00Z")}
-                                },
-                                {
-                                    "control.max.time":
-                                        {"$_internalExprLte": ISODate("2000-01-01T01:00:00Z")}
-                                },
-                            ]
+                            "control.max.time":
+                                {"$_internalExprGte": ISODate("2000-01-01T00:00:00Z")}
                         },
                         {
-                            "$and": [
-                                {"control.min.f": {"$_internalExprLte": 0}},
-                                {"control.max.f": {"$_internalExprGte": 0}}
-                            ]
-                        }
+                            "control.min.time":
+                                {"$_internalExprGte": ISODate("1999-12-31T23:00:00Z")}
+                        },
+                        {
+                            "control.max.time":
+                                {"$_internalExprLte": ISODate("2000-01-01T01:00:00Z")}
+                        },
+                        {"control.min.f": {"$_internalExprLte": 0}},
+                        {
+                            "control.min.time":
+                                {"$_internalExprLte": ISODate("2000-01-01T00:00:00Z")}
+                        },
                     ]
                 }),
                 residualFilter:

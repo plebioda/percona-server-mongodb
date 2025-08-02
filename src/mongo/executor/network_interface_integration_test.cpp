@@ -82,6 +82,7 @@
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/framework.h"
 #include "mongo/util/assert_util.h"
+#include "mongo/util/cancellation.h"
 #include "mongo/util/clock_source.h"
 #include "mongo/util/concurrency/notification.h"
 #include "mongo/util/duration.h"
@@ -130,7 +131,7 @@ TEST_F(NetworkInterfaceIntegrationFixture, PingWithoutStartup) {
     auto fut = runCommand(makeCallbackHandle(), request);
     ASSERT_FALSE(fut.isReady());
     net().startup();
-    ASSERT(fut.get().isOK());
+    ASSERT(fut.get(interruptible()).isOK());
 }
 
 // Hook that intentionally never finishes
@@ -344,6 +345,32 @@ public:
         return _helloResult != boost::none;
     }
 
+    // Test case definitions.
+    void testCancelMissingOperation();
+    void testCancelLocally();
+    void testCancelRemotely();
+    void testCancelRemotelyTimedOut();
+    void testImmediateCancel();
+    void testLateCancel();
+    void testConnectionErrorDropsSingleConnection();
+    void testTimeoutDuringConnectionHandshake();
+    void testTimeoutWaitingToAcquireConnection();
+    void testTimeoutGeneralNetworkInterface();
+    void testCustomCodeRequestTimeoutHit();
+    void testNoCustomCodeRequestTimeoutHit();
+    void testAsyncOpTimeout();
+    void testAsyncOpTimeoutWithOpCtxDeadlineSooner();
+    void testAsyncOpTimeoutWithOpCtxDeadlineLater();
+    void testStartCommand();
+    void testFireAndForget();
+    void testUseOperationKeyWhenProvided();
+    void testHelloRequestMissingInternalClientInfoWhenNotInternalClient();
+    void testTearDownWaitsForInProgress();
+    void testRunCommandOnLeasedStream();
+    void testConnectionErrorAssociatedWithRemote();
+    void testShutdownBeforeSendRequest();
+    void testShutdownAfterSendRequest();
+
 private:
     class WaitForHelloHook : public NetworkConnectionHook {
     public:
@@ -375,6 +402,42 @@ private:
     boost::optional<HelloData> _helloResult;
 };
 
+class NetworkInterfaceTestWithBaton : public NetworkInterfaceTest {
+public:
+    void setUp() override {
+        NetworkInterfaceTest::setUp();
+        _serviceContext = ServiceContext::make();
+        _client = _serviceContext->getService()->makeClient("BatonClient");
+        _opCtx = _client->makeOperationContext();
+        _baton = _opCtx->getBaton();
+    }
+
+    BatonHandle baton() override {
+        return _baton;
+    }
+
+    Interruptible* interruptible() override {
+        return _opCtx.get();
+    }
+
+private:
+    ServiceContext::UniqueServiceContext _serviceContext;
+    ServiceContext::UniqueClient _client;
+    ServiceContext::UniqueOperationContext _opCtx;
+    BatonHandle _baton;
+};
+
+using NetworkInterfaceTestWithoutBaton = NetworkInterfaceTest;
+
+#define TEST_WITH_AND_WITHOUT_BATON_F(suite, name) \
+    TEST_F(suite##WithBaton, name) {               \
+        test##name();                              \
+    }                                              \
+    TEST_F(suite##WithoutBaton, name) {            \
+        test##name();                              \
+    }                                              \
+    void suite::test##name()
+
 class NetworkInterfaceInternalClientTest : public NetworkInterfaceTest {
 public:
     void setUp() override {
@@ -388,28 +451,38 @@ public:
     }
 };
 
-TEST_F(NetworkInterfaceTest, CancelMissingOperation) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, CancelMissingOperation) {
     // This is just a sanity check, this action should have no effect.
-    net().cancelCommand(makeCallbackHandle());
+    cancelCommand(makeCallbackHandle());
     assertNumOps(0u, 0u, 0u, 0u);
 }
 
-TEST_F(NetworkInterfaceTest, CancelLocally) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, CancelLocally) {
+    stdx::thread runCommandThread;
+    ON_BLOCK_EXIT([&] { runCommandThread.join(); });
     auto cbh = makeCallbackHandle();
+    CancellationSource cancellationSource;
 
     auto deferred = [&] {
         // Kick off our operation
         FailPointEnableBlock fpb("networkInterfaceHangCommandsAfterAcquireConn");
 
-        auto deferred = runCommand(cbh, makeTestCommand(kMaxWait, makeEchoCmdObj()));
+        auto [promise, future] = makePromiseFuture<RemoteCommandResponse>();
+        runCommandThread =
+            stdx::thread([this, cbh, promise = std::move(promise), cancellationSource]() mutable {
+                promise.setFrom(runCommand(cbh,
+                                           makeTestCommand(kMaxWait, makeEchoCmdObj()),
+                                           cancellationSource.token())
+                                    .getNoThrow(interruptible()));
+            });
 
         waitForHello();
 
         fpb->waitForTimesEntered(fpb.initialTimesEntered() + 1);
 
-        net().cancelCommand(cbh);
+        cancellationSource.cancel();
 
-        return deferred;
+        return std::move(future);
     }();
 
     // Wait for op to complete, assert that it was canceled.
@@ -420,7 +493,7 @@ TEST_F(NetworkInterfaceTest, CancelLocally) {
     assertNumOps(1u, 0u, 0u, 0u);
 }
 
-TEST_F(NetworkInterfaceTest, CancelRemotely) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, CancelRemotely) {
     // Enable blockConnection for "echo".
     assertCommandOK(DatabaseName::kAdmin,
                     BSON("configureFailPoint"
@@ -445,23 +518,26 @@ TEST_F(NetworkInterfaceTest, CancelRemotely) {
     int numCurrentOpRan = 0;
 
     auto cbh = makeCallbackHandle();
+    CancellationSource cancellationSource;
     auto deferred = [&] {
         // Kick off an "echo" operation, which should block until cancelCommand causes
         // the operation to be killed.
         auto deferred =
-            runCommand(cbh, makeTestCommand(kNoTimeout, makeEchoCmdObj(), nullptr /* opCtx */));
+            runCommand(cbh,
+                       makeTestCommand(kNoTimeout, makeEchoCmdObj(), nullptr /* opCtx */),
+                       cancellationSource.token());
 
         // Wait for the "echo" operation to start.
         numCurrentOpRan += waitForCommandToStart("echo", kMaxWait);
 
-        // Run cancelCommand to kill the above operation.
-        net().cancelCommand(cbh);
+        // Kill the above operation.
+        cancellationSource.cancel();
 
         return deferred;
     }();
 
     // Wait for the command to return, assert that it was canceled.
-    auto result = deferred.get();
+    auto result = deferred.get(interruptible());
     ASSERT_EQ(ErrorCodes::CallbackCanceled, result.status);
     ASSERT(result.elapsed);
 
@@ -473,7 +549,7 @@ TEST_F(NetworkInterfaceTest, CancelRemotely) {
     assertNumOps(1u, 0u, 0u, 2u + numCurrentOpRan);
 }
 
-TEST_F(NetworkInterfaceTest, CancelRemotelyTimedOut) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, CancelRemotelyTimedOut) {
     // Enable blockConnection for "echo" and "_killOperations".
     assertCommandOK(DatabaseName::kAdmin,
                     BSON("configureFailPoint"
@@ -500,10 +576,13 @@ TEST_F(NetworkInterfaceTest, CancelRemotelyTimedOut) {
     int numCurrentOpRan = 0;
 
     auto cbh = makeCallbackHandle();
+    CancellationSource cancellationSource;
     auto deferred = [&] {
         // Kick off a blocking "echo" operation.
         auto deferred =
-            runCommand(cbh, makeTestCommand(kNoTimeout, makeEchoCmdObj(), nullptr /* opCtx */));
+            runCommand(cbh,
+                       makeTestCommand(kNoTimeout, makeEchoCmdObj(), nullptr /* opCtx */),
+                       cancellationSource.token());
 
         // Wait for the "echo" operation to start.
         numCurrentOpRan += waitForCommandToStart("echo", kMaxWait);
@@ -515,16 +594,16 @@ TEST_F(NetworkInterfaceTest, CancelRemotelyTimedOut) {
                                                << BSON_ARRAY("_killOperations") << "errorCode"
                                                << ErrorCodes::NetworkInterfaceExceededTimeLimit));
 
-        net().cancelCommand(cbh);
+        cancellationSource.cancel();
 
         // Wait for _killOperations for 'echo' to time out.
-        cmdFailedFpb->waitForTimesEntered(cmdFailedFpb.initialTimesEntered() + 1);
+        cmdFailedFpb->waitForTimesEntered(interruptible(), cmdFailedFpb.initialTimesEntered() + 1);
 
         return deferred;
     }();
 
     // Wait for the command to return, assert that it was canceled.
-    auto result = deferred.get();
+    auto result = deferred.get(interruptible());
     ASSERT_EQ(ErrorCodes::CallbackCanceled, result.status);
     ASSERT(result.elapsed);
 
@@ -533,17 +612,21 @@ TEST_F(NetworkInterfaceTest, CancelRemotelyTimedOut) {
     assertNumOps(1u, 1u, 0u, 1u + numCurrentOpRan);
 }
 
-TEST_F(NetworkInterfaceTest, ImmediateCancel) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, ImmediateCancel) {
     boost::optional<FailPointEnableBlock> fpb("networkInterfaceHangCommandsAfterAcquireConn");
     auto cbh = makeCallbackHandle();
+    CancellationSource cancellationSource;
 
     auto pf = makePromiseFuture<RemoteCommandResponse>();
-    auto cmdThread = stdx::thread(
-        [&] { pf.promise.setFrom(runCommand(cbh, makeTestCommand(kMaxWait, makeEchoCmdObj()))); });
+    auto cmdThread = stdx::thread([&] {
+        pf.promise.setFrom(
+            runCommand(cbh, makeTestCommand(kMaxWait, makeEchoCmdObj()), cancellationSource.token())
+                .getNoThrow(interruptible()));
+    });
     ON_BLOCK_EXIT([&] { cmdThread.join(); });
 
     fpb.get()->waitForTimesEntered(fpb->initialTimesEntered() + 1);
-    net().cancelCommand(cbh);
+    cancellationSource.cancel();
     fpb.reset();
 
     ASSERT_EQ(net().getCounters().sent, 0);
@@ -555,59 +638,23 @@ TEST_F(NetworkInterfaceTest, ImmediateCancel) {
     assertNumOps(1u, 0u, 0u, 0u);
 }
 
-TEST_F(NetworkInterfaceTest, LateCancel) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, LateCancel) {
     auto cbh = makeCallbackHandle();
+    CancellationSource cancellationSource;
 
-    auto deferred = runCommand(cbh, makeTestCommand(kMaxWait, makeEchoCmdObj()));
+    auto deferred =
+        runCommand(cbh, makeTestCommand(kMaxWait, makeEchoCmdObj()), cancellationSource.token());
 
     // Wait for op to complete, assert that it was not canceled.
-    auto result = deferred.get();
-    net().cancelCommand(cbh);
+    auto result = deferred.get(interruptible());
+    cancellationSource.cancel();
 
     ASSERT_OK(result.status);
     ASSERT(result.elapsed);
     assertNumOps(0u, 0u, 0u, 1u);
 }
 
-TEST_F(NetworkInterfaceTest, CancelBaton) {
-    auto client = getGlobalServiceContext()->getService()->makeClient(__FILE__);
-    auto opCtx = client->makeOperationContext();
-    auto cbh = makeCallbackHandle();
-
-    auto fp = configureFailCommand("echo", boost::none, Milliseconds(1000000000));
-
-    int numCurrentOpRan = 0;
-
-    auto deferred = [&] {
-        // Kick off an "echo" operation, which should block until cancelCommand causes
-        // the operation to be killed.
-        auto deferred = runCommand(
-            cbh,
-            makeTestCommand(
-                kNoTimeout, makeEchoCmdObj(), nullptr /* opCtx */, false /* fireAndForget */));
-
-        // Wait for the "echo" operation to start.
-        fp.waitForAdditionalTimesEntered(1);
-
-        // Run cancelCommand to kill the above operation.
-        net().cancelCommand(cbh);
-
-        return deferred;
-    }();
-
-    // Wait for the command to return, assert that it was canceled.
-    auto result = deferred.get();
-    ASSERT_EQ(ErrorCodes::CallbackCanceled, result.status);
-    ASSERT(result.elapsed);
-
-    // Wait for the operation to be killed on the remote host.
-    numCurrentOpRan += waitForCommandToStop("echo", kMaxWait);
-
-    // We have one canceled operation (echo) and the successful _killOp and currentOp operations.
-    assertNumOps(1u, 0u, 0u, 1 + numCurrentOpRan);
-}
-
-TEST_F(NetworkInterfaceTest, ConnectionErrorDropsSingleConnection) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, ConnectionErrorDropsSingleConnection) {
     FailPoint* failPoint =
         globalFailPointRegistry().find("asioTransportLayerAsyncConnectReturnsConnectionError");
     auto timesEntered = failPoint->setMode(FailPoint::nTimes, 1);
@@ -615,8 +662,8 @@ TEST_F(NetworkInterfaceTest, ConnectionErrorDropsSingleConnection) {
     auto cbh = makeCallbackHandle();
     auto deferred = runCommand(cbh, makeTestCommand(kMaxWait, makeEchoCmdObj()));
     // Wait for one of the connection attempts to fail with a `ConnectionError`.
-    failPoint->waitForTimesEntered(timesEntered + 1);
-    auto result = deferred.get();
+    failPoint->waitForTimesEntered(interruptible(), timesEntered + 1);
+    auto result = deferred.get(interruptible());
 
     ASSERT_OK(result.status);
     ConnectionPoolStats stats;
@@ -629,7 +676,7 @@ TEST_F(NetworkInterfaceTest, ConnectionErrorDropsSingleConnection) {
     ASSERT_EQ(stats.totalRefreshed, 2);
 }
 
-TEST_F(NetworkInterfaceTest, TimeoutDuringConnectionHandshake) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, TimeoutDuringConnectionHandshake) {
     // If network timeout occurs during connection setup before handshake completes,
     // HostUnreachable should be returned.
     FailPointEnableBlock fpb1("connectionPoolDropConnectionsBeforeGetConnection",
@@ -641,14 +688,14 @@ TEST_F(NetworkInterfaceTest, TimeoutDuringConnectionHandshake) {
     auto cbh = makeCallbackHandle();
     auto deferred = runCommand(cbh, makeTestCommand(Milliseconds(100), makeEchoCmdObj()));
 
-    auto result = deferred.get();
+    auto result = deferred.get(interruptible());
 
     ASSERT_EQ(ErrorCodes::HostUnreachable, result.status);
     // No timeouts are counted as a result of HostUnreachable being returned.
     assertNumOps(0u, 0u, 1u, 0u);
 }
 
-TEST_F(NetworkInterfaceTest, TimeoutWaitingToAcquireConnection) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, TimeoutWaitingToAcquireConnection) {
     // If timeout occurs during connection acquisition, PooledConnectionAcquisitionExceededTimeLimit
     // should be returned.
     FailPointEnableBlock fpb("connectionPoolDoesNotFulfillRequests",
@@ -657,13 +704,13 @@ TEST_F(NetworkInterfaceTest, TimeoutWaitingToAcquireConnection) {
     auto cbh = makeCallbackHandle();
     auto deferred = runCommand(cbh, makeTestCommand(Milliseconds(100), makeFindCmdObj()));
 
-    auto result = deferred.get();
+    auto result = deferred.get(interruptible());
 
     ASSERT_EQ(ErrorCodes::PooledConnectionAcquisitionExceededTimeLimit, result.status);
     assertNumOps(0u, 1u, 0u, 0u);
 }
 
-TEST_F(NetworkInterfaceTest, TimeoutGeneralNetworkInterface) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, TimeoutGeneralNetworkInterface) {
     // Run a command to populate the connection pool.
     assertCommandOK(DatabaseName::kAdmin, BSON("ping" << 1));
 
@@ -672,7 +719,7 @@ TEST_F(NetworkInterfaceTest, TimeoutGeneralNetworkInterface) {
     auto cbh = makeCallbackHandle();
     auto deferred = runCommand(cbh, makeTestCommand(Milliseconds(100), BSON("ping" << 1)));
 
-    auto result = deferred.get();
+    auto result = deferred.get(interruptible());
 
     ASSERT_EQ(ErrorCodes::NetworkInterfaceExceededTimeLimit, result.status);
     assertNumOps(0u, 1u, 0u, 1u);
@@ -682,13 +729,13 @@ TEST_F(NetworkInterfaceTest, TimeoutGeneralNetworkInterface) {
  * Test that if a custom timeout code is passed into the request, then timeouts errors will
  * expect the request's error code.
  */
-TEST_F(NetworkInterfaceTest, CustomCodeRequestTimeoutHit) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, CustomCodeRequestTimeoutHit) {
     auto cb = makeCallbackHandle();
     // Force timeout by setting timeout to 0.
     auto request = makeTestCommand(
         Milliseconds(0), makeFindCmdObj(), nullptr, false, ErrorCodes::MaxTimeMSExpired);
     auto deferred = runCommand(cb, request);
-    auto res = deferred.get();
+    auto res = deferred.get(interruptible());
 
     ASSERT(!res.isOK());
     ASSERT_EQ(res.status.code(), ErrorCodes::MaxTimeMSExpired);
@@ -698,18 +745,18 @@ TEST_F(NetworkInterfaceTest, CustomCodeRequestTimeoutHit) {
  * Test that if no custom timeout code is passed into the request, then timeouts errors will
  * expect default error codes depending on location.
  */
-TEST_F(NetworkInterfaceTest, NoCustomCodeRequestTimeoutHit) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, NoCustomCodeRequestTimeoutHit) {
     auto cb = makeCallbackHandle();
     // Force timeout by setting timeout to 0.
     auto request = makeTestCommand(Milliseconds(0), makeFindCmdObj());
     auto deferred = runCommand(cb, request);
-    auto res = deferred.get();
+    auto res = deferred.get(interruptible());
 
     ASSERT(!res.isOK());
     ASSERT_EQ(res.status.code(), ErrorCodes::PooledConnectionAcquisitionExceededTimeLimit);
 }
 
-TEST_F(NetworkInterfaceTest, AsyncOpTimeout) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, AsyncOpTimeout) {
     // Kick off operation
     auto cb = makeCallbackHandle();
     auto request = makeTestCommand(Milliseconds{1000}, makeSleepCmdObj());
@@ -717,7 +764,7 @@ TEST_F(NetworkInterfaceTest, AsyncOpTimeout) {
 
     waitForHello();
 
-    auto result = deferred.get();
+    auto result = deferred.get(interruptible());
 
     // mongos doesn't implement the ping command, so ignore the response there, otherwise
     // check that we've timed out.
@@ -729,7 +776,7 @@ TEST_F(NetworkInterfaceTest, AsyncOpTimeout) {
     }
 }
 
-TEST_F(NetworkInterfaceTest, AsyncOpTimeoutWithOpCtxDeadlineSooner) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, AsyncOpTimeoutWithOpCtxDeadlineSooner) {
     // Kick off operation
     auto cb = makeCallbackHandle();
 
@@ -753,7 +800,7 @@ TEST_F(NetworkInterfaceTest, AsyncOpTimeoutWithOpCtxDeadlineSooner) {
 
     waitForHello();
 
-    auto result = deferred.get();
+    auto result = deferred.get(interruptible());
 
     // mongos doesn't implement the ping command, so ignore the response there, otherwise
     // check that we've timed out.
@@ -772,7 +819,7 @@ TEST_F(NetworkInterfaceTest, AsyncOpTimeoutWithOpCtxDeadlineSooner) {
     assertNumOps(0u, 1u, 0u, 0u);
 }
 
-TEST_F(NetworkInterfaceTest, AsyncOpTimeoutWithOpCtxDeadlineLater) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, AsyncOpTimeoutWithOpCtxDeadlineLater) {
     // Kick off operation
     auto cb = makeCallbackHandle();
 
@@ -796,7 +843,7 @@ TEST_F(NetworkInterfaceTest, AsyncOpTimeoutWithOpCtxDeadlineLater) {
 
     waitForHello();
 
-    auto result = deferred.get();
+    auto result = deferred.get(interruptible());
 
     // mongos doesn't implement the ping command, so ignore the response there, otherwise
     // check that we've timed out.
@@ -816,12 +863,12 @@ TEST_F(NetworkInterfaceTest, AsyncOpTimeoutWithOpCtxDeadlineLater) {
     assertNumOps(0u, 1u, 0u, 0u);
 }
 
-TEST_F(NetworkInterfaceTest, StartCommand) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, StartCommand) {
     auto request = makeTestCommand(kNoTimeout, makeEchoCmdObj(), nullptr /* opCtx */);
 
     auto deferred = runCommand(makeCallbackHandle(), std::move(request));
 
-    auto res = deferred.get();
+    auto res = deferred.get(interruptible());
 
     ASSERT(res.elapsed);
     uassertStatusOK(res.status);
@@ -837,7 +884,7 @@ TEST_F(NetworkInterfaceTest, StartCommand) {
     assertNumOps(0u, 0u, 0u, 1u);
 }
 
-TEST_F(NetworkInterfaceTest, FireAndForget) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, FireAndForget) {
     assertCommandOK(DatabaseName::kAdmin,
                     BSON("configureFailPoint"
                          << "failCommand"
@@ -867,7 +914,7 @@ TEST_F(NetworkInterfaceTest, FireAndForget) {
     }
 
     for (auto& future : futures) {
-        auto result = future.get();
+        auto result = future.get(interruptible());
         ASSERT(result.elapsed);
         uassertStatusOK(result.status);
         ASSERT_EQ(1, result.data.getIntField("ok"));
@@ -974,7 +1021,7 @@ TEST_F(NetworkInterfaceTest, SetAlarm) {
     }
 }
 
-TEST_F(NetworkInterfaceTest, UseOperationKeyWhenProvided) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, UseOperationKeyWhenProvided) {
     const auto opKey = UUID::gen();
     assertCommandOK(DatabaseName::kAdmin,
                     BSON("configureFailPoint"
@@ -1005,7 +1052,7 @@ TEST_F(NetworkInterfaceTest, UseOperationKeyWhenProvided) {
     ON_BLOCK_EXIT([&] { resetIsInternalClient(false); });
     auto cbh = makeCallbackHandle();
     auto fut = runCommand(cbh, std::move(rcr));
-    fut.get();
+    fut.get(interruptible());
 }
 
 TEST_F(NetworkInterfaceInternalClientTest,
@@ -1030,7 +1077,8 @@ TEST_F(NetworkInterfaceInternalClientTest,
     assertNumOps(0u, 0u, 0u, 1u);
 }
 
-TEST_F(NetworkInterfaceTest, HelloRequestMissingInternalClientInfoWhenNotInternalClient) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest,
+                              HelloRequestMissingInternalClientInfoWhenNotInternalClient) {
     resetIsInternalClient(false);
 
     auto deferred = runCommand(makeCallbackHandle(), makeTestCommand(kNoTimeout, makeEchoCmdObj()));
@@ -1039,99 +1087,30 @@ TEST_F(NetworkInterfaceTest, HelloRequestMissingInternalClientInfoWhenNotInterna
     // Verify that the "hello" reply has the expected internalClient data.
     ASSERT_FALSE(helloHandshake.request["internalClient"]);
     // Verify that the ping op is counted as a success.
-    auto res = deferred.get();
+    auto res = deferred.get(interruptible());
     ASSERT(res.elapsed);
     assertNumOps(0u, 0u, 0u, 1u);
 }
 
-class ExhaustRequestHandlerUtil {
-public:
-    struct responseOutcomeCount {
-        int _success = 0;
-        int _failed = 0;
-    };
-
-    std::function<void(const RemoteCommandResponse&)>&& getExhaustRequestCallbackFn() {
-        return std::move(_callbackFn);
-    }
-
-    ExhaustRequestHandlerUtil::responseOutcomeCount getCountersWhenReady() {
-        stdx::unique_lock<stdx::mutex> lk(_mutex);
-        _cv.wait(_mutex, [&] { return _replyUpdated; });
-        _replyUpdated = false;
-        return _responseOutcomeCount;
-    }
-
-private:
-    // set to true once '_responseOutcomeCount' has been updated. Used to indicate that a new
-    // response has been sent.
-    bool _replyUpdated = false;
-
-    // counter of how many successful and failed responses were received.
-    responseOutcomeCount _responseOutcomeCount;
-
-    stdx::mutex _mutex;
-    stdx::condition_variable _cv;
-
-    // called when a server sends a new isMaster exhaust response. Updates _responseOutcomeCount
-    // and _replyUpdated.
-    std::function<void(const RemoteCommandResponse&)> _callbackFn =
-        [&](const executor::RemoteCommandResponse& response) {
-            {
-                stdx::unique_lock<stdx::mutex> lk(_mutex);
-                if (response.status.isOK()) {
-                    _responseOutcomeCount._success++;
-                } else {
-                    _responseOutcomeCount._failed++;
-                }
-                _replyUpdated = true;
-            }
-
-            _cv.notify_all();
-        };
-};
-
 TEST_F(NetworkInterfaceTest, StartExhaustCommandShouldReceiveMultipleResponses) {
+    CancellationSource cancelSource;
     auto isMasterCmd = BSON("isMaster" << 1 << "maxAwaitTimeMS" << 1000 << "topologyVersion"
                                        << TopologyVersion(OID::max(), 0).toBSON());
 
     auto request = makeTestCommand(kNoTimeout, isMasterCmd);
     auto cbh = makeCallbackHandle();
-    ExhaustRequestHandlerUtil exhaustRequestHandler;
+    auto reader = net().startExhaustCommand(cbh, request, nullptr, cancelSource.token()).get();
 
-    auto exhaustFuture = startExhaustCommand(
-        cbh, std::move(request), exhaustRequestHandler.getExhaustRequestCallbackFn());
+    // The server sends a response either when a topology change occurs or when it has not sent
+    // a response in 'maxAwaitTimeMS'. In this case we expect a response every 'maxAwaitTimeMS'
+    // = 1000 (set in the isMaster cmd above)
+    assertOK(reader->next().getNoThrow());
+    assertOK(reader->next().getNoThrow());
 
-    {
-        // The server sends a response either when a topology change occurs or when it has not sent
-        // a response in 'maxAwaitTimeMS'. In this case we expect a response every 'maxAwaitTimeMS'
-        // = 1000 (set in the isMaster cmd above)
-        auto counters = exhaustRequestHandler.getCountersWhenReady();
-        ASSERT(!exhaustFuture.isReady());
-
-        // The first response should be successful
-        ASSERT_EQ(counters._success, 1);
-        ASSERT_EQ(counters._failed, 0);
-    }
-
-    {
-        auto counters = exhaustRequestHandler.getCountersWhenReady();
-        ASSERT(!exhaustFuture.isReady());
-
-        // The second response should also be successful
-        ASSERT_EQ(counters._success, 2);
-        ASSERT_EQ(counters._failed, 0);
-    }
-
-    net().cancelCommand(cbh);
-    auto error = exhaustFuture.getNoThrow();
-    ASSERT((error == ErrorCodes::CallbackCanceled) || (error == ErrorCodes::HostUnreachable));
-
-    auto counters = exhaustRequestHandler.getCountersWhenReady();
-
-    // The command was cancelled so the 'fail' counter should be incremented
-    ASSERT_EQ(counters._success, 2);
-    ASSERT_EQ(counters._failed, 1);
+    cancelSource.cancel();
+    auto swResp = reader->next().getNoThrow();
+    ASSERT_OK(swResp);
+    ASSERT_EQ(swResp.getValue().status, ErrorCodes::CallbackCanceled);
 }
 
 TEST_F(NetworkInterfaceTest, StartExhaustCommandShouldStopOnFailure) {
@@ -1160,65 +1139,35 @@ TEST_F(NetworkInterfaceTest, StartExhaustCommandShouldStopOnFailure) {
 
     auto request = makeTestCommand(kNoTimeout, isMasterCmd);
     auto cbh = makeCallbackHandle();
-    ExhaustRequestHandlerUtil exhaustRequestHandler;
 
-    auto exhaustFuture = startExhaustCommand(
-        cbh, std::move(request), exhaustRequestHandler.getExhaustRequestCallbackFn());
+    auto reader = net().startExhaustCommand(cbh, request).get();
+    auto failedResp = reader->next().get();
+    ASSERT_EQ(getStatusFromCommandResult(failedResp.data), ErrorCodes::CommandFailed);
+    ASSERT_FALSE(failedResp.moreToCome);
 
-    {
-        auto counters = exhaustRequestHandler.getCountersWhenReady();
-        // Despite the command failing with ok: 0, the overall interaction is considered successful
-        // from a networking perspective.
-        ASSERT_OK(exhaustFuture.getNoThrow());
-        ASSERT_EQ(counters._success, 1);
-        ASSERT_EQ(counters._failed, 0);
-    }
+    ASSERT_EQ(reader->next().get().status, ErrorCodes::ExhaustCommandFinished);
 }
 
-TEST_F(NetworkInterfaceTest, ExhaustCommandCancelRunsOutOfLine) {
-    thread_local bool inCancellationContext = false;
-    auto pf = makePromiseFuture<bool>();
-    auto cbh = makeCallbackHandle();
-    auto callback = [&](auto&&) mutable {
-        pf.promise.emplaceValue(inCancellationContext);
-    };
-
-    auto deferred = [&] {
-        FailPointEnableBlock fpb("networkInterfaceHangCommandsAfterAcquireConn");
-
-        auto deferred = startExhaustCommand(
-            cbh, makeTestCommand(kMaxWait, makeEchoCmdObj()), std::move(callback));
-
-        waitForHello();
-
-        fpb->waitForTimesEntered(fpb.initialTimesEntered() + 1);
-
-        inCancellationContext = true;
-        net().cancelCommand(cbh);
-        inCancellationContext = false;
-        return deferred;
-    }();
-
-    auto result = deferred.getNoThrow();
-    ASSERT_EQ(ErrorCodes::CallbackCanceled, result);
-    bool cancellationRanInline = pf.future.get();
-    ASSERT_FALSE(cancellationRanInline);
-}
-
-TEST_F(NetworkInterfaceTest, TearDownWaitsForInProgress) {
-    boost::optional<stdx::thread> tearDownThread;
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, TearDownWaitsForInProgress) {
+    stdx::thread runCommandThread;
+    stdx::thread tearDownThread;
     auto tearDownPF = makePromiseFuture<void>();
 
     auto deferred = [&] {
         // Enable failpoint to make sure tearDown is blocked
         FailPointEnableBlock fpb("networkInterfaceFixtureHangOnCompletion");
 
-        auto future = runCommand(makeCallbackHandle(), makeTestCommand(kMaxWait, makeEchoCmdObj()));
+        auto [promise, future] = makePromiseFuture<RemoteCommandResponse>();
+        runCommandThread = stdx::thread([this, promise = std::move(promise)]() mutable {
+            promise.setFrom(
+                runCommand(makeCallbackHandle(), makeTestCommand(kMaxWait, makeEchoCmdObj()))
+                    .getNoThrow(interruptible()));
+        });
 
         // Wait for the completion of the command
         fpb->waitForTimesEntered(fpb.initialTimesEntered() + 1);
 
-        tearDownThread.emplace([this, promise = std::move(tearDownPF.promise)]() mutable {
+        tearDownThread = stdx::thread([this, promise = std::move(tearDownPF.promise)]() mutable {
             tearDown();
             promise.setWith([] {});
         });
@@ -1233,17 +1182,18 @@ TEST_F(NetworkInterfaceTest, TearDownWaitsForInProgress) {
         ASSERT_FALSE(tearDownPF.future.isReady())
             << "Expected tearDown to wait for blocked command";
 
-        return future;
+        return std::move(future);
     }();
 
-    tearDownThread->join();
+    tearDownThread.join();
+    runCommandThread.join();
 
     ASSERT(deferred.isReady());
     ASSERT(tearDownPF.future.isReady());
     ASSERT_EQ(getInProgress(), 0);
 }
 
-TEST_F(NetworkInterfaceTest, RunCommandOnLeasedStream) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, RunCommandOnLeasedStream) {
     auto cs = fixture();
     auto target = cs.getServers().front();
     auto leasedStream = net().leaseStream(target, transport::kGlobalSSLMode, kNoTimeout).get();
@@ -1253,7 +1203,7 @@ TEST_F(NetworkInterfaceTest, RunCommandOnLeasedStream) {
         RemoteCommandRequest(target, DatabaseName::kAdmin, makeEchoCmdObj(), nullptr, kNoTimeout);
     auto deferred = client->runCommandRequest(request);
 
-    auto res = deferred.get();
+    auto res = deferred.get(interruptible());
 
     ASSERT(res.elapsed);
     uassertStatusOK(res.status);
@@ -1269,21 +1219,21 @@ TEST_F(NetworkInterfaceTest, RunCommandOnLeasedStream) {
     ASSERT_EQ(1, res.data.getIntField("ok"));
 }
 
-TEST_F(NetworkInterfaceTest, ConnectionErrorAssociatedWithRemote) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, ConnectionErrorAssociatedWithRemote) {
     FailPointEnableBlock fpb("connectionPoolReturnsErrorOnGet");
 
     auto cb = makeCallbackHandle();
     auto request = makeTestCommand(kNoTimeout, makeEchoCmdObj());
     auto deferred = runCommand(cb, request);
 
-    auto result = deferred.get();
+    auto result = deferred.get(interruptible());
 
     ASSERT_EQ(ErrorCodes::HostUnreachable, result.status);
     ASSERT_EQ(result.target, fixture().getServers().front());
     assertNumOps(0u, 0u, 1u, 0u);
 }
 
-TEST_F(NetworkInterfaceTest, ShutdownBeforeSendRequest) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, ShutdownBeforeSendRequest) {
     auto operationKey = UUID::gen();
 
     // Block the remote handling of "echo" indefinitely. If the NI sends the command and is
@@ -1299,7 +1249,7 @@ TEST_F(NetworkInterfaceTest, ShutdownBeforeSendRequest) {
         auto cb = makeCallbackHandle();
         auto request =
             makeTestCommand(kNoTimeout, makeEchoCmdObj(), nullptr, false, {}, operationKey);
-        pf.promise.setFrom(runCommand(cb, request));
+        pf.promise.setFrom(runCommand(cb, request).getNoThrow(interruptible()));
     });
     ON_BLOCK_EXIT([&] {
         // TODO SERVER-93077: remove this killOp once disabling the failpoint is sufficient.
@@ -1344,7 +1294,7 @@ TEST_F(NetworkInterfaceTest, ShutdownBeforeSendRequest) {
     ASSERT_EQ(stats.totalInUse, 0);
 }
 
-TEST_F(NetworkInterfaceTest, ShutdownAfterSendRequest) {
+TEST_WITH_AND_WITHOUT_BATON_F(NetworkInterfaceTest, ShutdownAfterSendRequest) {
     auto operationKey = UUID::gen();
 
     // Block the remote handling of "echo" indefinitely. If the NI sends the command and is
@@ -1356,7 +1306,7 @@ TEST_F(NetworkInterfaceTest, ShutdownAfterSendRequest) {
         auto cb = makeCallbackHandle();
         auto request =
             makeTestCommand(kNoTimeout, makeEchoCmdObj(), nullptr, false, {}, operationKey);
-        pf.promise.setFrom(runCommand(cb, request));
+        pf.promise.setFrom(runCommand(cb, request).getNoThrow(interruptible()));
     });
     ON_BLOCK_EXIT([&] {
         // TODO SERVER-93077: remove this killOp once disabling the failpoint is sufficient.

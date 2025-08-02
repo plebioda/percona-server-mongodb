@@ -10,42 +10,6 @@ Import(
 env = env.Clone()
 
 env.Library(
-    target="sharding_catalog",
-    source=[
-        "shard_authoritative_catalog_gen.cpp",
-        "sharding_index_catalog_ddl_util.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/catalog/collection_crud",
-        "$BUILD_DIR/mongo/db/concurrency/exception_util",
-        "$BUILD_DIR/mongo/db/dbhelpers",
-        "$BUILD_DIR/mongo/db/query/query_stats/query_stats",
-        "$BUILD_DIR/mongo/db/query/write_ops/write_ops",
-        "$BUILD_DIR/mongo/db/shard_role",
-        "$BUILD_DIR/mongo/s/common_s",
-    ],
-)
-
-env.Library(
-    target="query_analysis_writer",
-    source=[
-        "query_analysis_writer.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/dbdirectclient",
-        "$BUILD_DIR/mongo/db/query/write_ops/write_ops_parsers",
-        "$BUILD_DIR/mongo/db/repl/replica_set_aware_service",
-        "$BUILD_DIR/mongo/db/server_base",
-        "$BUILD_DIR/mongo/db/service_context",
-        "$BUILD_DIR/mongo/db/shard_role",
-        "$BUILD_DIR/mongo/s/analyze_shard_key_common",
-        "$BUILD_DIR/mongo/s/query_analysis_sampler",
-        "analyze_shard_key_util",
-    ],
-)
-
-env.Library(
     target="sharding_runtime_d",
     source=[
         "active_migrations_registry.cpp",
@@ -62,20 +26,6 @@ env.Library(
         "document_source_analyze_shard_key_read_write_distribution_gen.cpp",
         "document_source_visitor_docs_needed_bounds.cpp",
         "drop_agg_temp_collections.cpp",
-        "global_index/common_types_gen.cpp",
-        "global_index/global_index_cloner_gen.cpp",
-        "global_index/global_index_cloner_fetcher.cpp",
-        "global_index/global_index_cloner_fetcher_factory.cpp",
-        "global_index/global_index_cloning_external_state.cpp",
-        "global_index/global_index_cloning_service.cpp",
-        "global_index/global_index_cumulative_metrics.cpp",
-        "global_index/global_index_cumulative_metrics_field_name_provider.cpp",
-        "global_index/global_index_inserter.cpp",
-        "global_index/global_index_metrics.cpp",
-        "global_index/global_index_metrics_field_name_provider.cpp",
-        "global_index/global_index_server_parameters_gen.cpp",
-        "global_index/global_index_util.cpp",
-        "global_index_crud_commands_gen.cpp",
         "metadata_consistency_util.cpp",
         "metadata_manager.cpp",
         "metrics/field_names/sharding_data_transform_cumulative_metrics_field_name_provider.cpp",
@@ -243,56 +193,6 @@ env.Library(
 )
 
 env.Library(
-    target="user_writes_recoverable_critical_section",
-    source=[
-        "user_writes_critical_section_document_gen.cpp",
-        "user_writes_recoverable_critical_section_service.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/dbdirectclient",
-        "$BUILD_DIR/mongo/db/repl/replica_set_aware_service",
-        "$BUILD_DIR/mongo/db/rw_concern_d",
-        "$BUILD_DIR/mongo/db/shard_role_api",
-    ],
-)
-
-env.Library(
-    target="transaction_coordinator",
-    source=[
-        "server_transaction_coordinators_metrics.cpp",
-        "single_transaction_coordinator_stats.cpp",
-        "transaction_coordinator_catalog.cpp",
-        "transaction_coordinator_curop.cpp",
-        "transaction_coordinator_document_gen.cpp",
-        "transaction_coordinator_futures_util.cpp",
-        "transaction_coordinator_metrics_observer.cpp",
-        "transaction_coordinator_params_gen.cpp",
-        "transaction_coordinator_service.cpp",
-        "transaction_coordinator_structures.cpp",
-        "transaction_coordinator_util.cpp",
-        "transaction_coordinator_worker_curop_repository_mongod.cpp",
-        "transaction_coordinator.cpp",
-        "transaction_coordinators_stats_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/commands/server_status_core",
-        "$BUILD_DIR/mongo/db/commands/txn_cmd_request",
-        "$BUILD_DIR/mongo/db/dbdirectclient",
-        "$BUILD_DIR/mongo/db/internal_transactions_feature_flag",
-        "$BUILD_DIR/mongo/db/not_primary_error_tracker",
-        "$BUILD_DIR/mongo/db/repl/change_stream_oplog_notification",
-        "$BUILD_DIR/mongo/db/repl/wait_for_majority_service",
-        "$BUILD_DIR/mongo/db/rw_concern_d",
-        "$BUILD_DIR/mongo/db/server_feature_flags",
-        "$BUILD_DIR/mongo/db/shard_role_api",
-        "$BUILD_DIR/mongo/db/transaction/transaction",
-        "$BUILD_DIR/mongo/db/vector_clock_mongod",
-        "$BUILD_DIR/mongo/executor/task_executor_pool",
-        "$BUILD_DIR/mongo/s/grid",
-    ],
-)
-
-env.Library(
     target="sharding_catalog_manager",
     source=[
         "add_shard_cmd_gen.cpp",
@@ -451,6 +351,8 @@ env.Library(
         "convert_to_capped_coordinator_document_gen.cpp",
         "create_collection_coordinator.cpp",
         "create_collection_coordinator_document_gen.cpp",
+        "create_database_coordinator.cpp",
+        "create_database_coordinator_document_gen.cpp",
         "drop_collection_coordinator.cpp",
         "drop_collection_coordinator_document_gen.cpp",
         "drop_database_coordinator.cpp",
@@ -517,19 +419,15 @@ env.Library(
         "shardsvr_convert_to_capped_participant_command.cpp",
         "shardsvr_create_collection_command.cpp",
         "shardsvr_create_collection_participant_command.cpp",
-        "shardsvr_create_global_index_command.cpp",
-        "shardsvr_delete_global_index_key_command.cpp",
         "shardsvr_drop_collection_command.cpp",
         "shardsvr_drop_collection_if_uuid_not_matching_command.cpp",
         "shardsvr_drop_collection_participant_command.cpp",
         "shardsvr_drop_database_command.cpp",
         "shardsvr_drop_database_participant_command.cpp",
-        "shardsvr_drop_global_index_command.cpp",
         "shardsvr_drop_index_catalog_entry_participant_command.cpp",
         "shardsvr_drop_indexes_command.cpp",
         "shardsvr_get_stats_for_balancing_command.cpp",
         "shardsvr_index_catalog_test_commands.cpp",
-        "shardsvr_insert_global_index_key_command.cpp",
         "shardsvr_join_ddl_coordinators_command.cpp",
         "shardsvr_join_migrations_command.cpp",
         "shardsvr_merge_all_chunks_on_shard_command.cpp",
@@ -552,7 +450,6 @@ env.Library(
         "shardsvr_split_chunk_command.cpp",
         "shardsvr_untrack_unsplittable_collection_command.cpp",
         "shardsvr_validate_shard_key_candidate.cpp",
-        "shardsvr_write_global_index_keys_command.cpp",
         "split_vector_command.cpp",
         "transition_to_sharded_cluster_gen.cpp",
         "transition_to_sharded_cluster_command.cpp",
@@ -579,7 +476,6 @@ env.Library(
         "$BUILD_DIR/mongo/db/commands/test_commands_enabled",
         "$BUILD_DIR/mongo/db/commands/txn_cmd_request",
         "$BUILD_DIR/mongo/db/fle_crud",
-        "$BUILD_DIR/mongo/db/global_index",
         "$BUILD_DIR/mongo/db/index_builds_coordinator_interface",
         "$BUILD_DIR/mongo/db/index_commands_idl",
         "$BUILD_DIR/mongo/db/internal_transactions_feature_flag",
@@ -619,17 +515,6 @@ env.Library(
 )
 
 env.Library(
-    target="analyze_shard_key_util",
-    source=[
-        "analyze_shard_key_util.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/shard_role",
-        "$BUILD_DIR/mongo/s/analyze_shard_key_common",
-    ],
-)
-
-env.Library(
     target="sessions_collection_config_server",
     source=[
         "sessions_collection_config_server.cpp",
@@ -640,17 +525,6 @@ env.Library(
         "$BUILD_DIR/mongo/s/sessions_collection_sharded",
         "$BUILD_DIR/mongo/s/sharding_api",
         "sharding_catalog_manager",
-    ],
-)
-
-env.Library(
-    target="sharding_logging",
-    source=[
-        "sharding_logging.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/shard_role_api",
-        "$BUILD_DIR/mongo/s/catalog/sharding_catalog_client_impl",
     ],
 )
 
@@ -731,11 +605,6 @@ env.CppUnitTest(
         "collection_sharding_runtime_test.cpp",
         "database_sharding_state_test.cpp",
         "ddl_lock_manager_test.cpp",
-        "global_index/global_index_cloner_fetcher_test.cpp",
-        "global_index/global_index_cloning_service_test.cpp",
-        "global_index/global_index_cumulative_metrics_test.cpp",
-        "global_index/global_index_inserter_test.cpp",
-        "global_index/global_index_metrics_test.cpp",
         "implicit_collection_creation_test.cpp",
         "metadata_consistency_util_test.cpp",
         "metadata_manager_test.cpp",
@@ -875,6 +744,7 @@ env.CppUnitTest(
         "config/sharding_catalog_manager_clear_jumbo_flag_test.cpp",
         "config/sharding_catalog_manager_commit_chunk_migration_test.cpp",
         "config/sharding_catalog_manager_config_initialization_test.cpp",
+        "config/sharding_catalog_manager_configure_collection_balancing_test.cpp",
         "config/sharding_catalog_manager_database_operations_test.cpp",
         "config/sharding_catalog_manager_ensure_chunk_version_is_greater_than_test.cpp",
         "config/sharding_catalog_manager_merge_chunks_test.cpp",
@@ -882,6 +752,7 @@ env.CppUnitTest(
         "config/sharding_catalog_manager_remove_shard_test.cpp",
         "config/sharding_catalog_manager_shard_collection_test.cpp",
         "config/sharding_catalog_manager_split_chunk_test.cpp",
+        "config/set_cluster_parameter_coordinator_test.cpp",
         "query_analysis_coordinator_test.cpp",
         "resharding/resharding_coordinator_commit_monitor_test.cpp",
         "resharding/resharding_coordinator_observer_test.cpp",
@@ -927,6 +798,7 @@ env.Benchmark(
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/shard_role_api",
     ],
+    CONSOLIDATED_TARGET="sharding_bm",
 )
 
 env.Benchmark(
@@ -954,6 +826,7 @@ env.Benchmark(
         "$BUILD_DIR/mongo/s/sharding_test_fixture_common",
         "sharding_runtime_d",
     ],
+    CONSOLIDATED_TARGET="sharding_bm",
 )
 
 env.Benchmark(

@@ -6,13 +6,12 @@ import glob
 import os
 import shutil
 import tarfile
-import tempfile
 import zipfile
 
 import requests
 import structlog
 
-from buildscripts.resmokelib.utils.filesystem import mkdtemp_in_build_dir, build_hygienic_bin_path
+from buildscripts.resmokelib.utils.filesystem import build_hygienic_bin_path, mkdtemp_in_build_dir
 
 S3_BUCKET = "mciuploads"
 

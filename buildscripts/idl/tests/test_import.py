@@ -32,7 +32,6 @@
 import io
 import textwrap
 import unittest
-from typing import Any, Dict
 
 # import package so that it works regardless of whether we run as a module or file
 if __package__ is None:
@@ -40,11 +39,11 @@ if __package__ is None:
     from os import path
 
     sys.path.append(path.dirname(path.abspath(__file__)))
-    from context import idl
     import testcase
+    from context import idl
 else:
-    from .context import idl
     from . import testcase
+    from .context import idl
 
 
 class DictionaryImportResolver(idl.parser.ImportResolverBase):

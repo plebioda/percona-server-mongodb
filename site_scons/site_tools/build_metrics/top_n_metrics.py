@@ -1,8 +1,8 @@
-import json
-import sys
-import datetime
 import argparse
+import datetime
+import json
 import logging
+
 from tabulate import tabulate
 
 parser = argparse.ArgumentParser(description="Print top n metrics from build metrics json files.")

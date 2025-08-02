@@ -1,9 +1,9 @@
-import time
-from typing import Tuple, List, Any, Optional
+from typing import Any, List, Optional, Tuple
 
-from typing_extensions import Protocol, TypedDict
-from .protocol import BuildMetricsCollector
 import SCons.Script
+from typing_extensions import TypedDict
+
+from .protocol import BuildMetricsCollector
 
 
 class _HookedStartTime(float):

@@ -55,6 +55,7 @@
 #include "mongo/db/repl/storage_interface.h"
 #include "mongo/db/repl/storage_interface_impl.h"
 #include "mongo/db/s/collection_sharding_state.h"
+#include "mongo/db/s/shard_filtering_metadata_refresh.h"
 #include "mongo/db/s/shard_local.h"
 #include "mongo/db/s/shard_server_op_observer.h"
 #include "mongo/db/s/sharding_mongod_test_fixture.h"
@@ -90,7 +91,6 @@ namespace mongo {
 
 using executor::NetworkInterfaceMock;
 using executor::NetworkTestEnv;
-using executor::RemoteCommandRequest;
 using repl::ReplicationCoordinatorMock;
 using repl::ReplSettings;
 
@@ -126,9 +126,11 @@ std::unique_ptr<executor::TaskExecutorPool> ShardingMongoDTestFixture::_makeTask
     _networkTestEnv = std::make_unique<NetworkTestEnv>(fixedTaskExecutor.get(), _mockNetwork);
 
     // Set up (one) TaskExecutor for the set of arbitrary TaskExecutors.
+    auto mockNetworkForPool = std::make_unique<executor::NetworkInterfaceMock>();
+    _mockNetworkForPool = mockNetworkForPool.get();
     std::vector<std::shared_ptr<executor::TaskExecutor>> arbitraryExecutorsForExecutorPool;
     arbitraryExecutorsForExecutorPool.emplace_back(
-        makeThreadPoolTestExecutor(std::make_unique<executor::NetworkInterfaceMock>()));
+        makeThreadPoolTestExecutor(std::move(mockNetworkForPool)));
 
     // Set up the TaskExecutorPool with the fixed TaskExecutor and set of arbitrary TaskExecutors.
     auto executorPool = std::make_unique<executor::TaskExecutorPool>();
@@ -213,6 +215,8 @@ Status ShardingMongoDTestFixture::initializeGlobalShardingStateForMongodForTest(
                std::move(executorPoolPtr),
                _mockNetwork);
 
+    FilteringMetadataCache::init(getServiceContext());
+
     return Status::OK();
 }
 
@@ -283,9 +287,7 @@ void ShardingMongoDTestFixture::tearDown() {
     ReplicaSetMonitor::cleanup();
 
     if (Grid::get(operationContext())->isInitialized()) {
-        if (Grid::get(operationContext())->getExecutorPool() && !_executorPoolShutDown) {
-            Grid::get(operationContext())->getExecutorPool()->shutdownAndJoin();
-        }
+        shutdownExecutorPool();
 
         if (Grid::get(operationContext())->shardRegistry()) {
             Grid::get(operationContext())->shardRegistry()->shutdown();
@@ -321,12 +323,6 @@ ClusterCursorManager* ShardingMongoDTestFixture::clusterCursorManager() const {
 executor::TaskExecutorPool* ShardingMongoDTestFixture::executorPool() const {
     invariant(Grid::get(operationContext())->getExecutorPool());
     return Grid::get(operationContext())->getExecutorPool();
-}
-
-void ShardingMongoDTestFixture::shutdownExecutorPool() {
-    invariant(!_executorPoolShutDown);
-    executorPool()->shutdownAndJoin();
-    _executorPoolShutDown = true;
 }
 
 std::shared_ptr<executor::TaskExecutor> ShardingMongoDTestFixture::executor() const {

@@ -54,7 +54,7 @@
 #include "mongo/db/service_context.h"
 #include "mongo/db/storage/execution_context.h"
 #include "mongo/db/storage/key_format.h"
-#include "mongo/db/storage/key_string.h"
+#include "mongo/db/storage/key_string/key_string.h"
 #include "mongo/db/storage/record_data.h"
 #include "mongo/db/storage/storage_engine.h"
 #include "mongo/db/storage/write_unit_of_work.h"
@@ -162,7 +162,7 @@ Status SkippedRecordTracker::retrySkippedRecords(OperationContext* opCtx,
         stdx::unique_lock<Client> lk(*opCtx->getClient());
         progress.set(
             lk,
-            CurOp::get(opCtx)->setProgress_inlock(curopMessage, _skippedRecordCounter.load(), 1),
+            CurOp::get(opCtx)->setProgress(lk, curopMessage, _skippedRecordCounter.load(), 1),
             opCtx);
     }
 

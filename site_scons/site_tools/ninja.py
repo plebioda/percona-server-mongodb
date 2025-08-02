@@ -21,15 +21,14 @@
 #
 """Generate build.ninja files from SCons aliases."""
 
-import sys
-import os
 import importlib
 import io
-import shutil
+import os
 import shlex
+import shutil
+import sys
 import tempfile
 import textwrap
-
 from collections import OrderedDict
 from glob import glob
 from os.path import join as joinpath
@@ -37,8 +36,8 @@ from os.path import splitext
 
 import SCons
 from SCons.Action import _string_from_cmd_list, get_default_ENV
-from SCons.Util import is_List, flatten_sequence
 from SCons.Script import COMMAND_LINE_TARGETS
+from SCons.Util import flatten_sequence, is_List
 
 NINJA_STATE = None
 NINJA_SYNTAX = "NINJA_SYNTAX"
@@ -583,6 +582,12 @@ class NinjaState:
                 "description": "Checked $out",
                 "pool": "local_pool",
             },
+            "BAZEL_BUILD_INDIRECTION": {
+                "command": "$NOOP",
+                "description": "Checking Bazel outputs...",
+                "pool": "local_pool",
+                "restat": 1,
+            },
             "INSTALL": {
                 "command": "$COPY $in $out",
                 "description": "Installed $out",
@@ -1039,10 +1044,17 @@ class NinjaState:
 
         ninja_sorted_build(
             ninja,
-            outputs=["set_to_always_run_bazel", "bazel_run_first"]
-            + self.env["NINJA_BAZEL_OUTPUTS"],
+            outputs=["bazel_run_first_internal"],
             inputs=[],
             rule="RUN_BAZEL_BUILD",
+        )
+
+        ninja_sorted_build(
+            ninja,
+            outputs=self.env["NINJA_BAZEL_OUTPUTS"] + ["bazel_run_first"],
+            inputs=[],
+            implicit=["bazel_run_first_internal"],
+            rule="BAZEL_BUILD_INDIRECTION",
         )
 
         # This sets up a dependency edge between build.ninja.in and build.ninja

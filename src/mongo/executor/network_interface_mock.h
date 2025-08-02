@@ -58,6 +58,7 @@
 #include "mongo/stdx/unordered_set.h"
 #include "mongo/transport/transport_layer.h"
 #include "mongo/util/assert_util.h"
+#include "mongo/util/cancellation.h"
 #include "mongo/util/clock_source.h"
 #include "mongo/util/clock_source_mock.h"
 #include "mongo/util/duration.h"
@@ -140,17 +141,43 @@ public:
     SemiFuture<TaskExecutor::ResponseStatus> startCommand(
         const TaskExecutor::CallbackHandle& cbHandle,
         RemoteCommandRequest& request,
-        const BatonHandle& baton = nullptr) override;
-    Status startExhaustCommand(const TaskExecutor::CallbackHandle& cbHandle,
-                               RemoteCommandRequest& request,
-                               RemoteCommandOnReplyFn&& onReply,
-                               const BatonHandle& baton = nullptr) override;
+        const BatonHandle& baton = nullptr,
+        const CancellationToken& token = CancellationToken::uncancelable()) override;
+
+    class ExhaustResponseReaderMock : public NetworkInterface::ExhaustResponseReader {
+    public:
+        ExhaustResponseReaderMock(NetworkInterfaceMock* interface,
+                                  TaskExecutor::CallbackHandle cbHandle,
+                                  RemoteCommandRequest request,
+                                  std::shared_ptr<Baton> baton,
+                                  const CancellationToken& token)
+            : _interface(interface),
+              _cbHandle(cbHandle),
+              _initialRequest(request),
+              _baton(baton),
+              _cancelSource(token) {}
+
+        SemiFuture<RemoteCommandResponse> next() override;
+
+    private:
+        enum class State { kInitialRequest, kExhaust, kDone };
+
+        NetworkInterfaceMock* _interface;
+        TaskExecutor::CallbackHandle _cbHandle;
+        RemoteCommandRequest _initialRequest;
+        std::shared_ptr<Baton> _baton;
+        CancellationSource _cancelSource;
+        State _state{State::kInitialRequest};
+    };
+
+    SemiFuture<std::shared_ptr<NetworkInterface::ExhaustResponseReader>> startExhaustCommand(
+        const TaskExecutor::CallbackHandle& cbHandle,
+        RemoteCommandRequest& request,
+        const BatonHandle& baton = nullptr,
+        const CancellationToken& = CancellationToken::uncancelable()) override;
 
     /**
-     * If the network operation is in the _unscheduled or _processing queues, moves the operation
-     * into the _scheduled queue with ErrorCodes::CallbackCanceled. If the operation is already in
-     * the _scheduled queue, does nothing. The latter simulates the case where cancelCommand() is
-     * called after the task has already completed, but its callback has not yet been run.
+     * Cancels the token associated with the passed in callback handle.
      */
     void cancelCommand(const TaskExecutor::CallbackHandle& cbHandle,
                        const BatonHandle& baton = nullptr) override;
@@ -326,7 +353,8 @@ public:
      * This represents interrupting the regular flow with, for example, a NetworkTimeout or
      * CallbackCanceled error.
      */
-    void _interruptWithResponse_inlock(const TaskExecutor::CallbackHandle& cbHandle,
+    void _interruptWithResponse_inlock(stdx::unique_lock<stdx::mutex>& lk,
+                                       const TaskExecutor::CallbackHandle& cbHandle,
                                        const TaskExecutor::ResponseStatus& response);
 
     /**
@@ -334,6 +362,10 @@ public:
      * network thread to process.
      */
     bool hasReadyNetworkOperations();
+
+    size_t getNumResponses() {
+        return _responses.size();
+    }
 
 private:
     /**
@@ -345,6 +377,8 @@ private:
         bool operator>(const AlarmInfo& rhs) const {
             return when > rhs.when;
         }
+
+        void cancel();
 
         std::uint64_t id;
         Date_t when;
@@ -361,51 +395,54 @@ private:
     /**
      * Implementation of startup behavior.
      */
-    void _startup_inlock();
+    void _startup_inlock(stdx::unique_lock<stdx::mutex>& lk);
 
     /**
      * Returns the current virtualized time.
      */
-    Date_t _now_inlock() const {
+    Date_t _now_inlock(stdx::unique_lock<stdx::mutex>& lk) const {
         return _clkSource->now();
     }
 
     /**
      * Implementation of waitForWork*.
      */
-    void _waitForWork_inlock(stdx::unique_lock<stdx::mutex>* lk);
+    void _waitForWork_inlock(stdx::unique_lock<stdx::mutex>& lk);
 
     /**
      * Returns true if there are ready requests for the network thread to service.
      */
-    bool _hasReadyRequests_inlock();
+    bool _hasReadyRequests_inlock(stdx::unique_lock<stdx::mutex>& lk);
 
     /**
      * Returns true if the network thread could run right now.
      */
-    bool _isNetworkThreadRunnable_inlock();
+    bool _isNetworkThreadRunnable_inlock(stdx::unique_lock<stdx::mutex>& lk);
 
     /**
      * Returns true if the executor thread could run right now.
      */
-    bool _isExecutorThreadRunnable_inlock();
+    bool _isExecutorThreadRunnable_inlock(stdx::unique_lock<stdx::mutex>& lk);
 
     /**
      * Enqueues a network operation to run in order of 'consideration date'.
      */
-    void _enqueueOperation_inlock(NetworkOperation&& op);
+    void _enqueueOperation_inlock(stdx::unique_lock<stdx::mutex>& lk, NetworkOperation&& op);
 
     /**
      * "Connects" to a remote host, and then enqueues the provided operation.
      */
-    void _connectThenEnqueueOperation_inlock(const HostAndPort& target, NetworkOperation&& op);
+    void _connectThenEnqueueOperation_inlock(stdx::unique_lock<stdx::mutex>& lk,
+                                             const HostAndPort& target,
+                                             NetworkOperation&& op);
 
     /**
      * Enqueues a response to be processed the next time we runReadyNetworkOperations.
      *
      * Note that interruption and timeout also invoke this function.
      */
-    void _scheduleResponse_inlock(NetworkOperationIterator noi,
+    void _scheduleResponse_inlock(stdx::unique_lock<stdx::mutex>& lk,
+                                  NetworkOperationIterator noi,
                                   Date_t when,
                                   const TaskExecutor::ResponseStatus& response);
 
@@ -414,12 +451,21 @@ private:
      * reaquire "lk" several times, but will not return until the executor has blocked
      * in waitFor*.
      */
-    void _runReadyNetworkOperations_inlock(stdx::unique_lock<stdx::mutex>* lk);
+    void _runReadyNetworkOperations_inlock(stdx::unique_lock<stdx::mutex>& lk);
 
-    SemiFuture<TaskExecutor::ResponseStatus> _startCommand(
+    SemiFuture<TaskExecutor::ResponseStatus> _startOperation(
         const TaskExecutor::CallbackHandle& cbHandle,
         RemoteCommandRequest& request,
-        const BatonHandle& baton = nullptr);
+        bool awaitExhaust,
+        const BatonHandle& baton = nullptr,
+        const CancellationToken& token = CancellationToken::uncancelable());
+
+    /**
+     * Returns an iterator pointing to the first unfinished NetworkOperation associated with the
+     * provided cbHandle. Returns _operations->end() if no such operation exists.
+     */
+    NetworkOperationIterator _getNetworkOperation_inlock(
+        WithLock, const TaskExecutor::CallbackHandle& cbHandle);
 
     // Mutex that synchronizes access to mutable data in this class and its subclasses.
     // Fields guarded by the mutex are labled (M), below, and those that are read-only
@@ -463,11 +509,10 @@ private:
     // Next alarm ID
     std::uint64_t _nextAlarmId{0};  // (M)
 
-    // Heap of alarms, with the next alarm always on top.
-    std::priority_queue<AlarmInfo, std::vector<AlarmInfo>, std::greater<AlarmInfo>> _alarms;  // (M)
-
-    // A set of alarm IDs for canceled alarms
-    stdx::unordered_set<std::uint64_t> _canceledAlarms;  // (M^:)
+    // Sorted map of target to alarms, with the next alarm always first.
+    std::multimap<Date_t, AlarmInfo> _alarms;                              // (M)
+    stdx::unordered_map<size_t, decltype(_alarms)::iterator> _alarmsById;  // (M)
+    stdx::unordered_set<size_t> _canceledAlarms;                           // (M)
 
     // The connection hook.
     std::unique_ptr<NetworkConnectionHook> _hook;  // (R)
@@ -504,6 +549,7 @@ public:
     NetworkOperation(const TaskExecutor::CallbackHandle& cbHandle,
                      const RemoteCommandRequest& theRequest,
                      Date_t theRequestDate,
+                     const CancellationToken& token,
                      Promise<TaskExecutor::ResponseStatus> promise);
 
     /**
@@ -525,7 +571,7 @@ public:
     /**
      * Fulfills a response to an ongoing operation.
      */
-    bool fulfillResponse(NetworkResponse response);
+    bool fulfillResponse_inlock(stdx::unique_lock<stdx::mutex>& lk, NetworkResponse response);
 
     /**
      * Predicate that returns true if cbHandle equals the executor's handle for this network
@@ -544,6 +590,10 @@ public:
      */
     const RemoteCommandRequest& getRequest() const {
         return _request;
+    }
+
+    CancellationSource& getCancellationSource() {
+        return _cancelSource;
     }
 
     /**
@@ -581,6 +631,7 @@ private:
     Date_t _requestDate;
     TaskExecutor::CallbackHandle _cbHandle;
     RemoteCommandRequest _request;
+    CancellationSource _cancelSource;
 
     bool _isProcessing = false;
     bool _isBlackholed = false;

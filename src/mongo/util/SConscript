@@ -1,9 +1,6 @@
 # -*- mode: python -*-
 
 from site_scons.mongo import insort_wrapper
-import subprocess
-import sys
-import os
 
 Import(
     [
@@ -256,17 +253,6 @@ else:
         ],
     )
 
-env.Library(
-    target="ntservice",
-    source=[
-        "ntservice.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/util/options_parser/options_parser",
-        "signal_handlers",
-    ],
-)
-
 env.Benchmark(
     target="clock_source_bm",
     source=[
@@ -276,22 +262,7 @@ env.Benchmark(
         "clock_sources",
         "processinfo",
     ],
-)
-
-env.Library(
-    target="signal_handlers",
-    source=[
-        "signal_handlers.cpp",
-        "signal_win32.cpp" if env.TargetOSIs("windows") else [],
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/log_process_details",
-        "$BUILD_DIR/mongo/db/service_context",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/server_base",
-    ],
+    CONSOLIDATED_TARGET="first_half_bm",
 )
 
 env.CppUnitTest(
@@ -311,6 +282,7 @@ env.Benchmark(
         "decimal_counter_bm.cpp",
     ],
     LIBDEPS=[],
+    CONSOLIDATED_TARGET="first_half_bm",
 )
 
 env.Benchmark(
@@ -335,6 +307,7 @@ env.Benchmark(
         "tick_source_bm.cpp",
     ],
     LIBDEPS=[],
+    CONSOLIDATED_TARGET="first_half_bm",
 )
 
 pcre_env = env.Clone()
@@ -362,17 +335,6 @@ env.Benchmark(
     source="hash_table_bm.cpp",
     LIBDEPS=[],
 )
-
-if env.TargetOSIs("windows"):
-    env.Library(
-        target="perfctr_collect",
-        source=[
-            "perfctr_collect.cpp",
-        ],
-        LIBDEPS=[
-            "$BUILD_DIR/mongo/base",
-        ],
-    )
 
 icuEnv = env.Clone()
 
@@ -461,6 +423,7 @@ icuEnv.CppUnitTest(
         "shared_buffer_test.cpp",
         "scoped_unlock_test.cpp",
         "secure_zero_memory_test.cpp",
+        "signal_handlers_asynchronous_test.cpp" if not env.TargetOSIs("windows") else [],
         "signal_handlers_synchronous_test.cpp" if not env.TargetOSIs("windows") else [],
         "static_immortal_test.cpp",
         "str_test.cpp",
@@ -499,7 +462,9 @@ icuEnv.CppUnitTest(
         "progress_meter",
         "safe_num",
         "secure_zero_memory",
+        "signal_handlers",
         "summation",
+        "version_impl",
     ],
 )
 
@@ -520,10 +485,7 @@ if env.TargetOSIs("windows"):
         ],
     )
 
-env.Benchmark(
-    target="base64_bm",
-    source="base64_bm.cpp",
-)
+env.Benchmark(target="base64_bm", source="base64_bm.cpp", CONSOLIDATED_TARGET="first_half_bm")
 
 stacktraceEnv = env.Clone()
 if use_libunwind:
@@ -596,6 +558,7 @@ env.Benchmark(
         "$BUILD_DIR/mongo/base",
         "processinfo",
     ],
+    CONSOLIDATED_TARGET="first_half_bm",
 )
 
 pretty_printer_test_program = env.Program(

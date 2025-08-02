@@ -76,8 +76,6 @@ public:
                   const BSONObj& document,
                   const BSONObj& writeConcern);
 
-    void setAuthzVersion(OperationContext* opCtx, int version);
-
     Status remove(OperationContext* opCtx,
                   const NamespaceString& collectionName,
                   const BSONObj& query,
@@ -91,6 +89,15 @@ public:
 
     void setFindsShouldFail(bool enable) {
         _findsShouldFail = enable;
+    }
+
+    /**
+     * Calls the base resolveRoles, but is exposed for testing purposes.
+     */
+    StatusWith<ResolvedRoleData> resolveRoles_forTest(OperationContext* opCtx,
+                                                      const std::vector<RoleName>& roleNames,
+                                                      ResolveRoleOption option) {
+        return resolveRoles(opCtx, roleNames, option);
     }
 
 protected:

@@ -138,7 +138,7 @@ std::variant<write_ops::UpdateCommandRequest, write_ops::DeleteCommandRequest> m
     const OID& bucketId, const CollectionPtr& coll, const std::vector<BSONObj>& measurements);
 
 using TimeseriesBatches = std::vector<std::shared_ptr<bucket_catalog::WriteBatch>>;
-using TimeseriesStmtIds = stdx::unordered_map<OID, std::vector<StmtId>, OID::Hasher>;
+using TimeseriesStmtIds = stdx::unordered_map<bucket_catalog::WriteBatch*, std::vector<StmtId>>;
 
 /**
  * Builds the transform update oplog entry with a transform function.
@@ -333,6 +333,16 @@ void deleteRequestCheckFunction(DeleteRequest* request, const TimeseriesOptions&
  */
 void updateRequestCheckFunction(UpdateRequest* request, const TimeseriesOptions& options);
 
+/**
+ * If runPostCommitDebugChecks is enabled, returns a function that runs (slow) post commit debug
+ * checks to ensure we maintain expected invariants about the bucket contents. Otherwise, returns
+ * nullptr.
+ *
+ * Set of checks:
+ *  - Measurement count on-disk matches in-memory state. (Helpful for detecting race conditions.)
+ */
+std::function<void(const timeseries::bucket_catalog::WriteBatch&, StringData timeField)>
+getPostCommitDebugChecks(OperationContext*, const NamespaceString&);
 
 namespace details {
 /**

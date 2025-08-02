@@ -189,8 +189,8 @@ void ReporterTest::setUp() {
 }
 
 void ReporterTest::tearDown() {
-    getExecutor().shutdown();
-    getExecutor().join();
+    shutdownExecutorThread();
+    joinExecutorThread();
     // Executor may still invoke reporter's callback before shutting down.
     reporter.reset();
     posUpdater.reset();
@@ -393,7 +393,8 @@ TEST_F(ReporterTestNoTriggerAtSetUp, IsNotActiveAfterUpdatePositionTimeoutExpire
     // Schedule a response to the updatePosition command at a time that exceeds the timeout. Then
     // make sure the reporter shut down due to a remote command timeout.
     auto updatePosRequest = net->getNextReadyRequest();
-    RemoteCommandResponse response(BSON("ok" << 1), Milliseconds(0));
+    RemoteCommandResponse response =
+        RemoteCommandResponse::make_forTest(BSON("ok" << 1), Milliseconds(0));
     executor::TaskExecutor::ResponseStatus responseStatus(response);
     net->scheduleResponse(
         updatePosRequest, net->now() + updatePositionTimeout + Milliseconds(1), responseStatus);
@@ -413,7 +414,8 @@ TEST_F(ReporterTest, TaskExecutorAndNetworkErrorsStopTheReporter) {
     ASSERT_TRUE(reporter->isActive());
     ASSERT_TRUE(reporter->isWaitingToSendReport());
 
-    processNetworkResponse({ErrorCodes::NoSuchKey, "waaaah", Milliseconds(0)});
+    processNetworkResponse(RemoteCommandResponse::make_forTest(
+        Status(ErrorCodes::NoSuchKey, "waaaah"), Milliseconds(0)));
 
     ASSERT_EQUALS(ErrorCodes::NoSuchKey, reporter->join());
     assertReporterDone();
@@ -544,7 +546,8 @@ TEST_F(ReporterTest, CommandPreparationFailureDuringRescheduleStopsTheReporter) 
 }
 
 TEST_F(ReporterTest, FailedUpdateShouldNotRescheduleUpdate) {
-    processNetworkResponse({ErrorCodes::OperationFailed, "update failed", Milliseconds(0)});
+    processNetworkResponse(RemoteCommandResponse::make_forTest(
+        Status(ErrorCodes::OperationFailed, "update failed"), Milliseconds(0)));
 
     ASSERT_EQUALS(ErrorCodes::OperationFailed, reporter->join());
     assertReporterDone();
@@ -559,7 +562,8 @@ TEST_F(ReporterTest, SuccessfulUpdateShouldRescheduleUpdate) {
 
     runUntil(until, true);
 
-    processNetworkResponse({ErrorCodes::OperationFailed, "update failed", Milliseconds(0)});
+    processNetworkResponse(RemoteCommandResponse::make_forTest(
+        Status(ErrorCodes::OperationFailed, "update failed"), Milliseconds(0)));
 
     ASSERT_EQUALS(ErrorCodes::OperationFailed, reporter->join());
     assertReporterDone();
@@ -573,6 +577,7 @@ TEST_F(ReporterTest, ShutdownWhileKeepAliveTimeoutIsScheduledShouldMakeReporterI
     ASSERT_TRUE(reporter->isActive());
 
     reporter->shutdown();
+    runReadyNetworkOperations();
 
     ASSERT_EQUALS(ErrorCodes::CallbackCanceled, reporter->join());
     ASSERT_FALSE(reporter->isActive());
@@ -701,6 +706,7 @@ TEST_F(ReporterTest,
     ASSERT_TRUE(reporter->isActive());
 
     reporter->shutdown();
+    runReadyNetworkOperations();
 
     ASSERT_EQUALS(ErrorCodes::CallbackCanceled, reporter->join());
     assertReporterDone();
@@ -723,9 +729,6 @@ TEST_F(ReporterTest, ShutdownImmediatelyAfterTriggerWhileKeepAliveTimeoutIsSched
     ASSERT_TRUE(reporter->isActive());
 
     auto net = getNet();
-    net->enterNetwork();
-    ASSERT_TRUE(net->hasReadyRequests());
-    net->exitNetwork();
 
     reporter->shutdown();
 
@@ -753,6 +756,7 @@ TEST_F(ReporterTest, AllowUsingBackupChannel) {
     ASSERT_TRUE(reporter->isActive());
 
     reporter->shutdown();
+    runReadyNetworkOperations();
     ASSERT_EQUALS(ErrorCodes::CallbackCanceled, reporter->join());
     assertReporterDone();
 }
@@ -763,12 +767,14 @@ TEST_F(ReporterTest, BackupChannelFailureAlsoCauseReporterFailure) {
     ASSERT_TRUE(reporter->isBackupActive());
 
     processNetworkResponse(BSON("ok" << 1), true);
-    processNetworkResponse({ErrorCodes::OperationFailed, "update failed", Milliseconds(0)}, false);
+    processNetworkResponse(
+        RemoteCommandResponse::make_forTest(Status(ErrorCodes::OperationFailed, "update failed"),
+                                            Milliseconds(0)),
+        false);
     ASSERT_EQUALS(ErrorCodes::OperationFailed, reporter->getStatus_forTest().code());
 
-    // We need to explicitly shutdown the reporter here because we need to ask the main channel to
-    // quit without processing a network response.
     reporter->shutdown();
+    runReadyNetworkOperations();
     ASSERT_EQUALS(ErrorCodes::CallbackCanceled, reporter->join());
     assertReporterDone();
 }
@@ -789,6 +795,7 @@ TEST_F(ReporterTest, BackupChannelSendAnotherOneAfterResponseIfReceiveTwo) {
     processNetworkResponse(BSON("ok" << 1), false);
 
     reporter->shutdown();
+    runReadyNetworkOperations();
     ASSERT_EQUALS(ErrorCodes::CallbackCanceled, reporter->join());
     assertReporterDone();
 }
@@ -801,6 +808,7 @@ TEST_F(ReporterTestNoTriggerAtSetUp, NotUsingBackupChannelWhenFree) {
     ASSERT_TRUE(reporter->isActive());
 
     reporter->shutdown();
+    runReadyNetworkOperations();
     ASSERT_EQUALS(ErrorCodes::CallbackCanceled, reporter->join());
     assertReporterDone();
 }

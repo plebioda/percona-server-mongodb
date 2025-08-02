@@ -30,14 +30,9 @@
 import collections
 import re
 import typing
-from typing import Type, TypeVar, cast, List, Set, Union, Optional
+from typing import cast
 
-from . import ast
-from . import bson
-from . import common
-from . import enum_types
-from . import errors
-from . import syntax
+from . import ast, bson, common, enum_types, errors, syntax
 
 
 def _validate_single_bson_type(ctxt, idl_type, syntax_type):

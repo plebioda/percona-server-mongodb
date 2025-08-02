@@ -35,11 +35,6 @@ feature_flags:
         cpp_varname: gFeatureFlagSecurityToken
         default: false
         shouldBeFCVGated: true
-    featureFlagGlobalIndexes:
-        description: "Enable support for global indexes"
-        cpp_varname: gFeatureFlagGlobalIndexes
-        default: false
-        shouldBeFCVGated: true
     featureFlagAllowAdditionalParticipants:
         description: "Enable adding additional participants to active transaction"
         cpp_varname: gFeatureFlagAllowAdditionalParticipants
@@ -55,12 +50,6 @@ feature_flags:
         description: "Enable creating collections with the RecordIdsReplicated option."
         cpp_varname: gFeatureFlagRecordIdsReplicated
         default: false
-        shouldBeFCVGated: true
-    featureFlagAuditConfigClusterParameter:
-        description: "Enable use of new auditConfig cluster server parameter"
-        cpp_varname: feature_flags::gFeatureFlagAuditConfigClusterParameter
-        default: true
-        version: 7.1
         shouldBeFCVGated: true
     featureFlagStreams:
         description: "Enable support for streams"
@@ -84,12 +73,6 @@ feature_flags:
         cpp_varname: gFeatureFlagAllMongodsAreSharded
         default: false
         shouldBeFCVGated: true
-    featureFlagShardKeyIndexOptionalHashedSharding:
-        description: "Feature flag to make a supporting shard key index for hashed sharding optional"
-        cpp_varname: gFeatureFlagShardKeyIndexOptionalHashedSharding
-        default: true
-        version: 7.0
-        shouldBeFCVGated: true
     featureFlagBanEncryptionOptionsInCollectionCreation:
         description: "Feature flag that bans encryption options from being used in createCollection
         commands"
@@ -100,7 +83,7 @@ feature_flags:
     featureFlagRearchitectUserAcquisition:
         description: "Enable new flow for authentication and authorization"
         cpp_varname: gFeatureFlagRearchitectUserAcquisition
-        default: false
+        default: true
         shouldBeFCVGated: false
     featureFlagOIDCInternalAuthorization:
         description: "Feature flag gating OIDC authentication with internal authorization"
@@ -121,12 +104,6 @@ feature_flags:
     featureFlagCompactOptions:
         description: "Feature flag to execute compaction with more options"
         cpp_varname: gFeatureFlagCompactOptions
-        default: true
-        shouldBeFCVGated: false
-    featureFlagLogSlowOpsBasedOnTimeWorking:
-        description: "Feature flag to enable slow operation logging based on time working rather
-        than total latency"
-        cpp_varname: gFeatureFlagLogSlowOpsBasedOnTimeWorking
         default: true
         shouldBeFCVGated: false
     # TODO SERVER-89999 remove once the version becomes last LTS

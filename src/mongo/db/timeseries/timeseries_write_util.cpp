@@ -81,6 +81,7 @@
 #include "mongo/db/timeseries/bucket_catalog/bucket_metadata.h"
 #include "mongo/db/timeseries/bucket_catalog/execution_stats.h"
 #include "mongo/db/timeseries/bucket_catalog/flat_bson.h"
+#include "mongo/db/timeseries/bucket_catalog/global_bucket_catalog.h"
 #include "mongo/db/timeseries/bucket_catalog/measurement_map.h"
 #include "mongo/db/timeseries/bucket_catalog/reopening.h"
 #include "mongo/db/timeseries/bucket_compression.h"
@@ -109,6 +110,7 @@ namespace mongo::timeseries {
 namespace {
 
 MONGO_FAIL_POINT_DEFINE(timeseriesDataIntegrityCheckFailureUpdate);
+MONGO_FAIL_POINT_DEFINE(runPostCommitDebugChecks);
 
 // Return a verifierFunction that is used to perform a data integrity check on inserts into
 // a compressed column.
@@ -613,6 +615,11 @@ std::shared_ptr<bucket_catalog::WriteBatch>& extractFromSelf(
     return batch;
 }
 
+uint64_t getStorageCacheSize(OperationContext* opCtx) {
+    return opCtx->getServiceContext()->getStorageEngine()->getEngine()->getCacheSizeMB() * 1024 *
+        1024;
+}
+
 BSONObj getSuitableBucketForReopening(OperationContext* opCtx,
                                       const Collection* bucketsColl,
                                       const TimeseriesOptions& options,
@@ -669,14 +676,14 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucketWithReopening(
     // The purpose of this scope is to destroy the ReopeningContext for the
     // compress-and-write-uncompressed-bucket scenario.
     {
-        auto swResult = bucket_catalog::tryInsert(opCtx,
-                                                  bucketCatalog,
-                                                  bucketsColl->ns().getTimeseriesViewNamespace(),
+        auto swResult = bucket_catalog::tryInsert(bucketCatalog,
                                                   bucketsColl->getDefaultCollator(),
                                                   measurementDoc,
+                                                  opCtx->getOpID(),
                                                   combine,
                                                   insertContext,
-                                                  time);
+                                                  time,
+                                                  getStorageCacheSize(opCtx));
         if (!swResult.isOK()) {
             return swResult;
         }
@@ -692,7 +699,7 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucketWithReopening(
 
                     if (!suitableBucket.isEmpty()) {
                         reopeningContext.bucketToReopen = bucket_catalog::BucketToReopen{
-                            suitableBucket, [&](OperationContext* opCtx, const BSONObj& bucketDoc) {
+                            suitableBucket, [opCtx, bucketsColl](const BSONObj& bucketDoc) {
                                 return bucketsColl->checkValidation(opCtx, bucketDoc);
                             }};
                     }
@@ -713,15 +720,15 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucketWithReopening(
                     }
 
                     return bucket_catalog::insertWithReopeningContext(
-                        opCtx,
                         bucketCatalog,
-                        bucketsColl->ns().getTimeseriesViewNamespace(),
                         bucketsColl->getDefaultCollator(),
                         measurementDoc,
+                        opCtx->getOpID(),
                         combine,
                         reopeningContext,
                         insertContext,
-                        time);
+                        time,
+                        getStorageCacheSize(opCtx));
                 },
                 [](bucket_catalog::InsertWaiter& waiter)
                     -> StatusWith<bucket_catalog::InsertResult> {
@@ -1159,29 +1166,29 @@ StatusWith<bucket_catalog::InsertResult> attemptInsertIntoBucket(
                         // This is the case where the reopened bucket was corrupted. Retry the
                         // insert directly on a new bucket.
                         return bucket_catalog::insert(
-                            opCtx,
                             bucketCatalog,
-                            bucketsColl->ns().getTimeseriesViewNamespace(),
                             bucketsColl->getDefaultCollator(),
                             measurementDoc,
+                            opCtx->getOpID(),
                             combine,
                             std::get<bucket_catalog::InsertContext>(
                                 insertContextAndDate.getValue()),
-                            std::get<Date_t>(insertContextAndDate.getValue()));
+                            std::get<Date_t>(insertContextAndDate.getValue()),
+                            getStorageCacheSize(opCtx));
                     }
                 }
                 return result;
             }
         case BucketReopeningPermittance::kDisallowed:
             return bucket_catalog::insert(
-                opCtx,
                 bucketCatalog,
-                bucketsColl->ns().getTimeseriesViewNamespace(),
                 bucketsColl->getDefaultCollator(),
                 measurementDoc,
+                opCtx->getOpID(),
                 combine,
                 std::get<bucket_catalog::InsertContext>(insertContextAndDate.getValue()),
-                std::get<Date_t>(insertContextAndDate.getValue()));
+                std::get<Date_t>(insertContextAndDate.getValue()),
+                getStorageCacheSize(opCtx));
     }
     MONGO_UNREACHABLE;
 }
@@ -1194,16 +1201,16 @@ void makeWriteRequest(OperationContext* opCtx,
                       std::vector<write_ops::InsertCommandRequest>* insertOps,
                       std::vector<write_ops::UpdateCommandRequest>* updateOps) {
     if (batch->numPreviouslyCommittedMeasurements == 0) {
-        insertOps->push_back(makeTimeseriesInsertOp(
-            batch, bucketsNs, metadata, std::move(stmtIds[batch->bucketId.oid])));
+        insertOps->push_back(
+            makeTimeseriesInsertOp(batch, bucketsNs, metadata, std::move(stmtIds[batch.get()])));
         return;
     }
     if (batch->generateCompressedDiff) {
         updateOps->push_back(makeTimeseriesCompressedDiffUpdateOp(
-            opCtx, batch, bucketsNs, std::move(stmtIds[batch->bucketId.oid])));
+            opCtx, batch, bucketsNs, std::move(stmtIds[batch.get()])));
     } else {
         updateOps->push_back(makeTimeseriesUpdateOp(
-            opCtx, batch, bucketsNs, metadata, std::move(stmtIds[batch->bucketId.oid])));
+            opCtx, batch, bucketsNs, metadata, std::move(stmtIds[batch.get()])));
     }
 }
 
@@ -1339,11 +1346,11 @@ void commitTimeseriesBucketsAtomically(
         std::vector<write_ops::InsertCommandRequest> insertOps;
         std::vector<write_ops::UpdateCommandRequest> updateOps;
 
-        auto& mainBucketCatalog = bucket_catalog::BucketCatalog::get(opCtx);
+        auto& mainBucketCatalog =
+            bucket_catalog::GlobalBucketCatalog::get(opCtx->getServiceContext());
         for (auto batch : batchesToCommit) {
             auto metadata = getMetadata(sideBucketCatalog, batch.get()->bucketId);
-            auto prepareCommitStatus =
-                prepareCommit(sideBucketCatalog, coll->ns().getTimeseriesViewNamespace(), batch);
+            auto prepareCommitStatus = prepareCommit(sideBucketCatalog, batch);
             if (!prepareCommitStatus.isOK()) {
                 abortStatus = prepareCommitStatus;
                 return;
@@ -1369,11 +1376,10 @@ void commitTimeseriesBucketsAtomically(
         getOpTimeAndElectionId(opCtx, &opTime, &electionId);
 
         for (auto batch : batchesToCommit) {
-            finish(opCtx,
-                   sideBucketCatalog,
-                   coll->ns(),
+            finish(sideBucketCatalog,
                    batch,
-                   bucket_catalog::CommitInfo{opTime, electionId});
+                   bucket_catalog::CommitInfo{opTime, electionId},
+                   getPostCommitDebugChecks(opCtx, coll->ns()));
             batch.get().reset();
         }
     } catch (const DBException& ex) {
@@ -1489,4 +1495,33 @@ void updateRequestCheckFunction(UpdateRequest* request, const TimeseriesOptions&
         request->setUpdateModification(modification);
     }
 }
+
+std::function<void(const timeseries::bucket_catalog::WriteBatch&, StringData)>
+getPostCommitDebugChecks(OperationContext* opCtx, const NamespaceString& ns) {
+    if (MONGO_likely(!runPostCommitDebugChecks.shouldFail())) {
+        return nullptr;
+    }
+
+    return [opCtx, &ns](const timeseries::bucket_catalog::WriteBatch& batch, StringData timeField) {
+        // Check in-memory and disk state, caller still has commit rights.
+        DBDirectClient client{opCtx};
+        BSONObj queriedBucket = client.findOne(ns, BSON("_id" << batch.bucketId.oid));
+        if (!queriedBucket.isEmpty()) {
+            uint32_t memCount =
+                batch.numPreviouslyCommittedMeasurements + batch.measurements.size();
+            uint32_t diskCount = isCompressedBucket(queriedBucket)
+                ? static_cast<uint32_t>(queriedBucket.getObjectField(kBucketControlFieldName)
+                                            .getIntField(kBucketControlCountFieldName))
+                : static_cast<uint32_t>(queriedBucket.getObjectField(kBucketDataFieldName)
+                                            .getObjectField(timeField)
+                                            .nFields());
+            invariant(memCount == diskCount,
+                      str::stream()
+                          << "Expected in-memory (" << memCount << ") and on-disk (" << diskCount
+                          << ") measurement counts to match. Bucket contents on disk: "
+                          << queriedBucket.toString());
+        }
+    };
+}
+
 }  // namespace mongo::timeseries

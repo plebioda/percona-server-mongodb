@@ -96,7 +96,6 @@
 #include "mongo/db/repl/repl_set_config.h"
 #include "mongo/db/repl/repl_settings.h"
 #include "mongo/db/repl/replication_coordinator.h"
-#include "mongo/db/repl/shard_merge_recipient_service.h"
 #include "mongo/db/repl/tenant_migration_donor_service.h"
 #include "mongo/db/repl/tenant_migration_recipient_service.h"
 #include "mongo/db/s/config/configsvr_coordinator_service.h"
@@ -112,7 +111,6 @@
 #include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/server_parameter.h"
-#include "mongo/db/serverless/shard_split_donor_service.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/shard_id.h"
 #include "mongo/db/storage/storage_parameters_gen.h"
@@ -722,7 +720,6 @@ private:
             if (repl::ReplicationCoordinator::get(opCtx)->getSettings().isServerless()) {
                 _cancelServerlessMigrations(opCtx);
             }
-            _maybeMigrateAuditConfig(opCtx, requestedVersion, changeTimestamp);
             return;
         }
 
@@ -730,7 +727,6 @@ private:
         // roles aren't mutually exclusive.
         if (role && role->has(ClusterRole::ConfigServer)) {
             // Config server role actions.
-            _maybeMigrateAuditConfig(opCtx, requestedVersion, changeTimestamp);
             _dropReshardingCoordinatorUniqueIndex(opCtx, requestedVersion);
         }
 
@@ -776,19 +772,6 @@ private:
         }
     }
 
-    void _maybeRemoveOldAuditConfig(
-        OperationContext* opCtx, const multiversion::FeatureCompatibilityVersion requestedVersion) {
-        if (feature_flags::gFeatureFlagAuditConfigClusterParameter.isEnabledOnVersion(
-                requestedVersion) &&
-            audit::removeOldConfig) {
-            LOGV2_DEBUG(7193000,
-                        3,
-                        "Upgraded to FCV with audit config cluster parameter enabled, removing old "
-                        "config.");
-            audit::removeOldConfig(opCtx);
-        }
-    }
-
     // This helper function is for updating server metadata to make sure the new features in the
     // upgraded version work for sharded and non-sharded clusters. It is required that the code
     // in this helper function is idempotent and could be done after _runDowngrade even if it
@@ -828,22 +811,6 @@ private:
         if (feature_flags::gPlacementHistoryPostFCV3.isEnabledOnTargetFCVButDisabledOnOriginalFCV(
                 requestedVersion, originalVersion)) {
             ShardingCatalogManager::get(opCtx)->initializePlacementHistory(opCtx);
-        }
-    }
-
-    void _maybeMigrateAuditConfig(OperationContext* opCtx,
-                                  const multiversion::FeatureCompatibilityVersion requestedVersion,
-                                  boost::optional<Timestamp> changeTimestamp) {
-        const auto& [fromVersion, _] = getTransitionFCVFromAndTo(
-            serverGlobalParams.featureCompatibility.acquireFCVSnapshot().getVersion());
-        if (feature_flags::gFeatureFlagAuditConfigClusterParameter
-                .isEnabledOnTargetFCVButDisabledOnOriginalFCV(requestedVersion, fromVersion) &&
-            audit::migrateOldToNew) {
-            LOGV2_DEBUG(7193001,
-                        3,
-                        "Upgrading to FCV wth audit config cluster parameter enabled, migrating "
-                        "audit config to cluster parameter.");
-            audit::migrateOldToNew(opCtx, changeTimestamp);
         }
     }
 
@@ -1100,24 +1067,6 @@ private:
         invariant(fcvSnapshot.isUpgradingOrDowngrading());
         const auto& [originalVersion, _] = getTransitionFCVFromAndTo(fcvSnapshot.getVersion());
 
-        if (feature_flags::gFeatureFlagAuditConfigClusterParameter
-                .isDisabledOnTargetFCVButEnabledOnOriginalFCV(requestedVersion, originalVersion)) {
-            // Ensure audit config cluster parameter is unset on disk.
-            AutoGetCollection clusterParametersColl(
-                opCtx, NamespaceString::kClusterParametersNamespace, MODE_IS);
-            BSONObj _result;
-            if (Helpers::findOne(opCtx,
-                                 clusterParametersColl.getCollection(),
-                                 BSON("_id"
-                                      << "auditConfig"),
-                                 _result)) {
-                uasserted(ErrorCodes::CannotDowngrade,
-                          "Cannot downgrade the cluster when the auditConfig cluster parameter is "
-                          "set. Drop the auditConfig document from the config.clusterParameters "
-                          "collection before downgrading.");
-            }
-        }
-
         // Note the config server is also considered a shard, so the ConfigServer and ShardServer
         // roles aren't mutually exclusive.
         if (role && role->has(ClusterRole::ConfigServer)) {
@@ -1233,20 +1182,6 @@ private:
         }
     }
 
-    void _updateAuditConfigOnDowngrade(
-        OperationContext* opCtx, const multiversion::FeatureCompatibilityVersion requestedVersion) {
-        const auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
-        invariant(fcvSnapshot.isUpgradingOrDowngrading());
-        const auto& [fromVersion, _] = getTransitionFCVFromAndTo(fcvSnapshot.getVersion());
-
-        if (feature_flags::gFeatureFlagAuditConfigClusterParameter
-                .isDisabledOnTargetFCVButEnabledOnOriginalFCV(requestedVersion, fromVersion)) {
-            if (audit::updateAuditConfigOnDowngrade) {
-                audit::updateAuditConfigOnDowngrade(opCtx);
-            }
-        }
-    }
-
     // This helper function is for any internal server downgrade cleanup, such as dropping
     // collections or aborting. This cleanup will happen after user collection downgrade
     // cleanup.
@@ -1313,7 +1248,6 @@ private:
         // Note the config server is also considered a shard, so the ConfigServer and ShardServer
         // roles aren't mutually exclusive.
         if (role && role->has(ClusterRole::ConfigServer)) {
-            _updateAuditConfigOnDowngrade(opCtx, requestedVersion);
             _dropInternalShardingIndexCatalogCollection(
                 opCtx,
                 requestedVersion,
@@ -1336,8 +1270,6 @@ private:
                 NamespaceString::kShardIndexCatalogNamespace);
 
             abortAllMultiUpdateCoordinators(opCtx, requestedVersion, originalVersion);
-        } else {
-            _updateAuditConfigOnDowngrade(opCtx, requestedVersion);
         }
     }
 
@@ -1642,17 +1574,6 @@ private:
                 ->lookupServiceByName(
                     repl::TenantMigrationRecipientService::kTenantMigrationRecipientServiceName));
         recipientService->abortAllMigrations(opCtx);
-
-        auto splitDonorService = checked_cast<ShardSplitDonorService*>(
-            repl::PrimaryOnlyServiceRegistry::get(opCtx->getServiceContext())
-                ->lookupServiceByName(ShardSplitDonorService::kServiceName));
-        splitDonorService->abortAllSplits(opCtx);
-
-        auto mergeRecipientService = checked_cast<repl::ShardMergeRecipientService*>(
-            repl::PrimaryOnlyServiceRegistry::get(opCtx->getServiceContext())
-                ->lookupServiceByName(
-                    repl::ShardMergeRecipientService::kShardMergeRecipientServiceName));
-        mergeRecipientService->abortAllMigrations(opCtx);
     }
 
     /**
@@ -1748,8 +1669,6 @@ private:
             ShardingDDLCoordinatorService::getService(opCtx)
                 ->waitForCoordinatorsOfGivenTypeToComplete(opCtx, DDLCoordinatorTypeEnum::kCollMod);
         }
-
-        _maybeRemoveOldAuditConfig(opCtx, requestedVersion);
 
         // TODO SERVER-80266 remove once 8.0 becomes last lts
         if (role && role->has(ClusterRole::ConfigServer)) {

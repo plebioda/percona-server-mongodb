@@ -11,30 +11,14 @@ Import(
 env = env.Clone()
 
 env.Library(
-    target="auth_op_observer",
-    source=[
-        "auth_op_observer.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/base",
-        "$BUILD_DIR/mongo/db/audit",
-        "$BUILD_DIR/mongo/db/audit/audit_impl" if has_option("audit") else [],
-        "$BUILD_DIR/mongo/db/catalog/collection_options",
-        "$BUILD_DIR/mongo/db/index/index_access_method",
-        "$BUILD_DIR/mongo/db/op_observer/op_observer",
-        "$BUILD_DIR/mongo/db/op_observer/op_observer_util",
-        "$BUILD_DIR/mongo/db/repl/oplog_entry",
-        "auth",
-    ],
-)
-
-env.Library(
     target="authorization_session_test_fixture",
     source=[
         "authorization_session_for_test.cpp",
         "authorization_session_test_fixture.cpp",
     ],
     LIBDEPS=[
+        "$BUILD_DIR/mongo/db/repl/replmocks",
+        "$BUILD_DIR/mongo/db/service_context_d",
         "$BUILD_DIR/mongo/db/service_context_d_test_fixture",
         "$BUILD_DIR/mongo/transport/transport_layer_mock",
         "auth",
@@ -79,6 +63,7 @@ env.CppUnitTest(
         "$BUILD_DIR/mongo/db/repl/oplog",
         "$BUILD_DIR/mongo/db/repl/oplog_interface_local",
         "$BUILD_DIR/mongo/db/repl/replmocks",
+        "$BUILD_DIR/mongo/db/service_context_d",
         "$BUILD_DIR/mongo/transport/transport_layer_common",
         "$BUILD_DIR/mongo/util/net/mock_http_client",
         "$BUILD_DIR/mongo/util/net/network",

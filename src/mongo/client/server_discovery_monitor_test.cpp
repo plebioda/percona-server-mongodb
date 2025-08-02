@@ -104,6 +104,7 @@ protected:
         _eventsPublisher.reset();
         _topologyListener.reset();
         _executor->shutdown();
+        executor::NetworkInterfaceMock::InNetworkGuard(_net)->runReadyNetworkOperations();
         _executor->join();
         _executor.reset();
         ReplicaSetMonitor::cleanup();
@@ -202,7 +203,8 @@ protected:
             const auto opmsg = OpMsgRequestBuilder::create(
                 auth::ValidatedTenancyScope::kNotRequired, request.dbname, request.cmdObj);
             const auto reply = node->runCommand(request.id, opmsg)->getCommandReply();
-            _net->scheduleSuccessfulResponse(noi, RemoteCommandResponse(reply, Milliseconds(0)));
+            _net->scheduleSuccessfulResponse(
+                noi, RemoteCommandResponse::make_forTest(reply, Milliseconds(0)));
         } else {
             _net->scheduleErrorResponse(noi, Status(ErrorCodes::HostUnreachable, ""));
         }

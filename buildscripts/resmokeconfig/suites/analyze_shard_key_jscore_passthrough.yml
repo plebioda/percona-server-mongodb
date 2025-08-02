@@ -96,6 +96,9 @@ selector:
     # system.profile collection doesn't exist on mongos.
     - requires_profiling
 
+    # analyzeShardKey doesn't support timeseries collections/views.
+    - requires_timeseries
+
     # Transactions are not allowed to operate on capped collections.
     - requires_capped
     # Prepare is not a command on mongos.
@@ -151,6 +154,7 @@ executor:
         queryAnalysisWriterIntervalSecs: 5
         analyzeShardKeyNumRanges: 10
         analyzeShardKeySplitPointExpirationSecs: 10
+        analyzeShardKeyMaxNumStaleVersionRetries: 2
         ttlMonitorSleepSecs: 5
         logComponentVerbosity:
           verbosity: 0
@@ -158,6 +162,7 @@ executor:
     mongos_options:
       set_parameters:
         queryAnalysisSamplerConfigurationRefreshSecs: 1
+        analyzeShardKeyMaxNumStaleVersionRetries: 2
         logComponentVerbosity:
           verbosity: 0
           sharding: 2

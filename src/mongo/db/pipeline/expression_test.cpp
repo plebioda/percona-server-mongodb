@@ -3308,6 +3308,17 @@ TEST(ExpressionMetaTest, ExpressionMetaVectorSearchScore) {
     Value val = expressionMeta->evaluate(doc.freeze(), &expCtx.variables);
     ASSERT_EQ(val.getDouble(), 1.23);
 }
+
+TEST(ExpressionMetaTest, ExpressionMetaScore) {
+    auto expCtx = ExpressionContextForTest{};
+    BSONObj expr = fromjson("{$meta: \"score\"}");
+    auto expressionMeta =
+        ExpressionMeta::parse(&expCtx, expr.firstElement(), expCtx.variablesParseState);
+    MutableDocument doc;
+    doc.metadata().setScore(1.23);
+    Value val = expressionMeta->evaluate(doc.freeze(), &expCtx.variables);
+    ASSERT_EQ(val.getDouble(), 1.23);
+}
 }  // namespace expression_meta_test
 
 namespace ExpressionRegexTest {
@@ -4360,6 +4371,19 @@ TEST(ExpressionSetFieldTest, SetFieldSerializesCorrectly) {
                                                     << "input" << BSON("a" << BSON("$const" << 1))
                                                     << "value" << BSON("$const" << 24)))),
         BSON("ignoredField" << expression->serialize()));
+}
+
+TEST(ExpressionSetFieldTest, SetFieldRejectsNullCharInFieldArgument) {
+    auto expCtx = ExpressionContextForTest{};
+    VariablesParseState vps = expCtx.variablesParseState;
+    auto fieldExpr = make_intrusive<ExpressionConstant>(&expCtx, Value("ab\0c"_sd));
+    auto inputExpr = make_intrusive<ExpressionConstant>(&expCtx, Value(BSON("a" << 1)));
+    auto valueExpr = make_intrusive<ExpressionConstant>(&expCtx, Value(true));
+    ASSERT_THROWS_CODE(
+        make_intrusive<ExpressionSetField>(
+            &expCtx, std::move(fieldExpr), std::move(inputExpr), std::move(valueExpr)),
+        AssertionException,
+        9534700);
 }
 
 TEST(ExpressionIfNullTest, OptimizedExpressionIfNullShouldRemoveNullConstant) {

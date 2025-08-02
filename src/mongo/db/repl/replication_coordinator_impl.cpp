@@ -1476,14 +1476,6 @@ void ReplicationCoordinatorImpl::signalWriterDrainComplete(OperationContext* opC
                                                            long long termWhenExhausted) noexcept {
     stdx::lock_guard<stdx::mutex> lk(_mutex);
 
-    if (_oplogSyncState == OplogSyncState::WriterDrainingForShardSplit) {
-        _oplogSyncState = OplogSyncState::ApplierDrainingForShardSplit;
-        auto memberState = _getMemberState(lk);
-        invariant(memberState.secondary() || memberState.startup());
-        _externalState->onWriterDrainComplete(opCtx);
-        return;
-    }
-
     if (_oplogSyncState != OplogSyncState::WriterDraining) {
         LOGV2(8938400, "Writer already left draining state, exiting");
         return;
@@ -1501,23 +1493,6 @@ void ReplicationCoordinatorImpl::signalWriterDrainComplete(OperationContext* opC
 
 void ReplicationCoordinatorImpl::signalApplierDrainComplete(OperationContext* opCtx,
                                                             long long termWhenExhausted) noexcept {
-    {
-        stdx::unique_lock<stdx::mutex> lk(_mutex);
-        if (_oplogSyncState ==
-            ReplicationCoordinator::OplogSyncState::ApplierDrainingForShardSplit) {
-            _oplogSyncState = OplogSyncState::Stopped;
-            auto memberState = _getMemberState(lk);
-            invariant(memberState.secondary() || memberState.startup());
-            _externalState->onApplierDrainComplete(opCtx);
-
-            if (_finishedDrainingPromise) {
-                _finishedDrainingPromise->emplaceValue();
-                _finishedDrainingPromise = boost::none;
-            }
-
-            return;
-        }
-    }
 
     // This logic is a little complicated in order to avoid acquiring the RSTL in mode X
     // unnecessarily.  This is important because the applier may call signalApplierDrainComplete()
@@ -2601,7 +2576,7 @@ ReplicationCoordinatorImpl::_startWaitingForReplication(WithLock wl,
     auto checkForStepDown = [&]() -> Status {
         if (isReplSet && !_memberState.primary()) {
             return {ErrorCodes::PrimarySteppedDown,
-                    "Primary stepped down while waiting for replication"};
+                    "Primary stepped down before starting to wait for replication"};
         }
 
         auto term = opTime.getTerm();
@@ -2897,13 +2872,10 @@ std::shared_ptr<const HelloResponse> ReplicationCoordinatorImpl::awaitHelloRespo
         status = Status(ErrorCodes::Error(errorCode),
                         "Set by setCustomErrorInHelloResponseMongoD fail point.");
     });
-
-    if (!status.isOK()) {
-        LOGV2_DEBUG(6208204, 1, "Error while waiting for hello response", "status"_attr = status);
-
-        // We decrement the counter on most errors. Note that some errors may already be covered
-        // by calls to resetNumAwaitingTopologyChangesForAllSessionManagers(), which sets the
-        // counter to zero, so we only decrement non-zero counters. This is safe so long as:
+    ON_BLOCK_EXIT([&, opCtx] {
+        // We decrement the counter. Note that some errors may already be covered
+        // by calls to resetNumAwaitingTopologyChanges(), which sets the counter to zero, so we
+        // only decrement non-zero counters. This is safe so long as:
         // 1) Increment + decrement calls always occur at a 1:1 ratio and in that order.
         // 2) All callers to increment/decrement/reset take locks.
         stdx::lock_guard lk(_mutex);
@@ -2911,12 +2883,16 @@ std::shared_ptr<const HelloResponse> ReplicationCoordinatorImpl::awaitHelloRespo
             HelloMetrics::get(opCtx)->getNumAwaitingTopologyChanges() > 0) {
             HelloMetrics::get(opCtx)->decrementNumAwaitingTopologyChanges();
         }
+    });
+    if (!status.isOK()) {
+        LOGV2_DEBUG(6208204, 1, "Error while waiting for hello response", "status"_attr = status);
 
         // Return a HelloResponse with the current topology version on timeout when waiting for
         // a topology change.
         if (status == ErrorCodes::ExceededTimeLimit) {
             // A topology change has not occured within the deadline so horizonString is still a
             // good indicator of whether we have a valid config.
+            stdx::lock_guard lk(_mutex);
             const bool hasValidConfig = horizonString != boost::none;
             return _makeHelloResponse(horizonString, lk, hasValidConfig);
         }
@@ -2977,7 +2953,7 @@ BSONObj ReplicationCoordinatorImpl::runCmdOnPrimaryAndAwaitResponse(
     // provide additional management when trying to cancel the request with differing clients.
     executor::RemoteCommandRequest request(primaryHostAndPort, dbName, cmdObj, nullptr);
     executor::RemoteCommandResponse cbkResponse(
-        Status{ErrorCodes::InternalError, "Uninitialized value"});
+        primaryHostAndPort, Status{ErrorCodes::InternalError, "Uninitialized value"});
 
     // Schedule the remote command.
     auto&& scheduleResult = _replExecutor->scheduleRemoteCommand(
@@ -3999,13 +3975,6 @@ Status ReplicationCoordinatorImpl::setMaintenanceMode(OperationContext* opCtx, b
     return Status::OK();
 }
 
-bool ReplicationCoordinatorImpl::shouldDropSyncSourceAfterShardSplit(const OID replicaSetId) const {
-    if (!_settings.isServerless()) {
-        return false;
-    }
-    return replicaSetId != _rsConfig.getConfig().getReplicaSetId();
-}
-
 Status ReplicationCoordinatorImpl::processReplSetSyncFrom(OperationContext* opCtx,
                                                           const HostAndPort& target,
                                                           BSONObjBuilder* resultObj) {
@@ -4737,7 +4706,7 @@ void ReplicationCoordinatorImpl::_reconfigToRemoveNewlyAddedField(
     {
         stdx::unique_lock<Client> lk(*opCtx->getClient());
         auto curOp = CurOp::get(opCtx.get());
-        curOp->setLogicalOp_inlock(LogicalOp::opCommand);
+        curOp->setLogicalOp(lk, LogicalOp::opCommand);
         BSONObjBuilder bob;
         bob.append("replSetReconfig", "automatic");
         bob.append("memberId", memberId.getData());
@@ -4745,8 +4714,8 @@ void ReplicationCoordinatorImpl::_reconfigToRemoveNewlyAddedField(
         bob.append("info",
                    "An automatic reconfig. Used to remove a 'newlyAdded' config field for a "
                    "replica set member.");
-        curOp->setOpDescription_inlock(bob.obj());
-        curOp->setNS_inlock(NamespaceString::kSystemReplSetNamespace);
+        curOp->setOpDescription(lk, bob.obj());
+        curOp->setNS(lk, NamespaceString::kSystemReplSetNamespace);
         curOp->ensureStarted();
     }
 
@@ -5474,19 +5443,6 @@ void ReplicationCoordinatorImpl::_enterDrainMode(WithLock) {
     _externalState->stopProducer();
 }
 
-Future<void> ReplicationCoordinatorImpl::_drainForShardSplit() {
-    stdx::lock_guard<stdx::mutex> lk(_mutex);
-    invariant(!_finishedDrainingPromise.has_value());
-    auto [promise, future] = makePromiseFuture<void>();
-    _finishedDrainingPromise = std::move(promise);
-    _oplogSyncState = feature_flags::gReduceMajorityWriteLatency.isEnabled(
-                          serverGlobalParams.featureCompatibility.acquireFCVSnapshot())
-        ? OplogSyncState::WriterDrainingForShardSplit
-        : OplogSyncState::ApplierDrainingForShardSplit;
-    _externalState->stopProducer();
-    return std::move(future);
-}
-
 ReplicationCoordinatorImpl::PostMemberStateUpdateAction
 ReplicationCoordinatorImpl::_setCurrentRSConfig(WithLock lk,
                                                 OperationContext* opCtx,
@@ -5639,7 +5595,7 @@ ReplicationCoordinatorImpl::_setCurrentRSConfig(WithLock lk,
     _replicationWaiterList.setValueIf(
         lk, [this](WithLock lk, const OpTime& opTime, const WriteConcernOptions& writeConcern) {
             // This throws if a waiter's writeConcern is no longer satisfiable, in which case
-            // setValueIf_inlock will fulfill the waiter's promise with the error status.
+            // setValueIf will fulfill the waiter's promise with the error status.
             uassertStatusOK(_checkIfWriteConcernCanBeSatisfied(lk, writeConcern));
             // Return false meaning that the waiter is still satisfiable and thus can remain in the
             // waiter list.
@@ -5912,14 +5868,6 @@ ChangeSyncSourceAction ReplicationCoordinatorImpl::shouldChangeSyncSource(
     const rpc::OplogQueryMetadata& oqMetadata,
     const OpTime& previousOpTimeFetched,
     const OpTime& lastOpTimeFetched) const {
-    if (shouldDropSyncSourceAfterShardSplit(replMetadata.getReplicaSetId())) {
-        // Drop the last batch of message following a change of replica set due to a shard split.
-        LOGV2(6394902,
-              "Choosing new sync source because we left the replica set due to a shard split.",
-              "currentReplicaSetId"_attr = _rsConfig.getConfig().getReplicaSetId(),
-              "otherReplicaSetId"_attr = replMetadata.getReplicaSetId());
-        return ChangeSyncSourceAction::kStopSyncingAndDropLastBatchIfPresent;
-    }
 
     stdx::lock_guard<stdx::mutex> lock(_mutex);
     const auto now = _replExecutor->now();
@@ -6278,7 +6226,7 @@ void ReplicationCoordinatorImpl::prepareReplMetadata(const GenericArguments& gen
         return;
     }
 
-    // Avoid retrieving Rollback ID if we do not need it for _prepareOplogQueryMetadata_inlock().
+    // Avoid retrieving Rollback ID if we do not need it for _prepareOplogQueryMetadata().
     int rbid = -1;
     if (hasOplogQueryMetadata) {
         rbid = _replicationProcess->getRollbackID();
@@ -6568,7 +6516,7 @@ void ReplicationCoordinatorImpl::createWMajorityWriteAvailabilityDateWaiter(OpTi
 
     WriteConcernOptions writeConcern(WriteConcernOptions::kMajority,
                                      WriteConcernOptions::SyncMode::UNSET,
-                                     // The timeout isn't used by _doneWaitingForReplication_inlock.
+                                     // The timeout isn't used by _doneWaitingForReplication.
                                      WriteConcernOptions::kNoTimeout);
     writeConcern = _populateUnsetWriteConcernOptionsSyncMode(lk, writeConcern);
 

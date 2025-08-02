@@ -157,11 +157,9 @@ mongo_cc_library(
         "//src/mongo/db/session:logical_session_id_helpers.h",
         "//src/mongo/db/sorter:sorter_gen",
         "//src/mongo/db/storage:compact_options.h",
-        "//src/mongo/db/storage:damage_vector.h",
         "//src/mongo/db/storage:engine_extension.h",
         "//src/mongo/db/storage:ident.h",
         "//src/mongo/db/storage:key_format.h",
-        "//src/mongo/db/storage:key_string.h",
         "//src/mongo/db/storage:keydb_api.h",
         "//src/mongo/db/storage:record_data.h",
         "//src/mongo/db/storage:record_store.h",
@@ -171,6 +169,7 @@ mongo_cc_library(
         "//src/mongo/db/storage:storage_stats.h",
         "//src/mongo/db/storage:temporary_record_store.h",
         "//src/mongo/db/storage:write_unit_of_work.h",
+        "//src/mongo/db/storage/key_string:key_string.h",
         "//src/mongo/idl:command_generic_argument.h",
         "//src/mongo/idl:idl_parser.h",
         "//src/mongo/platform:atomic_proxy.h",
@@ -186,6 +185,25 @@ mongo_cc_library(
     ],
     deps = [
         "//src/mongo:base",
+        "//src/mongo/db/storage:damage_vector",
         "//src/mongo/util:secure_compare_memory",
+    ],
+)
+
+mongo_cc_library(
+    name = "deferred_writer",
+    srcs = [
+        "deferred_writer.cpp",
+    ],
+    hdrs = [
+        "deferred_writer.h",
+    ],
+    deps = [
+        "//src/mongo/db:dbhelpers",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:shard_role",
+        "//src/mongo/db/catalog:catalog_helpers",
+        "//src/mongo/db/concurrency:exception_util",
+        "//src/mongo/util/concurrency:thread_pool",
     ],
 )

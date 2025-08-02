@@ -380,8 +380,6 @@ public:
 
     bool getMaintenanceMode() override;
 
-    bool shouldDropSyncSourceAfterShardSplit(OID replicaSetId) const override;
-
     Status processReplSetSyncFrom(OperationContext* opCtx,
                                   const HostAndPort& target,
                                   BSONObjBuilder* resultObj) override;
@@ -1808,12 +1806,6 @@ private:
     void _enterDrainMode(WithLock);
 
     /**
-     * Enter drain mode which does not result in a primary stepup. Returns a future which becomes
-     * ready when the oplog buffers have completed draining.
-     */
-    Future<void> _drainForShardSplit();
-
-    /**
      * Waits for the config state to leave kConfigStartingUp, which indicates that start() has
      * finished.
      */
@@ -2156,7 +2148,8 @@ private:
             // fail it here.
             if (!_promise->getFuture().isReady()) {
                 _promise->setError({ErrorCodes::PrimarySteppedDown,
-                                    "Primary stepped down while waiting for replication"});
+                                    "Primary stepped down while waiting for majority read "
+                                    "availability)"});
             }
             _promise = nullptr;
         }

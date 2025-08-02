@@ -74,7 +74,7 @@
 #include "mongo/db/service_context.h"
 #include "mongo/db/storage/ident.h"
 #include "mongo/db/storage/key_format.h"
-#include "mongo/db/storage/key_string.h"
+#include "mongo/db/storage/key_string/key_string.h"
 #include "mongo/db/storage/record_store.h"
 #include "mongo/db/storage/storage_engine.h"
 #include "mongo/db/storage/storage_parameters_gen.h"
@@ -534,7 +534,7 @@ Status MultiIndexBlock::insertAllDocumentsInCollection(
     ProgressMeterHolder progress;
     {
         stdx::unique_lock<Client> lk(*opCtx->getClient());
-        progress.set(lk, CurOp::get(opCtx)->setProgress_inlock(curopMessage, numRecords), opCtx);
+        progress.set(lk, CurOp::get(opCtx)->setProgress(lk, curopMessage, numRecords), opCtx);
     }
 
     hangAfterSettingUpIndexBuild.executeIf(

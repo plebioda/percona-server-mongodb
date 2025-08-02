@@ -875,6 +875,14 @@ export class ReplSetTest {
             printjson(this.routerPorts);
         }
 
+        if (jsTestOptions().shellGRPC) {
+            const nextPort = this._allocatePortForNode();
+            print("ReplSetTest Next gRPC port: " + nextPort);
+
+            this.grpcPorts.push(nextPort);
+            printjson(this.grpcPorts);
+        }
+
         var nextId = this.nodes.length;
         printjson(this.nodes);
 
@@ -977,7 +985,7 @@ export class ReplSetTest {
             }
             let members = res.members;
             if (nodes) {
-                members = res.members.filter((m) => nodes.some((node) => m.name === node.host));
+                members = res.members.filter((m) => nodes.some((node) => m.name === node.name));
             }
             return members.every((m) => hasSameConfig(m));
         });
@@ -2159,6 +2167,14 @@ export class ReplSetTest {
         var primary = this.getPrimary();
         assert(primary, 'calling getPrimary() failed');
 
+        // Ensure that the current primary isn't in the secondaries list from a stale
+        // determineLiveSecondaries call. Otherwise we will mistakenly freeze the current primary.
+        const primIndex = secondaries.indexOf(primary);
+        if (primIndex > -1) {
+            secondaries.splice(primIndex, 1);
+        }
+        checkerFunctionArgs.push(secondaries);
+
         // Prevent an election, which could start, then hang due to the fsyncLock.
         jsTestLog(`Freezing nodes: [${secondaries.map((n) => n.host)}]`);
         secondaries.forEach(secondary => this.freeze(secondary));
@@ -2220,7 +2236,7 @@ export class ReplSetTest {
         var collectionPrinted = new Set();
 
         function checkDBHashesForReplSet(
-            rst, dbDenylist = [], secondaries, msgPrefix, ignoreUUIDs) {
+            rst, dbDenylist = [], msgPrefix, ignoreUUIDs, secondaries) {
             // We don't expect the local database to match because some of its
             // collections are not replicated.
             dbDenylist.push('local');
@@ -2336,30 +2352,23 @@ export class ReplSetTest {
         }
 
         const liveSecondaries = _determineLiveSecondaries(this);
-        this.checkReplicaSet(checkDBHashesForReplSet,
-                             liveSecondaries,
-                             this,
-                             excludedDBs,
-                             liveSecondaries,
-                             msgPrefix,
-                             ignoreUUIDs);
+        this.checkReplicaSet(
+            checkDBHashesForReplSet, liveSecondaries, this, excludedDBs, msgPrefix, ignoreUUIDs);
     }
 
     checkOplogs(msgPrefix) {
         var liveSecondaries = _determineLiveSecondaries(this);
-        this.checkReplicaSet(checkOplogs, liveSecondaries, this, liveSecondaries, msgPrefix);
+        this.checkReplicaSet(checkOplogs, liveSecondaries, this, msgPrefix);
     }
 
     checkPreImageCollection(msgPrefix) {
         var liveSecondaries = _determineLiveSecondaries(this);
-        this.checkReplicaSet(
-            checkPreImageCollection, liveSecondaries, this, liveSecondaries, msgPrefix);
+        this.checkReplicaSet(checkPreImageCollection, liveSecondaries, this, msgPrefix);
     }
 
     checkChangeCollection(msgPrefix) {
         var liveSecondaries = _determineLiveSecondaries(this);
-        this.checkReplicaSet(
-            checkChangeCollection, liveSecondaries, this, liveSecondaries, msgPrefix);
+        this.checkReplicaSet(checkChangeCollection, liveSecondaries, this, msgPrefix);
     }
 
     /**
@@ -2450,6 +2459,9 @@ export class ReplSetTest {
         };
         if (this.isRouterServer) {
             defaults.routerPort = this.routerPorts[n];
+        }
+        if (jsTestOptions().shellGRPC) {
+            defaults.grpcPort = this.grpcPorts[n];
         }
 
         if (this.useAutoBootstrapProcedure) {
@@ -2962,7 +2974,7 @@ export class ReplSetTest {
         // Wait for all processes to terminate.
         for (let i = 0; i < this.ports.length; i++) {
             let conn = this._useBridge ? this._unbridgedNodes[i] : this.nodes[i];
-            let port = parseInt(conn.port);
+            let port = parseInt(conn.name.split(":")[1]);
             print("ReplSetTest stopSet waiting for mongo program on port " + port + " to stop.");
             let exitCode = waitMongoProgram(port);
             if (exitCode !== MongoRunner.EXIT_CLEAN && !opts.skipValidatingExitCode) {
@@ -3185,6 +3197,10 @@ function _constructStartNewInstances(rst, opts) {
 
     if (rst.isRouterServer) {
         rst.routerPorts = Array.from({length: numNodes}, rst._allocatePortForNode);
+    }
+
+    if (jsTestOptions().shellGRPC) {
+        rst.grpcPorts = Array.from({length: numNodes}, rst._allocatePortForNode);
     }
 }
 
@@ -3579,8 +3595,11 @@ const ReverseReader = function(mongo, coll, query) {
  * Check oplogs on all nodes, by reading from the last time. Since the oplog is a capped
  * collection, each node may not contain the same number of entries and stop if the cursor
  * is exhausted on any node being checked.
+ *
+ * `secondaries` must be the last argument since in checkReplicaSet we explicitly append the live
+ * secondaries to the end of the parameter list after ensuring that the current primary is excluded.
  */
-function checkOplogs(rst, secondaries, msgPrefix = 'checkOplogs') {
+function checkOplogs(rst, msgPrefix = 'checkOplogs', secondaries) {
     secondaries = secondaries || rst._secondaries;
 
     function assertOplogEntriesEq(oplogEntry0, oplogEntry1, reader0, reader1, prevOplogEntry) {
@@ -3739,8 +3758,11 @@ function dumpPreImagesCollection(msgPrefix, node, nsUUID, timestamp, limit) {
  * Check preimages on all nodes, by reading reading from the last time. Since the preimage may
  * or may not be maintained independently, each node may not contain the same number of entries
  * and stop if the cursor is exhausted on any node being checked.
+ *
+ * `secondaries` must be the last argument since in checkReplicaSet we explicitly append the live
+ * secondaries to the end of the parameter list after ensuring that the current primary is excluded.
  */
-function checkPreImageCollection(rst, secondaries, msgPrefix = 'checkPreImageCollection') {
+function checkPreImageCollection(rst, msgPrefix = 'checkPreImageCollection', secondaries) {
     secondaries = secondaries || rst._secondaries;
 
     const originalPreferences = [];
@@ -3944,8 +3966,11 @@ function checkTenantChangeCollection(
  * Check change_collection for all tenants on all nodes, by doing a reverse scan. This check
  * accounts for the fact that each node might independently truncate the change collection, and
  * not contain the same number of entries.
+ *
+ * `secondaries` must be the last argument since in checkReplicaSet we explicitly append the live
+ * secondaries to the end of the parameter list after ensuring that the current primary is excluded.
  */
-function checkChangeCollection(rst, secondaries, msgPrefix = 'checkChangeCollection') {
+function checkChangeCollection(rst, msgPrefix = 'checkChangeCollection', secondaries) {
     secondaries = secondaries || rst._secondaries;
     secondaries = secondaries.filter((node) => !isNodeArbiter(node));
 

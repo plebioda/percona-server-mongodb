@@ -92,14 +92,8 @@ NSS_CONSTANT(kTenantMigrationRecipientsNamespace,
              DatabaseName::kConfig,
              "tenantMigrationRecipients"_sd)
 
-// Namespace for storing the persisted state of shard merge recipient service instances.
-NSS_CONSTANT(kShardMergeRecipientsNamespace, DatabaseName::kConfig, "shardMergeRecipients"_sd)
-
 // Namespace for view on local.oplog.rs for tenant migrations.
 NSS_CONSTANT(kTenantMigrationOplogView, DatabaseName::kLocal, "system.tenantMigration.oplogView"_sd)
-
-// Namespace for storing the persisted state of tenant split donors.
-NSS_CONSTANT(kShardSplitDonorsNamespace, DatabaseName::kConfig, "shardSplitDonors"_sd)
 
 // Namespace for replica set configuration settings.
 NSS_CONSTANT(kSystemReplSetNamespace, DatabaseName::kLocal, "system.replset"_sd)
@@ -225,11 +219,6 @@ NSS_CONSTANT(kConfigsvrShardRemovalLogNamespace, DatabaseName::kConfig, "shardRe
 NSS_CONSTANT(kSetChangeStreamStateCoordinatorNamespace,
              DatabaseName::kConfig,
              "change_stream_coordinator"_sd)
-
-// Namespace used for storing global index cloner state documents.
-NSS_CONSTANT(kGlobalIndexClonerNamespace,
-             DatabaseName::kConfig,
-             "localGlobalIndexOperations.cloner"_sd)
 
 // Namespace used by an analyzeShardKey command to store the split points for the shard key being
 // analyzed.

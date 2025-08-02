@@ -187,9 +187,8 @@ EstimationResult interpolateEstimateInBucket(const ScalarHistogram& h,
 
     // If the value is minimal for its type, and the operation is $lt or $lte return cardinality up
     // to the previous bucket.
-    auto&& [minConstant, inclusive] = getMinMaxBoundForType(true /*isMin*/, tag);
-    auto [minTag, minVal] = *getConstTypeVal(*minConstant);
-    if (compareValues(minTag, minVal, tag, val) == 0) {
+    auto&& [min, inclusive] = stats::getMinMaxBoundForSBEType(tag, true /*isMin*/);
+    if (compareValues(min.getTag(), min.getValue(), tag, val) == 0) {
         return {resultCard, resultNDV};
     }
 
@@ -243,37 +242,27 @@ EstimationResult estimateRangeQueryOnArray(const ScalarHistogram& histogramAmin,
     return highEstimate - lowEstimate;
 }
 
-// --------------------- ARRAY HISTOGRAM ESTIMATION METHODS ---------------------
+// --------------------- CE HISTOGRAM ESTIMATION METHODS ---------------------
 
-int compareTypeTags(sbe::value::TypeTags a, sbe::value::TypeTags b) {
-    auto orderOfA = canonicalizeBSONTypeUnsafeLookup(tagToType(a));
-    auto orderOfB = canonicalizeBSONTypeUnsafeLookup(tagToType(b));
-    if (orderOfA < orderOfB) {
-        return -1;
-    } else if (orderOfA > orderOfB) {
-        return 1;
-    }
-    return 0;
-}
-
-EstimationResult estimateCardinalityEq(const stats::ArrayHistogram& ah,
+EstimationResult estimateCardinalityEq(const stats::CEHistogram& ceHist,
                                        sbe::value::TypeTags tag,
                                        sbe::value::Value val,
                                        bool includeScalar) {
     EstimationResult estimation = {0.0 /*card*/, 0.0 /*ndv*/};
     // Estimate cardinality for fields containing scalar values if includeScalar is true.
     if (includeScalar) {
-        estimation = estimateCardinality(ah.getScalar(), tag, val, EstimationType::kEqual);
+        estimation = estimateCardinality(ceHist.getScalar(), tag, val, EstimationType::kEqual);
     }
     // If histogram includes array data points, calculate cardinality for fields containing array
     // values.
-    if (ah.isArray()) {
-        estimation += estimateCardinality(ah.getArrayUnique(), tag, val, EstimationType::kEqual);
+    if (ceHist.isArray()) {
+        estimation +=
+            estimateCardinality(ceHist.getArrayUnique(), tag, val, EstimationType::kEqual);
     }
     return estimation;
 }
 
-EstimationResult estimateCardinalityRange(const stats::ArrayHistogram& ah,
+EstimationResult estimateCardinalityRange(const stats::CEHistogram& ceHist,
                                           bool lowInclusive,
                                           sbe::value::TypeTags tagLow,
                                           sbe::value::Value valLow,
@@ -293,12 +282,12 @@ EstimationResult estimateCardinalityRange(const stats::ArrayHistogram& ah,
     };
 
     EstimationResult result = {0.0 /*card*/, 0.0 /*ndv*/};
-    if (ah.isArray()) {
+    if (ceHist.isArray()) {
 
         if (includeScalar) {
             // Range query on array data.
-            result += estimateRangeQueryOnArray(ah.getArrayMin(),
-                                                ah.getArrayMax(),
+            result += estimateRangeQueryOnArray(ceHist.getArrayMin(),
+                                                ceHist.getArrayMax(),
                                                 lowInclusive,
                                                 tagLow,
                                                 valLow,
@@ -307,11 +296,11 @@ EstimationResult estimateCardinalityRange(const stats::ArrayHistogram& ah,
                                                 valHigh);
         } else {
             // $elemMatch query on array data.
-            const auto arrayMinEst = estRange(ah.getArrayMin());
-            const auto arrayMaxEst = estRange(ah.getArrayMax());
-            const auto arrayUniqueEst = estRange(ah.getArrayUnique());
+            const auto arrayMinEst = estRange(ceHist.getArrayMin());
+            const auto arrayMaxEst = estRange(ceHist.getArrayMax());
+            const auto arrayUniqueEst = estRange(ceHist.getArrayUnique());
 
-            const double totalArrayCount = ah.getArrayCount() - ah.getEmptyArrayCount();
+            const double totalArrayCount = ceHist.getArrayCount() - ceHist.getEmptyArrayCount();
 
             uassert(
                 9160701, "Array histograms should contain at least one array", totalArrayCount > 0);
@@ -327,7 +316,7 @@ EstimationResult estimateCardinalityRange(const stats::ArrayHistogram& ah,
                 }
                 case EstimationAlgo::HistogramV2: {
                     const double avgArraySize =
-                        getTotals(ah.getArrayUnique()).card / totalArrayCount;
+                        getTotals(ceHist.getArrayUnique()).card / totalArrayCount;
                     const double adjustedUniqueCard = (avgArraySize == 0.0)
                         ? 0.0
                         : std::min(arrayUniqueEst.card / pow(avgArraySize, 0.2), totalArrayCount);
@@ -351,13 +340,13 @@ EstimationResult estimateCardinalityRange(const stats::ArrayHistogram& ah,
     }
 
     if (includeScalar) {
-        result += estRange(ah.getScalar());
+        result += estRange(ceHist.getScalar());
     }
 
     return {result};
 }
 
-bool canEstimateBound(const stats::ArrayHistogram& ah,
+bool canEstimateBound(const stats::CEHistogram& ceHist,
                       const sbe::value::TypeTags tag,
                       bool includeScalar) {
     // if histogrammable, then it's estimable
@@ -371,7 +360,7 @@ bool canEstimateBound(const stats::ArrayHistogram& ah,
             return false;
         }
     }
-    if (ah.isArray()) {
+    if (ceHist.isArray()) {
         if (tag != sbe::value::TypeTags::Null) {
             return false;
         }
@@ -380,11 +369,11 @@ bool canEstimateBound(const stats::ArrayHistogram& ah,
 }
 
 // TODO: SERVER-94855 Supports mixed type intervals with type counts.
-Cardinality estimateIntervalCardinality(const stats::ArrayHistogram& ah,
+Cardinality estimateIntervalCardinality(const stats::CEHistogram& ceHist,
                                         const mongo::Interval& interval,
                                         bool includeScalar) {
     if (interval.isFullyOpen()) {
-        return ah.getSampleSize();
+        return ceHist.getSampleSize();
     }
 
     bool startInclusive = interval.startInclusive;
@@ -401,15 +390,14 @@ Cardinality estimateIntervalCardinality(const stats::ArrayHistogram& ah,
         std::swap(startVal, endVal);
     }
 
-    // If 'startTag' and 'endTag' are in the same sort order, they are estimable directly via
-    // either histograms or type counts.
-    // TODO: SERVER-94856 to support estimating type-bracketed interval here.
-    if (compareTypeTags(startTag, endTag) == 0) {
+    // If 'startTag' and 'endTag' are either in the same type or type-bracketed, they
+    // are estimable directly via either histograms or type counts.
+    if (stats::sameTypeBracketedInterval(startTag, endInclusive, endTag, endVal)) {
         if (stats::canEstimateTypeViaHistogram(startTag)) {
             if (stats::compareValues(startTag, startVal, endTag, endVal) == 0) {
-                return estimateCardinalityEq(ah, startTag, startVal, includeScalar).card;
+                return estimateCardinalityEq(ceHist, startTag, startVal, includeScalar).card;
             }
-            return estimateCardinalityRange(ah,
+            return estimateCardinalityRange(ceHist,
                                             startInclusive,
                                             startTag,
                                             startVal,

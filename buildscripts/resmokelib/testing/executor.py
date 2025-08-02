@@ -1,8 +1,8 @@
 """Driver of the test execution framework."""
 
-from logging import Logger
 import threading
 import time
+from logging import Logger
 from typing import Generic, List, Optional, TypeVar, Union
 
 from opentelemetry import context
@@ -15,16 +15,12 @@ from buildscripts.resmokelib.testing import hook_test_archival as archival
 from buildscripts.resmokelib.testing import hooks as _hooks
 from buildscripts.resmokelib.testing import job as _job
 from buildscripts.resmokelib.testing import report as _report
-from buildscripts.resmokelib.testing.docker_cluster_image_builder import (
-    DockerComposeImageBuilder,
-    build_images,
-)
 from buildscripts.resmokelib.testing.fixtures.interface import Fixture
 from buildscripts.resmokelib.testing.hooks.interface import Hook
 from buildscripts.resmokelib.testing.queue_element import (
+    QueueElem,
     QueueElemRepeatTime,
     queue_elem_factory,
-    QueueElem,
 )
 from buildscripts.resmokelib.testing.suite import Suite
 from buildscripts.resmokelib.utils import queue as _queue

@@ -117,6 +117,7 @@
 #include "mongo/s/query/exec/cluster_client_cursor_params.h"
 #include "mongo/s/query/exec/cluster_cursor_manager.h"
 #include "mongo/s/query/exec/cluster_query_result.h"
+#include "mongo/s/query/exec/collect_query_stats_mongos.h"
 #include "mongo/s/query/exec/establish_cursors.h"
 #include "mongo/s/query_analysis_sampler_util.h"
 #include "mongo/s/shard_version.h"
@@ -948,11 +949,11 @@ StatusWith<CursorResponse> ClusterFind::runGetMore(OperationContext* opCtx,
         CurOp::get(opCtx)->debug().nShards = pinnedCursor.getValue()->getNumRemotes();
         CurOp::get(opCtx)->debug().cursorid = cursorId;
         stdx::lock_guard<Client> lk(*opCtx->getClient());
-        CurOp::get(opCtx)->setShouldOmitDiagnosticInformation_inlock(
+        CurOp::get(opCtx)->setShouldOmitDiagnosticInformation(
             lk, pinnedCursor.getValue()->shouldOmitDiagnosticInformation());
-        CurOp::get(opCtx)->setOriginatingCommand_inlock(
-            pinnedCursor.getValue()->getOriginatingCommand());
-        CurOp::get(opCtx)->setGenericCursor_inlock(pinnedCursor.getValue().toGenericCursor());
+        CurOp::get(opCtx)->setOriginatingCommand(lk,
+                                                 pinnedCursor.getValue()->getOriginatingCommand());
+        CurOp::get(opCtx)->setGenericCursor(lk, pinnedCursor.getValue().toGenericCursor());
     }
 
     // If the 'failGetMoreAfterCursorCheckout' failpoint is enabled, throw an exception with the

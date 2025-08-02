@@ -1,33 +1,34 @@
-import copy
-from enum import Enum
+import atexit
 import errno
 import getpass
 import hashlib
-from io import StringIO
 import json
 import os
-import distro
 import platform
 import queue
 import shlex
 import shutil
+import socket
 import stat
 import subprocess
-import time
+import sys
 import threading
-from typing import List, Dict, Set, Tuple, Any
+import time
 import urllib.request
+from io import StringIO
+from typing import Any, Dict, List, Set, Tuple
+
+import distro
+import git
+import mongo.platform as mongo_platform
+import psutil
 import requests
+import SCons
 from retry import retry
 from retry.api import retry_call
-import sys
+from SCons.Script import ARGUMENTS
+
 from buildscripts.install_bazel import install_bazel
-import atexit
-
-import SCons
-
-import mongo.platform as mongo_platform
-import mongo.generators as mongo_generators
 
 # Disable retries locally
 _LOCAL_MAX_RETRY_ATTEMPTS = 1
@@ -403,7 +404,10 @@ def bazel_build_thread_func(env, log_dir: str, verbose: bool, ninja_generate: bo
         extra_args += ["--build_tag_filters=scons_link_lists"]
 
     bazel_cmd = Globals.bazel_base_build_command + extra_args + ["//src/..."]
-    print(f"Bazel build command:\n{' '.join(bazel_cmd)}")
+    if ninja_generate:
+        print("Generating bazel link deps...")
+    else:
+        print(f"Bazel build command:\n{' '.join(bazel_cmd)}")
     if env.GetOption("coverity-build"):
         print(
             "--coverity-build selected, assuming bazel targets were built in a previous coverity run. Not running bazel build."
@@ -553,6 +557,9 @@ def generate_bazel_info_for_ninja(env: SCons.Environment.Environment) -> None:
         + env["BAZEL_FLAGS_STR"],
         "defaults": [str(t) for t in SCons.Script.DEFAULT_TARGETS],
         "targets": Globals.scons2bazel_targets,
+        "CC": env.get("CC", ""),
+        "CXX": env.get("CXX", ""),
+        "USE_NATIVE_TOOLCHAIN": os.environ.get("USE_NATIVE_TOOLCHAIN"),
     }
     with open(".bazel_info_for_ninja.txt", "w") as f:
         json.dump(ninja_bazel_build_json, f)
@@ -733,10 +740,41 @@ def add_libdeps_time(env, delate_time):
     count_of_libdeps_links += 1
 
 
+def prefetch_toolchain(env):
+    bazel_bin_dir = (
+        env.GetOption("evergreen-tmp-dir")
+        if env.GetOption("evergreen-tmp-dir")
+        else os.path.expanduser("~/.local/bin")
+    )
+    if not os.path.exists(bazel_bin_dir):
+        os.makedirs(bazel_bin_dir)
+    Globals.bazel_executable = install_bazel(bazel_bin_dir)
+    if platform.system() == "Linux" and not ARGUMENTS.get("CC") and not ARGUMENTS.get("CXX"):
+        exec_root = f'bazel-{os.path.basename(env.Dir("#").abspath)}'
+        if exec_root and not os.path.exists(f"{exec_root}/external/mongo_toolchain"):
+            print("Prefetch the mongo toolchain...")
+            try:
+                retry_call(
+                    subprocess.run,
+                    [[Globals.bazel_executable, "build", "@mongo_toolchain"]],
+                    tries=Globals.max_retry_attempts,
+                    exceptions=(subprocess.CalledProcessError,),
+                )
+            except subprocess.CalledProcessError as ex:
+                print("ERROR: Bazel fetch failed!")
+                print(ex)
+                print("Please ask about this in #ask-devprod-build slack channel.")
+                sys.exit(1)
+
+        return exec_root
+
+
 # Required boilerplate function
 def exists(env: SCons.Environment.Environment) -> bool:
     # === Bazelisk ===
 
+    write_workstation_bazelrc()
+    env.AddMethod(prefetch_toolchain, "PrefetchToolchain")
     env.AddMethod(load_bazel_builders, "LoadBazelBuilders")
     return True
 
@@ -776,6 +814,61 @@ def handle_bazel_program_exception(env, target, outputs):
                     "bazel_output": bazel_output_file.replace("\\", "/"),
                 }
     return bazel_program
+
+
+def write_workstation_bazelrc():
+    if os.environ.get("CI") is None:
+        workstation_file = ".bazelrc.workstation"
+        existing_hash = ""
+        if os.path.exists(workstation_file):
+            with open(workstation_file) as f:
+                existing_hash = hashlib.md5(f.read().encode()).hexdigest()
+
+        repo = git.Repo()
+
+        try:
+            status = "clean" if repo.head.commit.diff(None) is None else "modified"
+        except Exception:
+            status = "Unknown"
+
+        try:
+            hostname = socket.gethostname()
+        except Exception:
+            hostname = "Unknown"
+
+        try:
+            remote = repo.branches.master.repo.remote().url
+        except Exception:
+            try:
+                remote = repo.remotes[0].url
+            except Exception:
+                remote = "Unknown"
+
+        try:
+            branch = repo.active_branch.name
+        except Exception:
+            branch = "Unknown"
+
+        try:
+            commit = repo.commit("HEAD")
+        except Exception:
+            commit = "Unknown"
+
+        bazelrc_contents = f"""\
+# Generated file, do not modify
+common --bes_keywords=developerBuild=True
+common --bes_keywords=workstation={hostname}
+common --bes_keywords=engflow:BuildScmRemote={remote}
+common --bes_keywords=engflow:BuildScmBranch={branch}
+common --bes_keywords=engflow:BuildScmRevision={commit}
+common --bes_keywords=engflow:BuildScmStatus={status}
+    """
+
+        current_hash = hashlib.md5(bazelrc_contents.encode()).hexdigest()
+        if existing_hash != current_hash:
+            print(f"Generating new {workstation_file} file...")
+            with open(workstation_file, "w") as f:
+                f.write(bazelrc_contents)
 
 
 def generate(env: SCons.Environment.Environment) -> None:
@@ -821,48 +914,52 @@ def generate(env: SCons.Environment.Environment) -> None:
             distro_or_os = distro_id
 
     bazel_internal_flags = [
-        f"--//bazel/config:compiler_type={env.ToolchainName()}",
-        f'--//bazel/config:opt={env.GetOption("opt")}',
-        f'--//bazel/config:dbg={env.GetOption("dbg") == "on"}',
-        f'--//bazel/config:thin_lto={env.GetOption("thin-lto") is not None}',
-        f'--//bazel/config:separate_debug={True if env.GetOption("separate-debug") == "on" else False}',
-        f'--//bazel/config:libunwind={env.GetOption("use-libunwind")}',
-        f'--//bazel/config:use_gdbserver={False if env.GetOption("gdbserver") is None else True}',
-        f'--//bazel/config:spider_monkey_dbg={True if env.GetOption("spider-monkey-dbg") == "on" else False}',
-        f"--//bazel/config:allocator={allocator}",
-        f'--//bazel/config:use_lldbserver={False if env.GetOption("lldb-server") is None else True}',
-        f'--//bazel/config:use_wait_for_debugger={False if env.GetOption("wait-for-debugger") is None else True}',
-        f'--//bazel/config:use_ocsp_stapling={True if env.GetOption("ocsp-stapling") == "on" else False}',
-        f'--//bazel/config:use_disable_ref_track={False if env.GetOption("disable-ref-track") is None else True}',
-        f'--//bazel/config:use_wiredtiger={True if env.GetOption("wiredtiger") == "on" else False}',
-        f'--//bazel/config:use_glibcxx_debug={env.GetOption("use-glibcxx-debug") is not None}',
-        f'--//bazel/config:use_tracing_profiler={env.GetOption("use-tracing-profiler") == "on"}',
-        f'--//bazel/config:build_grpc={True if env["ENABLE_GRPC_BUILD"] else False}',
-        f'--//bazel/config:use_libcxx={env.GetOption("libc++") is not None}',
-        f'--//bazel/config:detect_odr_violations={env.GetOption("detect-odr-violations") is not None}',
-        f"--//bazel/config:linkstatic={linkstatic}",
-        f'--//bazel/config:shared_archive={env.GetOption("link-model") == "dynamic-sdk"}',
-        f'--//bazel/config:linker={env.GetOption("linker")}',
-        f'--//bazel/config:streams_release_build={env.GetOption("streams-release-build")}',
-        f'--//bazel/config:release={env.GetOption("release") == "on"}',
-        f'--//bazel/config:build_enterprise={"MONGO_ENTERPRISE_VERSION" in env}',
-        f'--//bazel/config:visibility_support={env.GetOption("visibility-support")}',
-        f'--//bazel/config:disable_warnings_as_errors={env.GetOption("disable-warnings-as-errors") == "source"}',
-        f'--//bazel/config:gcov={env.GetOption("gcov") is not None}',
-        f'--//bazel/config:pgo_profile={env.GetOption("pgo-profile") is not None}',
-        f'--//bazel/config:server_js={env.GetOption("server-js") == "on"}',
-        f"--platforms=//bazel/platforms:{distro_or_os}_{normalized_arch}",
-        f"--host_platform=//bazel/platforms:{distro_or_os}_{normalized_arch}",
-        f'--//bazel/config:ssl={"True" if env.GetOption("ssl") == "on" else "False"}',
-        f'--//bazel/config:audit={env.GetOption("audit") is not None}',
-        f'--//bazel/config:full-featured={env.GetOption("full-featured") is not None}',
-        f'--//bazel/config:enable-fipsmode={env.GetOption("enable-fipsmode") is not None}',
-        f'--//bazel/config:enable-fcbis={env.GetOption("enable-fcbis") is not None}',
-        f'--//bazel/config:js_engine={env.GetOption("js-engine")}',
+        f"--compiler_type={env.ToolchainName()}",
+        f'--opt={env.GetOption("opt")}',
+        f'--dbg={env.GetOption("dbg") == "on"}',
+        f'--thin_lto={env.GetOption("thin-lto") is not None}',
+        f'--separate_debug={True if env.GetOption("separate-debug") == "on" else False}',
+        f'--libunwind={env.GetOption("use-libunwind")}',
+        f'--use_gdbserver={False if env.GetOption("gdbserver") is None else True}',
+        f'--spider_monkey_dbg={True if env.GetOption("spider-monkey-dbg") == "on" else False}',
+        f"--allocator={allocator}",
+        f'--use_lldbserver={False if env.GetOption("lldb-server") is None else True}',
+        f'--use_wait_for_debugger={False if env.GetOption("wait-for-debugger") is None else True}',
+        f'--use_ocsp_stapling={True if env.GetOption("ocsp-stapling") == "on" else False}',
+        f'--use_disable_ref_track={False if env.GetOption("disable-ref-track") is None else True}',
+        f'--use_wiredtiger={True if env.GetOption("wiredtiger") == "on" else False}',
+        f'--use_glibcxx_debug={env.GetOption("use-glibcxx-debug") is not None}',
+        f'--use_tracing_profiler={env.GetOption("use-tracing-profiler") == "on"}',
+        f'--build_grpc={True if env["ENABLE_GRPC_BUILD"] else False}',
+        f'--use_libcxx={env.GetOption("libc++") is not None}',
+        f'--detect_odr_violations={env.GetOption("detect-odr-violations") is not None}',
+        f"--linkstatic={linkstatic}",
+        f'--shared_archive={env.GetOption("link-model") == "dynamic-sdk"}',
+        f'--linker={env.GetOption("linker")}',
+        f'--streams_release_build={env.GetOption("streams-release-build")}',
+        f'--release={env.GetOption("release") == "on"}',
+        f'--build_enterprise={"MONGO_ENTERPRISE_VERSION" in env}',
+        f'--visibility_support={env.GetOption("visibility-support")}',
+        f'--disable_warnings_as_errors={env.GetOption("disable-warnings-as-errors") == "source"}',
+        f'--gcov={env.GetOption("gcov") is not None}',
+        f'--pgo_profile={env.GetOption("pgo-profile") is not None}',
+        f'--server_js={env.GetOption("server-js") == "on"}',
+        f'--ssl={"True" if env.GetOption("ssl") == "on" else "False"}',
+        f'--audit={env.GetOption("audit") is not None}',
+        f'--full_featured={env.GetOption("full-featured") is not None}',
+        f'--enable_fipsmode={env.GetOption("enable-fipsmode") is not None}',
+        f'--enable_fcbis={env.GetOption("enable-fcbis") is not None}',
+        f'--js_engine={env.GetOption("js-engine")}',
         "--define",
         f"MONGO_VERSION={env['MONGO_VERSION']}",
         "--compilation_mode=dbg",  # always build this compilation mode as we always build with -g
     ]
+
+    if not os.environ.get("USE_NATIVE_TOOLCHAIN"):
+        bazel_internal_flags += [
+            f"--platforms=//bazel/platforms:{distro_or_os}_{normalized_arch}",
+            f"--host_platform=//bazel/platforms:{distro_or_os}_{normalized_arch}",
+        ]
 
     if "MONGO_ENTERPRISE_VERSION" in env:
         enterprise_features = env.GetOption("enterprise_features")
@@ -879,11 +976,11 @@ def generate(env: SCons.Environment.Environment) -> None:
         bazel_internal_flags += ["--collect_code_coverage"]
 
     if env["DWARF_VERSION"]:
-        bazel_internal_flags.append(f"--//bazel/config:dwarf_version={env['DWARF_VERSION']}")
+        bazel_internal_flags.append(f"--dwarf_version={env['DWARF_VERSION']}")
 
     if normalized_os == "macos":
         bazel_internal_flags.append(
-            f"--//bazel/config:developer_dir={os.environ.get('DEVELOPER_DIR', '/Applications/Xcode.app')}"
+            f"--developer_dir={os.environ.get('DEVELOPER_DIR', '/Applications/Xcode.app')}"
         )
         minimum_macos_version = "11.0" if normalized_arch == "arm64" else "10.14"
         bazel_internal_flags.append(f"--macos_minimum_os={minimum_macos_version}")
@@ -891,18 +988,22 @@ def generate(env: SCons.Environment.Environment) -> None:
     http_client_option = env.GetOption("enable-http-client")
     if http_client_option is not None:
         if http_client_option in ["on", "auto"]:
-            bazel_internal_flags.append("--//bazel/config:http_client=True")
+            bazel_internal_flags.append("--http_client=True")
         elif http_client_option == "off":
-            bazel_internal_flags.append("--//bazel/config:http_client=False")
+            bazel_internal_flags.append("--http_client=False")
 
     sanitizer_option = env.GetOption("sanitize")
 
     if sanitizer_option is not None and sanitizer_option != "":
         options = sanitizer_option.split(",")
-        formatted_options = [f"--//bazel/config:{_SANITIZER_MAP[opt]}=True" for opt in options]
+        formatted_options = [f"--{_SANITIZER_MAP[opt]}=True" for opt in options]
         bazel_internal_flags.extend(formatted_options)
 
     if normalized_arch not in ["arm64", "amd64"]:
+        bazel_internal_flags.append("--config=local")
+        bazel_internal_flags.append("--jobs=4")
+    elif os.environ.get("USE_NATIVE_TOOLCHAIN"):
+        print("Custom toolchain detected, using --config=local for bazel build.")
         bazel_internal_flags.append("--config=local")
 
     # Disable remote execution for public release builds.
@@ -920,15 +1021,72 @@ def generate(env: SCons.Environment.Environment) -> None:
         _CI_MAX_RETRY_ATTEMPTS if os.environ.get("CI") is not None else _LOCAL_MAX_RETRY_ATTEMPTS
     )
 
-    bazel_bin_dir = (
-        env.GetOption("evergreen-tmp-dir")
-        if env.GetOption("evergreen-tmp-dir")
-        else os.path.expanduser("~/.local/bin")
-    )
-    if not os.path.exists(bazel_bin_dir):
-        os.makedirs(bazel_bin_dir)
+    # Set the JAVA_HOME directories for ppc64le and s390x since their bazel binaries are not compiled with a built-in JDK.
+    if normalized_arch == "ppc64le":
+        Globals.bazel_env_variables["JAVA_HOME"] = (
+            "/usr/lib/jvm/java-11-openjdk-11.0.4.11-2.el8.ppc64le"
+        )
+    elif normalized_arch == "s390x":
+        Globals.bazel_env_variables["JAVA_HOME"] = (
+            "/usr/lib/jvm/java-11-openjdk-11.0.11.0.9-0.el8_3.s390x"
+        )
 
-    Globals.bazel_executable = install_bazel(bazel_bin_dir)
+    check_remote_flags = bazel_internal_flags + shlex.split(env.get("BAZEL_FLAGS", ""))
+    if (
+        "--config=local" not in check_remote_flags
+        and "--config=public-release" not in check_remote_flags
+    ):
+        print(
+            "Running bazel with remote execution enabled. To disable bazel remote execution, please add BAZEL_FLAGS=--config=local to the end of your scons command line invocation."
+        )
+        if not validate_remote_execution_certs(env):
+            sys.exit(1)
+
+        try:
+            docker_detected = (
+                subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+            )
+        except Exception:
+            docker_detected = False
+        try:
+            podman_detected = (
+                subprocess.run(["podman", "--help"], capture_output=True).returncode == 0
+            )
+        except Exception:
+            podman_detected = False
+
+        if not docker_detected:
+            print("Not using dynamic scheduling because docker not detected ('docker info').")
+        elif docker_detected and podman_detected:
+            print(
+                "Docker and podman detected, disabling dynamic scheduling due to uncertainty in docker setup."
+            )
+        else:
+            # TODO: SERVER-95737 fix docker issues on ubuntu24
+            if distro_or_os == "ubuntu24":
+                print("Ubuntu24 is not supported to with dynamic scheduling. See SERVER-95737")
+            else:
+                remote_execution_containers = {}
+                container_file_path = "bazel/platforms/remote_execution_containers.bzl"
+                with open(container_file_path, "r") as f:
+                    code = compile(f.read(), container_file_path, "exec")
+                    exec(code, {}, remote_execution_containers)
+
+                docker_image = remote_execution_containers["REMOTE_EXECUTION_CONTAINERS"][
+                    f"{distro_or_os}"
+                ]["container-url"]
+
+                jobs = int(psutil.cpu_count() * 2) if os.environ.get("CI") else 400
+
+                bazel_internal_flags += [
+                    "--experimental_enable_docker_sandbox",
+                    f"--experimental_docker_image={docker_image}",
+                    "--experimental_docker_use_customized_images",
+                    "--internal_spawn_scheduler",
+                    "--dynamic_local_strategy=docker",
+                    "--spawn_strategy=dynamic",
+                    f"--jobs={jobs}",
+                ]
 
     Globals.bazel_base_build_command = (
         [
@@ -944,29 +1102,9 @@ def generate(env: SCons.Environment.Environment) -> None:
     with open(os.path.join(log_dir, "bazel_command"), "w") as f:
         f.write(" ".join(Globals.bazel_base_build_command))
 
-    # Set the JAVA_HOME directories for ppc64le and s390x since their bazel binaries are not compiled with a built-in JDK.
-    if normalized_arch == "ppc64le":
-        Globals.bazel_env_variables["JAVA_HOME"] = (
-            "/usr/lib/jvm/java-11-openjdk-11.0.4.11-2.el8.ppc64le"
-        )
-    elif normalized_arch == "s390x":
-        Globals.bazel_env_variables["JAVA_HOME"] = (
-            "/usr/lib/jvm/java-11-openjdk-11.0.11.0.9-0.el8_3.s390x"
-        )
-
     # Store the bazel command line flags so scons can check if it should rerun the bazel targets
     # if the bazel command line changes.
     env["BAZEL_FLAGS_STR"] = bazel_internal_flags + shlex.split(env.get("BAZEL_FLAGS", ""))
-
-    if (
-        "--config=local" not in env["BAZEL_FLAGS_STR"]
-        and "--config=public-release" not in env["BAZEL_FLAGS_STR"]
-    ):
-        print(
-            "Running bazel with remote execution enabled. To disable bazel remote execution, please add BAZEL_FLAGS=--config=local to the end of your scons command line invocation."
-        )
-        if not validate_remote_execution_certs(env):
-            sys.exit(1)
 
     # We always use --compilation_mode debug for now as we always want -g, so assume -dbg location
     out_dir_platform = "$TARGET_ARCH"
@@ -994,10 +1132,6 @@ def generate(env: SCons.Environment.Environment) -> None:
         action=BazelCopyOutputsAction,
         emitter=SCons.Builder.ListEmitter([bazel_target_emitter]),
     )
-
-    # TODO(SERVER-94605): remove when Windows temp directory is cleared between task runs
-    if normalized_os == "windows" and os.environ.get("CI"):
-        subprocess.run(["bazel", "clean", "--expunge"])
 
     cmd = (
         ["aquery"]

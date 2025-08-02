@@ -30,7 +30,6 @@
 #pragma once
 
 #include "mongo/db/exec/sbe/values/bson.h"
-#include "mongo/db/query/ce/bound_utils.h"
 #include "mongo/db/query/ce/histogram_common.h"
 #include "mongo/db/query/stats/value_utils.h"
 
@@ -89,23 +88,23 @@ EstimationResult estimateRangeQueryOnArray(const stats::ScalarHistogram& histogr
                                            sbe::value::TypeTags tagHigh,
                                            sbe::value::Value valHigh);
 
-// --------------------- ARRAY HISTOGRAM ESTIMATION METHODS ---------------------
+// --------------------- CE HISTOGRAM ESTIMATION METHODS ---------------------
 
 /**
- * Estimates the cardinality of an equality predicate given an ArrayHistogram and an SBE value and
+ * Estimates the cardinality of an equality predicate given an CEHistogram and an SBE value and
  * type tag pair.
  */
-EstimationResult estimateCardinalityEq(const stats::ArrayHistogram& ah,
+EstimationResult estimateCardinalityEq(const stats::CEHistogram& ceHist,
                                        sbe::value::TypeTags tag,
                                        sbe::value::Value val,
                                        bool includeScalar);
 
 /**
- * Estimates the cardinality of a range predicate given an ArrayHistogram and a range predicate.
+ * Estimates the cardinality of a range predicate given an CEHistogram and a range predicate.
  * Set 'includeScalar' to true to indicate whether or not the provided range should include no-array
  * values. The other fields define the range of the estimation.
  */
-EstimationResult estimateCardinalityRange(const stats::ArrayHistogram& ah,
+EstimationResult estimateCardinalityRange(const stats::CEHistogram& ceHist,
                                           bool lowInclusive,
                                           sbe::value::TypeTags tagLow,
                                           sbe::value::Value valLow,
@@ -119,20 +118,15 @@ EstimationResult estimateCardinalityRange(const stats::ArrayHistogram& ah,
  * Estimates the selectivity of a given interval if histogram estimation is possible. Otherwise,
  * throw an exception.
  */
-Cardinality estimateIntervalCardinality(const stats::ArrayHistogram& ah,
+Cardinality estimateIntervalCardinality(const stats::CEHistogram& ceHist,
                                         const mongo::Interval& interval,
                                         bool includeScalar = true);
 
 /**
  * Checks if a given bound can be estimated via either histograms or type counts.
  */
-bool canEstimateBound(const stats::ArrayHistogram& ah,
+bool canEstimateBound(const stats::CEHistogram& ceHist,
                       sbe::value::TypeTags tag,
                       bool includeScalar);
-
-/**
- * Three ways TypeTags comparison (aka spaceship operator) according to the BSON type sort order.
- */
-int compareTypeTags(sbe::value::TypeTags a, sbe::value::TypeTags b);
 
 }  // namespace mongo::ce

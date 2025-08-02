@@ -82,6 +82,7 @@ import {
 // Pre-written reasons for skipping a test.
 const isAnInternalCommand = "internal command";
 const isUnrelated = "is unrelated";
+const isDeprecated = "deprecated command";
 
 let viewsCommandTests = {
     _addShard: {skip: isAnInternalCommand},
@@ -138,7 +139,6 @@ let viewsCommandTests = {
     _flushReshardingStateChange: {skip: isUnrelated},
     _flushRoutingTableCacheUpdates: {skip: isUnrelated},
     _flushRoutingTableCacheUpdatesWithWriteConcern: {skip: isUnrelated},
-    _getAuditConfigGeneration: {skip: isUnrelated},
     _getNextSessionMods: {skip: isAnInternalCommand},
     _getUserCacheGeneration: {skip: isAnInternalCommand},
     _hashBSONElement: {skip: isAnInternalCommand},
@@ -170,18 +170,13 @@ let viewsCommandTests = {
     _shardsvrDropIndexCatalogEntryParticipant: {skip: isAnInternalCommand},
     _shardsvrDropIndexes: {skip: isAnInternalCommand},
     _shardsvrEndMigrationBlockingOperation: {skip: isAnInternalCommand},
-    _shardsvrInsertGlobalIndexKey: {skip: isAnInternalCommand},
     _shardsvrJoinDDLCoordinators: {skip: isAnInternalCommand},
-    _shardsvrDeleteGlobalIndexKey: {skip: isAnInternalCommand},
-    _shardsvrWriteGlobalIndexKeys: {skip: isAnInternalCommand},
     _shardsvrCleanupReshardCollection: {skip: isAnInternalCommand},
     _shardsvrRegisterIndex: {skip: isAnInternalCommand},
     _shardsvrCommitIndexParticipant: {skip: isAnInternalCommand},
     _shardsvrCommitReshardCollection: {skip: isAnInternalCommand},
     _shardsvrCreateCollection: {skip: isAnInternalCommand},
     _shardsvrCreateCollectionParticipant: {skip: isAnInternalCommand},
-    _shardsvrCreateGlobalIndex: {skip: isAnInternalCommand},
-    _shardsvrDropGlobalIndex: {skip: isAnInternalCommand},
     _shardsvrDropDatabase: {skip: isAnInternalCommand},
     _shardsvrDropDatabaseParticipant: {skip: isAnInternalCommand},
     _shardsvrGetStatsForBalancing: {skip: isAnInternalCommand},
@@ -382,9 +377,9 @@ let viewsCommandTests = {
     donorForgetMigration: {skip: isUnrelated},
     donorStartMigration: {skip: isUnrelated},
     donorWaitForMigrationToCommit: {skip: isUnrelated},
-    abortShardSplit: {skip: isUnrelated},
-    commitShardSplit: {skip: isUnrelated},
-    forgetShardSplit: {skip: isUnrelated},
+    abortShardSplit: {skip: isDeprecated},
+    commitShardSplit: {skip: isDeprecated},
+    forgetShardSplit: {skip: isDeprecated},
     drop: {command: {drop: "view"}},
     dropAllRolesFromDatabase: {skip: isUnrelated},
     dropAllUsersFromDatabase: {skip: isUnrelated},

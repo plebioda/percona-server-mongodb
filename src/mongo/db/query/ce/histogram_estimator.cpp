@@ -31,7 +31,7 @@
 
 namespace mongo::ce {
 
-Cardinality HistogramEstimator::estimateCardinality(const stats::ArrayHistogram& hist,
+Cardinality HistogramEstimator::estimateCardinality(const stats::CEHistogram& hist,
                                                     const Cardinality collectionSize,
                                                     const mongo::Interval& interval,
                                                     bool includeScalar) {
@@ -40,7 +40,7 @@ Cardinality HistogramEstimator::estimateCardinality(const stats::ArrayHistogram&
         collectionSize;
 }
 
-bool HistogramEstimator::canEstimateInterval(const stats::ArrayHistogram& hist,
+bool HistogramEstimator::canEstimateInterval(const stats::CEHistogram& hist,
                                              const mongo::Interval& interval,
                                              bool includeScalar) {
 
@@ -49,9 +49,11 @@ bool HistogramEstimator::canEstimateInterval(const stats::ArrayHistogram& hist,
     sbe::value::ValueGuard startGuard{startTag, startVal};
     sbe::value::ValueGuard endGuard{endTag, endVal};
 
-    if (compareTypeTags(startTag, endTag) == 0) {
-        return stats::canEstimateTypeViaHistogram(startTag) ||
-            canEstimateBound(hist, startTag, includeScalar);
+    // If 'startTag' and 'endTag' are either in the same type or type-bracketed, they are estimable
+    // directly via either histograms or type counts.
+    if (stats::sameTypeBracketedInterval(startTag, interval.endInclusive, endTag, endVal)) {
+        // TODO: SERVER-91639 to support estimating via type counts here.
+        return stats::canEstimateTypeViaHistogram(startTag);
     }
 
     return false;

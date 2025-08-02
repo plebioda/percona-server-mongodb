@@ -357,6 +357,7 @@ void _reportValidationResults(OperationContext* opCtx,
                               ValidateState* validateState,
                               ValidateResults* results,
                               BSONObjBuilder* output) {
+    // TODO(SERVER-95671): Move output-generation to ValidateResults::appendToResultsObj().
     BSONObjBuilder indexDetails;
 
     results->setReadTimestamp(validateState->getValidateTimestamp());
@@ -388,8 +389,6 @@ void _reportValidationResults(OperationContext* opCtx,
         }
 
         keysPerIndex.appendNumber(indexName, static_cast<long long>(vr.getKeysTraversed()));
-
-        results->stealErrorsAndWarnings(vr);
     }
 
     output->append("nIndexes", nIndexes);
@@ -553,7 +552,8 @@ Status validate(OperationContext* opCtx,
                 ValidateResults* results,
                 BSONObjBuilder* output,
                 const SerializationContext& sc) {
-    invariant(!shard_role_details::getLocker(opCtx)->isLocked() || storageGlobalParams.repair);
+    invariant(!shard_role_details::getLocker(opCtx)->isLocked() || storageGlobalParams.repair ||
+              storageGlobalParams.validate);
 
     // This is deliberately outside of the try-catch block, so that any errors thrown in the
     // constructor fail the cmd, as opposed to returning OK with valid:false.

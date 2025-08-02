@@ -71,7 +71,7 @@
 #include "mongo/db/service_context_d_test_fixture.h"
 #include "mongo/db/storage/column_store.h"
 #include "mongo/db/storage/index_entry_comparison.h"
-#include "mongo/db/storage/key_string.h"
+#include "mongo/db/storage/key_string/key_string.h"
 #include "mongo/db/storage/record_store.h"
 #include "mongo/db/storage/recovery_unit.h"
 #include "mongo/db/storage/sorted_data_interface.h"
@@ -125,7 +125,7 @@ std::vector<std::pair<BSONObj, ValidateResults>> foregroundValidate(
     bool valid,
     int numRecords,
     int numInvalidDocuments,
-    int numErrors,
+    int expectedNumErrors,
     std::initializer_list<CollectionValidation::ValidateMode> modes =
         {CollectionValidation::ValidateMode::kForeground,
          CollectionValidation::ValidateMode::kForegroundFull},
@@ -147,8 +147,18 @@ std::vector<std::pair<BSONObj, ValidateResults>> foregroundValidate(
         validateResults.appendToResultObj(&validateResultsBuilder, true /* debugging */);
         auto validateResultsObj = validateResultsBuilder.obj();
 
+        // The total number of errors is: those in the top-level results plus the sum of
+        // all index-specific errors.
+        std::size_t observedNumErrors = validateResults.getErrors().size() +
+            std::accumulate(validateResults.getIndexResultsMap().begin(),
+                            validateResults.getIndexResultsMap().end(),
+                            0,
+                            [](size_t current, const auto& ivr) {
+                                return current + ivr.second.getErrors().size();
+                            });
+
         ASSERT_EQ(validateResults.isValid(), valid) << obj << validateResultsObj;
-        ASSERT_EQ(validateResults.getErrors().size(), static_cast<long unsigned int>(numErrors))
+        ASSERT_EQ(observedNumErrors, static_cast<long unsigned int>(expectedNumErrors))
             << obj << validateResultsObj;
 
         ASSERT_EQ(obj.getIntField("nrecords"), numRecords) << obj << validateResultsObj;

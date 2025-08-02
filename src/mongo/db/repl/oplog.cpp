@@ -93,7 +93,6 @@
 #include "mongo/db/db_raii.h"
 #include "mongo/db/dbdirectclient.h"
 #include "mongo/db/dbhelpers.h"
-#include "mongo/db/global_index.h"
 #include "mongo/db/index/index_constants.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/index_builds_coordinator.h"
@@ -245,28 +244,6 @@ Status insertDocumentsForOplog(OperationContext* opCtx,
     // these inserts will not be visible.  When visibility updates, it will notify capped
     // waiters.
     return Status::OK();
-}
-
-void assertInitialSyncCanContinueDuringShardMerge(OperationContext* opCtx,
-                                                  const NamespaceString& nss,
-                                                  const OplogEntry& op) {
-    // Running shard merge during initial sync can lead to potential data loss on this node.
-    // So, we perform safety check during oplog catchup and at the end of initial sync
-    // recovery. (see recoverShardMergeRecipientAccessBlockers() for the detailed comment about the
-    // problematic scenario that can cause data loss.)
-    if (nss == NamespaceString::kShardMergeRecipientsNamespace) {
-        if (auto replCoord = repl::ReplicationCoordinator::get(opCtx); replCoord &&
-            replCoord->getSettings().isReplSet() && replCoord->getMemberState().startup2()) {
-            BSONElement idField = op.getObject().getField("_id");
-            // If the 'o' field does not have an _id, then 'o2' should have it.
-            // Otherwise, the oplog entry is corrupted.
-            if (idField.eoo() && op.getObject2()) {
-                idField = op.getObject2()->getField("_id");
-            }
-            const auto& migrationId = uassertStatusOK(UUID::parse(idField));
-            tenant_migration_access_blocker::assertOnUnsafeInitialSync(migrationId);
-        }
-    }
 }
 
 }  // namespace
@@ -433,8 +410,6 @@ void writeToImageCollection(OperationContext* opCtx,
     "d" delete
     "c" db cmd
     "n" no op
-    "xi" insert global index key
-    "xd" delete global index key
 */
 
 
@@ -1240,20 +1215,6 @@ const StringMap<ApplyOpMetadata> kOpsMap = {
          }
          return Status::OK();
      }}},
-    {"createGlobalIndex",
-     {[](OperationContext* opCtx, const ApplierOperation& op, OplogApplication::Mode mode)
-          -> Status {
-         const auto& globalIndexUUID = op->getUuid().get();
-         global_index::createContainer(opCtx, globalIndexUUID);
-         return Status::OK();
-     }}},
-    {"dropGlobalIndex",
-     {[](OperationContext* opCtx, const ApplierOperation& op, OplogApplication::Mode mode)
-          -> Status {
-         const auto& globalIndexUUID = op->getUuid().get();
-         global_index::dropContainer(opCtx, globalIndexUUID);
-         return Status::OK();
-     }}},
 };
 
 // Writes a change stream pre-image 'preImage' associated with oplog entry 'oplogEntry' and a write
@@ -1490,8 +1451,6 @@ Status applyOperation_inlock(OperationContext* opCtx,
     }
 
     const CollectionPtr& collection = collectionAcquisition.getCollectionPtr();
-
-    assertInitialSyncCanContinueDuringShardMerge(opCtx, requestNss, op);
 
     BSONObj o = op.getObject();
 
@@ -2204,58 +2163,6 @@ Status applyOperation_inlock(OperationContext* opCtx,
             }
             break;
         }
-        case OpTypeEnum::kInsertGlobalIndexKey: {
-            invariant(op.getUuid());
-
-            Timestamp timestamp;
-            if (assignOperationTimestamp) {
-                timestamp = op.getTimestamp();
-            }
-
-            writeConflictRetryWithLimit(
-                opCtx, "applyOps_insertGlobalIndexKey", collection->ns(), [&] {
-                    WriteUnitOfWork wuow(opCtx);
-                    if (timestamp != Timestamp::min()) {
-                        uassertStatusOK(
-                            shard_role_details::getRecoveryUnit(opCtx)->setTimestamp(timestamp));
-                    }
-
-                    global_index::insertKey(
-                        opCtx,
-                        collectionAcquisition,
-                        op.getObject().getObjectField(global_index::kOplogEntryIndexKeyFieldName),
-                        op.getObject().getObjectField(global_index::kOplogEntryDocKeyFieldName));
-
-                    wuow.commit();
-                });
-            break;
-        }
-        case OpTypeEnum::kDeleteGlobalIndexKey: {
-            invariant(op.getUuid());
-
-            Timestamp timestamp;
-            if (assignOperationTimestamp) {
-                timestamp = op.getTimestamp();
-            }
-
-            writeConflictRetryWithLimit(
-                opCtx, "applyOps_deleteGlobalIndexKey", collection->ns(), [&] {
-                    WriteUnitOfWork wuow(opCtx);
-                    if (timestamp != Timestamp::min()) {
-                        uassertStatusOK(
-                            shard_role_details::getRecoveryUnit(opCtx)->setTimestamp(timestamp));
-                    }
-
-                    global_index::deleteKey(
-                        opCtx,
-                        collectionAcquisition,
-                        op.getObject().getObjectField(global_index::kOplogEntryIndexKeyFieldName),
-                        op.getObject().getObjectField(global_index::kOplogEntryDocKeyFieldName));
-
-                    wuow.commit();
-                });
-            break;
-        }
         default: {
             // Commands are processed in applyCommand_inlock().
             invariant(false, str::stream() << "Unsupported opType " << OpType_serializer(opType));
@@ -2545,7 +2452,7 @@ Status applyCommand_inlock(OperationContext* opCtx,
         }
     }
 
-    AuthorizationManager::get(opCtx->getService())->logOp(opCtx, "c", nss, o, nullptr);
+    AuthorizationManager::get(opCtx->getService())->notifyDDLOperation(opCtx, "c", nss, o, nullptr);
     return Status::OK();
 }
 

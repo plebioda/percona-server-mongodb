@@ -65,8 +65,7 @@
 #include "mongo/db/audit/audit_flusher.h"
 #include "mongo/db/audit/audit_options.h"
 #include "mongo/db/auth/authorization_manager.h"
-#include "mongo/db/auth/authz_manager_external_state.h"
-#include "mongo/db/auth/authz_manager_external_state_s.h"
+#include "mongo/db/auth/authorization_manager_factory.h"
 #include "mongo/db/auth/user_cache_invalidator_job.h"
 #include "mongo/db/change_stream_options_manager.h"
 #include "mongo/db/client.h"
@@ -189,6 +188,7 @@ namespace {
 
 MONGO_FAIL_POINT_DEFINE(pauseWhileKillingOperationsAtShutdown);
 MONGO_FAIL_POINT_DEFINE(pauseAfterImplicitlyAbortAllTransactions)
+MONGO_FAIL_POINT_DEFINE(shutdownAtStartup);
 
 #if defined(_WIN32)
 const ntservice::NtServiceDefaultStrings defaultServiceStrings = {
@@ -925,9 +925,7 @@ ExitCode runMongosServer(ServiceContext* serviceContext) {
         TimeElapsedBuilderScopedTimer scopedTimer(serviceContext->getFastClockSource(),
                                                   "Build user and roles graph",
                                                   &startupTimeElapsedBuilder);
-        Status status =
-            AuthorizationManager::get(serviceContext->getService(ClusterRole::RouterServer))
-                ->initialize(opCtx);
+        Status status = globalAuthzManagerFactory->initialize(opCtx);
         if (!status.isOK()) {
             LOGV2_ERROR(22858, "Error initializing authorization data", "error"_attr = status);
             return ExitCode::shardingError;
@@ -1015,6 +1013,11 @@ ExitCode runMongosServer(ServiceContext* serviceContext) {
     logMongosStartupTimeElapsedStatistics(
         serviceContext, beginRunMongosServer, &startupTimeElapsedBuilder, &startupInfoBuilder);
 
+    if (MONGO_unlikely(shutdownAtStartup.shouldFail())) {
+        LOGV2(9494000, "Starting clean exit via failpoint");
+        exitCleanly(ExitCode::clean);
+    }
+
     // Block until shutdown.
     MONGO_IDLE_THREAD_BLOCK;
     return waitForShutdown();
@@ -1037,10 +1040,6 @@ void startupConfigActions(const std::vector<std::string>& argv) {
     ntservice::configureService(
         initService, moe::startupOptionsParsed, defaultServiceStrings, disallowedOptions, argv);
 #endif
-}
-
-std::unique_ptr<AuthzManagerExternalState> createAuthzManagerExternalStateMongos() {
-    return std::make_unique<AuthzManagerExternalStateMongos>();
 }
 
 ExitCode main(ServiceContext* serviceContext) {

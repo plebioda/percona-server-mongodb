@@ -45,6 +45,7 @@
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/timeseries/bucket_catalog/bucket_catalog.h"
 #include "mongo/db/timeseries/bucket_catalog/bucket_catalog_helpers.h"
+#include "mongo/db/timeseries/bucket_catalog/global_bucket_catalog.h"
 #include "mongo/db/timeseries/bucket_catalog/tracking_contexts.h"
 #include "mongo/db/timeseries/timeseries_extended_range.h"
 #include "mongo/db/transaction_resources.h"
@@ -124,16 +125,20 @@ void TimeSeriesOpObserver::onUpdate(OperationContext* opCtx,
                     args.coll->getTimeseriesBucketsMayHaveMixedSchemaData().value_or(false) ||
                     !mixedSchema());
 
-        timeseries::bucket_catalog::handleDirectWrite(opCtx,
-                                                      options.value(),
-                                                      args.coll->getDefaultCollator(),
-                                                      args.coll->uuid(),
-                                                      args.updateArgs->preImageDoc);
-        timeseries::bucket_catalog::handleDirectWrite(opCtx,
-                                                      options.value(),
-                                                      args.coll->getDefaultCollator(),
-                                                      args.coll->uuid(),
-                                                      args.updateArgs->updatedDoc);
+        timeseries::bucket_catalog::handleDirectWrite(
+            *shard_role_details::getRecoveryUnit(opCtx),
+            timeseries::bucket_catalog::GlobalBucketCatalog::get(opCtx->getServiceContext()),
+            options.value(),
+            args.coll->getDefaultCollator(),
+            args.coll->uuid(),
+            args.updateArgs->preImageDoc);
+        timeseries::bucket_catalog::handleDirectWrite(
+            *shard_role_details::getRecoveryUnit(opCtx),
+            timeseries::bucket_catalog::GlobalBucketCatalog::get(opCtx->getServiceContext()),
+            options.value(),
+            args.coll->getDefaultCollator(),
+            args.coll->uuid(),
+            args.updateArgs->updatedDoc);
     }
 }
 
@@ -151,7 +156,12 @@ void TimeSeriesOpObserver::onDelete(OperationContext* opCtx,
     }
 
     timeseries::bucket_catalog::handleDirectWrite(
-        opCtx, options.value(), coll->getDefaultCollator(), coll->uuid(), doc);
+        *shard_role_details::getRecoveryUnit(opCtx),
+        timeseries::bucket_catalog::GlobalBucketCatalog::get(opCtx->getServiceContext()),
+        options.value(),
+        coll->getDefaultCollator(),
+        coll->uuid(),
+        doc);
 }
 
 repl::OpTime TimeSeriesOpObserver::onDropCollection(OperationContext* opCtx,
@@ -161,8 +171,9 @@ repl::OpTime TimeSeriesOpObserver::onDropCollection(OperationContext* opCtx,
                                                     CollectionDropType dropType,
                                                     bool markFromMigrate) {
     if (collectionName.isTimeseriesBucketsCollection()) {
-        auto& bucketCatalog = timeseries::bucket_catalog::BucketCatalog::get(opCtx);
-        timeseries::bucket_catalog::clear(bucketCatalog, uuid);
+        auto& bucketCatalog =
+            timeseries::bucket_catalog::GlobalBucketCatalog::get(opCtx->getServiceContext());
+        timeseries::bucket_catalog::drop(bucketCatalog, uuid);
     }
 
     return {};
@@ -177,14 +188,15 @@ void TimeSeriesOpObserver::onReplicationRollback(OperationContext* opCtx,
         return;
     }
 
-    auto& bucketCatalog = timeseries::bucket_catalog::BucketCatalog::get(opCtx);
+    auto& bucketCatalog =
+        timeseries::bucket_catalog::GlobalBucketCatalog::get(opCtx->getServiceContext());
     tracked_vector<UUID> clearedCollectionUUIDs = make_tracked_vector<UUID>(
         timeseries::bucket_catalog::getTrackingContext(
             bucketCatalog.trackingContexts,
             timeseries::bucket_catalog::TrackingScope::kBucketStateRegistry),
         rbInfo.rollbackUUIDs.begin(),
         rbInfo.rollbackUUIDs.end());
-    timeseries::bucket_catalog::clear(bucketCatalog, std::move(clearedCollectionUUIDs));
+    timeseries::bucket_catalog::drop(bucketCatalog, std::move(clearedCollectionUUIDs));
 }
 
 }  // namespace mongo

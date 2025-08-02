@@ -5,6 +5,7 @@ Import(
         "env",
         "get_option",
         "has_option",
+        "http_client",
         "jsEngine",
         "version_parts",
         "version_extra",

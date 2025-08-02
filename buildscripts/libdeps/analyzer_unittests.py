@@ -24,21 +24,16 @@
 """Unittests for the graph analyzer."""
 
 import json
-import sys
 import unittest
 
-import networkx
-
 import libdeps.analyzer
+from generate_test_graphs import get_basic_mock_graph, get_double_diamond_mock_graph
 from libdeps.graph import (
+    CountTypes,
     DependsReportTypes,
     LibdepsGraph,
-    EdgeProps,
     LinterTypes,
-    NodeProps,
-    CountTypes,
 )
-from generate_test_graphs import get_double_diamond_mock_graph, get_basic_mock_graph
 
 
 class Tests(unittest.TestCase):

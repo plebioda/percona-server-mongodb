@@ -5,6 +5,9 @@
 //   # Cowardly refusing to run test that interacts with the system profiler as the 'system.profile'
 //   # collection is not replicated.
 //   does_not_support_causal_consistency,
+//   # The test expects one entry in the slow logs, therefore if the query is run multiple times the
+//   # assertion will fail.
+//   does_not_support_repeated_reads,
 //   # Uses $where operation.
 //   requires_scripting,
 //   directly_against_shardsvrs_incompatible,
@@ -13,7 +16,7 @@
 //   simulate_atlas_proxy_incompatible,
 //   requires_fcv_80,
 // ]
-import {QuerySettingsUtils} from "jstests/libs/query_settings_utils.js";
+import {QuerySettingsUtils} from "jstests/libs/query/query_settings_utils.js";
 
 const collName = "test";
 const qsutils = new QuerySettingsUtils(db, collName);

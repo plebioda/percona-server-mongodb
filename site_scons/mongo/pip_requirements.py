@@ -4,9 +4,9 @@
 # import python standard modules, because this module
 # should be used for finding such external modules or
 # missing dependencies.
-import sys
-import subprocess
 import re
+import subprocess
+import sys
 
 
 class MissingRequirements(Exception):
@@ -38,7 +38,7 @@ def verify_requirements(silent: bool = False, executable=sys.executable):
     # Import poetry. If this fails then we know the next function will fail.
     # This is so the user will have an easier time diagnosing the problem
     try:
-        import poetry
+        import poetry  # noqa: F401
     except ModuleNotFoundError as ex:
         raiseSuggestion(ex, "'poetry==1.8.3'")
 

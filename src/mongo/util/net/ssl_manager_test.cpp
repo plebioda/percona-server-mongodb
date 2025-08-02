@@ -29,6 +29,7 @@
 
 
 #include <asio.hpp>
+#include <boost/filesystem.hpp>
 #include <fstream>
 
 #include "mongo/config.h"
@@ -55,9 +56,33 @@
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kTest
 
+namespace fs = boost::filesystem;
 
 namespace mongo {
 namespace {
+
+#define TEST_CERTS_DIR "jstests/libs/"
+// certs & CRLs rooted in ca.pem
+constexpr const char* caFile = TEST_CERTS_DIR "ca.pem";
+constexpr const char* serverKeyFile = TEST_CERTS_DIR "server.pem";
+constexpr const char* clientKeyFile = TEST_CERTS_DIR "client.pem";
+constexpr const char* revokedClientKeyFile = TEST_CERTS_DIR "client_revoked.pem";
+
+constexpr const char* intermediateACaFile = TEST_CERTS_DIR "intermediate-ca.pem";
+constexpr const char* intermediateALeafKeyFile = TEST_CERTS_DIR "server-intermediate-leaf.pem";
+constexpr const char* intermediateBCaFile = TEST_CERTS_DIR "intermediate-ca-B.pem";
+constexpr const char* intermediateBLeafKeyFile = TEST_CERTS_DIR "intermediate-ca-B-leaf.pem";
+constexpr const char* emptyCRL = TEST_CERTS_DIR "crl.pem";
+constexpr const char* expiredCRL = TEST_CERTS_DIR "crl_expired.pem";
+constexpr const char* clientRevokedCRL = TEST_CERTS_DIR "crl_client_revoked.pem";
+constexpr const char* intermediateBRevokedCRL = TEST_CERTS_DIR "crl_intermediate_ca_B_revoked.pem";
+constexpr const char* intermediateBCRL = TEST_CERTS_DIR "crl_from_intermediate_ca_B.pem";
+
+// certs & CRLs rooted in trusted-ca.pem
+constexpr const char* trustedCaFile = TEST_CERTS_DIR "trusted-ca.pem";
+constexpr const char* trustedServerKeyFile = TEST_CERTS_DIR "trusted-server.pem";
+constexpr const char* trustedClientKeyFile = TEST_CERTS_DIR "trusted-client.pem";
+constexpr const char* trustedEmptyCRL = TEST_CERTS_DIR "crl_from_trusted_ca.pem";
 
 // Test implementation needed by ASIO transport.
 class SessionManagerUtil : public transport::SessionManager {
@@ -110,6 +135,74 @@ std::string loadFile(const std::string& name) {
     std::ifstream input(name);
     std::string str((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     return str;
+}
+
+// Reads the input stream until EOF or a valid PEM block is encountered.
+// Skips private key PEM blocks if includePrivateKeys is true.
+// Returns the parsed PEM block as a string (with newlines), or an empty
+// string if none is found or a read error occurs.
+std::string readOnePEMBlock(std::ifstream& inputStrm, bool includePrivateKeys) {
+    std::string line;
+    for (;;) {
+        std::stringstream output;
+        bool foundBegin = false;
+        bool foundEnd = false;
+        bool discard = false;
+
+        while (!foundBegin && std::getline(inputStrm, line)) {
+            foundBegin = (line.starts_with("-----BEGIN ") && line.ends_with("-----"));
+        }
+        if (!foundBegin) {
+            return "";
+        }
+
+        discard = (!includePrivateKeys && line.find("PRIVATE KEY") != std::string::npos);
+        output << line << std::endl;
+
+        while (!foundEnd && std::getline(inputStrm, line)) {
+            output << line << std::endl;
+            foundEnd = (line.starts_with("-----END ") && line.ends_with("-----"));
+        }
+        if (!foundEnd) {
+            return "";
+        }
+        if (!discard) {
+            return output.str();
+        }
+    }
+}
+
+struct PEMFileSpec {
+    std::string path;
+    bool includePrivateKeys{false};
+    void serialize(BSONObjBuilder* bob) const {
+        bob->append("path", path);
+        bob->append("includePrivateKeys", includePrivateKeys);
+    }
+};
+// Given a list of PEM files, this concatenates the PEM blocks in those files
+// (optionally filtering out private keys) and writes the result into a temporary
+// file. Returns the path to the temp file.
+std::string combinePEMFiles(const std::vector<PEMFileSpec>& pemSpecs) {
+    // make a temp file for the output
+    auto path = fs::temp_directory_path() / fs::unique_path("tmpfile_%%%%_%%%%_%%%%_%%%%.pem");
+    std::ofstream outStream(path.string());
+    invariant(outStream.is_open());
+
+    LOGV2(
+        9476600, "Combining PEM files", "output"_attr = path.string(), "pemFiles"_attr = pemSpecs);
+
+    // read & parse the PEM files; append PEM blocks to output
+    for (auto& pemSpec : pemSpecs) {
+        std::ifstream input(pemSpec.path);
+        std::string pemBlock;
+        do {
+            pemBlock = readOnePEMBlock(input, pemSpec.includePrivateKeys);
+            outStream << pemBlock;
+        } while (!pemBlock.empty());
+    }
+    outStream.close();
+    return path.string();
 }
 
 TEST(SSLManager, matchHostname) {
@@ -861,7 +954,7 @@ TEST(SSLManager, TransientSSLParamsStressTestWithManager) {
 
 #endif  // MONGO_CONFIG_SSL_PROVIDER == MONGO_CONFIG_SSL_PROVIDER_OPENSSL
 
-#if MONGO_CONFIG_SSL
+#ifdef MONGO_CONFIG_SSL
 
 TEST(SSLManager, CheckCertificateInTransientManager) {
     std::string CLIENT_SUBJECT =
@@ -930,8 +1023,6 @@ TEST(SSLManager, TransientSSLParamsNewConnection) {
     ASSERT_OK(tla.rotateCertificates(swContext.getValue()->manager, true));
 }
 
-#endif  // MONGO_CONFIG_SSL
-
 static bool isSanWarningWritten(const std::vector<std::string>& logLines) {
     for (const auto& line : logLines) {
         if (std::string::npos !=
@@ -983,7 +1074,8 @@ public:
     SSLTestFixture(const SSLParams& ingressParams,
                    const SSLParams& egressParams,
                    bool ingressIsServer = true,
-                   bool egressIsServer = true) {
+                   bool egressIsServer = true,
+                   const boost::optional<TransientSSLParams>& transientSSLParams = boost::none) {
         auto serviceContext = ServiceContext::make();
         setGlobalServiceContext(std::move(serviceContext));
 
@@ -993,7 +1085,8 @@ public:
         isSSLServer = true;
 
         serverSSLManager = SSLManagerInterface::create(ingressParams, ingressIsServer);
-        clientSSLManager = SSLManagerInterface::create(egressParams, egressIsServer);
+        clientSSLManager =
+            SSLManagerInterface::create(egressParams, transientSSLParams, egressIsServer);
 
         serverSSLContext = std::make_shared<asio::ssl::context>(asio::ssl::context::sslv23);
         clientSSLContext = std::make_shared<asio::ssl::context>(asio::ssl::context::sslv23);
@@ -1035,6 +1128,12 @@ public:
         uassertStatusOK(clientStatus);
     }
 
+    struct IngressEgressValidationResult {
+        StatusWith<SSLPeerInfo> ingress;
+        StatusWith<SSLPeerInfo> egress;
+    };
+    IngressEgressValidationResult runIngressEgressValidation();
+
     class ConnectionContext {
     public:
         ConnectionContext(int fd, asio::ssl::context& ctx) : io_context() {
@@ -1056,6 +1155,46 @@ public:
     std::shared_ptr<ConnectionContext> serverConn;
 };
 
+SSLTestFixture::IngressEgressValidationResult SSLTestFixture::runIngressEgressValidation() {
+    static const HostAndPort hostForLogging("hostforlogging");
+
+    // Caller must doHandshake beforehand
+    invariant(serverConn);
+    invariant(clientConn);
+
+    IngressEgressValidationResult result{SSLPeerInfo{}, SSLPeerInfo{}};
+
+    // do ingress (server) first
+    try {
+        result.ingress =
+            serverSSLManager
+                ->parseAndValidatePeerCertificate(serverConn->sslSocket->native_handle(),
+                                                  boost::none,
+                                                  "",
+                                                  hostForLogging,
+                                                  nullptr)
+                .get();
+    } catch (const DBException& ex) {
+        result.ingress = ex.toStatus();
+    }
+
+    // do egress (client) next
+    try {
+        result.egress =
+            clientSSLManager
+                ->parseAndValidatePeerCertificate(clientConn->sslSocket->native_handle(),
+                                                  boost::none,
+                                                  "localhost",
+                                                  hostForLogging,
+                                                  nullptr)
+                .get();
+    } catch (const DBException& ex) {
+        result.egress = ex.toStatus();
+    }
+
+    return result;
+}
+
 struct CertValidationTestCase {
     std::string cafile;
     std::string clusterCaFile;
@@ -1070,32 +1209,52 @@ struct CertValidationTestCase {
     }
 };
 
+void checkValidationResults(SSLTestFixture::IngressEgressValidationResult& result,
+                            bool expectIngressPass,
+                            bool expectEgressPass,
+                            ErrorCodes::Error expectIngressCode = ErrorCodes::SSLHandshakeFailed,
+                            ErrorCodes::Error expectEgressCode = ErrorCodes::SSLHandshakeFailed) {
+    ASSERT_EQ(result.ingress.isOK(), expectIngressPass)
+        << "Ingress validation status: " << result.ingress.getStatus();
+    ASSERT_EQ(result.egress.isOK(), expectEgressPass)
+        << "Egress validation status: " << result.egress.getStatus();
+    if (!result.ingress.isOK()) {
+        ASSERT_EQ(result.ingress.getStatus().code(), expectIngressCode)
+            << "Ingress validation status: " << result.ingress.getStatus();
+    }
+    if (!result.egress.isOK()) {
+        ASSERT_EQ(result.egress.getStatus().code(), expectEgressCode)
+            << "Egress validation status: " << result.egress.getStatus();
+    }
+}
+
 // Tests peer certificate validation on the egress side.
 // ingress (server) uses sslPEMKeyFile: "server.pem", sslCAFile: "ca.pem"
 // egress (client) uses sslPEMKeyFile: "client.pem"
 TEST(SSLManager, basicEgressValidationTests) {
-    const HostAndPort hostForLogging("hostforlogging");
-    constexpr const char* validCaFile = "jstests/libs/ca.pem";
-    constexpr const char* badCaFile = "jstests/libs/trusted-ca.pem";
+    constexpr auto validCaFile = caFile;
+    constexpr auto badCaFile = trustedCaFile;
 
     std::vector<CertValidationTestCase> testCases = {
         {"", "", false},
         {validCaFile, "", true},
         {badCaFile, "", false},
+
+        // These two tests that egress always uses caFile not clusterCAFile
         {badCaFile, validCaFile, false},
         {validCaFile, badCaFile, true},
     };
 
     SSLParams serverParams;
     serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
-    serverParams.sslCAFile = "jstests/libs/ca.pem";
-    serverParams.sslPEMKeyFile = "jstests/libs/server.pem";
+    serverParams.sslCAFile = caFile;
+    serverParams.sslPEMKeyFile = serverKeyFile;
     serverParams.sslAllowInvalidHostnames = true;
 
     for (auto& test : testCases) {
         SSLParams clientParams;
         clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
-        clientParams.sslPEMKeyFile = "jstests/libs/client.pem";
+        clientParams.sslPEMKeyFile = clientKeyFile;
         clientParams.sslAllowInvalidHostnames = true;
         clientParams.sslCAFile = test.cafile;
         clientParams.sslClusterCAFile = test.clusterCaFile;
@@ -1108,38 +1267,535 @@ TEST(SSLManager, basicEgressValidationTests) {
 
             SSLTestFixture tf(serverParams, clientParams);
             tf.doHandshake();
+            auto result = tf.runIngressEgressValidation();
+            checkValidationResults(result, true /*expectIngressPass*/, test.pass || weak);
 
-            SSLPeerInfo peerInfo;
-            Status status = Status::OK();
-            try {
-                peerInfo =
-                    tf.clientSSLManager
-                        ->parseAndValidatePeerCertificate(tf.clientConn->sslSocket->native_handle(),
-                                                          boost::none,
-                                                          "localhost",
-                                                          hostForLogging,
-                                                          nullptr)
-                        .get();
-            } catch (const DBException& ex) {
-                status = ex.toStatus();
-            }
-
-            if (status.isOK()) {
-                if (!test.pass) {
-                    ASSERT(weak) << "Test unexpectedly passed validation";
-                }
+            if (result.egress.isOK()) {
+                auto& peerInfo = result.egress.getValue();
                 ASSERT_EQ(peerInfo.subjectName().empty(), !test.pass);
                 ASSERT(peerInfo.isTLS());
                 ASSERT(peerInfo.roles().empty());
                 ASSERT_FALSE(peerInfo.getClusterMembership().has_value());
                 ASSERT_FALSE(peerInfo.sniName().has_value());
-            } else {
-                ASSERT_FALSE(test.pass)
-                    << "Test unexpectedly failed validation with exception: " << status;
             }
         }
     }
 }
 
+// Tests peer certificate validation on the ingress side.
+// ingress (server) uses sslPEMKeyFile: "server.pem"
+// egress (client) uses sslCAFile: "ca.pem" sslPEMKeyFile: "client.pem"
+TEST(SSLManager, basicIngressValidationTests) {
+    constexpr auto validCaFile = caFile;
+    constexpr auto badCaFile = trustedCaFile;
+
+    std::vector<CertValidationTestCase> testCases = {
+        {"", "", false},
+        {validCaFile, "", true},
+        {badCaFile, "", false},
+
+        // These two tests that ingress always uses clusterCAFile, not CAFile
+        {badCaFile, validCaFile, true},
+        {validCaFile, badCaFile, false},
+    };
+
+    SSLParams clientParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslCAFile = caFile;
+    clientParams.sslPEMKeyFile = clientKeyFile;
+    clientParams.sslAllowInvalidHostnames = true;
+
+    for (auto& test : testCases) {
+        SSLParams serverParams;
+        serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+        serverParams.sslPEMKeyFile = serverKeyFile;
+        serverParams.sslAllowInvalidHostnames = true;
+        serverParams.sslCAFile = test.cafile;
+        serverParams.sslClusterCAFile = test.clusterCaFile;
+
+        for (auto weak : {false, true}) {
+            test.allowInvalidCerts = weak;
+            serverParams.sslAllowInvalidCertificates = weak;
+
+            LOGV2(9476500, "Running test case", "test"_attr = test);
+            SSLTestFixture tf(serverParams, clientParams);
+            tf.doHandshake();
+            auto result = tf.runIngressEgressValidation();
+            checkValidationResults(result, test.pass || weak, true /*expectEgressPass*/);
+
+            if (result.ingress.isOK()) {
+                auto& peerInfo = result.ingress.getValue();
+                ASSERT_EQ(peerInfo.subjectName().empty(), !test.pass);
+                ASSERT(peerInfo.isTLS());
+                ASSERT(peerInfo.roles().empty());
+                ASSERT_FALSE(peerInfo.getClusterMembership().has_value());
+                ASSERT_FALSE(peerInfo.sniName().has_value());
+            }
+        }
+    }
+}
+
+// Tests which key files are used (pem key file vs cluster file) during ingress/egress.
+// Both ingress & egress are configured with sslCAFile: "ca.pem"
+TEST(SSLManager, keyFileUsageTests) {
+    struct TestCase {
+        std::string clientPemKeyFile;
+        std::string clientClusterFile;
+        std::string serverPemKeyFile;
+        std::string serverClusterFile;
+        bool clientPass;
+        bool serverPass;
+        void serialize(BSONObjBuilder* bob) const {
+            bob->append("clientPemKeyFile", clientPemKeyFile);
+            bob->append("clientClusterFile", clientClusterFile);
+            bob->append("serverPemKeyFile", serverPemKeyFile);
+            bob->append("serverClusterFile", serverClusterFile);
+            bob->append("clientPass", clientPass);
+            bob->append("serverPass", serverPass);
+        }
+    };
+
+    std::vector<TestCase> testCases = {
+        {clientKeyFile, "", serverKeyFile, "", true, true},
+        {trustedClientKeyFile, "", serverKeyFile, "", true, false},
+        {clientKeyFile, "", trustedServerKeyFile, "", false, true},
+        {trustedClientKeyFile, "", trustedServerKeyFile, "", false, false},
+
+        // These two tests that egress always uses clusterFile over pemKeyFile
+        {trustedClientKeyFile, clientKeyFile, serverKeyFile, "", true, true},
+        {clientKeyFile, trustedClientKeyFile, serverKeyFile, "", true, false},
+
+        // These two tests that ingress always uses pemKeyFile
+        {clientKeyFile, "", trustedServerKeyFile, serverKeyFile, false, true},
+        {clientKeyFile, "", serverKeyFile, trustedServerKeyFile, true, true},
+
+    // SSLManagerOpenSSL requires sslPEMKeyFile to be non-empty if running with isServer=true,
+    // whereas the other two implementations don't.
+#if MONGO_CONFIG_SSL_PROVIDER != MONGO_CONFIG_SSL_PROVIDER_OPENSSL
+        // Tests what happens when PEMKeyFile is empty on egress
+        {"", "", serverKeyFile, "", true, false},            // client does not present a cert
+        {"", clientKeyFile, serverKeyFile, "", true, true},  // client presents clientKeyFile cert
+#endif
+    };
+
+    SSLParams serverParams;
+    serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    serverParams.sslCAFile = caFile;
+    serverParams.sslAllowInvalidHostnames = true;
+
+    SSLParams clientParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslCAFile = caFile;
+    clientParams.sslAllowInvalidHostnames = true;
+
+    for (auto& test : testCases) {
+        LOGV2(9476501, "Running test case", "test"_attr = test);
+
+        serverParams.sslPEMKeyFile = test.serverPemKeyFile;
+        serverParams.sslClusterFile = test.serverClusterFile;
+
+        clientParams.sslPEMKeyFile = test.clientPemKeyFile;
+        clientParams.sslClusterFile = test.clientClusterFile;
+
+        SSLTestFixture tf(serverParams, clientParams);
+        tf.doHandshake();
+        auto result = tf.runIngressEgressValidation();
+        checkValidationResults(result, test.serverPass, test.clientPass);
+    }
+}
+
+// Tests ingress behavior if the peer does not send a client cert is controlled by
+// SSLParams.sslWeakCertificateValidation.
+// Also tests that tlsWithholdClientCertificate=true works on egress.
+TEST(SSLManager, noCertificatePresentedByPeerTests) {
+    SSLParams clientParams, serverParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslCAFile = caFile;
+    clientParams.sslPEMKeyFile = clientKeyFile;
+    clientParams.sslAllowInvalidHostnames = true;
+    clientParams.tlsWithholdClientCertificate = true;
+
+    serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    serverParams.sslCAFile = caFile;
+    serverParams.sslPEMKeyFile = serverKeyFile;
+    serverParams.sslAllowInvalidHostnames = true;
+
+    for (auto weak : {false, true}) {
+        LOGV2(9476502, "Running with sslWeakCertificateValidation=weak", "weak"_attr = weak);
+
+        serverParams.sslWeakCertificateValidation = weak;
+
+        SSLTestFixture tf(
+            serverParams, clientParams, true /*ingressIsServer*/, true /*egressIsServer*/);
+        tf.doHandshake();
+        auto result = tf.runIngressEgressValidation();
+        checkValidationResults(result, weak /*expectIngressPass*/, true /*expectEgressPass*/);
+    }
+}
+
+// Tests transient SSL parameters override the "normal" SSLParams passed to the
+// SSLManager when performing outbound connections (requires isServer=false on egress side).
+TEST(SSLManager, transientSSLParamsOverrideGlobalParamsTests) {
+    SSLParams clientParams, serverParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslCAFile = caFile;
+    clientParams.sslPEMKeyFile = clientKeyFile;
+    clientParams.sslAllowInvalidHostnames = true;
+
+    serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    serverParams.sslCAFile = trustedCaFile;
+    serverParams.sslPEMKeyFile = trustedServerKeyFile;
+    serverParams.sslAllowInvalidHostnames = true;
+
+    struct TestCase {
+        std::string caFile;
+        std::string keyFile;
+        bool clientPass;
+        bool serverPass;
+        void serialize(BSONObjBuilder* bob) const {
+            bob->append("caFile", caFile);
+            bob->append("keyFile", keyFile);
+            bob->append("clientPass", clientPass);
+            bob->append("serverPass", serverPass);
+        }
+    };
+    std::vector<TestCase> testCases{
+        {trustedCaFile, trustedClientKeyFile, true, true},
+        {caFile, trustedClientKeyFile, false, true},
+        {trustedCaFile, clientKeyFile, true, false},
+        {trustedCaFile, "", true, false},
+    };
+
+    // First, test that validation fails on both sides without the transient params.
+    SSLTestFixture tf(
+        serverParams, clientParams, true /*ingressIsServer*/, false /*egressIsServer*/);
+    tf.doHandshake();
+    auto result = tf.runIngressEgressValidation();
+    checkValidationResults(result, false, false);
+
+    for (auto& test : testCases) {
+        LOGV2(9476503, "Running test case", "test"_attr = test);
+
+        TLSCredentials creds;
+        creds.tlsAllowInvalidHostnames = true;
+        creds.tlsCAFile = test.caFile;
+        creds.tlsPEMKeyFile = test.keyFile;
+        TransientSSLParams transientParams(creds);
+
+        SSLTestFixture tf(serverParams, clientParams, true, false, transientParams);
+        tf.doHandshake();
+        auto result = tf.runIngressEgressValidation();
+        checkValidationResults(result, test.serverPass, test.clientPass);
+    }
+}
+
+// Tests that SSL validation can build its chain of trust given different CAFile & peer certificate
+// configurations that include intermediate CA certificates.
+// Caveats:
+// - Apple: allows intermediate certs (without root CA cert) to be the root of trust
+//          when validating chains.
+TEST(SSLManager, intermediateCATests) {
+    struct TestCase {
+        std::string clientCAFile;
+        std::string serverKeyFile;
+        bool clientPass;
+        void serialize(BSONObjBuilder* bob) const {
+            bob->append("clientCAFile", clientCAFile);
+            bob->append("serverKeyFile", serverKeyFile);
+            bob->append("clientPass", clientPass);
+        }
+    };
+
+    // intermediate-ca.pem + server-intermediate-leaf.pem bundle
+    const std::string intermediateALeafWithIssuerCertKeyFile = combinePEMFiles(
+        {{intermediateALeafKeyFile, true /*includePrivKey*/}, {intermediateACaFile}});
+    // ca.pem + intermediate-ca.pem + server-intermediate-leaf.pem bundle
+    const std::string intermediateALeafWithAllIssuerCertsKeyFile = combinePEMFiles(
+        {{intermediateALeafWithIssuerCertKeyFile, true /*includePrivKey*/}, {caFile}});
+    // intermediate-ca.pem + ca.pem
+    const std::string intermediateAWithRootCaFile =
+        combinePEMFiles({{intermediateACaFile}, {caFile}});
+    // intermediate-ca-B.pem + intermediate-ca-B-leaf.pem bundle
+    const std::string intermediateBLeafWithIssuerCertKeyFile = combinePEMFiles(
+        {{intermediateBLeafKeyFile, true /*includePrivKey*/}, {intermediateBCaFile}});
+
+#if MONGO_CONFIG_SSL_PROVIDER == MONGO_CONFIG_SSL_PROVIDER_APPLE
+    // Apple allows intermediate CA certs to be the root of trust when validating a chain.
+    const bool allowsIntermediateTrustRoot = true;
+#else
+    const bool allowsIntermediateTrustRoot = false;
+#endif
+
+    std::vector<TestCase> testCases = {
+        // Client configured with CAFile = intermediate-ca.pem only (ie. no root trust anchor)
+        // None of these should pass validation in the client:
+        // 1. server key = server-intermediate-leaf.pem
+        // 2. server key = server.pem
+        // 3. server key = intermediate-ca.pem + server-intermediate-leaf.pem bundle
+        // 4. server key = ca.pem + intermediate-ca.pem + server-intermediate-leaf.pem bundle
+        {intermediateACaFile, intermediateALeafKeyFile, allowsIntermediateTrustRoot},
+        {intermediateACaFile, serverKeyFile, false},
+        {intermediateACaFile, intermediateALeafWithIssuerCertKeyFile, allowsIntermediateTrustRoot},
+        {intermediateACaFile,
+         intermediateALeafWithAllIssuerCertsKeyFile,
+         allowsIntermediateTrustRoot},
+
+        // Client configured with CAFile = intermediate-ca.pem + ca.pem bundle (ie. w/ trust anchor)
+        // The following should pass validation in the client:
+        // 1. server key = server-intermediate-leaf.pem
+        // 2. server key = server.pem
+        // 3. server key = intermediate-ca-B.pem + intermediate-ca-B-leaf.pem bundle
+        //                 (leaf not signed by intermediate-ca.pem, but chain rooted in ca.pem)
+        // These should fail validation in the client:
+        // 4. server key = intermediate-ca-B-leaf.pem (no path to trusted root)
+        {intermediateAWithRootCaFile, intermediateALeafKeyFile, true},
+        {intermediateAWithRootCaFile, serverKeyFile, true},
+        {intermediateAWithRootCaFile, intermediateBLeafWithIssuerCertKeyFile, true},
+        {intermediateAWithRootCaFile, intermediateBLeafKeyFile, false},
+
+        // Client configured with CAFile = ca.pem
+        // The following should fail validation in the client:
+        // 1. server key = server-intermediate-leaf.pem
+        // 2. server key = intermediate-ca-B-leaf.pem
+        // The following should pass validation in the client:
+        // 3. server key = intermediate-ca.pem + server-intermediate-leaf.pem bundle
+        // 4. server key = intermediate-ca-B.pem + intermediate-ca-B-leaf.pem bundle
+        {caFile, intermediateALeafKeyFile, false},
+        {caFile, intermediateBLeafKeyFile, false},
+        {caFile, intermediateALeafWithIssuerCertKeyFile, true},
+        {caFile, intermediateBLeafWithIssuerCertKeyFile, true},
+    };
+
+    SSLParams clientParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslAllowInvalidHostnames = true;
+    clientParams.sslPEMKeyFile = trustedClientKeyFile;
+
+    SSLParams serverParams;
+    serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    serverParams.sslAllowInvalidHostnames = true;
+    serverParams.sslCAFile = trustedCaFile;
+
+    for (auto& test : testCases) {
+        clientParams.sslCAFile = test.clientCAFile;
+        serverParams.sslPEMKeyFile = test.serverKeyFile;
+
+        LOGV2(9476601, "Running test case", "test"_attr = test);
+
+        SSLTestFixture tf(serverParams, clientParams);
+        tf.doHandshake();
+        auto result = tf.runIngressEgressValidation();
+        checkValidationResults(result, true /*expectIngressPass*/, test.clientPass);
+    }
+}
+
+// Tests that validation fails if configured CRL for the issuer of the peer certificate being
+// validated has expired.
+// Caveats:
+// - Apple: CRL unsupported; test disabled
+// - Windows: validation fails, but with misleading error message
+#if MONGO_CONFIG_SSL_PROVIDER != MONGO_CONFIG_SSL_PROVIDER_APPLE
+TEST(SSLManager, expiredCRLTest) {
+    SSLParams clientParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslAllowInvalidHostnames = true;
+    clientParams.sslCAFile = caFile;
+    clientParams.sslPEMKeyFile = clientKeyFile;
+    clientParams.sslCRLFile = expiredCRL;
+
+    SSLParams serverParams;
+    serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    serverParams.sslAllowInvalidHostnames = true;
+    serverParams.sslCAFile = caFile;
+    serverParams.sslPEMKeyFile = serverKeyFile;
+    serverParams.sslCRLFile = expiredCRL;
+
+    SSLTestFixture tf(serverParams, clientParams);
+    tf.doHandshake();
+    auto result = tf.runIngressEgressValidation();
+    checkValidationResults(result, false /*expectIngressPass*/, false /*expectEgressPass*/);
+
+#if MONGO_CONFIG_SSL_PROVIDER == MONGO_CONFIG_SSL_PROVIDER_WINDOWS
+    constexpr const char* cause = "revocation server was offline";
+#else
+    constexpr const char* cause = "expired";
+#endif
+    ASSERT_NE(result.ingress.getStatus().reason().find(cause), std::string::npos);
+    ASSERT_NE(result.egress.getStatus().reason().find(cause), std::string::npos);
+}
+
+// Tests peer cert validation behavior if multiple CRLs from the same issuer are included
+// in the CRL PEM file.
+// Caveats:
+// - Apple: CRL unsupported; test disabled
+// - Windows: not allowed; setup fails with "The object or property already exists"
+// - OpenSSL: allowed, even with some CRLs having already expired
+TEST(SSLManager, multipleCRLsFromSameIssuerTests) {
+    // Combine two CRLs from the same issuer, one is valid and the other is expired.
+    const auto expiredCRLWithNonExpiredCRL = combinePEMFiles({{clientRevokedCRL}, {expiredCRL}});
+
+    SSLParams serverParams;
+    serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    serverParams.sslAllowInvalidHostnames = true;
+    serverParams.sslCAFile = caFile;
+    serverParams.sslPEMKeyFile = serverKeyFile;
+    serverParams.sslCRLFile = expiredCRLWithNonExpiredCRL;
+
+    SSLParams clientParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslAllowInvalidHostnames = true;
+    clientParams.sslCAFile = caFile;
+
+#if MONGO_CONFIG_SSL_PROVIDER == MONGO_CONFIG_SSL_PROVIDER_WINDOWS
+    ASSERT_THROWS_CODE_AND_WHAT(
+        SSLManagerInterface::create(serverParams, true),
+        DBException,
+        ErrorCodes::InvalidSSLConfiguration,
+        "CertAddCRLContextToStore Failed  The object or property already exists.");
+#else
+    {
+        clientParams.sslPEMKeyFile = clientKeyFile;
+        LOGV2(9476700, "Running with client key file", "keyfile"_attr = clientKeyFile);
+        SSLTestFixture tf(serverParams, clientParams);
+        tf.doHandshake();
+        auto result = tf.runIngressEgressValidation();
+        checkValidationResults(result, true /*expectIngressPass*/, true);
+    }
+    {
+        clientParams.sslPEMKeyFile = revokedClientKeyFile;
+        LOGV2(9476701, "Running with client key file", "keyfile"_attr = revokedClientKeyFile);
+        SSLTestFixture tf(serverParams, clientParams);
+        tf.doHandshake();
+        auto result = tf.runIngressEgressValidation();
+        checkValidationResults(result, false, true);
+        ASSERT_NE(result.ingress.getStatus().reason().find("revoked"), std::string::npos);
+    }
+#endif
+}
+
+// Tests basic CRL revocation works on ingress if the client is configured with a revoked key.
+// Caveats:
+// - Apple: CRL unsupported; test disabled
+TEST(SSLManager, basicCRLRevocationTests) {
+    struct TestCase {
+        std::string serverCRLFile;
+        bool serverPass;
+        void serialize(BSONObjBuilder* bob) const {
+            bob->append("serverCRLFile", serverCRLFile);
+            bob->append("serverPass", serverPass);
+        }
+    };
+
+    SSLParams clientParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslAllowInvalidHostnames = true;
+    clientParams.sslCAFile = trustedCaFile;
+    clientParams.sslPEMKeyFile = revokedClientKeyFile;
+
+    SSLParams serverParams;
+    serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    serverParams.sslAllowInvalidHostnames = true;
+    serverParams.sslCAFile = caFile;
+    serverParams.sslPEMKeyFile = trustedServerKeyFile;
+
+    {
+        serverParams.sslCRLFile = emptyCRL;
+        LOGV2(9476702, "Running test case", "CRLFile"_attr = emptyCRL, "pass"_attr = true);
+        SSLTestFixture tf(serverParams, clientParams);
+        tf.doHandshake();
+        auto result = tf.runIngressEgressValidation();
+        checkValidationResults(result, true, true /*expectEgressPass*/);
+    }
+    {
+        serverParams.sslCRLFile = clientRevokedCRL;
+        LOGV2(9476703, "Running test case", "CRLFile"_attr = clientRevokedCRL, "pass"_attr = false);
+        SSLTestFixture tf(serverParams, clientParams);
+        tf.doHandshake();
+        auto result = tf.runIngressEgressValidation();
+        checkValidationResults(result, false, true /*expectEgressPass*/);
+        ASSERT_NE(result.ingress.getStatus().reason().find("revoked"), std::string::npos);
+    }
+}
+
+// Tests validation behavior on ingress (or egress) if CRL checking is enabled, but no suitable
+// CRL is found from same issuer of the peer cert being validated.
+// Caveats:
+// - Apple: CRL unsupported; test disabled
+// - Windows: validation passes if no CRL is found
+// - OpenSSL: validation fails if no CRL is found
+TEST(SSLManager, noCRLFoundTests) {
+    SSLParams clientParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslAllowInvalidHostnames = true;
+    clientParams.sslCAFile = caFile;
+    clientParams.sslPEMKeyFile = clientKeyFile;
+    clientParams.sslCRLFile = trustedEmptyCRL;  // CRL issued by trusted-ca.pem, not ca.pem
+
+    SSLParams serverParams;
+    serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    serverParams.sslAllowInvalidHostnames = true;
+    serverParams.sslCAFile = caFile;
+    serverParams.sslPEMKeyFile = serverKeyFile;
+    serverParams.sslCRLFile = trustedEmptyCRL;
+
+    SSLTestFixture tf(serverParams, clientParams);
+    tf.doHandshake();
+    auto result = tf.runIngressEgressValidation();
+#if MONGO_CONFIG_SSL_PROVIDER == MONGO_CONFIG_SSL_PROVIDER_WINDOWS
+    checkValidationResults(result, true, true);
+#else
+    checkValidationResults(result, false, false);
+    constexpr const char* expectedError = "unable to get certificate CRL";
+    ASSERT_NE(result.ingress.getStatus().reason().find(expectedError), std::string::npos);
+    ASSERT_NE(result.egress.getStatus().reason().find(expectedError), std::string::npos);
+#endif
+}
+
+// Tests whether validation passes if an intermediate CA issuer cert is revoked, but
+// the end-entity cert is not.
+// Caveats:
+// - Apple: CRL unsupported; test disabled
+// - Windows: multiple CRLs (root CRL + intermediate CRL) is not allowed
+// TODO: SERVER-95583 investigate why windows behaves like this.
+// - OpenSSL: passes; only leaf cert is checked against CRL
+// TODO: SERVER-95445 should fix this openssl issue.
+TEST(SSLManager, revocationWithCRLsIntermediateTests) {
+    // intermediate-ca-B.pem + intermediate-ca-B-leaf.pem bundle
+    const std::string intermediateBLeafWithIssuerCertKeyFile = combinePEMFiles(
+        {{intermediateBLeafKeyFile, true /*includePrivKey*/}, {intermediateBCaFile}});
+    // crl_from_intermediate_ca_B.pem + crl_intermediate_ca_B_revoked.pem
+    const std::string crlsFromRootAndIntermediateB =
+        combinePEMFiles({{intermediateBRevokedCRL}, {intermediateBCRL}});
+
+    SSLParams clientParams;
+    clientParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    clientParams.sslAllowInvalidHostnames = true;
+    clientParams.sslCAFile = caFile;
+    clientParams.sslPEMKeyFile = clientKeyFile;
+    clientParams.sslCRLFile = crlsFromRootAndIntermediateB;
+
+    SSLParams serverParams;
+    serverParams.sslMode.store(::mongo::sslGlobalParams.SSLMode_requireSSL);
+    serverParams.sslAllowInvalidHostnames = true;
+    serverParams.sslCAFile = caFile;
+    serverParams.sslPEMKeyFile = intermediateBLeafWithIssuerCertKeyFile;
+
+#if MONGO_CONFIG_SSL_PROVIDER == MONGO_CONFIG_SSL_PROVIDER_WINDOWS
+    ASSERT_THROWS_CODE_AND_WHAT(
+        SSLManagerInterface::create(clientParams, true),
+        DBException,
+        ErrorCodes::InvalidSSLConfiguration,
+        "CertAddCRLContextToStore Failed  The object or property already exists.");
+#else
+    SSLTestFixture tf(serverParams, clientParams);
+    tf.doHandshake();
+    auto result = tf.runIngressEgressValidation();
+    checkValidationResults(result, true, true);
+#endif
+}
+
+#endif  // MONGO_CONFIG_SSL_PROVIDER != MONGO_CONFIG_SSL_PROVIDER_APPLE
+
+#endif  // MONGO_CONFIG_SSL
 }  // namespace
 }  // namespace mongo

@@ -4,20 +4,6 @@ Import("env")
 
 env = env.Clone()
 
-# Should not be referenced outside this SConscript file.
-env.Library(
-    target="kv_drop_pending_ident_reaper",
-    source=[
-        "kv_drop_pending_ident_reaper.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/concurrency/exception_util",
-        "$BUILD_DIR/mongo/db/concurrency/lock_manager",
-        "$BUILD_DIR/mongo/db/query/query_stats/query_stats",
-        "$BUILD_DIR/mongo/db/shard_role_api",
-    ],
-)
-
 env.Library(
     target="kv_engine_test_harness",
     source=[
@@ -33,7 +19,7 @@ env.Library(
         "$BUILD_DIR/mongo/db/service_context_test_fixture",
         "$BUILD_DIR/mongo/db/shard_role_api",
         "$BUILD_DIR/mongo/db/storage/durable_catalog",
-        "$BUILD_DIR/mongo/db/storage/key_string",
+        "$BUILD_DIR/mongo/db/storage/key_string/key_string",
         "$BUILD_DIR/mongo/db/storage/record_store_base",
         "$BUILD_DIR/mongo/unittest/unittest",
         "$BUILD_DIR/mongo/util/clock_source_mock",

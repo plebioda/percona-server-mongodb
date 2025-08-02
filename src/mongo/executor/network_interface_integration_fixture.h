@@ -39,6 +39,7 @@
 #include "mongo/client/connection_string.h"
 #include "mongo/db/baton.h"
 #include "mongo/executor/connection_pool.h"
+#include "mongo/executor/executor_integration_test_fixture.h"
 #include "mongo/executor/network_connection_hook.h"
 #include "mongo/executor/network_interface.h"
 #include "mongo/executor/remote_command_request.h"
@@ -79,7 +80,7 @@ inline TaskExecutor::CallbackHandle makeCallbackHandle() {
 
 using StartCommandCB = std::function<void(const RemoteCommandResponse&)>;
 
-class NetworkInterfaceIntegrationFixture : public mongo::unittest::Test {
+class NetworkInterfaceIntegrationFixture : public ExecutorIntegrationTestFixture {
 public:
     void createNet(std::unique_ptr<NetworkConnectionHook> connectHook = nullptr,
                    ConnectionPool::Options options = {});
@@ -101,23 +102,32 @@ public:
 
     PseudoRandom* getRandomNumberGenerator();
 
-    Future<RemoteCommandResponse> runCommand(const TaskExecutor::CallbackHandle& cbHandle,
-                                             RemoteCommandRequest rcroa,
-                                             const std::shared_ptr<Baton>& baton = nullptr);
+    /**
+     * Runs a command, returning a future representing its response. When waiting on this future,
+     * use the interruptible returned by interruptible() and only do so from one thread.
+     */
+    Future<RemoteCommandResponse> runCommand(
+        const TaskExecutor::CallbackHandle& cbHandle,
+        RemoteCommandRequest request,
+        const CancellationToken& token = CancellationToken::uncancelable());
+
+    void cancelCommand(const TaskExecutor::CallbackHandle& cbHandle);
 
     /**
      * Runs a command on the fixture NetworkInterface and asserts it suceeded.
      */
-    BSONObj runSetupCommandSync(const DatabaseName& db, BSONObj cmdObj);
+    BSONObj runSetupCommandSync(const DatabaseName& db, BSONObj cmdObj) override;
 
-    Future<void> startExhaustCommand(
-        const TaskExecutor::CallbackHandle& cbHandle,
-        RemoteCommandRequest request,
-        std::function<void(const RemoteCommandResponse&)> exhaustUtilCB,
-        const BatonHandle& baton = nullptr);
-
+    /**
+     * Runs a command synchronously, returning its response. While this executes, no other thread
+     * may use interruptible().
+     */
     RemoteCommandResponse runCommandSync(RemoteCommandRequest& request);
 
+    /**
+     * Asserts that a command succeeds or fails in some disposition. While these execute, no other
+     * thread may use interruptible().
+     */
     void assertCommandOK(const DatabaseName& db,
                          const BSONObj& cmd,
                          Milliseconds timeoutMillis = Minutes(5),
@@ -142,58 +152,22 @@ public:
         return _workInProgress;
     }
 
-    class FailPointGuard {
-    public:
-        FailPointGuard(StringData fpName,
-                       NetworkInterfaceIntegrationFixture* fixture,
-                       int initalTimesEntered)
-            : _fpName(fpName), _fixture(fixture), _initialTimesEntered(initalTimesEntered) {}
+    /**
+     * Returns a Baton that can be used to run commands on, or nullptr for reactor-only operation.
+     * Implicitly used by runCommand, cancelCommand, runCommandSync, and assertCommand* variants.
+     */
+    virtual BatonHandle baton() {
+        return nullptr;
+    }
 
-        FailPointGuard(const FailPointGuard&) = delete;
-        FailPointGuard& operator=(const FailPointGuard&) = delete;
-
-        ~FailPointGuard() {
-            disable();
-        }
-
-        void waitForAdditionalTimesEntered(int count) {
-            auto cmdObj =
-                BSON("waitForFailPoint" << _fpName << "timesEntered" << _initialTimesEntered + count
-                                        << "maxTimeMS" << 30000);
-            _fixture->runSetupCommandSync(DatabaseName::kAdmin, cmdObj);
-        }
-
-        void disable() {
-            if (std::exchange(_disabled, true)) {
-                return;
-            }
-
-            auto cmdObj = BSON("configureFailPoint" << _fpName << "mode"
-                                                    << "off");
-            _fixture->runSetupCommandSync(DatabaseName::kAdmin, cmdObj);
-        }
-
-    private:
-        std::string _fpName;
-        NetworkInterfaceIntegrationFixture* _fixture;
-        int _initialTimesEntered;
-        bool _disabled{false};
-    };
-
-
-    FailPointGuard configureFailPoint(StringData fp, BSONObj data);
-
-    FailPointGuard configureFailCommand(StringData failCommand,
-                                        boost::optional<ErrorCodes::Error> errorCode = boost::none,
-                                        boost::optional<Milliseconds> blockTime = boost::none);
+    /** Returns an Interruptible appropriate for the Baton returned from baton(). */
+    virtual Interruptible* interruptible() {
+        return Interruptible::notInterruptible();
+    }
 
 private:
     void _onSchedulingCommand();
     void _onCompletingCommand();
-
-    unittest::MinimumLoggedSeverityGuard networkSeverityGuard{
-        logv2::LogComponent::kNetwork,
-        logv2::LogSeverity::Debug(NetworkInterface::kDiagnosticLogLevel)};
 
     std::unique_ptr<NetworkInterface> _fixtureNet;
     std::unique_ptr<NetworkInterface> _net;

@@ -26,6 +26,7 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/auth/authorization_backend_interface.h"
@@ -35,35 +36,25 @@
 #include "mongo/db/auth/authorization_client_handle_shard.h"
 #include "mongo/db/auth/authorization_manager_factory_impl.h"
 #include "mongo/db/auth/authorization_manager_impl.h"
-#include "mongo/db/auth/authz_manager_external_state_d.h"
-#include "mongo/db/auth/authz_manager_external_state_s.h"
+#include "mongo/db/auth/authorization_router_impl.h"
 
 namespace mongo {
 
 std::unique_ptr<AuthorizationManager> AuthorizationManagerFactoryImpl::createRouter(
     Service* service) {
-    return std::make_unique<AuthorizationManagerImpl>(
-        service, std::make_unique<AuthzManagerExternalStateMongos>());
+    auto authzRouter = std::make_unique<AuthorizationRouterImpl>(
+        service, std::make_unique<AuthorizationClientHandleRouter>());
+
+    return std::make_unique<AuthorizationManagerImpl>(service, std::move(authzRouter));
 }
 
 std::unique_ptr<AuthorizationManager> AuthorizationManagerFactoryImpl::createShard(
     Service* service) {
-    return std::make_unique<AuthorizationManagerImpl>(
-        service, std::make_unique<AuthzManagerExternalStateMongod>());
+    auto authzRouter = std::make_unique<AuthorizationRouterImpl>(
+        service, std::make_unique<AuthorizationClientHandleShard>());
+    return std::make_unique<AuthorizationManagerImpl>(service, std::move(authzRouter));
 }
 
-std::unique_ptr<AuthorizationClientHandle>
-AuthorizationManagerFactoryImpl::createClientHandleRouter(Service* service) {
-    return std::make_unique<AuthorizationClientHandleRouter>();
-}
-
-std::unique_ptr<AuthorizationClientHandle> AuthorizationManagerFactoryImpl::createClientHandleShard(
-    Service* service) {
-    return std::make_unique<AuthorizationClientHandleShard>();
-}
-
-// TODO SERVER-95189 - move to protected or remove, may need to move this into the
-// AuthorizationManagerImpl class so externally not callable.
 std::unique_ptr<auth::AuthorizationBackendInterface>
 AuthorizationManagerFactoryImpl::createBackendInterface(Service* service) {
     invariant(service->role().has(ClusterRole::ShardServer) ||

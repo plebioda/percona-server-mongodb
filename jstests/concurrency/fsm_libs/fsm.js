@@ -30,6 +30,8 @@ export var fsm = (function() {
     //                    { stateName: { nextState1: probability,
     //                                   nextState2: ... } }
     // args.iterations = number of iterations to run the FSM for
+    // args.errorLatch = the latch that a thread count downs when it errors.
+    // args.numThreads = total number of threads running.
     async function runFSM(args) {
         if (TestData.runInsideTransaction) {
             let overridePath = "jstests/libs/override_methods/";
@@ -76,16 +78,24 @@ export var fsm = (function() {
             };
 
             const makeReplSetConnWithExistingSession = (connStrList, replSetName) => {
-                const conn = makeNewConnWithExistingSession(`mongodb://${
-                    connStrList.join(',')}/?appName=tid:${args.tid}&replicaSet=${replSetName}`);
-
-                return conn;
+                let connStr = `mongodb://${connStrList.join(',')}/?appName=tid:${
+                    args.tid}&replicaSet=${replSetName}`;
+                if (jsTestOptions().shellGRPC) {
+                    connStr += "&grpc=false";
+                }
+                return makeNewConnWithExistingSession(connStr);
             };
+
+            // Config shard conn strings do not use gRPC.
+            const kNonGrpcConnStr = (connStr) => jsTestOptions().shellGRPC
+                ? `mongodb://${connStr}/?grpc=false`
+                : `mongodb://${connStr}`;
 
             connCache =
                 {mongos: [], config: [], shards: {}, rsConns: {config: undefined, shards: {}}};
             connCache.mongos = args.cluster.mongos.map(makeNewConnWithExistingSession);
-            connCache.config = args.cluster.config.map(makeNewConnWithExistingSession);
+            connCache.config = args.cluster.config.map(connStr => kNonGrpcConnStr(connStr))
+                                   .map(makeNewConnWithExistingSession);
             connCache.rsConns.config = makeReplSetConnWithExistingSession(
                 args.cluster.config, getReplSetName(connCache.config[0]));
 
@@ -97,14 +107,19 @@ export var fsm = (function() {
             var shardNames = Object.keys(args.cluster.shards);
 
             shardNames.forEach(name => {
-                connCache.shards[name] =
-                    args.cluster.shards[name].map(makeNewConnWithExistingSession);
+                connCache.shards[name] = args.cluster.shards[name]
+                                             .map(connStr => kNonGrpcConnStr(connStr))
+                                             .map(makeNewConnWithExistingSession);
                 connCache.rsConns.shards[name] = makeReplSetConnWithExistingSession(
                     args.cluster.shards[name], getReplSetName(connCache.shards[name][0]));
             });
         }
 
         for (var i = 0; i < args.iterations; ++i) {
+            if (args.errorLatch.getCount() < args.numThreads) {
+                break;
+            }
+
             var fn = args.states[currentState];
 
             assert.eq('function', typeof fn, 'states.' + currentState + ' is not a function');

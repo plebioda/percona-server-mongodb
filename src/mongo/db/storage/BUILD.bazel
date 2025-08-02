@@ -80,6 +80,14 @@ mongo_cc_library(
 )
 
 mongo_cc_library(
+    name = "damage_vector",
+    srcs = [],
+    hdrs = [
+        "damage_vector.h",
+    ],
+)
+
+mongo_cc_library(
     name = "remove_saver",
     srcs = [
         "remove_saver.cpp",
@@ -267,32 +275,6 @@ mongo_cc_library(
 )
 
 mongo_cc_library(
-    name = "key_string",
-    srcs = [
-        "key_string.cpp",
-    ],
-    hdrs = [
-        "index_entry_comparison.h",
-        "key_string.h",
-        "sorted_data_interface.h",
-        "//src/mongo/db/exec/sbe/values:key_string_entry.h",
-        "//src/mongo/db/exec/sbe/values:row.h",
-        "//src/mongo/db/exec/sbe/values:slot.h",
-        "//src/mongo/db/exec/sbe/values:slot_util.h",
-        "//src/mongo/db/exec/sbe/values:value.h",
-        "//src/mongo/db/exec/sbe/values:value_builder.h",
-        "//src/mongo/util:id_generator.h",
-    ],
-    header_deps = [
-        "//src/mongo/db/op_observer:op_observer",
-    ],
-    deps = [
-        "//src/mongo:base",
-        "//src/mongo/bson:bson_validate",
-    ],
-)
-
-mongo_cc_library(
     name = "execution_context",
     srcs = [
         "execution_context.cpp",
@@ -367,8 +349,8 @@ mongo_cc_library(
         "//src/mongo/db/commands:server_status_core",
     ],
     deps = [
-        "key_string",
         "//src/mongo:base",
+        "//src/mongo/db/storage/key_string",
     ],
 )
 
@@ -382,8 +364,8 @@ mongo_cc_library(
     ],
     deps = [
         ":duplicate_key_error_info",
-        ":key_string",
         "//src/mongo/db:server_base",
+        "//src/mongo/db/storage/key_string",
     ],
 )
 
@@ -567,5 +549,118 @@ mongo_cc_library(
         "recovery_unit_base",
         "storage_options",
         "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "backup_block",
+    srcs = [
+        "backup_block.cpp",
+    ],
+    hdrs = [
+        "backup_block.h",
+    ],
+    deps = [
+        ":storage_options",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:shard_role_api",
+    ],
+)
+
+mongo_cc_library(
+    name = "oplog_cap_maintainer_thread",
+    srcs = [
+        "oplog_cap_maintainer_thread.cpp",
+    ],
+    hdrs = [
+        "oplog_cap_maintainer_thread.h",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:service_context",
+        "//src/mongo/db:shard_role",
+        "//src/mongo/db/catalog:collection_catalog",
+        "//src/mongo/db/catalog:database_holder",
+        "//src/mongo/db/catalog:local_oplog_info",
+        "//src/mongo/db/concurrency:lock_manager",
+        "//src/mongo/util:background_job",
+        "//src/mongo/util/concurrency:spin_lock",
+    ],
+)
+
+mongo_cc_library(
+    name = "storage_engine_common",
+    srcs = [
+        "storage_engine_change_context.cpp",
+        "storage_engine_init.cpp",
+    ],
+    hdrs = [
+        "master_key_rotation_completed.h", # TODO: consider moving this to a more appropriate location.
+        "storage_engine_change_context.h",
+        "storage_engine_init.h",
+    ],
+    deps = [
+        ":storage_control",
+        ":storage_engine_lock_file",
+        ":storage_engine_metadata",
+        ":storage_options",
+        ":storage_repair_observer",
+        "//src/mongo/db:service_context",
+        "//src/mongo/db:shard_role_api",
+        "//src/mongo/db/encryption:encryption_options",
+        "//src/mongo/db/encryption:key",
+        "//src/mongo/db/exec:scoped_timer",
+        "//src/mongo/util/concurrency:spin_lock",
+    ],
+)
+
+mongo_cc_library(
+    name = "storage_util",
+    srcs = [
+        "storage_util.cpp",
+    ],
+    hdrs = [
+        "storage_util.h",
+    ],
+    deps = [
+        ":durable_catalog",
+        ":storage_options",
+        "//src/mongo/db:multitenancy",
+        "//src/mongo/db/catalog:collection_catalog",
+        "//src/mongo/db/storage/kv:kv_drop_pending_ident_reaper",
+    ],
+)
+
+mongo_cc_library(
+    name = "storage_engine_impl",
+    srcs = [
+        "deferred_drop_record_store.cpp",
+        "storage_engine_impl.cpp",
+    ],
+    hdrs = [
+        "deferred_drop_record_store.h",
+        "journal_listener.h",
+        "storage_engine_impl.h",
+    ],
+    deps = [
+        ":backup_block",
+        ":durable_catalog",
+        ":storage_control",
+        ":storage_options",
+        ":storage_repair_observer",
+        ":storage_util",
+        ":two_phase_index_build_knobs_idl",
+        "//src/mongo/db:audit",
+        "//src/mongo/db:multitenancy",
+        "//src/mongo/db:resumable_index_builds_idl",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:server_feature_flags",
+        "//src/mongo/db:shard_role",
+        "//src/mongo/db:vector_clock",
+        "//src/mongo/db/catalog:catalog_control",
+        "//src/mongo/db/catalog:catalog_helpers",
+        "//src/mongo/db/catalog:collection_options",
+        "//src/mongo/db/catalog:index_catalog",
+        "//src/mongo/db/storage/kv:kv_drop_pending_ident_reaper",
     ],
 )

@@ -1,17 +1,14 @@
-import os
-import glob
-import subprocess
 import csv
-import io
 import enum
-import platform
-import puremagic
+import os
 import pathlib
+import platform
+import subprocess
 from typing import Optional
 
-from SCons.Node.FS import File, Dir
+import puremagic
 from typing_extensions import TypedDict
-from .util import get_build_metric_dict
+
 from .protocol import BuildMetricsCollector
 
 

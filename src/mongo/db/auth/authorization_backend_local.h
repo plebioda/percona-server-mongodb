@@ -30,42 +30,26 @@
 
 #include "mongo/db/auth/authorization_backend_interface.h"
 #include "mongo/db/auth/authorization_manager.h"
-#include "mongo/db/auth/authz_manager_external_state_local.h"
 #include "mongo/db/db_raii.h"
 
 namespace mongo::auth {
 
 class AuthorizationBackendLocal : public AuthorizationBackendInterface {
-public:
+protected:
     Status rolesExist(OperationContext* opCtx, const std::vector<RoleName>& roleNames) final;
 
-    using ResolvedRoleData = AuthorizationManager::ResolvedRoleData;
-    using ResolveRoleOption = AuthorizationManager::ResolveRoleOption;
     StatusWith<ResolvedRoleData> resolveRoles(OperationContext* opCtx,
                                               const std::vector<RoleName>& roleNames,
                                               ResolveRoleOption option) final;
 
-    UsersInfoReply acquireUsers(OperationContext* opCtx, const UsersInfoCommand& cmd) final;
+    UsersInfoReply lookupUsers(OperationContext* opCtx, const UsersInfoCommand& cmd) final;
 
-    RolesInfoReply acquireRoles(OperationContext* opCtx, const RolesInfoCommand& cmd) final;
-
-    /**
-     * Returns true if there exists at least one privilege document in the system.
-     * Used by the AuthorizationSession to determine whether localhost connections should be
-     * granted special access to bootstrap the system.
-     * NOTE: If this method ever returns true, the result is cached in _privilegeDocsExist,
-     * meaning that once this method returns true it will continue to return true for the
-     * lifetime of this process, even if all users are subsequently dropped from the system.
-     */
-    bool hasAnyPrivilegeDocuments(OperationContext* opCtx) final;
-
-    Status hasValidAuthSchemaVersionDocumentForInitialSync(OperationContext* opCtx) final;
+    RolesInfoReply lookupRoles(OperationContext* opCtx, const RolesInfoCommand& cmd) final;
 
     StatusWith<User> getUserObject(OperationContext* opCtx,
                                    const UserRequest& userReq,
                                    const SharedUserAcquisitionStats& userAcquisitionStats) override;
 
-protected:
     /**
      * Ensures a consistent logically valid view of the data across users and roles collections.
      *
@@ -112,20 +96,10 @@ protected:
 
     static Status makeRoleNotFoundStatus(const stdx::unordered_set<RoleName>& unknownRoles);
 
-    Status hasAnyUserDocuments(OperationContext* opCtx,
-                               const boost::optional<TenantId>& tenantId) final;
-
-    Status hasValidStoredAuthorizationVersion(OperationContext* opCtx, BSONObj* foundVersionDoc);
-
-    Status getStoredAuthorizationVersion(OperationContext* opCtx, int* outVersion);
-
     virtual Status findOne(OperationContext* opCtx,
                            const NamespaceString& nss,
                            const BSONObj& query,
                            BSONObj* result);
-
-    // TODO: Replace below line with private when removing the external state objects.
-    friend class AuthzManagerExternalStateLocal;
 
     Status getRolesAsUserFragment(OperationContext* opCtx,
                                   const std::vector<RoleName>& roleNames,

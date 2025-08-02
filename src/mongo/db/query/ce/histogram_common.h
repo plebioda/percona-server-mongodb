@@ -29,8 +29,7 @@
 
 #pragma once
 
-#include "mongo/db/query/stats/array_histogram.h"
-#include "mongo/db/query/stats/scalar_histogram.h"
+#include "mongo/db/query/stats/ce_histogram.h"
 
 namespace mongo::ce {
 
@@ -53,13 +52,6 @@ struct EstimationResult {
 };
 
 enum class EstimationType { kEqual, kLess, kLessOrEqual, kGreater, kGreaterOrEqual };
-
-const stdx::unordered_map<EstimationType, std::string> estimationTypeName = {
-    {EstimationType::kEqual, "eq"},
-    {EstimationType::kLess, "lt"},
-    {EstimationType::kLessOrEqual, "lte"},
-    {EstimationType::kGreater, "gt"},
-    {EstimationType::kGreaterOrEqual, "gte"}};
 
 /**
  * Checks if an interval is in descending direction.

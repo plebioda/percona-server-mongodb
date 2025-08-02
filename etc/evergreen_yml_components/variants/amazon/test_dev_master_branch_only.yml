@@ -121,6 +121,8 @@ buildvariants:
     stepback: false
     expansions:
       compile_variant: *amazon-linux-2023-arm64-bazel-compile
+      compile_flags: >-
+        BAZEL_FLAGS="--config=remote_link"
     tasks:
       - name: compile_bazel_TG
       - name: compile_bazel_sanitize_TG
@@ -203,6 +205,7 @@ buildvariants:
       - name: .default .requires_large_host !.requires_compile_variant !.incompatible_development_variant !.incompatible_all_feature_flags !.suggested_excluding_required__for_devprod_mitigation_only
         distros:
           - amazon2-arm64-atlas-latest-large
+      - name: .fuzzer_deterministic
 
   - &enterprise-amazon-linux2-arm64-all-feature-flags-fuzzers
     <<: *enterprise-amazon-linux2-arm64-all-feature-flags-template

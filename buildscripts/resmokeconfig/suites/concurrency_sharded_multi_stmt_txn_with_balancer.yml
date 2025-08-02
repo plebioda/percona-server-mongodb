@@ -72,6 +72,8 @@ selector:
     - requires_profiling
     - does_not_support_transactions
     - assumes_unsharded_collection
+    # Time-series collections do not support write transactions
+    - requires_timeseries
 
 executor:
   archive:
@@ -114,6 +116,7 @@ executor:
       set_parameters:
         enableTestCommands: 1
         roleGraphInvalidationIsFatal: 1
+        analyzeShardKeyMaxNumStaleVersionRetries: 2
         queryAnalysisWriterIntervalSecs: 1
         queryAnalysisSamplerConfigurationRefreshSecs: 1
         defaultConfigCommandTimeoutMS: 90000

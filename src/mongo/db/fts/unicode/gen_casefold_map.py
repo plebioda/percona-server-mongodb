@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 import sys
 
-from gen_helper import getCopyrightNotice, openNamespaces, closeNamespaces, include
+from gen_helper import closeNamespaces, getCopyrightNotice, include, openNamespaces
 
 
 def generate(unicode_casefold_file, target):

@@ -1,21 +1,16 @@
 """Test hook that periodically makes the primary of a replica set step down."""
 
-import collections
 import copy
-import os.path
 import random
+import re
+import sys
 import threading
 import time
-import sys
-
-import pymongo.errors
 
 from buildscripts.resmokelib import errors
 from buildscripts.resmokelib.mongo_fuzzer_configs import generate_normal_mongo_parameters
 from buildscripts.resmokelib.testing.fixtures import interface as fixture_interface
-from buildscripts.resmokelib.testing.fixtures import replicaset
-from buildscripts.resmokelib.testing.fixtures import shardedcluster
-from buildscripts.resmokelib.testing.fixtures import standalone
+from buildscripts.resmokelib.testing.fixtures import replicaset, shardedcluster, standalone
 from buildscripts.resmokelib.testing.hooks import interface
 from buildscripts.resmokelib.testing.hooks import lifecycle as lifecycle_interface
 
@@ -97,20 +92,65 @@ class FuzzRuntimeParameters(interface.Hook):
         self._add_fixture(self._fixture)
 
         from buildscripts.resmokelib.config_fuzzer_limits import (
-            runtime_parameter_fuzzer_params,
+            config_fuzzer_params,
         )
 
-        validate_runtime_parameter_spec(runtime_parameter_fuzzer_params["mongod"])
-        validate_runtime_parameter_spec(runtime_parameter_fuzzer_params["mongos"])
+        # Get only the mongod and mongos parameters that have "runtime" in the "fuzz_at" param value.
+        runtime_mongod_params = {
+            param: val
+            for param, val in config_fuzzer_params["mongod"].items()
+            if "runtime" in val.get("fuzz_at", [])
+        }
+        runtime_mongos_params = {
+            param: val
+            for param, val in config_fuzzer_params["mongos"].items()
+            if "runtime" in val.get("fuzz_at", [])
+        }
+
+        from buildscripts.resmokelib import config
+
+        # We have some parameters that should only be fuzzed depending on the storageEngineConcurrencyAdjustmentAlgorithm.
+        # The storagEngineConcurrencyAdjustmentAlgorithm is only fuzzed at startup.
+        storageEngineConcurrencyAdjustmentAlgorithm = re.search(
+            r"storageEngineConcurrencyAdjustmentAlgorithm:\s+(\w+)", config.MONGOD_SET_PARAMETERS
+        )
+        if (
+            storageEngineConcurrencyAdjustmentAlgorithm
+            and storageEngineConcurrencyAdjustmentAlgorithm.group(1) == "throughputProbing"
+        ):
+            runtime_mongod_params = {
+                k: v for k, v in runtime_mongod_params.items() if "wiredTigerConcurrent" not in k
+            }
+        elif (
+            storageEngineConcurrencyAdjustmentAlgorithm
+            and storageEngineConcurrencyAdjustmentAlgorithm.group(1)
+            == "fixedConcurrentTransactions"
+        ):
+            runtime_mongod_params = {
+                k: v for k, v in runtime_mongod_params.items() if "throughputProbing" not in k
+            }
+        # If we can't find a storageEngineConcurrencyAdjustmentAlgorithm field, we don't want to fuzz any parameters related to the storageEngineConcurrencyAdjustmentAlgorithm.
+        elif not storageEngineConcurrencyAdjustmentAlgorithm:
+            runtime_mongod_params = {
+                k: v
+                for k, v in runtime_mongod_params.items()
+                if "wiredTigerConcurrent" and "throughputProbing" not in k
+            }
+
+        # Flow control-related parameters should only be fuzzed when enableFlowControl is set to True at startup.
+        enableFlowControl = re.search(r"enableFlowControl:\s+(\w+)", config.MONGOD_SET_PARAMETERS)
+        if not enableFlowControl or enableFlowControl.group(1) == "false":
+            runtime_mongod_params = {
+                k: v for k, v in runtime_mongod_params.items() if "flowControl" not in k
+            }
+
+        validate_runtime_parameter_spec(runtime_mongod_params)
+        validate_runtime_parameter_spec(runtime_mongos_params)
         # Construct the runtime state before the suite begins.
         # The initial lastSet time of each parameter is the start time of the suite.
-        self._mongod_param_state = RuntimeParametersState(
-            runtime_parameter_fuzzer_params["mongod"], self._seed
-        )
+        self._mongod_param_state = RuntimeParametersState(runtime_mongod_params, self._seed)
 
-        self._mongos_param_state = RuntimeParametersState(
-            runtime_parameter_fuzzer_params["mongos"], self._seed
-        )
+        self._mongos_param_state = RuntimeParametersState(runtime_mongos_params, self._seed)
 
         self._setParameter_thread = _SetParameterThread(
             self.logger,

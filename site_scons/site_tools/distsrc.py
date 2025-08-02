@@ -20,18 +20,15 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-import git
-import SCons
+import io
 import os
-import os.path as ospath
-import subprocess
-import shutil
 import tarfile
 import time
 import zipfile
-import io
-
 from distutils.spawn import find_executable
+
+import git
+import SCons
 
 __distsrc_callbacks = []
 

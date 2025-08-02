@@ -20,14 +20,14 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+import hashlib
 import os
 import re
 import subprocess
 import urllib
 
-from pkg_resources import parse_version
-
 import SCons
+from pkg_resources import parse_version
 
 _icecream_version_min = parse_version("1.3")
 _icecream_version_gcc_remote_cpp = parse_version("1.2")
@@ -109,8 +109,13 @@ def generate(env):
     # Make CC and CXX absolute paths too. This ensures the correct paths to
     # compilers get passed to icecc-create-env rather than letting it
     # potentially discover something we don't expect via PATH.
-    env["CC"] = env.WhereIs("$CC")
-    env["CXX"] = env.WhereIs("$CXX")
+    cc_path = env.WhereIs("$CC")
+    cxx_path = env.WhereIs("$CXX")
+
+    if cc_path is None:
+        env["CC"] = os.path.abspath(env["CC"])
+    if cxx_path is None:
+        env["CXX"] = os.path.abspath(env["CXX"])
 
     # Set up defaults for configuration options
     env["ICECREAM_TARGET_DIR"] = env.Dir(
@@ -186,9 +191,11 @@ def generate(env):
 
         # This is what we are going to call the file names as known to SCons on disk. We do the
         # subst early so that we can call `replace` on the result.
-        setupEnv["ICECC_VERSION_ID"] = setupEnv.subst(
-            "icecc-create-env.${CC}${CXX}.tar.gz"
-        ).replace("/", "_")
+        cc_names = setupEnv.subst("${CC}${CXX}")
+        # file name limit is 256
+        if len(cc_names) > 100:
+            cc_names = hashlib.md5(cc_names.encode()).hexdigest()
+        setupEnv["ICECC_VERSION_ID"] = f"icecc-create-env.{cc_names}.tar.gz".replace("/", "_")
 
         setupEnv["ICECC_VERSION"] = icecc_version_file = setupEnv.Command(
             target="$ICECREAM_TARGET_DIR/$ICECC_VERSION_ID",

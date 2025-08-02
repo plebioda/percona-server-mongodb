@@ -2,13 +2,10 @@
 # the dockerfiles listed in bazel/remote_execution_container/.
 
 import argparse
-from datetime import datetime
-import json
 import os
 import pathlib
 import subprocess
-import tempfile
-import urllib.request
+from datetime import datetime
 
 
 def log_subprocess_run(*args, **kwargs):

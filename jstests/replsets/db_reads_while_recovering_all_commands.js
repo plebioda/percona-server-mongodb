@@ -19,6 +19,7 @@ const fullNs = dbName + "." + collName;
 const isAnInternalCommand = "internal command";
 const isNotAUserDataRead = "does not return user data";
 const isPrimaryOnly = "primary only";
+const isDeprecated = "deprecated command";
 
 const allCommands = {
     _addShard: {skip: isPrimaryOnly},
@@ -71,7 +72,6 @@ const allCommands = {
     _flushReshardingStateChange: {skip: isPrimaryOnly},
     _flushRoutingTableCacheUpdates: {skip: isPrimaryOnly},
     _flushRoutingTableCacheUpdatesWithWriteConcern: {skip: isPrimaryOnly},
-    _getAuditConfigGeneration: {skip: isNotAUserDataRead},
     _getNextSessionMods: {skip: isPrimaryOnly},
     _getUserCacheGeneration: {skip: isNotAUserDataRead},
     _hashBSONElement: {skip: isNotAUserDataRead},
@@ -96,8 +96,6 @@ const allCommands = {
     _shardsvrCommitIndexParticipant: {skip: isPrimaryOnly},
     _shardsvrCommitReshardCollection: {skip: isPrimaryOnly},
     _shardsvrConvertToCapped: {skip: isPrimaryOnly},
-    _shardsvrCreateGlobalIndex: {skip: isAnInternalCommand},
-    _shardsvrDropGlobalIndex: {skip: isAnInternalCommand},
     _shardsvrDropCollection: {skip: isPrimaryOnly},
     _shardsvrCreateCollection: {skip: isPrimaryOnly},
     _shardsvrDropCollectionIfUUIDNotMatchingWithWriteConcern: {skip: isNotAUserDataRead},
@@ -106,9 +104,6 @@ const allCommands = {
     _shardsvrDropIndexes: {skip: isAnInternalCommand},
     _shardsvrCreateCollectionParticipant: {skip: isPrimaryOnly},
     _shardsvrGetStatsForBalancing: {skip: isPrimaryOnly},
-    _shardsvrInsertGlobalIndexKey: {skip: isPrimaryOnly},
-    _shardsvrDeleteGlobalIndexKey: {skip: isPrimaryOnly},
-    _shardsvrWriteGlobalIndexKeys: {skip: isPrimaryOnly},
     _shardsvrJoinMigrations: {skip: isAnInternalCommand},
     _shardsvrJoinDDLCoordinators: {skip: isPrimaryOnly},
     _shardsvrMergeAllChunksOnShard: {skip: isPrimaryOnly},
@@ -252,9 +247,9 @@ const allCommands = {
     donorForgetMigration: {skip: isPrimaryOnly},
     donorStartMigration: {skip: isPrimaryOnly},
     donorWaitForMigrationToCommit: {skip: isPrimaryOnly},
-    abortShardSplit: {skip: isPrimaryOnly},
-    commitShardSplit: {skip: isPrimaryOnly},
-    forgetShardSplit: {skip: isPrimaryOnly},
+    abortShardSplit: {skip: isDeprecated},
+    commitShardSplit: {skip: isDeprecated},
+    forgetShardSplit: {skip: isDeprecated},
     drop: {skip: isPrimaryOnly},
     dropAllRolesFromDatabase: {skip: isPrimaryOnly},
     dropAllUsersFromDatabase: {skip: isPrimaryOnly},

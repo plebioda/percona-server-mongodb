@@ -3,6 +3,7 @@
 import enum
 from dataclasses import dataclass
 from typing import Any, List, Optional
+
 import mongo.generators as mongo_generators
 from site_scons.mongo import platform
 
@@ -66,7 +67,7 @@ LINUX_BUILD_PROFILES = {
     # These options were the default settings before implementing build profiles.
     BuildProfileType.DEFAULT: BuildProfile(
         ninja="disabled",
-        variables_files=[],
+        variables_files=["./etc/scons/mongodbtoolchain_stable_gcc.vars"],
         allocator="auto",
         sanitize=None,
         link_model="auto",

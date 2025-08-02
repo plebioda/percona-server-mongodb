@@ -128,13 +128,15 @@ TaskExecutorCursor::TaskExecutorCursor(TaskExecutorCursor&& other) noexcept
 
 TaskExecutorCursor::~TaskExecutorCursor() {
     try {
-        if (_cursorId < kMinLegalCursorId || _options.pinConnection) {
+        if (_cursorId < kMinLegalCursorId) {
             // The initial find to establish the cursor has to be canceled to avoid leaking cursors.
             // Once the cursor is established, killing the cursor will interrupt any ongoing
             // `getMore` operation.
-            // Additionally, in pinned mode, we should cancel any in-progress RPC if there is one,
-            // even at the cost of churning the connection, because it's the only way to interrupt
-            // the ongoing operation.
+            // In pinned mode, we do not interrupt the ongoing operation because it may close the
+            // underlying connection in the PinnedConnectionTaskExecutor, which other
+            // TaskExecutorCursors may be relying on for ongoing work. We instead let the
+            // outstanding operations on this cursor complete so that other TaskExecutorCursors can
+            // continue to use the shared PinnedConnectionTaskExecutor connection.
             if (_cmdState) {
                 _executor->cancel(_cmdState->cbHandle);
             }
@@ -183,7 +185,7 @@ TaskExecutorCursor::~TaskExecutorCursor() {
         // inline.
         if (!swCallback.isOK()) {
             TaskExecutor::RemoteCommandCallbackArgs args(
-                _executor.get(), {}, {}, swCallback.getStatus());
+                _executor.get(), {}, {}, {_rcr.target, swCallback.getStatus()});
             callbackToRun(args);
         }
     } catch (const DBException& ex) {
@@ -355,6 +357,10 @@ void TaskExecutorCursor::_getNextBatch(OperationContext* opCtx) {
                                                  freshRcr,
                                                  copyOptions()));
     }
+}
+
+std::shared_ptr<executor::TaskExecutor> TaskExecutorCursor::getExecutor_forTest() {
+    return _executor;
 }
 
 }  // namespace executor

@@ -2,10 +2,10 @@
 
 import argparse
 import copy
-from dataclasses import dataclass
 import json
 import sys
 import textwrap
+
 from profilerlib import CallMetrics
 
 

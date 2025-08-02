@@ -106,6 +106,7 @@ mongo_cc_library(
         "//src/mongo/db/timeseries/bucket_catalog:rollover.h",
         "//src/mongo/db/timeseries/bucket_catalog:tracking_contexts.h",
         "//src/mongo/db/timeseries/bucket_catalog:write_batch.h",
+        "//src/mongo/util/tracking:tracked_btree_map.h",
         "//src/mongo/util:tracked_types.h",
         "//src/mongo/util:tracking_context.h",
     ],
@@ -198,5 +199,43 @@ mongo_cc_library(
         "//src/mongo/db/storage:storage_options",
         "//src/mongo/db/timeseries/bucket_catalog",
         "//src/mongo/db/update:update_common",
+    ],
+)
+
+mongo_cc_library(
+    name = "timeseries_op_observer",
+    srcs = [
+        "timeseries_op_observer.cpp",
+    ],
+    hdrs = [
+        "timeseries_op_observer.h",
+    ],
+    deps = [
+        ":timeseries_extended_range",
+        "//src/mongo/db/catalog:collection_catalog",
+        "//src/mongo/db/concurrency:lock_manager",
+        "//src/mongo/db/op_observer",
+        "//src/mongo/db/timeseries/bucket_catalog",
+    ],
+)
+
+mongo_cc_library(
+    name = "timeseries_collmod",
+    srcs = [
+        "timeseries_collmod.cpp",
+    ],
+    hdrs = [
+        "timeseries_collmod.h",
+    ],
+    deps = [
+        ":catalog_helper",
+        ":timeseries_conversion_util",
+        ":timeseries_options",
+        "//src/mongo/db:coll_mod_command_idl",
+        "//src/mongo/db:index_commands_idl",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:shard_role",
+        "//src/mongo/db/catalog:catalog_helpers",
+        "//src/mongo/db/exec:bucket_unpacker",
     ],
 )

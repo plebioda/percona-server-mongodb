@@ -5,8 +5,7 @@ filters:
       - 10gen/query-execution
   - "exhaust_cursor_currentop_integration_test.cpp":
     approvers:
-      - TedTuckman
-      - banarun
-      - awagenmaker
-    metadata:
-      owning_team: 10gen/query-integration
+      - 10gen/query-integration-staff-leads
+  - "collect_query_stats_mongod.*":
+    approvers:
+      - 10gen/query-integration-observability

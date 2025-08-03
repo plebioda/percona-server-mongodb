@@ -2190,7 +2190,7 @@ static void setupHotBackupProgressMeter(OperationContext* opCtx,
                                         boost::uintmax_t totalfsize) {
     constexpr auto curopMessage = "Hot Backup: copying data bytes"_sd;
     stdx::unique_lock<Client> lk(*opCtx->getClient());
-    progressMeter.set(lk, CurOp::get(opCtx)->setProgress_inlock(curopMessage), opCtx);
+    progressMeter.set(lk, CurOp::get(opCtx)->setProgress(lk, curopMessage), opCtx);
     progressMeter.get(lk)->reset(totalfsize, 10, 512);
 }
 

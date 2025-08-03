@@ -123,9 +123,6 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 namespace mongo {
 namespace repl {
 
-// Failpoint for initial sync
-extern FailPoint failInitialSyncWithBadHost;
-
 // Failpoint which causes the initial sync function to hang before creating shared data and
 // splitting control flow between the oplog fetcher and the cloners.
 extern FailPoint initialSyncHangBeforeSplittingControlFlow;
@@ -274,10 +271,10 @@ InitialSyncerFCB::~InitialSyncerFCB() {
 
 bool InitialSyncerFCB::isActive() const {
     stdx::lock_guard<stdx::mutex> lock(_mutex);
-    return _isActive_inlock();
+    return _isActive(lock);
 }
 
-bool InitialSyncerFCB::_isActive_inlock() const {
+bool InitialSyncerFCB::_isActive(WithLock lk) const {
     return State::kRunning == _state || State::kShuttingDown == _state;
 }
 
@@ -303,7 +300,7 @@ Status InitialSyncerFCB::startup(OperationContext* opCtx,
             return {ErrorCodes::ShutdownInProgress, "initial syncer completed"};
     }
 
-    _setUp_inlock(opCtx, initialSyncMaxAttempts);
+    _setUp(lock, opCtx, initialSyncMaxAttempts);
 
     // Start first initial sync attempt.
     std::uint32_t initialSyncAttempt = 0;
@@ -311,7 +308,8 @@ Status InitialSyncerFCB::startup(OperationContext* opCtx,
         _exec, Status(ErrorCodes::CallbackCanceled, "Initial Sync Attempt Canceled"));
     _clonerAttemptExec = std::make_unique<executor::ScopedTaskExecutor>(
         _clonerExec, Status(ErrorCodes::CallbackCanceled, "Initial Sync Attempt Canceled"));
-    auto status = _scheduleWorkAndSaveHandle_inlock(
+    auto status = _scheduleWorkAndSaveHandle(
+        lock,
         [=, this](const executor::TaskExecutor::CallbackArgs& args) {
             _startInitialSyncAttemptCallback(args, initialSyncAttempt, initialSyncMaxAttempts);
         },
@@ -342,7 +340,7 @@ Status InitialSyncerFCB::shutdown() {
             return Status::OK();
     }
 
-    _cancelRemainingWork_inlock();
+    _cancelRemainingWork(lock);
 
     // Ensure that storage change will not be blocked by shutdown's opCtx (first call to
     // InitialSyncerFCB::shutdown comes from ReplicationCoordinatorImpl::enterTerminalShutdown
@@ -355,12 +353,12 @@ Status InitialSyncerFCB::shutdown() {
 
 void InitialSyncerFCB::cancelCurrentAttempt() {
     stdx::lock_guard lk(_mutex);
-    if (_isActive_inlock()) {
+    if (_isActive(lk)) {
         LOGV2_DEBUG(128419,
                     1,
                     "Cancelling the current initial sync attempt.",
                     "currentAttempt"_attr = _stats.failedInitialSyncAttempts + 1);
-        _cancelRemainingWork_inlock();
+        _cancelRemainingWork(lk);
     } else {
         LOGV2_DEBUG(128420,
                     1,
@@ -369,14 +367,14 @@ void InitialSyncerFCB::cancelCurrentAttempt() {
     }
 }
 
-void InitialSyncerFCB::_cancelRemainingWork_inlock() {
-    _cancelHandle_inlock(_startInitialSyncAttemptHandle);
-    _cancelHandle_inlock(_chooseSyncSourceHandle);
-    _cancelHandle_inlock(_getBaseRollbackIdHandle);
-    _cancelHandle_inlock(_fetchBackupCursorHandle);
-    _cancelHandle_inlock(_transferFileHandle);
-    _cancelHandle_inlock(_keepAliveHandle);
-    _cancelHandle_inlock(_currentHandle);
+void InitialSyncerFCB::_cancelRemainingWork(WithLock lk) {
+    _cancelHandle(lk, _startInitialSyncAttemptHandle);
+    _cancelHandle(lk, _chooseSyncSourceHandle);
+    _cancelHandle(lk, _getBaseRollbackIdHandle);
+    _cancelHandle(lk, _fetchBackupCursorHandle);
+    _cancelHandle(lk, _transferFileHandle);
+    _cancelHandle(lk, _keepAliveHandle);
+    _cancelHandle(lk, _currentHandle);
 
     if (_sharedData) {
         // We actually hold the required lock, but the lock object itself is not passed through.
@@ -388,10 +386,10 @@ void InitialSyncerFCB::_cancelRemainingWork_inlock() {
     if (_client) {
         _client->shutdownAndDisallowReconnect();
     }
-    _shutdownComponent_inlock(_applier);
-    _shutdownComponent_inlock(_backupCursorFetcher);
-    _shutdownComponent_inlock(_fCVFetcher);
-    _shutdownComponent_inlock(_beginFetchingOpTimeFetcher);
+    _shutdownComponent(lk, _applier);
+    _shutdownComponent(lk, _backupCursorFetcher);
+    _shutdownComponent(lk, _fCVFetcher);
+    _shutdownComponent(lk, _beginFetchingOpTimeFetcher);
     (*_attemptExec)->shutdown();
     (*_clonerAttemptExec)->shutdown();
     _attemptCanceled = true;
@@ -399,7 +397,7 @@ void InitialSyncerFCB::_cancelRemainingWork_inlock() {
 
 void InitialSyncerFCB::join() {
     stdx::unique_lock<stdx::mutex> lk(_mutex);
-    _stateCondition.wait(lk, [this]() { return !_isActive_inlock(); });
+    _stateCondition.wait(lk, [&]() { return !_isActive(lk); });
 }
 
 InitialSyncerFCB::State InitialSyncerFCB::getState_forTest() const {
@@ -423,18 +421,18 @@ void InitialSyncerFCB::setAllowedOutageDuration_forTest(Milliseconds allowedOuta
 
 bool InitialSyncerFCB::_isShuttingDown() const {
     stdx::lock_guard<stdx::mutex> lock(_mutex);
-    return _isShuttingDown_inlock();
+    return _isShuttingDown(lock);
 }
 
-bool InitialSyncerFCB::_isShuttingDown_inlock() const {
+bool InitialSyncerFCB::_isShuttingDown(WithLock lk) const {
     return State::kShuttingDown == _state;
 }
 
 std::string InitialSyncerFCB::getDiagnosticString() const {
     LockGuard lk(_mutex);
     str::stream out;
-    out << "InitialSyncerFCB -" << " active: " << _isActive_inlock()
-        << " shutting down: " << _isShuttingDown_inlock();
+    out << "InitialSyncerFCB -" << " active: " << _isActive(lk)
+        << " shutting down: " << _isShuttingDown(lk);
     if (_initialSyncState) {
         out << " opsAppied: " << _initialSyncState->appliedOps;
     }
@@ -454,10 +452,10 @@ BSONObj InitialSyncerFCB::getInitialSyncProgress() const {
     if (!_initialSyncState && initial_sync_common_stats::initialSyncCompletes.get() > 0) {
         return {};
     }
-    return _getInitialSyncProgress_inlock();
+    return _getInitialSyncProgress(lk);
 }
 
-void InitialSyncerFCB::_appendInitialSyncProgressMinimal_inlock(BSONObjBuilder* bob) const {
+void InitialSyncerFCB::_appendInitialSyncProgressMinimal(WithLock lk, BSONObjBuilder* bob) const {
     bob->append("method", getInitialSyncMethod());
     _stats.append(bob);
     if (!_initialSyncState) {
@@ -511,10 +509,10 @@ void InitialSyncerFCB::_appendInitialSyncProgressMinimal_inlock(BSONObjBuilder* 
     }
 }
 
-BSONObj InitialSyncerFCB::_getInitialSyncProgress_inlock() const {
+BSONObj InitialSyncerFCB::_getInitialSyncProgress(WithLock lk) const {
     try {
         BSONObjBuilder bob;
-        _appendInitialSyncProgressMinimal_inlock(&bob);
+        _appendInitialSyncProgressMinimal(lk, &bob);
         if (_initialSyncState) {
             if (_initialSyncState->allDatabaseCloner) {
                 BSONObjBuilder dbsBuilder(bob.subobjStart("databases"));
@@ -529,12 +527,13 @@ BSONObj InitialSyncerFCB::_getInitialSyncProgress_inlock() const {
               "error"_attr = e.toString());
     }
     BSONObjBuilder bob;
-    _appendInitialSyncProgressMinimal_inlock(&bob);
+    _appendInitialSyncProgressMinimal(lk, &bob);
     return bob.obj();
 }
 
-void InitialSyncerFCB::_setUp_inlock(OperationContext* opCtx,
-                                     std::uint32_t initialSyncMaxAttempts) {
+void InitialSyncerFCB::_setUp(WithLock lk,
+                              OperationContext* opCtx,
+                              std::uint32_t initialSyncMaxAttempts) {
     // 'opCtx' is passed through from startup().
     _replicationProcess->getConsistencyMarkers()->clearInitialSyncId(opCtx);
 
@@ -550,8 +549,9 @@ void InitialSyncerFCB::_setUp_inlock(OperationContext* opCtx,
     _allowedOutageDuration = Seconds(initialSyncTransientErrorRetryPeriodSeconds.load());
 }
 
-void InitialSyncerFCB::_tearDown_inlock(OperationContext* opCtx,
-                                        const StatusWith<OpTimeAndWallTime>& lastApplied) {
+void InitialSyncerFCB::_tearDown(WithLock lk,
+                                 OperationContext* opCtx,
+                                 const StatusWith<OpTimeAndWallTime>& lastApplied) {
     _stats.initialSyncEnd = _exec->now();
 
     if (!lastApplied.isOK()) {
@@ -603,7 +603,8 @@ void InitialSyncerFCB::_startInitialSyncAttemptCallback(
     std::uint32_t initialSyncMaxAttempts) noexcept {
     auto status = [&] {
         stdx::lock_guard<stdx::mutex> lock(_mutex);
-        return _checkForShutdownAndConvertStatus_inlock(
+        return _checkForShutdownAndConvertStatus(
+            lock,
             callbackArgs,
             str::stream() << "error while starting initial sync attempt "
                           << (initialSyncAttempt + 1) << " of " << initialSyncMaxAttempts);
@@ -620,14 +621,14 @@ void InitialSyncerFCB::_startInitialSyncAttemptCallback(
           "initialSyncMaxAttempts"_attr = initialSyncMaxAttempts);
 
     // This completion guard invokes _finishInitialSyncAttempt on destruction.
-    auto cancelRemainingWorkInLock = [this]() {
-        _cancelRemainingWork_inlock();
+    auto cancelRemainingWork = [this](WithLock lk) {
+        _cancelRemainingWork(lk);
     };
     auto finishInitialSyncAttemptFn = [this](const StatusWith<OpTimeAndWallTime>& lastApplied) {
         _finishInitialSyncAttempt(lastApplied);
     };
     auto onCompletionGuard =
-        std::make_shared<OnCompletionGuard>(cancelRemainingWorkInLock, finishInitialSyncAttemptFn);
+        std::make_shared<OnCompletionGuard>(cancelRemainingWork, finishInitialSyncAttemptFn);
 
     // Lock guard must be declared after completion guard because completion guard destructor
     // has to run outside lock.
@@ -674,8 +675,9 @@ void InitialSyncerFCB::_startInitialSyncAttemptCallback(
     std::uint32_t chooseSyncSourceMaxAttempts =
         static_cast<std::uint32_t>(numInitialSyncConnectAttempts.load());
 
-    // _scheduleWorkAndSaveHandle_inlock() is shutdown-aware.
-    status = _scheduleWorkAndSaveHandle_inlock(
+    // _scheduleWorkAndSaveHandle() is shutdown-aware.
+    status = _scheduleWorkAndSaveHandle(
+        lock,
         [=, this](const executor::TaskExecutor::CallbackArgs& args) {
             _chooseSyncSourceCallback(
                 args, chooseSyncSourceAttempt, chooseSyncSourceMaxAttempts, onCompletionGuard);
@@ -683,7 +685,7 @@ void InitialSyncerFCB::_startInitialSyncAttemptCallback(
         &_chooseSyncSourceHandle,
         str::stream() << "_chooseSyncSourceCallback-" << chooseSyncSourceAttempt);
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 }
@@ -703,23 +705,16 @@ void InitialSyncerFCB::_chooseSyncSourceCallback(
     // of a failed _chooseSyncSourceCallback() task is a cancellation triggered by
     // InitialSyncerFCB::shutdown() or the task executor shutting down.
     auto status =
-        _checkForShutdownAndConvertStatus_inlock(callbackArgs, "error while choosing sync source");
+        _checkForShutdownAndConvertStatus(lock, callbackArgs, "error while choosing sync source");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
-    if (MONGO_unlikely(failInitialSyncWithBadHost.shouldFail())) {
-        status = Status(ErrorCodes::InvalidSyncSource,
-                        "initial sync failed - failInitialSyncWithBadHost failpoint is set.");
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
-        return;
-    }
-
-    auto syncSource = _chooseSyncSource_inlock();
+    auto syncSource = _chooseSyncSource(lock);
     if (!syncSource.isOK()) {
         if (chooseSyncSourceAttempt + 1 >= chooseSyncSourceMaxAttempts) {
-            onCompletionGuard->setResultAndCancelRemainingWork_inlock(
+            onCompletionGuard->setResultAndCancelRemainingWork(
                 lock,
                 syncSource.getStatus().withContext("Finishing file copy based initial sync "
                                                    "attempt: could not choose valid sync source"));
@@ -735,7 +730,8 @@ void InitialSyncerFCB::_chooseSyncSourceCallback(
                     "retryTime"_attr = when.toString(),
                     "chooseSyncSourceAttempt"_attr = (chooseSyncSourceAttempt + 1),
                     "numInitialSyncConnectAttempts"_attr = numInitialSyncConnectAttempts.load());
-        auto status = _scheduleWorkAtAndSaveHandle_inlock(
+        auto status = _scheduleWorkAtAndSaveHandle(
+            lock,
             when,
             [=, this](const executor::TaskExecutor::CallbackArgs& args) {
                 _chooseSyncSourceCallback(args,
@@ -746,7 +742,7 @@ void InitialSyncerFCB::_chooseSyncSourceCallback(
             &_chooseSyncSourceHandle,
             str::stream() << "_chooseSyncSourceCallback-" << (chooseSyncSourceAttempt + 1));
         if (!status.isOK()) {
-            onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+            onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
             return;
         }
         return;
@@ -770,7 +766,7 @@ void InitialSyncerFCB::_chooseSyncSourceCallback(
     // collections and dropping user databases) attached to the current thread.
     status = _truncateOplogAndDropReplicatedDatabases();
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -783,14 +779,14 @@ void InitialSyncerFCB::_chooseSyncSourceCallback(
     });
     status = scheduleResult.getStatus();
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
     _getBaseRollbackIdHandle = scheduleResult.getValue();
 } catch (const DBException&) {
     // Report exception as an initial syncer failure.
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, exceptionToStatus());
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, exceptionToStatus());
 }
 
 // TODO: we probably don't need this in FCBIS
@@ -844,10 +840,10 @@ Status InitialSyncerFCB::_truncateOplogAndDropReplicatedDatabases() {
 void InitialSyncerFCB::_rollbackCheckerResetCallback(
     const RollbackChecker::Result& result, std::shared_ptr<OnCompletionGuard> onCompletionGuard) {
     stdx::lock_guard<stdx::mutex> lock(_mutex);
-    auto status = _checkForShutdownAndConvertStatus_inlock(result.getStatus(),
-                                                           "error while getting base rollback ID");
+    auto status = _checkForShutdownAndConvertStatus(
+        lock, result.getStatus(), "error while getting base rollback ID");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -859,7 +855,8 @@ void InitialSyncerFCB::_rollbackCheckerResetCallback(
     _client = _createClientFn();
 
     // schedule $backupCursor on the sync source
-    status = _scheduleWorkAndSaveHandle_inlock(
+    status = _scheduleWorkAndSaveHandle(
+        lock,
         [this, onCompletionGuard](const executor::TaskExecutor::CallbackArgs& args) {
             const int extensionsUsed = 0;
             _fetchBackupCursorCallback(args, extensionsUsed, onCompletionGuard, [] {
@@ -874,7 +871,7 @@ void InitialSyncerFCB::_rollbackCheckerResetCallback(
         &_fetchBackupCursorHandle,
         "_fetchBackupCursorCallback");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 }
@@ -884,16 +881,16 @@ void InitialSyncerFCB::_fcvFetcherCallback(const StatusWith<Fetcher::QueryRespon
                                            const OpTime& lastOpTime,
                                            OpTime& beginFetchingOpTime) {
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    auto status = _checkForShutdownAndConvertStatus_inlock(
-        result.getStatus(), "error while getting the remote feature compatibility version");
+    auto status = _checkForShutdownAndConvertStatus(
+        lock, result.getStatus(), "error while getting the remote feature compatibility version");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
     const auto docs = result.getValue().documents;
     if (docs.size() > 1) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(
+        onCompletionGuard->setResultAndCancelRemainingWork(
             lock,
             Status(ErrorCodes::TooManyMatchingDocuments,
                    str::stream() << "Expected to receive one feature compatibility version "
@@ -904,7 +901,7 @@ void InitialSyncerFCB::_fcvFetcherCallback(const StatusWith<Fetcher::QueryRespon
     }
     const auto hasDoc = docs.begin() != docs.end();
     if (!hasDoc) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(
+        onCompletionGuard->setResultAndCancelRemainingWork(
             lock,
             Status(ErrorCodes::IncompatibleServerVersion,
                    "Sync source had no feature compatibility version document"));
@@ -913,7 +910,7 @@ void InitialSyncerFCB::_fcvFetcherCallback(const StatusWith<Fetcher::QueryRespon
 
     auto fCVParseSW = FeatureCompatibilityVersionParser::parse(docs.front());
     if (!fCVParseSW.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, fCVParseSW.getStatus());
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, fCVParseSW.getStatus());
         return;
     }
 
@@ -923,7 +920,7 @@ void InitialSyncerFCB::_fcvFetcherCallback(const StatusWith<Fetcher::QueryRespon
     // (Generic FCV reference): This FCV check should exist across LTS binary versions.
     if (serverGlobalParams.featureCompatibility.acquireFCVSnapshot().isUpgradingOrDowngrading(
             version)) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(
+        onCompletionGuard->setResultAndCancelRemainingWork(
             lock,
             Status(ErrorCodes::IncompatibleServerVersion,
                    str::stream() << "Sync source had unsafe feature compatibility version: "
@@ -982,7 +979,7 @@ void InitialSyncerFCB::_fcvFetcherCallback(const StatusWith<Fetcher::QueryRespon
     const auto configResult = _dataReplicatorExternalState->getCurrentConfig();
     status = configResult.getStatus();
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         _initialSyncState.reset();
         return;
     }
@@ -1083,7 +1080,7 @@ void InitialSyncerFCB::_finishInitialSyncAttempt(const StatusWith<OpTimeAndWallT
     bool hasRetries = _stats.failedInitialSyncAttempts < _stats.maxFailedInitialSyncAttempts;
 
     initial_sync_common_stats::LogInitialSyncAttemptStats(
-        result, hasRetries, _getInitialSyncProgress_inlock());
+        result, hasRetries, _getInitialSyncProgress(lock));
 
     if (result.isOK()) {
         // Scope guard will invoke _finishCallback().
@@ -1113,7 +1110,8 @@ void InitialSyncerFCB::_finishInitialSyncAttempt(const StatusWith<OpTimeAndWallT
         _clonerExec, Status(ErrorCodes::CallbackCanceled, "Initial Sync Attempt Canceled"));
     _attemptCanceled = false;
     auto when = (*_attemptExec)->now() + _opts.initialSyncRetryWait;
-    auto status = _scheduleWorkAtAndSaveHandle_inlock(
+    auto status = _scheduleWorkAtAndSaveHandle(
+        lock,
         when,
         [=, this](const executor::TaskExecutor::CallbackArgs& args) {
             _startInitialSyncAttemptCallback(
@@ -1144,7 +1142,7 @@ void InitialSyncerFCB::_finishCallback(StatusWith<OpTimeAndWallTime> lastApplied
     {
         stdx::lock_guard<stdx::mutex> lock(_mutex);
         auto opCtx = makeOpCtx();
-        _tearDown_inlock(opCtx.get(), lastApplied);
+        _tearDown(lock, opCtx.get(), lastApplied);
         invariant(_onCompletion);
         std::swap(_onCompletion, onCompletion);
     }
@@ -1221,27 +1219,30 @@ void InitialSyncerFCB::_clearRetriableError(WithLock lk) {
     _retryingOperation = boost::none;
 }
 
-Status InitialSyncerFCB::_checkForShutdownAndConvertStatus_inlock(
-    const executor::TaskExecutor::CallbackArgs& callbackArgs, const std::string& message) {
-    return _checkForShutdownAndConvertStatus_inlock(callbackArgs.status, message);
+Status InitialSyncerFCB::_checkForShutdownAndConvertStatus(
+    WithLock lk,
+    const executor::TaskExecutor::CallbackArgs& callbackArgs,
+    const std::string& message) {
+    return _checkForShutdownAndConvertStatus(lk, callbackArgs.status, message);
 }
 
-Status InitialSyncerFCB::_checkForShutdownAndConvertStatus_inlock(const Status& status,
-                                                                  const std::string& message) {
+Status InitialSyncerFCB::_checkForShutdownAndConvertStatus(WithLock lk,
+                                                           const Status& status,
+                                                           const std::string& message) {
 
-    if (_isShuttingDown_inlock()) {
+    if (_isShuttingDown(lk)) {
         return {ErrorCodes::CallbackCanceled, message + ": initial syncer is shutting down"};
     }
 
     return status.withContext(message);
 }
 
-Status InitialSyncerFCB::_scheduleWorkAndSaveHandle_inlock(
-    executor::TaskExecutor::CallbackFn work,
-    executor::TaskExecutor::CallbackHandle* handle,
-    const std::string& name) {
+Status InitialSyncerFCB::_scheduleWorkAndSaveHandle(WithLock lk,
+                                                    executor::TaskExecutor::CallbackFn work,
+                                                    executor::TaskExecutor::CallbackHandle* handle,
+                                                    const std::string& name) {
     invariant(handle);
-    if (_isShuttingDown_inlock()) {
+    if (_isShuttingDown(lk)) {
         return {ErrorCodes::CallbackCanceled,
                 str::stream() << "failed to schedule work " << name
                               << ": initial syncer is shutting down"};
@@ -1254,13 +1255,14 @@ Status InitialSyncerFCB::_scheduleWorkAndSaveHandle_inlock(
     return Status::OK();
 }
 
-Status InitialSyncerFCB::_scheduleWorkAtAndSaveHandle_inlock(
+Status InitialSyncerFCB::_scheduleWorkAtAndSaveHandle(
+    WithLock lk,
     Date_t when,
     executor::TaskExecutor::CallbackFn work,
     executor::TaskExecutor::CallbackHandle* handle,
     const std::string& name) {
     invariant(handle);
-    if (_isShuttingDown_inlock()) {
+    if (_isShuttingDown(lk)) {
         return {ErrorCodes::CallbackCanceled,
                 str::stream() << "failed to schedule work " << name << " at " << when.toString()
                               << ": initial syncer is shutting down"};
@@ -1274,7 +1276,7 @@ Status InitialSyncerFCB::_scheduleWorkAtAndSaveHandle_inlock(
     return Status::OK();
 }
 
-void InitialSyncerFCB::_cancelHandle_inlock(executor::TaskExecutor::CallbackHandle handle) {
+void InitialSyncerFCB::_cancelHandle(WithLock lk, executor::TaskExecutor::CallbackHandle handle) {
     if (!handle) {
         return;
     }
@@ -1282,13 +1284,13 @@ void InitialSyncerFCB::_cancelHandle_inlock(executor::TaskExecutor::CallbackHand
 }
 
 template <typename Component>
-Status InitialSyncerFCB::_startupComponent_inlock(Component& component) {
+Status InitialSyncerFCB::_startupComponent(WithLock lk, Component& component) {
     // It is necessary to check if shutdown or attempt cancelling happens before starting a
     // component; otherwise the component may call a callback function in line which will
     // cause a deadlock when the callback attempts to obtain the initial syncer mutex.
-    if (_isShuttingDown_inlock() || _attemptCanceled) {
+    if (_isShuttingDown(lk) || _attemptCanceled) {
         component.reset();
-        if (_isShuttingDown_inlock()) {
+        if (_isShuttingDown(lk)) {
             return {ErrorCodes::CallbackCanceled,
                     "initial syncer shutdown while trying to call startup() on component"};
         } else {
@@ -1304,14 +1306,14 @@ Status InitialSyncerFCB::_startupComponent_inlock(Component& component) {
 }
 
 template <typename Component>
-void InitialSyncerFCB::_shutdownComponent_inlock(Component& component) {
+void InitialSyncerFCB::_shutdownComponent(WithLock lk, Component& component) {
     if (!component) {
         return;
     }
     component->shutdown();
 }
 
-StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
+StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource(WithLock lk) {
     auto syncSource = _opts.syncSourceSelector->chooseNewSyncSource(_lastFetched);
     if (syncSource.empty()) {
         return Status{ErrorCodes::InvalidSyncSource,
@@ -1328,7 +1330,7 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
         (*_attemptExec)
             ->scheduleRemoteCommand(
                 buildInfoRequest,
-                [this, &syncSource, &result](
+                [this, &lk, &syncSource, &result](
                     const executor::TaskExecutor::RemoteCommandCallbackArgs& args) {
                     if (!args.response.isOK()) {
                         LOGV2_WARNING(128459,
@@ -1359,7 +1361,8 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
                             "Invalid sync source",
                             "error"_attr =
                                 "sync source does not support file copy-based initial sync");
-                        result = _invalidSyncSource_inlock(
+                        result = _invalidSyncSource(
+                            lk,
                             syncSource,
                             kDenylistPersistent,
                             "sync source does not support file copy-based initial sync");
@@ -1385,7 +1388,7 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
         (*_attemptExec)
             ->scheduleRemoteCommand(
                 serverStatusRequest,
-                [this, &syncSource, &result](
+                [this, &lk, &syncSource, &result](
                     const executor::TaskExecutor::RemoteCommandCallbackArgs& args) {
                     if (!args.response.isOK()) {
                         LOGV2_WARNING(128457,
@@ -1404,8 +1407,8 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
                         LOGV2_WARNING(128458,
                                       "Invalid sync source",
                                       "error"_attr = "storage engine mismatch");
-                        result = _invalidSyncSource_inlock(
-                            syncSource, kDenylistPersistent, "storage engine mismatch");
+                        result = _invalidSyncSource(
+                            lk, syncSource, kDenylistPersistent, "storage engine mismatch");
                         return;
                     }
                 });
@@ -1428,7 +1431,7 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
         (*_attemptExec)
             ->scheduleRemoteCommand(
                 getParameterRequest,
-                [this, &syncSource, &result](
+                [this, &lk, &syncSource, &result](
                     const executor::TaskExecutor::RemoteCommandCallbackArgs& args) {
                     if (!args.response.isOK()) {
                         LOGV2_WARNING(128448,
@@ -1447,8 +1450,8 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
                         LOGV2_WARNING(128449,
                                       "Invalid sync source",
                                       "error"_attr = "directoryperdb mismatch");
-                        result = _invalidSyncSource_inlock(
-                            syncSource, kDenylistPersistent, "directoryperdb mismatch");
+                        result = _invalidSyncSource(
+                            lk, syncSource, kDenylistPersistent, "directoryperdb mismatch");
                         return;
                     }
                     bool dirForIndexes =
@@ -1457,10 +1460,10 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
                         LOGV2_WARNING(128450,
                                       "Invalid sync source",
                                       "error"_attr = "wiredTigerDirectoryForIndexes mismatch");
-                        result =
-                            _invalidSyncSource_inlock(syncSource,
-                                                      kDenylistPersistent,
-                                                      "wiredTigerDirectoryForIndexes mismatch");
+                        result = _invalidSyncSource(lk,
+                                                    syncSource,
+                                                    kDenylistPersistent,
+                                                    "wiredTigerDirectoryForIndexes mismatch");
                         return;
                     }
                     // And BTW, get cursorTimeoutMillis, to fine tune the backup cursor's keep alive
@@ -1496,10 +1499,11 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
         syncSource,
         NamespaceString::kServerConfigurationNamespace.dbName(),
         queryBob.obj(),
-        [this, &syncSource, &result](const StatusWith<mongo::Fetcher::QueryResponse>& response,
-                                     mongo::Fetcher::NextAction*,
-                                     mongo::BSONObjBuilder*) {
-            auto status = _checkForShutdownAndConvertStatus_inlock(
+        [this, &lk, &syncSource, &result](const StatusWith<mongo::Fetcher::QueryResponse>& response,
+                                          mongo::Fetcher::NextAction*,
+                                          mongo::BSONObjBuilder*) {
+            auto status = _checkForShutdownAndConvertStatus(
+                lk,
                 response.getStatus(),
                 "error while fetching the remote feature compatibility version");
             if (!status.isOK()) {
@@ -1534,7 +1538,8 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
             auto version = fcvParseSW.getValue();
             if (serverGlobalParams.featureCompatibility.acquireFCVSnapshot()
                     .isUpgradingOrDowngrading(version)) {
-                result = _invalidSyncSource_inlock(
+                result = _invalidSyncSource(
+                    lk,
                     syncSource,
                     kDenylistPersistent,
                     str::stream() << "Sync source had unsafe feature compatibility version: "
@@ -1562,9 +1567,10 @@ StatusWith<HostAndPort> InitialSyncerFCB::_chooseSyncSource_inlock() {
     return result;
 }
 
-Status InitialSyncerFCB::_invalidSyncSource_inlock(const HostAndPort& syncSource,
-                                                   Seconds denylistDuration,
-                                                   const std::string& context) {
+Status InitialSyncerFCB::_invalidSyncSource(WithLock lk,
+                                            const HostAndPort& syncSource,
+                                            Seconds denylistDuration,
+                                            const std::string& context) {
     // If the sync source is invalid, we should denylist it for a while.
     const auto until = (*_attemptExec)->now() + denylistDuration;
     _opts.syncSourceSelector->denylistSyncSource(syncSource, until);
@@ -1715,9 +1721,9 @@ Status InitialSyncerFCB::_switchStorageLocation(
     return Status::OK();
 }
 
-Status InitialSyncerFCB::_killBackupCursor_inlock() {
+Status InitialSyncerFCB::_killBackupCursor(WithLock lk) {
     // Cancel scheduled keep alive call
-    _cancelHandle_inlock(_keepAliveHandle);
+    _cancelHandle(lk, _keepAliveHandle);
 
     // Kill the backup cursor by sending a killCursors command to the sync source.
     decltype(_backupCursorInfo) backupCursorInfo;
@@ -1758,10 +1764,10 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
     std::shared_ptr<OnCompletionGuard> onCompletionGuard,
     std::function<BSONObj()> createRequestObj) noexcept try {
     stdx::lock_guard<stdx::mutex> lock(_mutex);
-    auto status = _checkForShutdownAndConvertStatus_inlock(
-        callbackArgs, "error executing backup cusrsor on the sync source");
+    auto status = _checkForShutdownAndConvertStatus(
+        lock, callbackArgs, "error executing backup cusrsor on the sync source");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -1771,9 +1777,10 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
     LOGV2_DEBUG(128407, 1, "Opening backup cursor on sync source", "syncSource"_attr = _syncSource);
 
     auto fetchStatus = std::make_shared<boost::optional<Status>>();
-    const auto fetcherCallback = [this, fetchStatus](const Fetcher::QueryResponseStatus& dataStatus,
-                                                     Fetcher::NextAction* nextAction,
-                                                     BSONObjBuilder* getMoreBob) noexcept {
+    const auto fetcherCallback = [this, &lock, fetchStatus](
+                                     const Fetcher::QueryResponseStatus& dataStatus,
+                                     Fetcher::NextAction* nextAction,
+                                     BSONObjBuilder* getMoreBob) noexcept {
         try {
             uassertStatusOK(dataStatus);
 
@@ -1826,7 +1833,8 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
             // "Location50886: The existing backup cursor must be closed before $backupCursor can
             // succeed." replace error code with InvalidSyncSource to ensure fallback to logical
             if (fetchStatus->get().code() == 50886) {
-                *fetchStatus = _invalidSyncSource_inlock(
+                *fetchStatus = _invalidSyncSource(
+                    lock,
                     _syncSource,
                     kDenylistTemporary,
                     str::stream() << "Error fetching backup cursor entries: " << ex.reason());
@@ -1853,7 +1861,7 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
     Status scheduleStatus = _backupCursorFetcher->schedule();
     if (!scheduleStatus.isOK()) {
         _backupCursorFetcher.reset();
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, scheduleStatus);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, scheduleStatus);
         return;
     }
 
@@ -1866,7 +1874,7 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
             }
             auto status = fetchStatus->get();
             if (!status.isOK()) {
-                onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+                onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
                 return;
             }
 
@@ -1876,7 +1884,8 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
 
             // Start keep alive loop for the backup cursor
             auto when = (*_attemptExec)->now() + _keepAliveInterval;
-            status = _scheduleWorkAtAndSaveHandle_inlock(
+            status = _scheduleWorkAtAndSaveHandle(
+                lock,
                 when,
                 [this, onCompletionGuard](const executor::TaskExecutor::CallbackArgs& args) {
                     _keepAliveCallback(args, onCompletionGuard);
@@ -1884,12 +1893,13 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
                 &_keepAliveHandle,
                 "_keepAliveCallback");
             if (!status.isOK()) {
-                onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+                onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
                 return;
             }
 
             // schedule file transfer callback
-            status = _scheduleWorkAndSaveHandle_inlock(
+            status = _scheduleWorkAndSaveHandle(
+                lock,
                 [this, extensionsUsed, onCompletionGuard](
                     const executor::TaskExecutor::CallbackArgs& args) {
                     _transferFileCallback(args, 0LU, extensionsUsed, onCompletionGuard);
@@ -1897,7 +1907,7 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
                 &_transferFileHandle,
                 str::stream() << "_transferFileCallback-" << 0);
             if (!status.isOK()) {
-                onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+                onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
                 return;
             }
         })
@@ -1906,7 +1916,7 @@ void InitialSyncerFCB::_fetchBackupCursorCallback(
 } catch (const DBException&) {
     // Report exception as an initial syncer failure.
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, exceptionToStatus());
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, exceptionToStatus());
 }
 
 void InitialSyncerFCB::_keepAliveCallback(
@@ -1915,7 +1925,7 @@ void InitialSyncerFCB::_keepAliveCallback(
     std::shared_ptr<OnCompletionGuard> onCompletionGuard) noexcept try {
     stdx::lock_guard<stdx::mutex> lock(_mutex);
     auto status =
-        _checkForShutdownAndConvertStatus_inlock(callbackArgs, "error keeping backup cursor alive");
+        _checkForShutdownAndConvertStatus(lock, callbackArgs, "error keeping backup cursor alive");
     if (status.code() == ErrorCodes::CallbackCanceled) {
         // If the initial syncer is shutting down or keep alive handle was cancelled, we should stop
         // keeping the backup cursor alive. Just return.
@@ -1924,7 +1934,7 @@ void InitialSyncerFCB::_keepAliveCallback(
     }
     if (!status.isOK()) {
         LOGV2_WARNING(128463, "Unexpected error in _keepAliveCallback", "error"_attr = status);
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -1956,7 +1966,7 @@ void InitialSyncerFCB::_keepAliveCallback(
                     }
 
                     if (!args.response.isOK()) {
-                        onCompletionGuard->setResultAndCancelRemainingWork_inlock(
+                        onCompletionGuard->setResultAndCancelRemainingWork(
                             lock,
                             args.response.status.withContext(
                                 "error executing getMore to keep backup cursor alive"));
@@ -1965,7 +1975,8 @@ void InitialSyncerFCB::_keepAliveCallback(
 
                     // If the command was successful, reschedule the keep alive.
                     auto when = (*_attemptExec)->now() + _keepAliveInterval;
-                    auto status = _scheduleWorkAtAndSaveHandle_inlock(
+                    auto status = _scheduleWorkAtAndSaveHandle(
+                        lock,
                         when,
                         [this,
                          onCompletionGuard](const executor::TaskExecutor::CallbackArgs& args) {
@@ -1974,12 +1985,12 @@ void InitialSyncerFCB::_keepAliveCallback(
                         &_keepAliveHandle,
                         "_keepAliveCallback");
                     if (!status.isOK()) {
-                        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+                        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
                         return;
                     }
                 });
     if (!scheduleResult.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(
+        onCompletionGuard->setResultAndCancelRemainingWork(
             lock,
             scheduleResult.getStatus().withContext(
                 "Failed to schedule getMore to keep backup cursor alive"));
@@ -1988,7 +1999,7 @@ void InitialSyncerFCB::_keepAliveCallback(
 } catch (const DBException&) {
     // Report exception as an initial syncer failure.
     stdx::lock_guard<stdx::mutex> lock(_mutex);
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, exceptionToStatus());
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, exceptionToStatus());
 }
 
 // tenant_migration_shard_merge_util.cpp : cloneFile
@@ -2000,10 +2011,10 @@ void InitialSyncerFCB::_transferFileCallback(
     std::shared_ptr<OnCompletionGuard> onCompletionGuard) noexcept try {
     // stdx::lock_guard<stdx::mutex> lock(_mutex);
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    auto status = _checkForShutdownAndConvertStatus_inlock(
-        callbackArgs, "error transferring file from sync source");
+    auto status = _checkForShutdownAndConvertStatus(
+        lock, callbackArgs, "error transferring file from sync source");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2013,7 +2024,7 @@ void InitialSyncerFCB::_transferFileCallback(
     status = replAuthenticate(&syncSourceConn)
                  .withContext(str::stream() << "Failed to authenticate to " << _syncSource);
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2038,13 +2049,14 @@ void InitialSyncerFCB::_transferFileCallback(
                       "Failed to clone file",
                       "fileName"_attr = remoteFileName,
                       "error"_attr = cloneStatus);
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, cloneStatus);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, cloneStatus);
     } else {
         LOGV2_DEBUG(128413, 1, "Cloned file", "fileName"_attr = remoteFileName);
         auto nextFileIdx = fileIdx + 1;
         if (nextFileIdx < _remoteFiles.size()) {
             // schedule next file cloning
-            status = _scheduleWorkAndSaveHandle_inlock(
+            status = _scheduleWorkAndSaveHandle(
+                lock,
                 [this, nextFileIdx, extensionsUsed, onCompletionGuard](
                     const executor::TaskExecutor::CallbackArgs& args) {
                     _transferFileCallback(args, nextFileIdx, extensionsUsed, onCompletionGuard);
@@ -2052,7 +2064,7 @@ void InitialSyncerFCB::_transferFileCallback(
                 &_transferFileHandle,
                 str::stream() << "_transferFileCallback-" << nextFileIdx << "-" << extensionsUsed);
             if (!status.isOK()) {
-                onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+                onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
                 return;
             }
         } else {
@@ -2091,7 +2103,7 @@ void InitialSyncerFCB::_transferFileCallback(
                         });
             status = scheduleResult.getStatus();
             if (!status.isOK()) {
-                onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+                onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
                 return;
             }
             _currentHandle = scheduleResult.getValue();
@@ -2100,7 +2112,7 @@ void InitialSyncerFCB::_transferFileCallback(
 } catch (const DBException&) {
     // Report exception as an initial syncer failure.
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, exceptionToStatus());
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, exceptionToStatus());
 }
 
 void InitialSyncerFCB::_compareLastAppliedCallback(
@@ -2109,10 +2121,10 @@ void InitialSyncerFCB::_compareLastAppliedCallback(
     // NOLINTNEXTLINE(*-unnecessary-value-param)
     std::shared_ptr<OnCompletionGuard> onCompletionGuard) noexcept try {
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    auto status = _checkForShutdownAndConvertStatus_inlock(
-        callbackArgs.response.status, "error executing replSetGetStatus on the sync source");
+    auto status = _checkForShutdownAndConvertStatus(
+        lock, callbackArgs.response.status, "error executing replSetGetStatus on the sync source");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2128,36 +2140,37 @@ void InitialSyncerFCB::_compareLastAppliedCallback(
         // The lag is OK, we can conclude the backup cursor loop
         // file cloning is completed - close backup cursor
         LOGV2_DEBUG(128453, 1, "The lag is acceptable. Switching to downloaded files");
-        auto status = _killBackupCursor_inlock();
+        auto status = _killBackupCursor(lock);
         if (!status.isOK()) {
-            onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+            onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
             return;
         }
         // schedule next task
-        status = _scheduleWorkAndSaveHandle_inlock(
+        status = _scheduleWorkAndSaveHandle(
+            lock,
             [this, onCompletionGuard](const executor::TaskExecutor::CallbackArgs& args) {
                 _switchToDownloadedCallback(args, onCompletionGuard);
             },
             &_currentHandle,
             "_switchToDownloadedCallback");
         if (!status.isOK()) {
-            onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+            onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         }
         return;
     }
     // The lag is too big, we need to extend the backup cursor
     if (!(extensionsUsed < fileBasedInitialSyncMaxCyclesWithoutProgress)) {
         LOGV2_DEBUG(128454, 1, "The lag is too big and no backup cursor extensions left");
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(
+        onCompletionGuard->setResultAndCancelRemainingWork(
             lock,
-            _invalidSyncSource_inlock(_syncSource,
-                                      kDenylistTemporary,
-                                      str::stream()
-                                          << "No backup cursor extensions left. Node is still "
-                                             "behind sync source more than the allowed lag: "
-                                          << _lastApplied.opTime.getSecs() << " + "
-                                          << fileBasedInitialSyncMaxLagSec << " < "
-                                          << lastAppliedTS.getSecs()));
+            _invalidSyncSource(lock,
+                               _syncSource,
+                               kDenylistTemporary,
+                               str::stream() << "No backup cursor extensions left. Node is still "
+                                                "behind sync source more than the allowed lag: "
+                                             << _lastApplied.opTime.getSecs() << " + "
+                                             << fileBasedInitialSyncMaxLagSec << " < "
+                                             << lastAppliedTS.getSecs()));
         return;
     }
 
@@ -2166,7 +2179,8 @@ void InitialSyncerFCB::_compareLastAppliedCallback(
     // does not return metadata
     _oplogEnd = appliedOpTime;
     // execute $backupCursorExtend to the lastAppliedTS moment
-    status = _scheduleWorkAndSaveHandle_inlock(
+    status = _scheduleWorkAndSaveHandle(
+        lock,
         [this, extensionsUsed, onCompletionGuard, lastAppliedTS](
             const executor::TaskExecutor::CallbackArgs& args) {
             _fetchBackupCursorCallback(
@@ -2187,13 +2201,13 @@ void InitialSyncerFCB::_compareLastAppliedCallback(
         &_fetchBackupCursorHandle,
         "_fetchBackupCursorCallback(extend)");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 } catch (const DBException&) {
     // Report exception as an initial syncer failure.
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, exceptionToStatus());
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, exceptionToStatus());
 }
 
 void InitialSyncerFCB::_switchToDownloadedCallback(
@@ -2202,10 +2216,10 @@ void InitialSyncerFCB::_switchToDownloadedCallback(
     std::shared_ptr<OnCompletionGuard> onCompletionGuard) noexcept try {
     ChangeStorageGuard changeStorageGuard(this);
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    auto status = _checkForShutdownAndConvertStatus_inlock(callbackArgs,
-                                                           "_switchToDownloadedCallback cancelled");
+    auto status = _checkForShutdownAndConvertStatus(
+        lock, callbackArgs, "_switchToDownloadedCallback cancelled");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2215,7 +2229,7 @@ void InitialSyncerFCB::_switchToDownloadedCallback(
     if (!bfiles.isOK()) {
         LOGV2_DEBUG(
             128405, 2, "Failed to get the list of local files", "status"_attr = bfiles.getStatus());
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, bfiles.getStatus());
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, bfiles.getStatus());
         return;
     }
     LOGV2_DEBUG(
@@ -2236,7 +2250,7 @@ void InitialSyncerFCB::_switchToDownloadedCallback(
                                     startup_recovery::StartupRecoveryMode::kReplicaSetMember);
     lock.lock();
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2259,36 +2273,37 @@ void InitialSyncerFCB::_switchToDownloadedCallback(
     status = StorageInterface::get(opCtx.get())
                  ->dropCollection(opCtx.get(), NamespaceString::kLastVoteNamespace);
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
     status = externalState.createLocalLastVoteCollection(opCtx.get());
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
     // replace the config with savedRSConfig
     status = externalState.replaceLocalConfigDocument(opCtx.get(), savedRSConfig);
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
     // schedule next task
-    status = _scheduleWorkAndSaveHandle_inlock(
+    status = _scheduleWorkAndSaveHandle(
+        lock,
         [this, onCompletionGuard](const executor::TaskExecutor::CallbackArgs& args) {
             _executeRecovery(args, onCompletionGuard);
         },
         &_currentHandle,
         "_executeRecovery");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 } catch (const DBException&) {
     // Report exception as an initial syncer failure.
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, exceptionToStatus());
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, exceptionToStatus());
 }
 
 void InitialSyncerFCB::_executeRecovery(
@@ -2297,9 +2312,9 @@ void InitialSyncerFCB::_executeRecovery(
     std::shared_ptr<OnCompletionGuard> onCompletionGuard) noexcept try {
     stdx::lock_guard<stdx::mutex> lock(_mutex);
     auto status =
-        _checkForShutdownAndConvertStatus_inlock(callbackArgs, "_executeRecovery cancelled");
+        _checkForShutdownAndConvertStatus(lock, callbackArgs, "_executeRecovery cancelled");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2328,20 +2343,21 @@ void InitialSyncerFCB::_executeRecovery(
     }
 
     // schedule next task
-    status = _scheduleWorkAndSaveHandle_inlock(
+    status = _scheduleWorkAndSaveHandle(
+        lock,
         [this, onCompletionGuard](const executor::TaskExecutor::CallbackArgs& args) {
             _switchToDummyToDBPathCallback(args, onCompletionGuard);
         },
         &_currentHandle,
         "_switchToDummyToDBPathCallback");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 } catch (const DBException&) {
     // Report exception as an initial syncer failure.
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, exceptionToStatus());
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, exceptionToStatus());
 }
 
 void InitialSyncerFCB::_switchToDummyToDBPathCallback(
@@ -2350,10 +2366,10 @@ void InitialSyncerFCB::_switchToDummyToDBPathCallback(
     std::shared_ptr<OnCompletionGuard> onCompletionGuard) noexcept try {
     ChangeStorageGuard changeStorageGuard(this);
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    auto status = _checkForShutdownAndConvertStatus_inlock(
-        callbackArgs, "_switchToDummyToDBPathCallback cancelled");
+    auto status = _checkForShutdownAndConvertStatus(
+        lock, callbackArgs, "_switchToDummyToDBPathCallback cancelled");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2364,14 +2380,14 @@ void InitialSyncerFCB::_switchToDummyToDBPathCallback(
     status = _switchStorageLocation(opCtx.get(), _cfgDBPath + "/.initialsync/.dummy");
     lock.lock();
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
     // Delete the list of files obtained from the local backup cursor
     status = _deleteLocalFiles();
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2379,7 +2395,7 @@ void InitialSyncerFCB::_switchToDummyToDBPathCallback(
     boost::filesystem::path cfgDBPath(_cfgDBPath);
     status = _moveFiles(cfgDBPath / ".initialsync", cfgDBPath);
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2389,25 +2405,26 @@ void InitialSyncerFCB::_switchToDummyToDBPathCallback(
         opCtx.get(), _cfgDBPath, startup_recovery::StartupRecoveryMode::kReplicaSetMember);
     lock.lock();
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
     // schedule next task
-    status = _scheduleWorkAndSaveHandle_inlock(
+    status = _scheduleWorkAndSaveHandle(
+        lock,
         [this, onCompletionGuard](const executor::TaskExecutor::CallbackArgs& args) {
             _finalizeAndCompleteCallback(args, onCompletionGuard);
         },
         &_currentHandle,
         "_finalizeAndCompleteCallback");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 } catch (const DBException&) {
     // Report exception as an initial syncer failure.
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, exceptionToStatus());
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, exceptionToStatus());
 }
 
 void InitialSyncerFCB::_finalizeAndCompleteCallback(
@@ -2415,10 +2432,10 @@ void InitialSyncerFCB::_finalizeAndCompleteCallback(
     // NOLINTNEXTLINE(*-unnecessary-value-param)
     std::shared_ptr<OnCompletionGuard> onCompletionGuard) noexcept try {
     stdx::lock_guard<stdx::mutex> lock(_mutex);
-    auto status = _checkForShutdownAndConvertStatus_inlock(
-        callbackArgs, "_finalizeAndCompleteCallback cancelled");
+    auto status = _checkForShutdownAndConvertStatus(
+        lock, callbackArgs, "_finalizeAndCompleteCallback cancelled");
     if (!status.isOK()) {
-        onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, status);
+        onCompletionGuard->setResultAndCancelRemainingWork(lock, status);
         return;
     }
 
@@ -2430,11 +2447,11 @@ void InitialSyncerFCB::_finalizeAndCompleteCallback(
     }
 
     // Successfully complete initial sync
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, _lastApplied);
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, _lastApplied);
 } catch (const DBException&) {
     // Report exception as an initial syncer failure.
     stdx::unique_lock<stdx::mutex> lock(_mutex);
-    onCompletionGuard->setResultAndCancelRemainingWork_inlock(lock, exceptionToStatus());
+    onCompletionGuard->setResultAndCancelRemainingWork(lock, exceptionToStatus());
 }
 
 

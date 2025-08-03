@@ -35,7 +35,6 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -44,7 +43,6 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 
 #include "mongo/base/status.h"
 #include "mongo/base/status_with.h"
-#include "mongo/base/string_data.h"
 #include "mongo/bson/bsonobj.h"
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/client/dbclient_connection.h"
@@ -228,19 +226,19 @@ private:
      * Returns true if we are still processing initial sync tasks (_state is either Running or
      * Shutdown).
      */
-    bool _isActive_inlock() const;
+    bool _isActive(WithLock lk) const;
 
     /**
      * Cancels all outstanding work.
      * Used by shutdown() and CompletionGuard::setResultAndCancelRemainingWork().
      */
-    void _cancelRemainingWork_inlock();
+    void _cancelRemainingWork(WithLock lk);
 
     /**
      * Returns true if the initial syncer has received a shutdown request (_state is ShuttingDown).
      */
     bool _isShuttingDown() const;
-    bool _isShuttingDown_inlock() const;
+    bool _isShuttingDown(WithLock lk) const;
 
     /**
      * Initial sync flowchart:
@@ -249,7 +247,7 @@ private:
      *         |
      *         |
      *         V
-     *     _setUp_inlock()
+     *     _setUp()
      *         |
      *         |
      *         V
@@ -324,13 +322,14 @@ private:
     /**
      * Sets up internal state to begin initial sync.
      */
-    void _setUp_inlock(OperationContext* opCtx, std::uint32_t initialSyncMaxAttempts);
+    void _setUp(WithLock lk, OperationContext* opCtx, std::uint32_t initialSyncMaxAttempts);
 
     /**
      * Tears down internal state before reporting final status to caller.
      */
-    void _tearDown_inlock(OperationContext* opCtx,
-                          const StatusWith<OpTimeAndWallTime>& lastApplied);
+    void _tearDown(WithLock lk,
+                   OperationContext* opCtx,
+                   const StatusWith<OpTimeAndWallTime>& lastApplied);
 
     /**
      * Callback to start a single initial sync attempt.
@@ -448,15 +447,16 @@ private:
 
     // Obtains a valid sync source from the sync source selector.
     // Returns error if a sync source cannot be found.
-    StatusWith<HostAndPort> _chooseSyncSource_inlock();
+    StatusWith<HostAndPort> _chooseSyncSource(WithLock lk);
 
     // Denylist sync source and return status with InvalidSyncSource
-    Status _invalidSyncSource_inlock(const HostAndPort& syncSource,
-                                     Seconds denylistDuration,
-                                     const std::string& context);
+    Status _invalidSyncSource(WithLock lk,
+                              const HostAndPort& syncSource,
+                              Seconds denylistDuration,
+                              const std::string& context);
 
-    void _appendInitialSyncProgressMinimal_inlock(BSONObjBuilder* bob) const;
-    BSONObj _getInitialSyncProgress_inlock() const;
+    void _appendInitialSyncProgressMinimal(WithLock lk, BSONObjBuilder* bob) const;
+    BSONObj _getInitialSyncProgress(WithLock lk) const;
 
     /**
      * Check if a status is one which means there's a retriable error and we should retry the
@@ -478,28 +478,33 @@ private:
      * status will include 'message'.
      * Otherwise, returns Status::OK().
      */
-    Status _checkForShutdownAndConvertStatus_inlock(
-        const executor::TaskExecutor::CallbackArgs& callbackArgs, const std::string& message);
-    Status _checkForShutdownAndConvertStatus_inlock(const Status& status,
-                                                    const std::string& message);
+    Status _checkForShutdownAndConvertStatus(
+        WithLock lk,
+        const executor::TaskExecutor::CallbackArgs& callbackArgs,
+        const std::string& message);
+    Status _checkForShutdownAndConvertStatus(WithLock lk,
+                                             const Status& status,
+                                             const std::string& message);
 
     /**
      * Schedules work to be run by the task executor.
      * Saves handle if work was successfully scheduled.
      * Returns scheduleWork status (without the handle).
      */
-    Status _scheduleWorkAndSaveHandle_inlock(executor::TaskExecutor::CallbackFn work,
-                                             executor::TaskExecutor::CallbackHandle* handle,
-                                             const std::string& name);
-    Status _scheduleWorkAtAndSaveHandle_inlock(Date_t when,
-                                               executor::TaskExecutor::CallbackFn work,
-                                               executor::TaskExecutor::CallbackHandle* handle,
-                                               const std::string& name);
+    Status _scheduleWorkAndSaveHandle(WithLock lk,
+                                      executor::TaskExecutor::CallbackFn work,
+                                      executor::TaskExecutor::CallbackHandle* handle,
+                                      const std::string& name);
+    Status _scheduleWorkAtAndSaveHandle(WithLock lk,
+                                        Date_t when,
+                                        executor::TaskExecutor::CallbackFn work,
+                                        executor::TaskExecutor::CallbackHandle* handle,
+                                        const std::string& name);
 
     /**
      * Cancels task executor callback handle if not null.
      */
-    void _cancelHandle_inlock(executor::TaskExecutor::CallbackHandle handle);
+    void _cancelHandle(WithLock lk, executor::TaskExecutor::CallbackHandle handle);
 
     /**
      * Starts up component and checks initial syncer's shutdown state at the same time.
@@ -507,13 +512,13 @@ private:
      * to the component type).
      */
     template <typename Component>
-    Status _startupComponent_inlock(Component& component);
+    Status _startupComponent(WithLock lk, Component& component);
 
     /**
      * Shuts down component if not null.
      */
     template <typename Component>
-    void _shutdownComponent_inlock(Component& component);
+    void _shutdownComponent(WithLock lk, Component& component);
 
     /**
      * Temporary location to declare all FCB-related private methods
@@ -531,7 +536,7 @@ private:
         const std::string& newLocation,
         boost::optional<startup_recovery::StartupRecoveryMode> = boost::none);
 
-    Status _killBackupCursor_inlock();
+    Status _killBackupCursor(WithLock lk);
 
     // Counts how many documents have been refetched from the source in the current batch.
     AtomicWord<unsigned> _fetchCount;

@@ -28,7 +28,6 @@ wtEnv.Library(
         "oplog_truncate_markers_server_status_section.cpp",
         "wiredtiger_backup_cursor_hooks.cpp",
         "wiredtiger_begin_transaction_block.cpp",
-        "wiredtiger_column_store.cpp",
         "wiredtiger_compiled_configuration.cpp",
         "wiredtiger_cursor.cpp",
         "wiredtiger_cursor_helpers.cpp",

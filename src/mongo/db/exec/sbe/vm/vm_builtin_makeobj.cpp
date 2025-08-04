@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2022-present MongoDB, Inc.
+ *    Copyright (C) 2024-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -27,26 +27,19 @@
  *    it in the license file.
  */
 
-#pragma once
+#include "mongo/db/exec/sbe/vm/vm_makeobj.h"
 
-#include "mongo/bson/bsonelement.h"
-#include "mongo/bson/util/builder.h"
-#include "mongo/db/index/column_key_generator.h"
+namespace mongo::sbe::vm {
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinMakeObj(ArityType arity,
+                                                                        const CodeFragment* code) {
+    tassert(9531000,
+            str::stream() << "Unsupported number of args passed to makeObj(): " << arity,
+            arity >= 2);
 
-namespace mongo {
-namespace column_keygen {
-/**
- * Write 'element' to the end of 'cellBuffer' using a specialized compact format for values stored
- * in a columnar index "cell."
- */
-void appendElementToCell(const BSONElement& element, BufBuilder* cellBuffer);
+    const int argsStackOff = 2;
+    const uint32_t numArgs = arity - 2;
+    const auto impl = MakeObjImpl{*this, argsStackOff, numArgs, code};
 
-/**
- * Transform the contents of a columnar index "cell" into its on-disk storage format and write it
- * out to the 'cellBuffer' builder. The resulting cell encodes all the values associated with one
- * path in an indexed document as well as the associated "array info" and flags.
- */
-void writeEncodedCell(const UnencodedCellView& cell, BufBuilder* cellBuffer);
-void writeEncodedCell(const UnencodedCellView& cell, PooledFragmentBuilder* cellBuffer);
-}  // namespace column_keygen
-}  // namespace mongo
+    return impl.makeObj<ObjectWriter, ArrayWriter>();
+}
+}  // namespace mongo::sbe::vm

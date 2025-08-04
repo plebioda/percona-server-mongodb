@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2022-present MongoDB, Inc.
+ *    Copyright (C) 2024-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -27,9 +27,19 @@
  *    it in the license file.
  */
 
-/**
- * This file contains tests for sbe::ColumnScan
- */
+#include "mongo/db/exec/sbe/vm/vm_makeobj.h"
 
+namespace mongo::sbe::vm {
+FastTuple<bool, value::TypeTags, value::Value> ByteCode::builtinMakeBsonObj(
+    ArityType arity, const CodeFragment* code) {
+    tassert(6897002,
+            str::stream() << "Unsupported number of args passed to makeBsonObj(): " << arity,
+            arity >= 2);
 
-namespace mongo::sbe {}  // namespace mongo::sbe
+    const int argsStackOff = 2;
+    const uint32_t numArgs = arity - 2;
+    const auto impl = MakeObjImpl{*this, argsStackOff, numArgs, code};
+
+    return impl.makeObj<BsonObjWriter, BsonArrWriter>();
+}
+}  // namespace mongo::sbe::vm

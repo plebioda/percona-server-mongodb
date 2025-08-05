@@ -137,7 +137,6 @@ env.CppUnitTest(
     LIBDEPS=[
         "catalog/catalog_test_fixture",
         "catalog/collection_catalog",
-        "catalog/collection_crud",
         "change_stream_options",
         "change_stream_options_manager",
         "change_stream_pre_image_test_helpers",
@@ -145,6 +144,7 @@ env.CppUnitTest(
         "change_stream_pre_images_collection_manager",
         "change_stream_serverless_helpers",
         "change_streams_cluster_parameter",
+        "collection_crud/collection_crud",
         "op_observer/op_observer",
         "op_observer/op_observer_impl",
         "op_observer/operation_logger_impl",
@@ -264,22 +264,6 @@ env.Library(
 )
 
 env.Library(
-    target="cluster_transaction_api",
-    source=[
-        "cluster_transaction_api.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/db/session/logical_session_id",
-        "$BUILD_DIR/mongo/db/session/logical_session_id_helpers",
-        "$BUILD_DIR/mongo/db/transaction/transaction_api",
-        "$BUILD_DIR/mongo/rpc/rpc",
-        "$BUILD_DIR/mongo/s/startup_initialization",
-        "service_context",
-        "shared_request_handling",
-    ],
-)
-
-env.Library(
     target="service_context_d",
     source=[
         "service_entry_point_rs_endpoint.cpp",
@@ -353,29 +337,6 @@ env.Library(
         "s/forwardable_operation_metadata",
         "shard_role",
         "storage/two_phase_index_build_knobs_idl",
-    ],
-)
-
-env.Library(
-    target="cloner",
-    source=[
-        "cloner.cpp",
-        "cloner_gen.cpp",
-    ],
-    LIBDEPS_PRIVATE=[
-        "$BUILD_DIR/mongo/client/authentication",
-        "catalog/collection_crud",
-        "catalog/collection_options",
-        "catalog/multi_index_block",
-        "commands/list_collections_filter",
-        "concurrency/exception_util",
-        "dbdirectclient",
-        "index_builds_coordinator_interface",
-        "multitenancy",
-        "query/write_ops/write_ops",
-        "repl/isself",
-        "server_base",
-        "shard_role",
     ],
 )
 
@@ -700,13 +661,13 @@ env.Library(
         "auth/auth_op_observer",
         "catalog/catalog_helpers",
         "catalog/catalog_impl",
-        "catalog/collection_crud",
         "catalog/health_log",
         "catalog/health_log_interface",
         "change_collection_expired_change_remover",
         "change_stream_change_collection_manager",
         "change_stream_options_manager",
         "change_streams_cluster_parameter",
+        "collection_crud/collection_crud",
         "commands/mongod",
         "commands/mongod_fsync",
         "commands/profile_common",
@@ -736,7 +697,6 @@ env.Library(
         "query/client_cursor/client_cursor",
         "query/query_settings/manager",
         "query/stats/stats",
-        "repl/drop_pending_collection_reaper",
         "repl/initial_syncer",
         "repl/initial_syncer_fcb"
         if has_option("enable-fcbis") or has_option("full-featured")
@@ -1002,8 +962,8 @@ if wiredtiger:
         ],
         LIBDEPS=[
             "catalog/catalog_test_fixture",
-            "catalog/collection_crud",
             "catalog/index_build_entry_idl",
+            "collection_crud/collection_crud",
             "index_build_entry_helpers",
             "index_builds_coordinator_mongod",
             "query_exec",
@@ -1143,9 +1103,9 @@ if wiredtiger:
             "$BUILD_DIR/mongo/util/progress_meter",
             "admission/ticketholder_manager",
             "catalog/catalog_test_fixture",
-            "catalog/collection_crud",
             "catalog/collection_uuid_mismatch_info",
             "catalog/database_holder",
+            "collection_crud/collection_crud",
             "concurrency/exception_util",
             "query_exec",
             "s/shard_server_test_fixture",

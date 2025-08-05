@@ -40,10 +40,10 @@
 #include "mongo/bson/json.h"
 #include "mongo/client/dbclient_base.h"
 #include "mongo/db/catalog/collection.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/index_catalog.h"
 #include "mongo/db/client.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/curop.h"
@@ -80,7 +80,7 @@ public:
         : _dbLock(&_opCtx, nss().dbName(), MODE_X),
           _ctx(&_opCtx, nss()),
           _coll(nullptr),
-          _expCtx(make_intrusive<ExpressionContext>(&_opCtx, nullptr, nss())) {}
+          _expCtx(ExpressionContextBuilder{}.opCtx(&_opCtx).ns(nss()).build()) {}
 
     virtual ~IndexScanTest() {}
 

@@ -646,7 +646,8 @@ IndexCatalogEntry* IndexCatalogImpl::createIndexEntry(OperationContext* opCtx,
     bool isUpdateMetadata = CreateIndexEntryFlags::kUpdateMetadata & flags;
     if (isUpdateMetadata) {
         bool isForceUpdateMetadata = CreateIndexEntryFlags::kForceUpdateMetadata & flags;
-        engine->getEngine()->alterIdentMetadata(opCtx, ident, desc, isForceUpdateMetadata);
+        engine->getEngine()->alterIdentMetadata(
+            *shard_role_details::getRecoveryUnit(opCtx), ident, desc, isForceUpdateMetadata);
     }
 
     if (!frozen) {
@@ -947,9 +948,8 @@ Status IndexCatalogImpl::_isSpecOk(OperationContext* opCtx,
 
     // Create an ExpressionContext, used to parse the match expression and to house the collator for
     // the remaining checks.
-    boost::intrusive_ptr<ExpressionContext> expCtx(
-        new ExpressionContext(opCtx, std::move(collator), nss));
-
+    auto expCtx =
+        ExpressionContextBuilder{}.opCtx(opCtx).collator(std::move(collator)).ns(nss).build();
     // Ensure if there is a filter, its valid.
     BSONElement filterElement = spec.getField("partialFilterExpression");
     if (filterElement) {

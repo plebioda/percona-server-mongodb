@@ -54,11 +54,11 @@
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/catalog/collection_options.h"
 #include "mongo/db/catalog/collection_validation.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog/index_catalog.h"
 #include "mongo/db/catalog/index_catalog_entry.h"
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/client.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/index/index_access_method.h"
 #include "mongo/db/operation_context.h"
@@ -73,6 +73,7 @@
 #include "mongo/db/storage/record_store.h"
 #include "mongo/db/storage/recovery_unit.h"
 #include "mongo/db/storage/sorted_data_interface.h"
+#include "mongo/db/storage/sorted_data_interface_test_assert.h"
 #include "mongo/db/storage/write_unit_of_work.h"
 #include "mongo/idl/server_parameter_test_util.h"
 #include "mongo/stdx/thread.h"
@@ -417,7 +418,8 @@ TEST_F(CollectionValidationTest, ValidateOldUniqueIndexKeyWarning) {
             bool dupsAllowed = false;
             sortedDataInterface->unindex(opCtx, keyStringWithRecordId, dupsAllowed);
             FailPointEnableBlock insertOldFormatKeys("WTIndexInsertUniqueKeysInOldFormat");
-            ASSERT_OK(sortedDataInterface->insert(opCtx, keyStringWithRecordId, dupsAllowed));
+            ASSERT_SDI_INSERT_OK(
+                sortedDataInterface->insert(opCtx, keyStringWithRecordId, dupsAllowed));
             wuow.commit();
         }
 

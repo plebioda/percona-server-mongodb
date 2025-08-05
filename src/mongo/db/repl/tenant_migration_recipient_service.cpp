@@ -59,10 +59,10 @@
 #include "mongo/config.h"  // IWYU pragma: keep
 #include "mongo/db/basic_types_gen.h"
 #include "mongo/db/catalog/collection.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog/local_oplog_info.h"
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/client.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/concurrency/exception_util.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/concurrency/replication_state_transition_lock_guard.h"
@@ -167,35 +167,6 @@ bool isMigrationCompleted(TenantMigrationRecipientStateEnum state) {
     return state == TenantMigrationRecipientStateEnum::kDone ||
         state == TenantMigrationRecipientStateEnum::kAborted ||
         state == TenantMigrationRecipientStateEnum::kCommitted;
-}
-
-boost::intrusive_ptr<ExpressionContext> makeExpressionContext(OperationContext* opCtx) {
-    StringMap<ExpressionContext::ResolvedNamespace> resolvedNamespaces;
-
-    // Add kTenantMigrationOplogView, kSessionTransactionsTableNamespace, and kRsOplogNamespace
-    // to resolvedNamespaces since they are all used during different pipeline stages.
-    resolvedNamespaces[NamespaceString::kTenantMigrationOplogView.coll()] = {
-        NamespaceString::kTenantMigrationOplogView, std::vector<BSONObj>()};
-
-    resolvedNamespaces[NamespaceString::kSessionTransactionsTableNamespace.coll()] = {
-        NamespaceString::kSessionTransactionsTableNamespace, std::vector<BSONObj>()};
-
-    resolvedNamespaces[NamespaceString::kRsOplogNamespace.coll()] = {
-        NamespaceString::kRsOplogNamespace, std::vector<BSONObj>()};
-
-    return make_intrusive<ExpressionContext>(opCtx,
-                                             boost::none, /* explain */
-                                             false,       /* fromRouter */
-                                             false,       /* needsMerge */
-                                             true,        /* allowDiskUse */
-                                             true,        /* bypassDocumentValidation */
-                                             false,       /* isMapReduceCommand */
-                                             NamespaceString::kSessionTransactionsTableNamespace,
-                                             boost::none, /* runtimeConstants */
-                                             nullptr,     /* collator */
-                                             MongoProcessInterface::create(opCtx),
-                                             std::move(resolvedNamespaces),
-                                             boost::none); /* collUUID */
 }
 
 // We allow retrying on the following oplog fetcher errors:
@@ -997,7 +968,14 @@ AggregateCommandRequest
 TenantMigrationRecipientService::Instance::_makeCommittedTransactionsAggregation() const {
 
     auto opCtx = cc().makeOperationContext();
-    auto expCtx = makeExpressionContext(opCtx.get());
+    auto expCtx = ExpressionContextBuilder{}
+                      .withReplicationResolvedNamespaces()
+                      .opCtx(opCtx.get())
+                      .mongoProcessInterface(MongoProcessInterface::create(opCtx.get()))
+                      .ns(NamespaceString::kSessionTransactionsTableNamespace)
+                      .allowDiskUse(true)
+                      .bypassDocumentValidation(true)
+                      .build();
 
     Timestamp startApplyingDonorOpTime;
     {
@@ -1241,7 +1219,14 @@ TenantMigrationRecipientService::Instance::_fetchRetryableWritesOplogBeforeStart
     }
 
     auto opCtx = cc().makeOperationContext();
-    auto expCtx = makeExpressionContext(opCtx.get());
+    auto expCtx = ExpressionContextBuilder{}
+                      .withReplicationResolvedNamespaces()
+                      .opCtx(opCtx.get())
+                      .mongoProcessInterface(MongoProcessInterface::create(opCtx.get()))
+                      .ns(NamespaceString::kSessionTransactionsTableNamespace)
+                      .allowDiskUse(true)
+                      .bypassDocumentValidation(true)
+                      .build();
     // If the oplog buffer contains entries at this point, it indicates that the recipient went
     // through failover before it finished writing all oplog entries to the buffer. Clear it and
     // redo the work.

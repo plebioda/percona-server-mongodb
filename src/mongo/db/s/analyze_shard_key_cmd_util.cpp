@@ -139,6 +139,7 @@ namespace {
 MONGO_FAIL_POINT_DEFINE(analyzeShardKeyPauseBeforeCalculatingKeyCharacteristicsMetrics);
 MONGO_FAIL_POINT_DEFINE(analyzeShardKeyPauseBeforeCalculatingReadWriteDistributionMetrics);
 MONGO_FAIL_POINT_DEFINE(analyzeShardKeyPauseBeforeCalculatingCollStatsMetrics);
+MONGO_FAIL_POINT_DEFINE(analyzeShardKeyHangInClusterAggregate);
 
 constexpr StringData kIndexKeyFieldName = "key"_sd;
 constexpr StringData kDocFieldName = "doc"_sd;
@@ -370,26 +371,27 @@ void runClusterAggregate(OperationContext* opCtx,
         }();
     }
 
-    StringMap<ExpressionContext::ResolvedNamespace> resolvedNamespaces;
+    if (MONGO_unlikely(analyzeShardKeyHangInClusterAggregate.shouldFail())) {
+        analyzeShardKeyHangInClusterAggregate.pauseWhileSet();
+    }
+
+    StringMap<ResolvedNamespace> resolvedNamespaces;
     resolvedNamespaces[nss.coll()] = {nss, std::vector<BSONObj>{}};
 
     auto pi = std::make_shared<ShardServerProcessInterface>(
         Grid::get(opCtx)->getExecutorPool()->getArbitraryExecutor());
 
-    auto expCtx = make_intrusive<ExpressionContext>(opCtx,
-                                                    boost::none, /* explain */
-                                                    false,       /* fromRouter */
-                                                    false,       /* needsMerge */
-                                                    aggRequest.getAllowDiskUse(),
-                                                    true,  /* bypassDocumentValidation */
-                                                    false, /* isMapReduceCommand */
-                                                    nss,
-                                                    boost::none, /* runtimeConstants */
-                                                    std::move(collation),
-                                                    std::move(pi),
-                                                    std::move(resolvedNamespaces),
-                                                    collUuid);
-    expCtx->tempDir = storageGlobalParams.dbpath + "/_tmp";
+    auto expCtx = ExpressionContextBuilder{}
+                      .opCtx(opCtx)
+                      .collator(std::move(collation))
+                      .mongoProcessInterface(std::move(pi))
+                      .ns(nss)
+                      .resolvedNamespace(std::move(resolvedNamespaces))
+                      .allowDiskUse(aggRequest.getAllowDiskUse())
+                      .bypassDocumentValidation(true)
+                      .collUUID(collUuid)
+                      .tmpDir(storageGlobalParams.dbpath + "/_tmp")
+                      .build();
 
     size_t altNumRetries = 0;  // 0 means use the default max number of retries.
     if (MONGO_unlikely(analyzeShardKeyMaxNumStaleVersionRetries > 0)) {

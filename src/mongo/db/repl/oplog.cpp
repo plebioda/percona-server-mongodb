@@ -53,13 +53,11 @@
 #include "mongo/client/read_preference.h"
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/catalog/backwards_compatible_collection_options_util.h"
-#include "mongo/db/catalog/capped_collection_maintenance.h"
 #include "mongo/db/catalog/capped_utils.h"
 #include "mongo/db/catalog/coll_mod.h"
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/catalog/collection_catalog.h"
 #include "mongo/db/catalog/collection_options.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog/create_collection.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/database_holder.h"
@@ -82,6 +80,8 @@
 #include "mongo/db/change_stream_serverless_helpers.h"
 #include "mongo/db/client.h"
 #include "mongo/db/coll_mod_gen.h"
+#include "mongo/db/collection_crud/capped_collection_maintenance.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/create_gen.h"
 #include "mongo/db/commands/test_commands_enabled.h"
@@ -184,7 +184,6 @@ void abortIndexBuilds(OperationContext* opCtx,
         indexBuildsCoordinator->abortDatabaseIndexBuilds(opCtx, nss.dbName(), reason);
     } else if (commandType == OplogEntry::CommandType::kDrop ||
                commandType == OplogEntry::CommandType::kDropIndexes ||
-               commandType == OplogEntry::CommandType::kDeleteIndexes ||
                commandType == OplogEntry::CommandType::kCollMod ||
                commandType == OplogEntry::CommandType::kRenameCollection) {
         const boost::optional<UUID> collUUID =
@@ -1045,14 +1044,6 @@ const StringMap<ApplyOpMetadata> kOpsMap = {
           const auto& entry = *op;
           const auto& cmd = entry.getObject();
           auto nss = extractNsFromUUIDorNs(opCtx, entry.getNss(), entry.getUuid(), cmd);
-          if (nss.isDropPendingNamespace()) {
-              LOGV2(21253,
-                    "applyCommand: collection is already in a drop-pending state, ignoring "
-                    "collection drop",
-                    logAttrs(nss),
-                    "command"_attr = redact(cmd));
-              return Status::OK();
-          }
           // Parse optime from oplog entry unless we are applying this command in standalone or on a
           // primary (replicated writes enabled).
           OpTime opTime;

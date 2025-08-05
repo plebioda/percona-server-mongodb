@@ -43,7 +43,6 @@
 #include "mongo/db/op_observer/op_observer_impl.h"
 #include "mongo/db/op_observer/op_observer_registry.h"
 #include "mongo/db/op_observer/operation_logger_impl.h"
-#include "mongo/db/repl/drop_pending_collection_reaper.h"
 #include "mongo/db/repl/member_state.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/repl_set_config.h"
@@ -188,15 +187,11 @@ std::unique_ptr<BalancerConfiguration> ShardingMongoDTestFixture::makeBalancerCo
     return std::make_unique<BalancerConfiguration>();
 }
 
-std::unique_ptr<CatalogCache> ShardingMongoDTestFixture::makeCatalogCache() {
-    return std::make_unique<CatalogCache>(getServiceContext(),
-                                          CatalogCacheLoader::get(getServiceContext()));
-}
-
 Status ShardingMongoDTestFixture::initializeGlobalShardingStateForMongodForTest(
-    const ConnectionString& configConnStr) {
-    invariant(serverGlobalParams.clusterRole.has(ClusterRole::ShardServer) ||
-              serverGlobalParams.clusterRole.has(ClusterRole::ConfigServer));
+    const ConnectionString& configConnStr,
+    std::unique_ptr<CatalogCache> catalogCache,
+    std::shared_ptr<CatalogCacheLoader> catalogCacheLoader) {
+    invariant(serverGlobalParams.clusterRole.has(ClusterRole::ShardServer));
 
     // Create and initialize each sharding component individually before moving them to the Grid
     // in order to control the order of initialization, since some components depend on others.
@@ -208,14 +203,14 @@ Status ShardingMongoDTestFixture::initializeGlobalShardingStateForMongodForTest(
 
     auto const grid = Grid::get(operationContext());
     grid->init(makeShardingCatalogClient(),
-               makeCatalogCache(),
+               std::move(catalogCache),
                makeShardRegistry(configConnStr),
                makeClusterCursorManager(),
                makeBalancerConfiguration(),
                std::move(executorPoolPtr),
                _mockNetwork);
 
-    FilteringMetadataCache::init(getServiceContext());
+    FilteringMetadataCache::initForTesting(getServiceContext(), catalogCacheLoader);
 
     return Status::OK();
 }
@@ -246,9 +241,6 @@ void ShardingMongoDTestFixture::setUp() {
     repl::ReplicationCoordinator::set(service, std::move(replCoordPtr));
 
     auto storagePtr = std::make_unique<repl::StorageInterfaceImpl>();
-
-    repl::DropPendingCollectionReaper::set(
-        service, std::make_unique<repl::DropPendingCollectionReaper>(storagePtr.get()));
 
     repl::ReplicationProcess::set(service,
                                   std::make_unique<repl::ReplicationProcess>(

@@ -38,6 +38,7 @@
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonobj.h"
 #include "mongo/util/duration.h"
+#include "mongo/util/net/cidr.h"
 
 namespace mongo {
 
@@ -150,6 +151,13 @@ public:
     static std::unique_ptr<HttpClient> createWithoutConnectionPool();
 
     /**
+     * Factory method provided by client implementation.
+     *
+     * Used by Atlas Stream Processing.
+     */
+    static std::unique_ptr<HttpClient> createWithFirewall(const std::vector<CIDR>& cidrDenyList);
+
+    /**
      * Content for ServerStatus http_client section.
      */
     static BSONObj getServerStatus();
@@ -187,6 +195,12 @@ public:
      * Factory method provided by client implementation.
      */
     virtual std::unique_ptr<HttpClient> createWithoutConnectionPool() = 0;
+
+    /**
+     * Factory method provided by client implementation.
+     */
+    virtual std::unique_ptr<HttpClient> createWithFirewall(
+        const std::vector<CIDR>& cidrDenyList) = 0;
 
     /**
      * Content for ServerStatus http_client section.

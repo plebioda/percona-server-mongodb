@@ -52,7 +52,6 @@
 #include "mongo/db/catalog/collection_catalog.h"
 #include "mongo/db/catalog/collection_options.h"
 #include "mongo/db/catalog/collection_uuid_mismatch.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/database_holder.h"
 #include "mongo/db/catalog/document_validation.h"
@@ -63,6 +62,7 @@
 #include "mongo/db/catalog/local_oplog_info.h"
 #include "mongo/db/catalog/unique_collection_name.h"
 #include "mongo/db/catalog_raii.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/exception_util.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
@@ -488,7 +488,7 @@ Status renameCollectionWithinDBForApplyOps(OperationContext* opCtx,
         if (!targetColl && uuidToDrop) {
             invariant(options.dropTarget);
             auto collToDropBasedOnUUID = getNamespaceFromUUID(opCtx, uuidToDrop.value());
-            if (collToDropBasedOnUUID && !collToDropBasedOnUUID->isDropPendingNamespace()) {
+            if (collToDropBasedOnUUID) {
                 invariant(collToDropBasedOnUUID->isEqualDb(target));
                 targetColl = CollectionCatalog::get(opCtx)->lookupCollectionByNamespace(
                     opCtx, *collToDropBasedOnUUID);
@@ -942,12 +942,6 @@ void validateNamespacesForRenameCollection(OperationContext* opCtx,
                   "allowed");
     }
 
-    uassert(ErrorCodes::NamespaceNotFound,
-            str::stream() << "renameCollection cannot accept a source collection that is in a "
-                             "drop-pending state: "
-                          << source.toStringForErrorMsg(),
-            !source.isDropPendingNamespace());
-
     uassert(ErrorCodes::IllegalOperation,
             "renaming system.views collection or renaming to system.views is not allowed",
             !source.isSystemDotViews() && !target.isSystemDotViews());
@@ -1004,13 +998,6 @@ Status renameCollection(OperationContext* opCtx,
                         const NamespaceString& source,
                         const NamespaceString& target,
                         const RenameCollectionOptions& options) {
-    if (source.isDropPendingNamespace()) {
-        return Status(ErrorCodes::NamespaceNotFound,
-                      str::stream() << "renameCollection() cannot accept a source "
-                                       "collection that is in a drop-pending state: "
-                                    << source.toStringForErrorMsg());
-    }
-
     if (source.isSystemDotViews() || target.isSystemDotViews()) {
         return Status(
             ErrorCodes::IllegalOperation,
@@ -1112,7 +1099,7 @@ Status renameCollectionForApplyOps(OperationContext* opCtx,
         MODE_X,
         AutoGetCollection::Options{}.viewMode(auto_get_collection::ViewMode::kViewsPermitted));
 
-    if (sourceNss.isDropPendingNamespace() || !sourceColl) {
+    if (!sourceColl) {
         boost::optional<NamespaceString> dropTargetNss;
 
         if (options.dropTarget)

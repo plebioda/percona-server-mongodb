@@ -45,7 +45,6 @@
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/catalog/collection_catalog.h"
 #include "mongo/db/catalog/collection_options.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog/create_collection.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/document_validation.h"
@@ -54,6 +53,7 @@
 #include "mongo/db/catalog/rename_collection.h"
 #include "mongo/db/catalog/unique_collection_name.h"
 #include "mongo/db/catalog_raii.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/exception_util.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
@@ -106,11 +106,6 @@ void cloneCollectionAsCapped(OperationContext* opCtx,
     uassert(6367302,
             "Cannot convert an encrypted collection to a capped collection",
             !fromCollection->getCollectionOptions().encryptedFieldConfig);
-
-    uassert(ErrorCodes::NamespaceNotFound,
-            str::stream() << "source collection " << fromNss.toStringForErrorMsg()
-                          << " is currently in a drop-pending state.",
-            !fromNss.isDropPendingNamespace());
 
     uassert(ErrorCodes::NamespaceExists,
             str::stream() << "cloneCollectionAsCapped failed - destination collection "

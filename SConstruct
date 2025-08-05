@@ -379,6 +379,17 @@ add_option(
     type="choice",
 )
 
+
+add_option(
+    "debug-symbols",
+    choices=["on", "off"],
+    const="on",
+    default=build_profile.debug_symbols,
+    help="Enable producing debug symbols",
+    nargs="?",
+    type="choice",
+)
+
 add_option(
     "disable-ref-track",
     help="Disables runtime tracking of REF state changes for pages within wiredtiger. "
@@ -2120,6 +2131,7 @@ env.AddMethod(is_toolchain, "ToolchainIs")
 
 releaseBuild = get_option("release") == "on"
 debugBuild = get_option("dbg") == "on"
+debug_symbols = get_option("debug-symbols") == "on"
 optBuild = mongo_generators.get_opt_options(env)
 
 if env.get("ENABLE_BUILD_RETRY"):
@@ -3045,9 +3057,9 @@ elif env.TargetOSIs("windows"):
     env.Append(CCFLAGS=["/errorReport:none"])
 
     # Select debugging format. /Zi gives faster links but seems to use more memory.
-    if get_option("msvc-debugging-format") == "codeview":
+    if get_option("msvc-debugging-format") == "codeview" and debug_symbols:
         env["CCPDBFLAGS"] = "/Z7"
-    elif get_option("msvc-debugging-format") == "pdb":
+    elif get_option("msvc-debugging-format") == "pdb" and debug_symbols:
         env["CCPDBFLAGS"] = "/Zi /Fd${TARGET}.pdb"
 
     # The SCons built-in pdbGenerator always adds /DEBUG, but we would like
@@ -3061,6 +3073,11 @@ elif env.TargetOSIs("windows"):
 
     env["_PDB"] = pdbGenerator
 
+    # SCons by default adds debug flags /Z7, /Zi and /Debug
+    # we want to remove these if debug_symbols are off
+    if not debug_symbols:
+        del env["CCPDBFLAGS"]
+
     # /DEBUG will tell the linker to create a .pdb file
     # which WinDbg and Visual Studio will use to resolve
     # symbols if you want to debug a release-mode image.
@@ -3071,7 +3088,7 @@ elif env.TargetOSIs("windows"):
     # If the user set a /DEBUG flag explicitly, don't add
     # another. Otherwise use the standard /DEBUG flag, since we always
     # want PDBs.
-    if not any(flag.startswith("/DEBUG") for flag in env["LINKFLAGS"]):
+    if not any(flag.startswith("/DEBUG") for flag in env["LINKFLAGS"]) and debug_symbols:
         env.Append(LINKFLAGS=["/DEBUG"])
 
     # /MD:  use the multithreaded, DLL version of the run-time library (MSVCRT.lib/MSVCR###.DLL)
@@ -3160,7 +3177,7 @@ elif env.TargetOSIs("windows"):
     )
 
 # When building on visual studio, this sets the name of the debug symbols file
-if env.ToolchainIs("msvc"):
+if env.ToolchainIs("msvc") and debug_symbols:
     env["PDB"] = "${TARGET.base}.pdb"
 
 # Python uses APPDATA to determine the location of user installed
@@ -4715,6 +4732,12 @@ def doConfigure(myenv):
             if myenv.AddToCCFLAGSIfSupported("-fdebug-types-section"):
                 myenv.AppendUnique(LINKFLAGS=["-fdebug-types-section"])
 
+        # Turn off debug symbols. Due to g0 disabling any previously added debugging flags,
+        # it is easier to append g0 near the end rather than trying to not add all the other
+        # debug flags. This should be added after any debug flags.
+        if not debug_symbols:
+            myenv.AppendUnique(LINKFLAGS=["-g0"], CCFLAGS=["-g0"])
+
         # Our build is already parallel.
         if not myenv.AddToLINKFLAGSIfSupported("-Wl,--no-threads"):
             myenv.AddToLINKFLAGSIfSupported("--Wl,--threads=1")
@@ -5870,7 +5893,7 @@ if gdb_index_enabled is True:
 if env.get("ENABLE_GRPC_BUILD"):
     env.Tool("protobuf_compiler")
 
-if get_option("separate-debug") == "on" or env.TargetOSIs("windows"):
+if (get_option("separate-debug") == "on" or env.TargetOSIs("windows")) and debug_symbols:
     separate_debug = Tool("separate_debug")
     if not separate_debug.exists(env):
         env.FatalError(
@@ -5961,7 +5984,8 @@ def _aib_debugdir(source, target, env, for_signature):
     )
 
 
-env["PREFIX_DEBUGDIR"] = _aib_debugdir
+if debug_symbols:
+    env["PREFIX_DEBUGDIR"] = _aib_debugdir
 
 env.AddSuffixMapping(
     {

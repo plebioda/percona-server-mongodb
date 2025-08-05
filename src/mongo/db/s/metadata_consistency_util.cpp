@@ -401,8 +401,7 @@ std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> makeQueuedPlanExecutor(
     std::vector<MetadataInconsistencyItem>&& inconsistencies,
     const NamespaceString& nss) {
 
-    auto expCtx =
-        make_intrusive<ExpressionContext>(opCtx, std::unique_ptr<CollatorInterface>(nullptr), nss);
+    auto expCtx = ExpressionContextBuilder{}.opCtx(opCtx).ns(nss).build();
     auto ws = std::make_unique<WorkingSet>();
     auto root = std::make_unique<QueuedDataStage>(expCtx.get(), ws.get());
 
@@ -811,7 +810,12 @@ std::vector<MetadataInconsistencyItem> checkCollectionMetadataConsistencyAcrossS
         AggregateCommandRequest aggRequest{nss, getRawPipelineStages(nss)};
 
         std::vector<BSONObj> facetedResult = _runExhaustiveAggregation(
-            opCtx, nss, aggRequest, "Check collection options consistency across shards"_sd);
+            opCtx, nss, aggRequest, "Check collection metadata consistency across shards"_sd);
+
+        // Even though the last stage of the aggregation is a $facet, the aggregation runner will
+        // return an empty vector if aggregation fails due to an inconsistency reported elsewhere.
+        if (facetedResult.empty())
+            continue;
         tassert(9089900,
                 "Expected collection metadata consistency check aggregation to return one document",
                 facetedResult.size() == 1);

@@ -184,13 +184,15 @@ StorageEngineImpl::StorageEngineImpl(OperationContext* opCtx,
 void StorageEngineImpl::loadCatalog(OperationContext* opCtx,
                                     boost::optional<Timestamp> stableTs,
                                     LastShutdownState lastShutdownState) {
-    bool catalogExists = _engine->hasIdent(opCtx, kCatalogInfo);
+    bool catalogExists =
+        _engine->hasIdent(*shard_role_details::getRecoveryUnit(opCtx), kCatalogInfo);
     if (_options.forRepair && catalogExists) {
         auto repairObserver = StorageRepairObserver::get(getGlobalServiceContext());
         invariant(repairObserver->isIncomplete());
 
         LOGV2(22246, "Repairing catalog metadata");
-        Status status = _engine->repairIdent(opCtx, kCatalogInfo);
+        Status status =
+            _engine->repairIdent(*shard_role_details::getRecoveryUnit(opCtx), kCatalogInfo);
 
         if (status.code() == ErrorCodes::DataModifiedByRepair) {
             LOGV2_WARNING(22264, "Catalog data modified by repair", "error"_attr = status);
@@ -204,8 +206,8 @@ void StorageEngineImpl::loadCatalog(OperationContext* opCtx,
     if (!catalogExists) {
         WriteUnitOfWork uow(opCtx);
 
-        auto status = _engine->createRecordStore(
-            opCtx, kCatalogInfoNamespace, kCatalogInfo, CollectionOptions());
+        auto status =
+            _engine->createRecordStore(kCatalogInfoNamespace, kCatalogInfo, CollectionOptions());
 
         // BadValue is usually caused by invalid configuration string.
         // We still fassert() but without a stack trace.
@@ -231,7 +233,8 @@ void StorageEngineImpl::loadCatalog(OperationContext* opCtx,
     _catalog->init(opCtx);
 
     LOGV2(9529902, "Retrieving all idents from storage engine");
-    std::vector<std::string> identsKnownToStorageEngine = _engine->getAllIdents(opCtx);
+    std::vector<std::string> identsKnownToStorageEngine =
+        _engine->getAllIdents(*shard_role_details::getRecoveryUnit(opCtx));
     std::sort(identsKnownToStorageEngine.begin(), identsKnownToStorageEngine.end());
 
     std::vector<DurableCatalog::EntryIdentifier> catalogEntries =
@@ -276,7 +279,8 @@ void StorageEngineImpl::loadCatalog(OperationContext* opCtx,
                     // collection, we create an new entry for it.
                     WriteUnitOfWork wuow(opCtx);
 
-                    auto keyFormat = _engine->getKeyFormat(opCtx, ident);
+                    auto keyFormat =
+                        _engine->getKeyFormat(*shard_role_details::getRecoveryUnit(opCtx), ident);
                     bool isClustered = keyFormat == KeyFormat::String;
                     CollectionOptions optionsWithUUID;
                     optionsWithUUID.uuid.emplace(UUID::gen());
@@ -532,8 +536,7 @@ Status StorageEngineImpl::_recoverOrphanedCollection(OperationContext* opCtx,
     WriteUnitOfWork wuow(opCtx);
     const auto catalogEntry = _catalog->getParsedCatalogEntry(opCtx, catalogId);
     const auto md = catalogEntry->metadata;
-    Status status =
-        _engine->recoverOrphanedIdent(opCtx, collectionName, collectionIdent, md->options);
+    Status status = _engine->recoverOrphanedIdent(collectionName, collectionIdent, md->options);
 
     bool dataModified = status.code() == ErrorCodes::DataModifiedByRepair;
     if (!status.isOK() && !dataModified) {
@@ -674,7 +677,8 @@ StatusWith<StorageEngine::ReconcileResult> StorageEngineImpl::reconcileCatalogAn
     // tables".
     std::set<std::string> engineIdents;
     {
-        std::vector<std::string> vec = _engine->getAllIdents(opCtx);
+        std::vector<std::string> vec =
+            _engine->getAllIdents(*shard_role_details::getRecoveryUnit(opCtx));
         engineIdents.insert(vec.begin(), vec.end());
         engineIdents.erase(kCatalogInfo);
     }
@@ -935,8 +939,8 @@ void StorageEngineImpl::notifyStorageStartupRecoveryComplete() {
     _engine->notifyStorageStartupRecoveryComplete();
 }
 
-void StorageEngineImpl::notifyReplStartupRecoveryComplete(OperationContext* opCtx) {
-    _engine->notifyReplStartupRecoveryComplete(opCtx);
+void StorageEngineImpl::notifyReplStartupRecoveryComplete(RecoveryUnit& ru) {
+    _engine->notifyReplStartupRecoveryComplete(ru);
 }
 
 RecoveryUnit* StorageEngineImpl::newRecoveryUnit() {
@@ -1023,40 +1027,39 @@ void StorageEngineImpl::flushAllFiles(OperationContext* opCtx, bool callerHoldsR
     _engine->flushAllFiles(opCtx, callerHoldsReadLock);
 }
 
-Status StorageEngineImpl::beginBackup(OperationContext* opCtx) {
+Status StorageEngineImpl::beginBackup() {
     // We should not proceed if we are already in backup mode
     if (_inBackupMode)
         return Status(ErrorCodes::BadValue, "Already in Backup Mode");
-    Status status = _engine->beginBackup(opCtx);
+    Status status = _engine->beginBackup();
     if (status.isOK())
         _inBackupMode = true;
     return status;
 }
 
-void StorageEngineImpl::endBackup(OperationContext* opCtx) {
+void StorageEngineImpl::endBackup() {
     // We should never reach here if we aren't already in backup mode
     invariant(_inBackupMode);
-    _engine->endBackup(opCtx);
+    _engine->endBackup();
     _inBackupMode = false;
 }
 
-Status StorageEngineImpl::disableIncrementalBackup(OperationContext* opCtx) {
+Status StorageEngineImpl::disableIncrementalBackup() {
     LOGV2(9538600, "Disabling incremental backup");
-    return _engine->disableIncrementalBackup(opCtx);
+    return _engine->disableIncrementalBackup();
 }
 
 StatusWith<std::unique_ptr<StorageEngine::StreamingCursor>>
-StorageEngineImpl::beginNonBlockingBackup(OperationContext* opCtx,
-                                          const StorageEngine::BackupOptions& options) {
-    return _engine->beginNonBlockingBackup(opCtx, options);
+StorageEngineImpl::beginNonBlockingBackup(const StorageEngine::BackupOptions& options) {
+    return _engine->beginNonBlockingBackup(options);
 }
 
-void StorageEngineImpl::endNonBlockingBackup(OperationContext* opCtx) {
-    return _engine->endNonBlockingBackup(opCtx);
+void StorageEngineImpl::endNonBlockingBackup() {
+    return _engine->endNonBlockingBackup();
 }
 
-StatusWith<std::deque<std::string>> StorageEngineImpl::extendBackupCursor(OperationContext* opCtx) {
-    return _engine->extendBackupCursor(opCtx);
+StatusWith<std::deque<std::string>> StorageEngineImpl::extendBackupCursor() {
+    return _engine->extendBackupCursor();
 }
 
 bool StorageEngineImpl::supportsCheckpoints() const {
@@ -1077,7 +1080,8 @@ Status StorageEngineImpl::repairRecordStore(OperationContext* opCtx,
     auto repairObserver = StorageRepairObserver::get(getGlobalServiceContext());
     invariant(repairObserver->isIncomplete());
 
-    Status status = _engine->repairIdent(opCtx, _catalog->getEntry(catalogId).ident);
+    Status status = _engine->repairIdent(*shard_role_details::getRecoveryUnit(opCtx),
+                                         _catalog->getEntry(catalogId).ident);
     bool dataModified = status.code() == ErrorCodes::DataModifiedByRepair;
     if (!status.isOK() && !dataModified) {
         return status;
@@ -1182,7 +1186,7 @@ StatusWith<Timestamp> StorageEngineImpl::recoverToStableTimestamp(OperationConte
     // assert it has sole access when performing rollback_to_stable().
     shard_role_details::replaceRecoveryUnit(opCtx);
 
-    StatusWith<Timestamp> swTimestamp = _engine->recoverToStableTimestamp(opCtx);
+    StatusWith<Timestamp> swTimestamp = _engine->recoverToStableTimestamp(*opCtx);
     if (!swTimestamp.isOK()) {
         return swTimestamp;
     }
@@ -1427,7 +1431,8 @@ int64_t StorageEngineImpl::sizeOnDiskForDb(OperationContext* opCtx, const Databa
             opCtx,
             IndexCatalog::InclusionPolicy::kReady | IndexCatalog::InclusionPolicy::kUnfinished);
         while (it->more()) {
-            size += _engine->getIdentSize(opCtx, it->next()->getIdent());
+            size += _engine->getIdentSize(*shard_role_details::getRecoveryUnit(opCtx),
+                                          it->next()->getIdent());
         }
 
         return true;
@@ -1446,12 +1451,12 @@ int64_t StorageEngineImpl::sizeOnDiskForDb(OperationContext* opCtx, const Databa
 }
 
 StatusWith<Timestamp> StorageEngineImpl::pinOldestTimestamp(
-    OperationContext* opCtx,
+    RecoveryUnit& ru,
     const std::string& requestingServiceName,
     Timestamp requestedTimestamp,
     bool roundUpIfTooOld) {
     return _engine->pinOldestTimestamp(
-        opCtx, requestingServiceName, requestedTimestamp, roundUpIfTooOld);
+        ru, requestingServiceName, requestedTimestamp, roundUpIfTooOld);
 }
 
 void StorageEngineImpl::unpinOldestTimestamp(const std::string& requestingServiceName) {
@@ -1473,7 +1478,8 @@ Status StorageEngineImpl::oplogDiskLocRegister(OperationContext* opCtx,
     invariant(!shard_role_details::getLocker(opCtx)->hasReadTicket() ||
               !opCtx->uninterruptibleLocksRequested_DO_NOT_USE());  // NOLINT
 
-    return _engine->oplogDiskLocRegister(opCtx, oplogRecordStore, opTime, orderedCommit);
+    return _engine->oplogDiskLocRegister(
+        *shard_role_details::getRecoveryUnit(opCtx), oplogRecordStore, opTime, orderedCommit);
 }
 
 void StorageEngineImpl::waitForAllEarlierOplogWritesToBeVisible(
@@ -1533,8 +1539,8 @@ void StorageEngineImpl::dump() const {
     _engine->dump();
 }
 
-Status StorageEngineImpl::autoCompact(OperationContext* opCtx, const AutoCompactOptions& options) {
-    return _engine->autoCompact(opCtx, options);
+Status StorageEngineImpl::autoCompact(RecoveryUnit& ru, const AutoCompactOptions& options) {
+    return _engine->autoCompact(ru, options);
 }
 
 }  // namespace mongo

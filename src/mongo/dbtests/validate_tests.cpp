@@ -62,7 +62,6 @@
 #include "mongo/db/catalog/collection_catalog.h"
 #include "mongo/db/catalog/collection_options.h"
 #include "mongo/db/catalog/collection_validation.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/index_catalog.h"
 #include "mongo/db/catalog/index_catalog_entry.h"
@@ -70,6 +69,7 @@
 #include "mongo/db/catalog/validate_results.h"
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/client.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/db_raii.h"
@@ -91,6 +91,7 @@
 #include "mongo/db/storage/record_store.h"
 #include "mongo/db/storage/recovery_unit.h"
 #include "mongo/db/storage/snapshot.h"
+#include "mongo/db/storage/sorted_data_interface_test_assert.h"
 #include "mongo/db/storage/storage_engine.h"
 #include "mongo/db/storage/storage_options.h"
 #include "mongo/db/storage/write_unit_of_work.h"
@@ -1142,9 +1143,8 @@ public:
                                         sortedDataInterface->getOrdering(),
                                         recordId)
                     .release();
-            auto insertStatus =
-                sortedDataInterface->insert(&_opCtx, indexKey, true /* dupsAllowed */);
-            ASSERT_OK(insertStatus);
+            ASSERT_SDI_INSERT_OK(
+                sortedDataInterface->insert(&_opCtx, indexKey, true /* dupsAllowed */));
             commitTransaction();
         }
 
@@ -2151,7 +2151,7 @@ public:
                     commitTransaction();
                 }
 
-                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, entry));
+                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, coll(), entry));
             }
 
             releaseDb();
@@ -2401,7 +2401,7 @@ public:
                     commitTransaction();
                 }
 
-                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, entry));
+                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, coll(), entry));
             }
 
             releaseDb();
@@ -2706,7 +2706,7 @@ public:
                     commitTransaction();
                 }
 
-                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, entry));
+                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, coll(), entry));
             }
 
             // Insert the key on b.
@@ -2753,7 +2753,7 @@ public:
                     commitTransaction();
                 }
 
-                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, entry));
+                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, coll(), entry));
             }
 
             releaseDb();
@@ -3319,7 +3319,7 @@ public:
                     commitTransaction();
                 }
 
-                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, entry));
+                ASSERT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, coll(), entry));
             }
 
             // Insert the key on "a".
@@ -3366,7 +3366,7 @@ public:
                     commitTransaction();
                 }
 
-                ASSERT_NOT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, entry));
+                ASSERT_NOT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, coll(), entry));
             }
 
             releaseDb();
@@ -4542,7 +4542,7 @@ public:
                     commitTransaction();
                 }
 
-                ASSERT_NOT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, entry));
+                ASSERT_NOT_OK(interceptor->checkDuplicateKeyConstraints(&_opCtx, coll(), entry));
             }
 
             releaseDb();

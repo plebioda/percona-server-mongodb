@@ -119,7 +119,7 @@ public:
 class WritableAuditLog : public logv2::AuditLog {
 public:
     WritableAuditLog(const BSONObj& filter)
-        : _matcher(filter.getOwned(), new ExpressionContext(nullptr, nullptr, NamespaceString())) {}
+        : _matcher(filter.getOwned(), ExpressionContextBuilder{}.ns(NamespaceString()).build()) {}
     virtual ~WritableAuditLog() {}
 
     void append(const BSONObj& obj, const bool affects_durable_state) {

@@ -51,6 +51,7 @@
 #include "mongo/db/storage/key_format.h"
 #include "mongo/db/storage/key_string/key_string.h"
 #include "mongo/db/storage/sorted_data_interface.h"
+#include "mongo/db/storage/wiredtiger/wiredtiger_recovery_unit.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_session_cache.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/uuid.h"
@@ -126,14 +127,14 @@ public:
      * Creates a WiredTiger table suitable for implementing a MongoDB index.
      * 'config' should be created with generateCreateString().
      */
-    static Status create(OperationContext* opCtx,
+    static Status create(WiredTigerRecoveryUnit&,
                          const std::string& uri,
                          const std::string& config);
 
     /**
      * Drops the specified WiredTiger table. This should only be used for resuming index builds.
      */
-    static Status Drop(OperationContext* opCtx, const std::string& uri);
+    static Status Drop(WiredTigerRecoveryUnit&, const std::string& uri);
 
     /**
      * Constructs an index. The rsKeyFormat is the RecordId key format of the related RecordStore.
@@ -146,11 +147,11 @@ public:
                     const IndexDescriptor* desc,
                     bool isLogged);
 
-    Status insert(OperationContext* opCtx,
-                  const key_string::Value& keyString,
-                  bool dupsAllowed,
-                  IncludeDuplicateRecordId includeDuplicateRecordId =
-                      IncludeDuplicateRecordId::kOff) override;
+    std::variant<Status, DuplicateKey> insert(OperationContext* opCtx,
+                                              const key_string::Value& keyString,
+                                              bool dupsAllowed,
+                                              IncludeDuplicateRecordId includeDuplicateRecordId =
+                                                  IncludeDuplicateRecordId::kOff) override;
 
     void unindex(OperationContext* opCtx,
                  const key_string::Value& keyString,
@@ -163,7 +164,8 @@ public:
     bool appendCustomStats(OperationContext* opCtx,
                            BSONObjBuilder* output,
                            double scale) const override;
-    Status dupKeyCheck(OperationContext* opCtx, const key_string::Value& keyString) override;
+    boost::optional<DuplicateKey> dupKeyCheck(OperationContext* opCtx,
+                                              const key_string::Value& keyString) override;
 
     bool isEmpty(OperationContext* opCtx) override;
 
@@ -196,10 +198,6 @@ public:
 
     NamespaceString getCollectionNamespace(OperationContext* opCtx) const;
 
-    const BSONObj& keyPattern() const {
-        return _keyPattern;
-    }
-
     virtual bool isIdIndex() const {
         return false;
     }
@@ -221,7 +219,7 @@ public:
     }
 
 protected:
-    virtual Status _insert(
+    virtual std::variant<Status, SortedDataInterface::DuplicateKey> _insert(
         OperationContext* opCtx,
         WT_CURSOR* c,
         WiredTigerSession* session,
@@ -267,7 +265,7 @@ protected:
      * Returns true if the prefix key exists in the index with the same RecordId. Returns false if
      * the prefix key does not exist in the index. Should only be used for non-_id indexes.
      */
-    StatusWith<bool> _checkDups(
+    std::variant<bool, DuplicateKey> _checkDups(
         OperationContext* opCtx,
         WT_CURSOR* c,
         WiredTigerSession* session,
@@ -309,8 +307,6 @@ protected:
     uint64_t _tableId;
     const UUID _collectionUUID;
     const std::string _indexName;
-    const BSONObj _keyPattern;
-    const BSONObj _collation;
     const bool _isLogged;
 };
 
@@ -343,13 +339,14 @@ public:
 
 
 protected:
-    Status _insert(OperationContext* opCtx,
-                   WT_CURSOR* c,
-                   WiredTigerSession* session,
-                   const key_string::Value& keyString,
-                   bool dupsAllowed,
-                   IncludeDuplicateRecordId includeDuplicateRecordId =
-                       IncludeDuplicateRecordId::kOff) override;
+    std::variant<Status, SortedDataInterface::DuplicateKey> _insert(
+        OperationContext* opCtx,
+        WT_CURSOR* c,
+        WiredTigerSession* session,
+        const key_string::Value& keyString,
+        bool dupsAllowed,
+        IncludeDuplicateRecordId includeDuplicateRecordId =
+            IncludeDuplicateRecordId::kOff) override;
 
     void _unindex(OperationContext* opCtx,
                   WT_CURSOR* c,
@@ -408,13 +405,14 @@ public:
     }
 
 protected:
-    Status _insert(OperationContext* opCtx,
-                   WT_CURSOR* c,
-                   WiredTigerSession* session,
-                   const key_string::Value& keyString,
-                   bool dupsAllowed,
-                   IncludeDuplicateRecordId includeDuplicateRecordId =
-                       IncludeDuplicateRecordId::kOff) override;
+    std::variant<Status, SortedDataInterface::DuplicateKey> _insert(
+        OperationContext* opCtx,
+        WT_CURSOR* c,
+        WiredTigerSession* session,
+        const key_string::Value& keyString,
+        bool dupsAllowed,
+        IncludeDuplicateRecordId includeDuplicateRecordId =
+            IncludeDuplicateRecordId::kOff) override;
 
     void _unindex(OperationContext* opCtx,
                   WT_CURSOR* c,
@@ -463,13 +461,14 @@ public:
     }
 
 protected:
-    Status _insert(OperationContext* opCtx,
-                   WT_CURSOR* c,
-                   WiredTigerSession* session,
-                   const key_string::Value& keyString,
-                   bool dupsAllowed,
-                   IncludeDuplicateRecordId includeDuplicateRecordId =
-                       IncludeDuplicateRecordId::kOff) override;
+    std::variant<Status, SortedDataInterface::DuplicateKey> _insert(
+        OperationContext* opCtx,
+        WT_CURSOR* c,
+        WiredTigerSession* session,
+        const key_string::Value& keyString,
+        bool dupsAllowed,
+        IncludeDuplicateRecordId includeDuplicateRecordId =
+            IncludeDuplicateRecordId::kOff) override;
 
     void _unindex(OperationContext* opCtx,
                   WT_CURSOR* c,

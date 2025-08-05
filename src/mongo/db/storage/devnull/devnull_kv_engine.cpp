@@ -222,7 +222,8 @@ class DevNullSortedDataBuilderInterface : public SortedDataBuilderInterface {
 public:
     DevNullSortedDataBuilderInterface() {}
 
-    Status addKey(const key_string::Value& keyString) override {
+    std::variant<Status, SortedDataInterface::DuplicateKey> addKey(
+        const key_string::Value& keyString) override {
         return Status::OK();
     }
 };
@@ -242,10 +243,11 @@ public:
         return {};
     }
 
-    Status insert(OperationContext* opCtx,
-                  const key_string::Value& keyString,
-                  bool dupsAllowed,
-                  IncludeDuplicateRecordId includeDuplicateRecordId) override {
+    std::variant<Status, DuplicateKey> insert(
+        OperationContext* opCtx,
+        const key_string::Value& keyString,
+        bool dupsAllowed,
+        IncludeDuplicateRecordId includeDuplicateRecordId) override {
         return Status::OK();
     }
 
@@ -253,8 +255,9 @@ public:
                  const key_string::Value& keyString,
                  bool dupsAllowed) override {}
 
-    Status dupKeyCheck(OperationContext* opCtx, const key_string::Value& keyString) override {
-        return Status::OK();
+    boost::optional<DuplicateKey> dupKeyCheck(OperationContext* opCtx,
+                                              const key_string::Value& keyString) override {
+        return boost::none;
     }
 
     boost::optional<RecordId> findLoc(OperationContext* opCtx,
@@ -303,8 +306,7 @@ public:
 
 DevNullKVEngine::DevNullKVEngine() : _engineDbPath(storageGlobalParams.dbpath) {
     auto testFilePath = _engineDbPath / "testFile.txt";
-    _mockBackupBlocks.push_back(BackupBlock(/*opCtx=*/nullptr,
-                                            /*nss=*/boost::none,
+    _mockBackupBlocks.push_back(BackupBlock(/*nss=*/boost::none,
                                             /*uuid=*/boost::none,
                                             /*filePath=*/testFilePath.string()));
 }
@@ -370,8 +372,7 @@ public:
     void setCatalogEntries(stdx::unordered_map<std::string, std::pair<NamespaceString, UUID>>
                                identsToNsAndUUID) override {}
 
-    StatusWith<std::deque<BackupBlock>> getNextBatch(OperationContext* opCtx,
-                                                     const std::size_t batchSize) override {
+    StatusWith<std::deque<BackupBlock>> getNextBatch(const std::size_t batchSize) override {
         if (_exhaustCursor) {
             std::deque<BackupBlock> emptyVector;
             return emptyVector;
@@ -388,11 +389,11 @@ private:
 }  // namespace
 
 StatusWith<std::unique_ptr<StorageEngine::StreamingCursor>> DevNullKVEngine::beginNonBlockingBackup(
-    OperationContext* opCtx, const StorageEngine::BackupOptions& options) {
+    const StorageEngine::BackupOptions& options) {
     return std::make_unique<StreamingCursorImpl>(options, _mockBackupBlocks);
 }
 
-StatusWith<std::deque<std::string>> DevNullKVEngine::extendBackupCursor(OperationContext* opCtx) {
+StatusWith<std::deque<std::string>> DevNullKVEngine::extendBackupCursor() {
     std::deque<std::string> filesToCopy = {
         (_engineDbPath / "journal" / "WiredTigerLog.999").string()};
     return filesToCopy;

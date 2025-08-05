@@ -39,10 +39,11 @@ function validateConnectionStatus(expectedUser, expectedRole, showPrivileges) {
     assert(uuid, "UUID returned from runCommand is falsy: " + tojson(uuid));
 
     const parsedUUID = JSON.parse(JSON.stringify(uuid));
+    const kUUIDSubtype = 4;
     assert.eq(NumberInt(parsedUUID["$type"]),
-              4,
+              kUUIDSubtype,
               "UUID field should be a BinDataUUID, got: " + tojson(uuid));
-    assert(parsedUUID["$binary"], "Missing payload for UUID type: " + tojson(uuid));
+    assert(parsedUUID["$binary"], "Missing payload for client UUID: " + tojson(uuid));
 
     // Test that authenticated users are properly returned.
     var users = authInfo.authenticatedUsers;

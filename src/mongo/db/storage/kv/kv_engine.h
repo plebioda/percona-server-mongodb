@@ -77,7 +77,7 @@ public:
      * This function may race with shutdown. As a result, any steps within this function that should
      * not race with shutdown should obtain the global lock.
      */
-    virtual void notifyReplStartupRecoveryComplete(OperationContext* opCtx) {}
+    virtual void notifyReplStartupRecoveryComplete(RecoveryUnit&) {}
 
     virtual RecoveryUnit* newRecoveryUnit() = 0;
 
@@ -119,8 +119,7 @@ public:
      * drop call on the KVEngine once the WUOW commits. Therefore drops will never be rolled
      * back and it is safe to immediately reclaim storage.
      */
-    virtual Status createRecordStore(OperationContext* opCtx,
-                                     const NamespaceString& nss,
+    virtual Status createRecordStore(const NamespaceString& nss,
                                      StringData ident,
                                      const CollectionOptions& options,
                                      KeyFormat keyFormat = KeyFormat::Long) = 0;
@@ -137,8 +136,7 @@ public:
      * Similar to createRecordStore but this imports from an existing table with the provided ident
      * instead of creating a new one.
      */
-    virtual Status importRecordStore(OperationContext* opCtx,
-                                     StringData ident,
+    virtual Status importRecordStore(StringData ident,
                                      const BSONObj& storageMetadata,
                                      const ImportOptions& importOptions) {
         MONGO_UNREACHABLE;
@@ -156,7 +154,7 @@ public:
      * visibility management. Calls with `orderedCommit` true will not be concurrent with calls of
      * `orderedCommit` false.
      */
-    virtual Status oplogDiskLocRegister(OperationContext* opCtx,
+    virtual Status oplogDiskLocRegister(RecoveryUnit&,
                                         RecordStore* oplogRecordStore,
                                         const Timestamp& opTime,
                                         bool orderedCommit) = 0;
@@ -193,7 +191,7 @@ public:
     virtual bool waitUntilUnjournaledWritesDurable(OperationContext* opCtx,
                                                    bool stableCheckpoint) = 0;
 
-    virtual Status createSortedDataInterface(OperationContext* opCtx,
+    virtual Status createSortedDataInterface(RecoveryUnit&,
                                              const NamespaceString& nss,
                                              const CollectionOptions& collOptions,
                                              StringData ident,
@@ -203,22 +201,22 @@ public:
      * Similar to createSortedDataInterface but this imports from an existing table with the
      * provided ident instead of creating a new one.
      */
-    virtual Status importSortedDataInterface(OperationContext* opCtx,
+    virtual Status importSortedDataInterface(RecoveryUnit&,
                                              StringData ident,
                                              const BSONObj& storageMetadata,
                                              const ImportOptions& importOptions) {
         MONGO_UNREACHABLE;
     }
 
-    virtual Status dropSortedDataInterface(OperationContext* opCtx, StringData ident) = 0;
+    virtual Status dropSortedDataInterface(RecoveryUnit&, StringData ident) = 0;
 
-    virtual int64_t getIdentSize(OperationContext* opCtx, StringData ident) = 0;
+    virtual int64_t getIdentSize(RecoveryUnit&, StringData ident) = 0;
 
     /**
      * Repair an ident. Returns Status::OK if repair did not modify data. Returns a non-fatal status
      * of DataModifiedByRepair if a repair operation succeeded, but may have modified data.
      */
-    virtual Status repairIdent(OperationContext* opCtx, StringData ident) = 0;
+    virtual Status repairIdent(RecoveryUnit& ru, StringData ident) = 0;
 
     /**
      * Removes any knowledge of the ident from the storage engines metadata which includes removing
@@ -234,7 +232,7 @@ public:
      * Removes any knowledge of the ident from the storage engines metadata without removing the
      * underlying files belonging to the ident.
      */
-    virtual void dropIdentForImport(OperationContext* opCtx, StringData ident) = 0;
+    virtual void dropIdentForImport(Interruptible&, RecoveryUnit&, StringData ident) = 0;
 
     /**
      * Attempts to locate and recover a file that is "orphaned" from the storage engine's metadata,
@@ -246,18 +244,17 @@ public:
      * This recovery process makes no guarantees about the integrity of data recovered or even that
      * it still exists when recovered.
      */
-    virtual Status recoverOrphanedIdent(OperationContext* opCtx,
-                                        const NamespaceString& nss,
+    virtual Status recoverOrphanedIdent(const NamespaceString& nss,
                                         StringData ident,
                                         const CollectionOptions& options) {
-        auto status = createRecordStore(opCtx, nss, ident, options);
+        auto status = createRecordStore(nss, ident, options);
         if (status.isOK()) {
             return {ErrorCodes::DataModifiedByRepair, "Orphan recovery created a new record store"};
         }
         return status;
     }
 
-    virtual void alterIdentMetadata(OperationContext* opCtx,
+    virtual void alterIdentMetadata(RecoveryUnit&,
                                     StringData ident,
                                     const IndexDescriptor* desc,
                                     bool isForceUpdateMetadata) {}
@@ -270,7 +267,7 @@ public:
     /**
      * See StorageEngine::beginBackup for details
      */
-    virtual Status beginBackup(OperationContext* opCtx) {
+    virtual Status beginBackup() {
         return Status(ErrorCodes::CommandNotSupported,
                       "The current storage engine doesn't support backup mode");
     }
@@ -278,25 +275,25 @@ public:
     /**
      * See StorageEngine::endBackup for details
      */
-    virtual void endBackup(OperationContext* opCtx) {
+    virtual void endBackup() {
         MONGO_UNREACHABLE;
     }
 
-    virtual Status disableIncrementalBackup(OperationContext* opCtx) {
+    virtual Status disableIncrementalBackup() {
         MONGO_UNREACHABLE;
     }
 
     virtual StatusWith<std::unique_ptr<StorageEngine::StreamingCursor>> beginNonBlockingBackup(
-        OperationContext* opCtx, const StorageEngine::BackupOptions& options) {
+        const StorageEngine::BackupOptions& options) {
         return Status(ErrorCodes::CommandNotSupported,
                       "The current storage engine doesn't support backup mode");
     }
 
-    virtual void endNonBlockingBackup(OperationContext* opCtx) {
+    virtual void endNonBlockingBackup() {
         MONGO_UNREACHABLE;
     }
 
-    virtual StatusWith<std::deque<std::string>> extendBackupCursor(OperationContext* opCtx) {
+    virtual StatusWith<std::deque<std::string>> extendBackupCursor() {
         return Status(ErrorCodes::CommandNotSupported,
                       "The current storage engine doesn't support backup mode");
     }
@@ -339,9 +336,9 @@ public:
      */
     virtual bool supportsDirectoryPerDB() const = 0;
 
-    virtual bool hasIdent(OperationContext* opCtx, StringData ident) const = 0;
+    virtual bool hasIdent(RecoveryUnit&, StringData ident) const = 0;
 
-    virtual std::vector<std::string> getAllIdents(OperationContext* opCtx) const = 0;
+    virtual std::vector<std::string> getAllIdents(RecoveryUnit&) const = 0;
 
     /**
      * This method will be called before there is a clean shutdown.  Storage engines should
@@ -417,7 +414,7 @@ public:
     /**
      * See `StorageEngine::recoverToStableTimestamp`
      */
-    virtual StatusWith<Timestamp> recoverToStableTimestamp(OperationContext* opCtx) {
+    virtual StatusWith<Timestamp> recoverToStableTimestamp(Interruptible&) {
         fassertFailed(50664);
     }
 
@@ -474,7 +471,7 @@ public:
         return Timestamp();
     }
 
-    virtual StatusWith<Timestamp> pinOldestTimestamp(OperationContext* opCtx,
+    virtual StatusWith<Timestamp> pinOldestTimestamp(RecoveryUnit&,
                                                      const std::string& requestingServiceName,
                                                      Timestamp requestedTimestamp,
                                                      bool roundUpIfTooOld) {
@@ -511,7 +508,7 @@ public:
     /**
      * Returns the 'KeyFormat' tied to 'ident'.
      */
-    virtual KeyFormat getKeyFormat(OperationContext* opCtx, StringData ident) const {
+    virtual KeyFormat getKeyFormat(RecoveryUnit&, StringData ident) const {
         MONGO_UNREACHABLE;
     }
 
@@ -537,7 +534,7 @@ public:
     /**
      * See StorageEngine::autoCompact for details
      */
-    virtual Status autoCompact(OperationContext* opCtx, const AutoCompactOptions& options) {
+    virtual Status autoCompact(RecoveryUnit&, const AutoCompactOptions& options) {
         return Status(ErrorCodes::CommandNotSupported,
                       "The current storage engine doesn't support auto compact");
     }

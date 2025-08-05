@@ -1139,7 +1139,8 @@ void ReplicationCoordinatorImpl::startup(OperationContext* opCtx,
         // function to avoid deadlock.
         auto storageEngine = opCtx->getServiceContext()->getStorageEngine();
         invariant(storageEngine);
-        storageEngine->notifyReplStartupRecoveryComplete(opCtx);
+        storageEngine->notifyReplStartupRecoveryComplete(
+            *shard_role_details::getRecoveryUnit(opCtx));
 
         stdx::lock_guard<stdx::mutex> lk(_mutex);
         _setConfigState(lk, kConfigReplicationDisabled);
@@ -2542,11 +2543,6 @@ BSONObj ReplicationCoordinatorImpl::_getReplicationProgress(WithLock wl) const {
 
     const auto currentCommittedSnapshotOpTime = _getCurrentCommittedSnapshotOpTime(wl);
     progress.append("currentCommittedSnapshotOpTime", currentCommittedSnapshotOpTime.toBSON());
-
-    const auto earliestDropPendingOpTime = _externalState->getEarliestDropPendingOpTime();
-    if (earliestDropPendingOpTime) {
-        progress.append("earliestDropPendingOpTime", earliestDropPendingOpTime->toBSON());
-    }
 
     _topCoord->fillMemberData(&progress);
     return progress.obj();

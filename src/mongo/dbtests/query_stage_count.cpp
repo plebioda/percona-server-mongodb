@@ -47,10 +47,10 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/oid.h"
 #include "mongo/db/catalog/collection.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/index_catalog.h"
 #include "mongo/db/client.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/curop.h"
@@ -99,7 +99,7 @@ public:
     CountStageTest()
         : _dbLock(&_opCtx, nss().dbName(), MODE_X),
           _ctx(&_opCtx, nss()),
-          _expCtx(make_intrusive<ExpressionContext>(&_opCtx, nullptr, kTestNss)),
+          _expCtx(ExpressionContextBuilder{}.opCtx(&_opCtx).ns(kTestNss).build()),
           _coll(nullptr) {}
 
     virtual ~CountStageTest() {}

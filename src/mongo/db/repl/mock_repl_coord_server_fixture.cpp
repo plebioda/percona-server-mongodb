@@ -32,15 +32,14 @@
 #include <memory>
 
 #include "mongo/client/connection_string.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/client.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/dbdirectclient.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/repl/drop_pending_collection_reaper.h"
 #include "mongo/db/repl/member_state.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/oplog_entry.h"
@@ -97,10 +96,6 @@ void MockReplCoordServerFixture::setUp() {
     ASSERT_TRUE(client.createCollection(NamespaceString::kRsOplogNamespace, 1024 * 1024, true));
 
     repl::acquireOplogCollectionForLogging(opCtx());
-
-    repl::DropPendingCollectionReaper::set(
-        service,
-        std::make_unique<repl::DropPendingCollectionReaper>(repl::StorageInterface::get(service)));
 
     // Set a committed snapshot so that we can perform majority reads.
     WriteUnitOfWork wuow{_opCtx.get()};

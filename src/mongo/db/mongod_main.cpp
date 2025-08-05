@@ -79,7 +79,6 @@
 #include "mongo/db/catalog/collection_catalog.h"
 #include "mongo/db/catalog/collection_impl.h"
 #include "mongo/db/catalog/collection_options.h"
-#include "mongo/db/catalog/collection_write_path.h"
 #include "mongo/db/catalog/database.h"
 #include "mongo/db/catalog/database_holder.h"
 #include "mongo/db/catalog/database_holder_impl.h"
@@ -93,6 +92,7 @@
 #include "mongo/db/change_streams_cluster_parameter_gen.h"
 #include "mongo/db/client.h"
 #include "mongo/db/cluster_role.h"
+#include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/feature_compatibility_version.h"
 #include "mongo/db/commands/feature_compatibility_version_gen.h"
@@ -154,7 +154,6 @@
 #include "mongo/db/read_write_concern_defaults.h"
 #include "mongo/db/read_write_concern_defaults_cache_lookup_mongod.h"
 #include "mongo/db/repl/base_cloner.h"
-#include "mongo/db/repl/drop_pending_collection_reaper.h"
 #include "mongo/db/repl/initial_syncer_factory.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/repl/primary_only_service.h"
@@ -263,7 +262,6 @@
 #include "mongo/rpc/reply_builder_interface.h"
 #include "mongo/s/analyze_shard_key_role.h"
 #include "mongo/s/catalog_cache.h"
-#include "mongo/s/catalog_cache_loader.h"
 #include "mongo/s/client/shard_registry.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/query_analysis_client.h"
@@ -1454,10 +1452,6 @@ void setUpReplication(ServiceContext* serviceContext) {
             storageInterface, std::move(consistencyMarkers), std::move(recovery)));
     auto replicationProcess = repl::ReplicationProcess::get(serviceContext);
 
-    repl::DropPendingCollectionReaper::set(
-        serviceContext, std::make_unique<repl::DropPendingCollectionReaper>(storageInterface));
-    auto dropPendingCollectionReaper = repl::DropPendingCollectionReaper::get(serviceContext);
-
     repl::TopologyCoordinator::Options topoCoordOptions;
     topoCoordOptions.maxSyncSourceLagSecs = Seconds(repl::maxSyncSourceLagSecs);
     topoCoordOptions.clusterRole = serverGlobalParams.clusterRole;
@@ -1466,7 +1460,7 @@ void setUpReplication(ServiceContext* serviceContext) {
         serviceContext,
         getGlobalReplSettings(),
         std::make_unique<repl::ReplicationCoordinatorExternalStateImpl>(
-            serviceContext, dropPendingCollectionReaper, storageInterface, replicationProcess),
+            serviceContext, storageInterface, replicationProcess),
         makeReplicationExecutor(serviceContext),
         std::make_unique<repl::TopologyCoordinator>(topoCoordOptions),
         replicationProcess,
@@ -1988,8 +1982,8 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
         validator->shutDown();
     }
 
-    // The migrationutil executor must be shut down before shutting down the CatalogCacheLoader and
-    // the ExecutorPool. Otherwise, it may try to schedule work on those components and fail.
+    // The migrationutil executor must be shut down before shutting down the CatalogCache and the
+    // ExecutorPool. Otherwise, it may try to schedule work on those components and fail.
     LOGV2_OPTIONS(4784921, {LogComponent::kSharding}, "Shutting down the MigrationUtilExecutor");
     auto migrationUtilExecutor = migrationutil::getMigrationUtilExecutor(serviceContext);
     {
@@ -2014,17 +2008,11 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
     }
 
     if (Grid::get(serviceContext)->isShardingInitialized()) {
-        // The CatalogCache must be shuted down before shutting down the CatalogCacheLoader as the
-        // CatalogCache may try to schedule work on CatalogCacheLoader and fail.
-        TimeElapsedBuilderScopedTimer scopedTimer(
-            serviceContext->getFastClockSource(),
-            "Shut down the catalog cache and catalog cache loader",
-            &shutdownTimeElapsedBuilder);
+        TimeElapsedBuilderScopedTimer scopedTimer(serviceContext->getFastClockSource(),
+                                                  "Shut down the catalog cache",
+                                                  &shutdownTimeElapsedBuilder);
         LOGV2_OPTIONS(6773201, {LogComponent::kSharding}, "Shutting down the CatalogCache");
         Grid::get(serviceContext)->catalogCache()->shutDownAndJoin();
-
-        LOGV2_OPTIONS(4784922, {LogComponent::kSharding}, "Shutting down the CatalogCacheLoader");
-        CatalogCacheLoader::get(serviceContext).shutDown();
     }
 
     if (auto configServerRoutingInfoCache = RoutingInformationCache::get(serviceContext)) {

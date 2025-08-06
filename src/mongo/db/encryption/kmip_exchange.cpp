@@ -34,7 +34,6 @@ Copyright (C) 2023-present Percona and/or its affiliates. All rights reserved.
 #include <array>
 #include <chrono>
 #include <cstdint>
-#include <sstream>
 #include <string_view>
 #include <type_traits>
 

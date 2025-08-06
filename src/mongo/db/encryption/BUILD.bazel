@@ -34,3 +34,101 @@ mongo_cc_library(
         "encryption_options.h",
     ],
 )
+
+mongo_cc_library(
+    name = "read_file_to_secure_string",
+    srcs = [
+        "read_file_to_secure_string.cpp",
+    ],
+    hdrs = [
+        "read_file_to_secure_string.h",
+    ],
+    deps = [
+        "//src/mongo/base:secure_allocator",
+        "//src/mongo/db:server_base",
+    ],
+)
+
+mongo_cc_library(
+    name = "vault_secret_metadata_locator",
+    srcs = [
+        "vault_secret_metadata_locator.cpp",
+    ],
+    hdrs = [
+        "vault_secret_metadata_locator.h",
+    ],
+)
+
+mongo_cc_library(
+    name = "vault_client",
+    srcs = [
+        "vault_client.cpp",
+    ],
+    hdrs = [
+        "vault_client.h",
+    ],
+    deps = [
+        ":read_file_to_secure_string",
+        ":vault_secret_metadata_locator",
+        "//src/mongo:base",
+        "//src/mongo/util/net:http_client",
+    ],
+)
+
+mongo_cc_library(
+    name = "kmip_client",
+    srcs = [
+        "kmip_client.cpp",
+        "kmip_exchange.cpp",
+    ],
+    hdrs = [
+        "key_state.h",
+        "kmip_client.h",
+        "kmip_exchange.h",
+        "kmip_session.h",
+    ],
+    deps = [
+        ":key",
+        "//src/mongo:base",
+        "//src/mongo/base:secure_allocator",
+        "//src/third_party/libkmip-0ecda33:kmippp",
+        "//src/third_party/libkmip-0ecda33:libkmip",
+    ],
+)
+
+mongo_cc_library(
+    name = "key_management",
+    srcs = [
+        "key_operations.cpp",
+        "master_key_provider.cpp",
+    ],
+    hdrs = [
+        "error.h",
+        "error_builder.h",
+        "key_entry.h",
+        "key_operations.h",
+        "master_key_provider.h",
+    ],
+    deps = [
+        ":key",
+        ":encryption_options",
+        ":kmip_client",
+        ":read_file_to_secure_string",
+        ":vault_client",
+        "//src/mongo:base",
+        "//src/mongo/util:periodic_runner",
+    ],
+)
+
+mongo_cc_library(
+    name = "encryption_status",
+    srcs = [
+        "encryption_status.cpp",
+    ],
+    deps = [
+        ":encryption_options",
+        ":key_management",
+        "//src/mongo:base",
+        "//src/mongo/db/commands:server_status_core",
+    ],
+)

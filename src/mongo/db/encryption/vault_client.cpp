@@ -31,9 +31,7 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 
 #include "mongo/db/encryption/vault_client.h"
 
-#include <cstddef>
 #include <random>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -48,7 +46,6 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/bson/bsonobj.h"
 #include "mongo/bson/bsontypes.h"
 #include "mongo/bson/json.h"
-#include "mongo/db/encryption/encryption_options.h"
 #include "mongo/db/encryption/read_file_to_secure_string.h"
 #include "mongo/db/encryption/vault_secret_metadata_locator.h"
 #include "mongo/db/json.h"

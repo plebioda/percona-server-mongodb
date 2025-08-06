@@ -76,7 +76,7 @@ void WiredTigerBackupCursorHooks::fsyncLock(OperationContext* opCtx) {
             "can succeed.",
             _state != kHotBackup);
     auto* engine = opCtx->getServiceContext()->getStorageEngine();
-    uassertStatusOK(engine->beginBackup(opCtx));
+    uassertStatusOK(engine->beginBackup());
     _state = kFsyncLocked;
 }
 
@@ -84,7 +84,7 @@ void WiredTigerBackupCursorHooks::fsyncUnlock(OperationContext* opCtx) {
     stdx::lock_guard<stdx::mutex> lk(_mutex);
     uassert(50888, "The node is not fsyncLocked.", _state == kFsyncLocked);
     auto* engine = opCtx->getServiceContext()->getStorageEngine();
-    engine->endBackup(opCtx);
+    engine->endBackup();
     _state = kInactive;
 }
 
@@ -130,8 +130,7 @@ BackupCursorState WiredTigerBackupCursorHooks::openBackupCursor(
         checkpointTimestamp = engine->getLastStableRecoveryTimestamp();
     };
 
-    auto filesToBackup =
-        uassertStatusOK(engine->beginNonBlockingBackup(opCtx, options));
+    auto filesToBackup = uassertStatusOK(engine->beginNonBlockingBackup(options));
     _state = kBackupCursorOpened;
     _openCursor = UUID::gen();
     LOGV2(29093, "Opened backup cursor", "backupId"_attr = _openCursor.get());
@@ -232,7 +231,7 @@ void WiredTigerBackupCursorHooks::_closeBackupCursor(OperationContext* opCtx,
                           << " Running: " << _openCursor.get(),
             backupId == _openCursor.get());
     auto* engine = opCtx->getServiceContext()->getStorageEngine();
-    engine->endNonBlockingBackup(opCtx);
+    engine->endNonBlockingBackup();
     auto* encHooks = EncryptionHooks::get(opCtx->getServiceContext());
     if (encHooks->enabled()) {
         fassert(50934, encHooks->endNonBlockingBackup(opCtx));
@@ -271,7 +270,7 @@ BackupCursorExtendState WiredTigerBackupCursorHooks::extendBackupCursor(Operatio
     // use WiredTigerKVEngine::extendBackupCursor
     {
         auto* engine = opCtx->getServiceContext()->getStorageEngine();
-        auto res = engine->extendBackupCursor(opCtx);
+        auto res = engine->extendBackupCursor();
         if (!res.isOK()) {
             LOGV2_ERROR_OPTIONS(29095,
                                 {logv2::UserAssertAfterLog(res.getStatus().code())},

@@ -96,8 +96,8 @@ DocumentSource::GetNextResult DocumentSourceBackupCursor::doGetNext() {
 
     if (_docIt == _backupBlocks.cend()) {
         constexpr std::size_t batchSize = 100;
-        _backupBlocks = uassertStatusOK(
-            _backupCursorState.streamingCursor->getNextBatch(pExpCtx->opCtx, batchSize));
+        _backupBlocks =
+            uassertStatusOK(_backupCursorState.streamingCursor->getNextBatch(batchSize));
         _docIt = _backupBlocks.cbegin();
         // Empty batch means streaming cursor is exhausted
         if (_backupBlocks.empty()) {

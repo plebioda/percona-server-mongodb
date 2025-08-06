@@ -402,7 +402,6 @@ static void copy_keydb_files(const boost::filesystem::path& from,
 namespace {
 
 StatusWith<std::deque<BackupBlock>> getBackupBlocksFromBackupCursor(
-    OperationContext* opCtx,
     boost::optional<Timestamp> checkpointTimestamp,
     WT_SESSION* session,
     WT_CURSOR* cursor,
@@ -463,8 +462,7 @@ StatusWith<std::deque<BackupBlock>> getBackupBlocksFromBackupCursor(
                             "offset"_attr = offset,
                             "size"_attr = size,
                             "type"_attr = type);
-                backupBlocks.push_back(BackupBlock(opCtx,
-                                                   /*nss=*/boost::none,
+                backupBlocks.push_back(BackupBlock(/*nss=*/boost::none,
                                                    /*uuid=*/boost::none,
                                                    filePath.string(),
                                                    offset,
@@ -476,8 +474,7 @@ StatusWith<std::deque<BackupBlock>> getBackupBlocksFromBackupCursor(
             // us to distinguish between an unchanged file and a deleted file in an incremental
             // backup.
             if (fileUnchangedFlag) {
-                backupBlocks.push_back(BackupBlock(opCtx,
-                                                   /*nss=*/boost::none,
+                backupBlocks.push_back(BackupBlock(/*nss=*/boost::none,
                                                    /*uuid=*/boost::none,
                                                    filePath.string(),
                                                    0 /* offset */,
@@ -498,8 +495,7 @@ StatusWith<std::deque<BackupBlock>> getBackupBlocksFromBackupCursor(
             // to an entire file. Full backups cannot open an incremental cursor, even if they
             // are the initial incremental backup.
             const std::uint64_t length = incrementalBackup ? fileSize : 0;
-            backupBlocks.push_back(BackupBlock(opCtx,
-                                               /*nss=*/boost::none,
+            backupBlocks.push_back(BackupBlock(/*nss=*/boost::none,
                                                /*uuid=*/boost::none,
                                                filePath.string(),
                                                0 /* offset */,
@@ -1959,8 +1955,7 @@ StatusWith<std::deque<BackupBlock>> EncryptionKeyDB::beginNonBlockingBackup(
     }
 
     const bool fullBackup = !options.srcBackupName;
-    auto swBackupBlocks = getBackupBlocksFromBackupCursor(opCtx,
-                                                          checkpointTimestamp,
+    auto swBackupBlocks = getBackupBlocksFromBackupCursor(checkpointTimestamp,
                                                           session,
                                                           cursor,
                                                           options.incrementalBackup,
@@ -1996,8 +1991,7 @@ StatusWith<std::deque<std::string>> EncryptionKeyDB::extendBackupCursor(Operatio
         return wtRCToStatus(wtRet, session);
     }
 
-    auto swBackupBlocks = getBackupBlocksFromBackupCursor(opCtx,
-                                                          boost::none,
+    auto swBackupBlocks = getBackupBlocksFromBackupCursor(boost::none,
                                                           session,
                                                           cursor,
                                                           /*incrementalBackup=*/false,

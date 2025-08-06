@@ -16,8 +16,6 @@ Import([
 
 icuSuffix = '-57.1'
 tomcryptSuffix = '-1.18.2'
-libarchiveSuffix = '-3.4.0'
-libkmipSuffix = '-0ecda33'
 
 thirdPartyEnvironmentModifications = {
     'abseil-cpp': {'CPPPATH': ['#/src/third_party/abseil-cpp/dist'], },
@@ -28,10 +26,6 @@ thirdPartyEnvironmentModifications = {
         ],
     },
     'croaring': {'CPPPATH': ['#src/third_party/croaring/dist'], },
-    'percona_incl': {'CPPPATH': ['#/src/third_party/install/include'], },
-    'libarchive': {'CPPPATH': ['#/src/third_party/libarchive' + libarchiveSuffix], },
-    'libkmip': {'CPPPATH': ['#/src/third_party/libkmip' + libkmipSuffix + '/libkmip/include'], },
-    'kmippp' : {'CPPPATH': ['#/src/third_party/libkmip' + libkmipSuffix], },
     'fmt': {'CPPPATH': ['#src/third_party/fmt/dist/include'], },
     'immer': {'CPPPATH': ['#src/third_party/immer/dist'], },
     's2': {'CPPPATH': ['#src/third_party/s2'], },
@@ -433,48 +427,6 @@ if env.TargetOSIs('linux') and env['ENABLE_GRPC_BUILD']:
             'grpc/grpc++_reflection',
         ])
     grpcEnv.ShimLibrary(name="grpc", )
-
-libarchiveEnv = env.Clone()
-libarchiveEnv.InjectThirdParty(libraries=['libarchive'])
-libarchiveEnv.SConscript('libarchive' + libarchiveSuffix + '/libarchive/SConscript', exports={ 'env' : libarchiveEnv})
-libarchiveEnv = libarchiveEnv.Clone(
-    LIBDEPS_INTERFACE=[
-        'libarchive' + libarchiveSuffix + '/libarchive/libarchive',
-    ])
-
-libarchiveEnv.Library(
-    target='shim_libarchive',
-    source=[
-        'shim_libarchive.cpp',
-    ])
-
-libkmipEnv = env.Clone()
-libkmipEnv.InjectThirdParty(libraries=['libkmip'])
-libkmipEnv.SConscript('libkmip' + libkmipSuffix + '/libkmip/SConscript', exports={ 'env' : libkmipEnv })
-libkmipEnv = libkmipEnv.Clone(
-    LIBDEPS_INTERFACE=[
-        'libkmip' + libkmipSuffix + '/libkmip/libkmip',
-    ])
-
-libkmipEnv.Library(
-    target='shim_libkmip',
-    source=[
-        'shim_libkmip.cpp',
-    ])
-
-kmipppEnv = env.Clone()
-kmipppEnv.InjectThirdParty(libraries=['kmippp'])
-kmipppEnv.SConscript('libkmip' + libkmipSuffix + '/kmippp/SConscript', exports={ 'env' : kmipppEnv })
-kmipppEnv = kmipppEnv.Clone(
-    LIBDEPS_INTERFACE=[
-        'libkmip' + libkmipSuffix + '/kmippp/kmippp',
-    ])
-
-kmipppEnv.Library(
-    target='shim_kmippp',
-    source=[
-        'shim_kmippp.cpp',
-    ])
 
 if env.ShouldBuildStreams():
     libKafkaEnv = env.Clone()

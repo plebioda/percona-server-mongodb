@@ -2240,7 +2240,7 @@ void InitialSyncerFCB::_switchToDownloadedCallback(
     // retrieve the current on-disk replica set configuration
     auto* rs = repl::ReplicationCoordinator::get(opCtx->getServiceContext());
     invariant(rs);
-    BSONObj savedRSConfig = rs->getConfigBSON();
+    BSONObj savedRSConfig = rs->getConfig().toBSON();
 
     // Switch storage to be pointing to the set of downloaded files
     lock.unlock();

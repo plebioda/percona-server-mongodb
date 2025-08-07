@@ -316,7 +316,6 @@ env.Library(
         "$BUILD_DIR/mongo/executor/scoped_task_executor",
         "$BUILD_DIR/mongo/executor/task_executor_interface",
         "$BUILD_DIR/mongo/util/progress_meter",
-        "drop_pending_collection_reaper",
         "initial_syncer",
         "replication_auth",
         "serveronly_repl",

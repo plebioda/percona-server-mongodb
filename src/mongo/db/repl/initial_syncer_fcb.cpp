@@ -68,7 +68,6 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/aggregate_command_gen.h"
 #include "mongo/db/repl/all_database_cloner.h"
-#include "mongo/db/repl/drop_pending_collection_reaper.h"
 #include "mongo/db/repl/fcb_file_cloner.h"
 #include "mongo/db/repl/initial_sync_state.h"
 #include "mongo/db/repl/initial_syncer_common_stats.h"
@@ -2266,7 +2265,6 @@ void InitialSyncerFCB::_switchToDownloadedCallback(
 
     ReplicationCoordinatorExternalStateImpl externalState(
         opCtx->getServiceContext(),
-        DropPendingCollectionReaper::get(opCtx.get()),
         StorageInterface::get(opCtx.get()),
         ReplicationProcess::get(opCtx.get()));
     // replace the lastVote document with a default one

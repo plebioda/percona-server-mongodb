@@ -64,6 +64,9 @@ structs:
       version:
         description: "The current MongoDB server version, e.g. '1.2.3-rc0'"
         type: string
+      psmdbVersion:
+        description: "The 'psmdbVersion' key is used to distinguish between MongoDB and PSMDB"
+        type: string
       versionArray:
         description: "The current MongoDB server version broken down by numeric component, e.g. [1, 2, 3, 4]"
         type: array<safeInt>
@@ -79,6 +82,10 @@ structs:
         optional: true
       modules:
         description: "The set of modules included in this build; e.g. ['enterprise']"
+        type: array<string>
+        optional: true
+      proFeatures:
+        description: "The set of pro features included in this build; e.g. ['FIPSMode', 'FCBIS']"
         type: array<string>
         optional: true
       allocator:

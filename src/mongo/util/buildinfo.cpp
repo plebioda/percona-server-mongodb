@@ -133,11 +133,13 @@ BuildInfo getBuildInfo() {
     const auto& info = VersionInfoInterface::instance();
 
     auto reply = buildInfoVersionOnly(info);
+    reply.setPsmdbVersion(info.version());
     reply.setGitVersion(info.gitVersion());
 #ifdef _WIN32
     reply.setTargetMinOS(info.targetMinOS());
 #endif
     reply.setModules(info.modules());
+    reply.setProFeatures(info.psmdbProFeatures());
     reply.setAllocator(info.allocator());
     reply.setJavascriptEngine(info.jsEngine());
     reply.setSysinfo("deprecated"_sd);

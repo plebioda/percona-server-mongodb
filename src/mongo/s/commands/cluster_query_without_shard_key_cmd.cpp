@@ -57,8 +57,6 @@
 #include "mongo/db/commands/query_cmd/explain_gen.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/exec/document_value/document.h"
-#include "mongo/db/feature_flag.h"
-#include "mongo/db/internal_transactions_feature_flag_gen.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/aggregate_command_gen.h"
@@ -225,7 +223,7 @@ BSONObj createAggregateCmdObj(
 
     aggregate.setCollation(parsedInfo.collation);
     aggregate.setIsClusterQueryWithoutShardKeyCmd(true);
-    aggregate.setFromMongos(true);
+    aggregation_request_helper::setFromRouter(aggregate, true);
 
     if (parsedInfo.sort) {
         aggregate.setNeedsMerge(true);
@@ -665,9 +663,7 @@ public:
     }
 };
 
-MONGO_REGISTER_COMMAND(ClusterQueryWithoutShardKeyCmd)
-    .requiresFeatureFlag(&feature_flags::gFeatureFlagUpdateOneWithoutShardKey)
-    .forRouter();
+MONGO_REGISTER_COMMAND(ClusterQueryWithoutShardKeyCmd).forRouter();
 
 }  // namespace
 }  // namespace mongo

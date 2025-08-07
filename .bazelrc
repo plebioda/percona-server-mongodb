@@ -28,15 +28,11 @@ build --experimental_reuse_sandbox_directories
 # targets have been converted (i.e. unittest binaries) and we can BWOB, remote linking should be faster
 # in those cases:
 build --strategy=CppLink=local
-build --modify_execution_info=CppLink=+no-remote-cache
 build --strategy=CppArchive=local
-build --modify_execution_info=CppArchive=+no-remote-cache
 build --strategy=SolibSymlink=local
-build --modify_execution_info=SolibSymlink=+no-remote-cache
-build --strategy=ExtractDebugInfo=local
-build --modify_execution_info=ExtractDebugInfo=+no-remote-cache
-build --strategy=StripDebugInfo=local
-build --modify_execution_info=StripDebugInfo=+no-remote-cache
+build --strategy=StripDebuginfo=local
+build --strategy=ExtractDebuginfo=local
+build --modify_execution_info=^(CppLink|CppArchive|SolibSymlink|ExtractDebuginfo|StripDebuginfo)$=+no-remote-cache
 
 # Aliases for config flags
 build --flag_alias=linkstatic=//bazel/config:linkstatic
@@ -76,6 +72,7 @@ build --flag_alias=full_featured=//bazel/config:full-featured
 build --flag_alias=enable_fipsmode=//bazel/config:enable-fipsmode
 build --flag_alias=enable_fcbis=//bazel/config:enable-fcbis
 build --flag_alias=js_engine=//bazel/config:js_engine
+build --flag_alias=use_sasl_client=//bazel/config:use_sasl_client
 build --flag_alias=enterprise_feature_all=//bazel/config:enterprise_feature_all
 build --flag_alias=enterprise_feature_all=//bazel/config:enterprise_feature_all
 build --flag_alias=enterprise_feature_all=//bazel/config:enterprise_feature_all
@@ -195,7 +192,10 @@ common --bes_upload_mode=fully_async
 # common --remote_download_outputs=toplevel
 
 # Default Mongo Version if a version is not specified.
-build --define=MONGO_VERSION=8.1.0
+build --define=MONGO_VERSION=8.1.0-alpha
+
+# Default distmod if not specified.
+build --define=MONGO_DISTMOD=""
 
 # try to import the bazelrc files if available
 try-import %workspace%/.bazelrc.local

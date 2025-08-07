@@ -1,6 +1,9 @@
 /*
  * Test that if a mongos sends mongod a $search pipeline with an unknown field in the $search stage,
  * mongod will ignore the superfluous field.
+ * @tags: [
+ *   requires_fcv_81,
+ * ]
  */
 
 import {getUUIDFromListCollections} from "jstests/libs/uuid_util.js";
@@ -37,7 +40,6 @@ const stWithMock = new ShardingTestWithMongotMock({
     other: {
         rsOptions: nodeOptions,
         mongosOptions: nodeOptions,
-        shardOptions: nodeOptions,
     }
 });
 stWithMock.start();
@@ -107,7 +109,7 @@ const shardPipelineWithUnknownFields = {
 
 const commandObj = {
     aggregate: collName,
-    fromMongos: true,
+    fromRouter: true,
     needsMerge: true,
     // Internal client has to provide writeConcern
     writeConcern: {w: "majority"},

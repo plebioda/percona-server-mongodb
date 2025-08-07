@@ -280,6 +280,7 @@
 #include "mongo/util/allocator_thread.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/background.h"
+#include "mongo/util/buildinfo.h"
 #include "mongo/util/clock_source.h"
 #include "mongo/util/cmdline_utils/censor_cmdline.h"
 #include "mongo/util/concurrency/idle_thread_block.h"
@@ -364,10 +365,12 @@ void logStartup(OperationContext* opCtx) {
     toLog.append("pid", ProcessId::getCurrent().asLongLong());
 
 
-    BSONObjBuilder buildinfo(toLog.subobjStart("buildinfo"));
-    VersionInfoInterface::instance().appendBuildInfo(&buildinfo);
-    appendStorageEngineList(opCtx->getServiceContext(), &buildinfo);
-    buildinfo.doneFast();
+    {
+        BSONObjBuilder buildinfo(toLog.subobjStart("buildinfo"));
+        auto info = getBuildInfo();
+        info.setStorageEngines(getStorageEngineNames(opCtx->getServiceContext()));
+        info.serialize(&buildinfo);
+    }
 
     BSONObj o = toLog.obj();
 
@@ -2151,12 +2154,10 @@ int mongod_main(int argc, char* argv[]) {
 
     auto* service = [] {
         try {
-            auto serviceContextHolder = ServiceContext::make();
+            auto serviceContextHolder =
+                ServiceContext::make(FastClockSourceFactory::create(Milliseconds(10)));
             auto* serviceContext = serviceContextHolder.get();
 
-            // This FastClockSourceFactory creates a background thread ClockSource. It must be set
-            // on ServiceContext before any other threads can get and use it.
-            serviceContext->setFastClockSource(FastClockSourceFactory::create(Milliseconds(10)));
             setGlobalServiceContext(std::move(serviceContextHolder));
 
             return serviceContext;

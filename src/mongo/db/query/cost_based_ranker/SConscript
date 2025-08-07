@@ -6,8 +6,12 @@ env.CppUnitTest(
     target="cost_based_ranker_test",
     source=[
         "estimates_test.cpp",
+        "heuristic_estimator_test.cpp",
     ],
     LIBDEPS=[
+        "$BUILD_DIR/mongo/db/query/query_planner",
+        "$BUILD_DIR/mongo/db/query/query_test_service_context",
         "estimates",
+        "heuristic_estimator",
     ],
 )

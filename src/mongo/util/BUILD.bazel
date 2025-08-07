@@ -1,5 +1,6 @@
-load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library")
+load("//bazel:mongo_src_rules.bzl", "MONGO_GLOBAL_COPTS", "MONGO_GLOBAL_DEFINES", "MONGO_GLOBAL_LINKFLAGS", "idl_generator", "mongo_cc_library")
 load("//bazel/config:render_template.bzl", "render_template")
+load("//bazel/config:generate_config_header.bzl", "generate_config_header")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -24,6 +25,27 @@ filegroup(
         "safe_num.h",
         "scoped_unlock.h",
         "serialization_context.h",
+    ],
+)
+
+idl_generator(
+    name = "buildinfo_gen",
+    src = "buildinfo.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+    ],
+)
+
+mongo_cc_library(
+    name = "buildinfo",
+    srcs = [
+        "buildinfo.cpp",
+        ":buildinfo_gen",
+    ],
+    hdrs = ["buildinfo.h"],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/idl:idl_parser",
     ],
 )
 
@@ -657,4 +679,121 @@ mongo_cc_library(
         ":signal_handlers",
         "//src/mongo/util/options_parser",
     ],
+)
+
+mongo_cc_library(
+    name = "version_impl",
+    srcs = [
+        "version_impl.cpp",
+    ],
+    hdrs = [
+        "version_constants.h",
+    ],
+    deps = [
+        "//src/mongo:base",
+    ],
+)
+
+mongo_cc_library(
+    name = "tcmalloc_set_parameter",
+    srcs = [
+        "tcmalloc_parameters_gen",
+        "tcmalloc_set_parameter.cpp",
+    ],
+    hdrs = [
+        "tcmalloc_set_parameter.h",
+    ],
+    local_defines = select({
+        "//bazel/config:tcmalloc_gperf_enabled": ["MONGO_HAVE_GPERFTOOLS_SIZE_CLASS_STATS"],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//bazel/config:tcmalloc_gperf_enabled": [],
+        "//bazel/config:tcmalloc_google_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "processinfo",
+        "//src/mongo/db:server_base",
+    ],
+)
+
+mongo_cc_library(
+    name = "tcmalloc_server_status",
+    srcs = [
+        "heap_profiler.cpp",
+        "tcmalloc_server_status_section.cpp",
+    ],
+    local_defines = select({
+        "//bazel/config:tcmalloc_gperf_enabled": ["MONGO_HAVE_GPERFTOOLS_SIZE_CLASS_STATS"],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//bazel/config:tcmalloc_gperf_enabled": [],
+        "//bazel/config:tcmalloc_google_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "processinfo",
+        "tcmalloc_set_parameter",
+        "//src/mongo:base",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db/commands:server_status_core",
+    ],
+)
+
+mongo_cc_library(
+    name = "allocator_thread",
+    srcs = select({
+        "//bazel/config:tcmalloc_gperf_enabled": ["allocator_tcmalloc_thread.cpp"],
+        "//bazel/config:tcmalloc_google_enabled": ["allocator_tcmalloc_thread.cpp"],
+        "//conditions:default": ["allocator_system_thread.cpp"],
+    }),
+    hdrs = [
+        "allocator_thread.h",
+    ],
+    copts = select({
+        "//bazel/config:gcc_or_clang": ["-Wno-sign-compare"],
+        "//conditions:default": [],
+    }),
+    local_defines = select({
+        "//bazel/config:tcmalloc_gperf_enabled": ["MONGO_HAVE_GPERFTOOLS_SIZE_CLASS_STATS"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//src/mongo/db:server_base",
+    ] + select({
+        "//bazel/config:system_allocator_enabled": [],
+        "//conditions:default": [
+            "tcmalloc_server_status",
+            "tcmalloc_set_parameter",
+            "//src/mongo/db:service_context",
+        ],
+    }),
+)
+
+generate_config_header(
+    name = "version_constants_gen",
+    additional_inputs = ["//:git_head_optional"],
+    checks = ":version_constants_gen.py",
+    cpp_defines = MONGO_GLOBAL_DEFINES,
+    cpp_linkflags = MONGO_GLOBAL_LINKFLAGS,
+    cpp_opts = MONGO_GLOBAL_COPTS,
+    extra_definitions = {
+        "MONGO_DISTMOD": "$(MONGO_DISTMOD)",
+        "MONGO_VERSION": "$(MONGO_VERSION)",
+    } | select({
+        "//bazel/config:js_engine_mozjs": {"js_engine_ver": "mozjs"},
+        "//conditions:default": {"js_engine_ver": "none"},
+    }) | select({
+        "//bazel/config:tcmalloc_google_enabled": {"MONGO_ALLOCATOR": "tcmalloc-google"},
+        "//bazel/config:tcmalloc_gperf_enabled": {"MONGO_ALLOCATOR": "tcmalloc-gperf"},
+        "//conditions:default": {"MONGO_ALLOCATOR": "system"},
+    }) | select({
+        "//bazel/config:build_enterprise_enabled": {"build_enterprise_enabled": "1"},
+        "//conditions:default": {},
+    }),
+    logfile = "version_constants_gen.log",
+    output = "version_constants.h",
+    template = "version_constants.h.in",
 )

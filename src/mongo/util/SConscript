@@ -19,53 +19,6 @@ env = env.Clone()
 
 env.InjectThirdParty("asio")
 
-js_engine_ver = get_option("js-engine") if get_option("server-js") == "on" else "none"
-
-module_list = ",\n".join(['"{0}"_sd'.format(x) for x in env["MONGO_MODULES"]])
-psmdb_pro_feature_list = ",\n".join(['"{0}"_sd'.format(x) for x in env["PSMDB_PRO_FEATURES"]])
-
-
-# Render the MONGO_BUILDINFO_ENVIRONMENT_DATA dict into an initializer for a
-# `std::vector<VersionInfoInterface::BuildInfoField>`.
-def fmtBuildInfo(data):
-    def fmtBool(val):
-        return "true" if val else "false"
-
-    def fmtStr(val):
-        return 'R"({0})"_sd'.format(val.replace("\\", r"\\"))
-
-    def fmtObj(obj):
-        return "{{{}, {}, {}, {}}}".format(
-            fmtStr(obj["key"]),
-            fmtStr(env.subst(obj["value"])),
-            fmtBool(obj["inBuildInfo"]),
-            fmtBool(obj["inVersion"]),
-        )
-
-    return ",\n".join([fmtObj(obj) for _, obj in data.items()])
-
-
-buildInfoInitializer = fmtBuildInfo(env["MONGO_BUILDINFO_ENVIRONMENT_DATA"])
-
-generatedVersionFile = env.Substfile(
-    "version_constants.h.in",
-    SUBST_DICT=[
-        ("@mongo_version@", env["MONGO_VERSION"]),
-        ("@mongo_version_major@", version_parts[0]),
-        ("@mongo_version_minor@", version_parts[1]),
-        ("@mongo_version_patch@", version_parts[2]),
-        ("@mongo_version_extra@", version_parts[3]),
-        ("@mongo_version_extra_str@", version_extra),
-        ("@mongo_git_hash@", env["MONGO_GIT_HASH"]),
-        ("@buildinfo_js_engine@", js_engine_ver),
-        ("@buildinfo_allocator@", env["MONGO_ALLOCATOR"]),
-        ("@buildinfo_modules@", module_list),
-        ("@buildinfo_psmdb_pro_features@", psmdb_pro_feature_list),
-        ("@buildinfo_environment_data@", buildInfoInitializer),
-    ],
-)
-env.Alias("generated-sources", generatedVersionFile)
-
 if env.TargetOSIs("windows"):
     enterpriseEnv = env.Clone().InjectModule("enterprise")
     generatedResourceConstantFile = enterpriseEnv.Substfile(
@@ -94,16 +47,6 @@ env.SConscript(
         "env",
         "version_extra",
         "version_parts",
-    ],
-)
-
-env.Library(
-    target="version_impl",
-    source=[
-        "version_impl.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/base",
     ],
 )
 
@@ -185,50 +128,6 @@ if tcmallocAttrs:
         # Include valgrind since tcmalloc disables itself while running under valgrind
         tcmspEnv.InjectThirdParty("valgrind")
 
-    tcmspEnv.Library(
-        target="allocator_thread",
-        source=[
-            "allocator_tcmalloc_thread.cpp",
-        ],
-        LIBDEPS_PRIVATE=[
-            "$BUILD_DIR/mongo/db/server_base",
-            "$BUILD_DIR/mongo/db/service_context",
-            "tcmalloc_server_status",
-            "tcmalloc_set_parameter",
-        ],
-    )
-
-    tcmspEnv.Library(
-        target="tcmalloc_set_parameter",
-        source=[
-            "tcmalloc_set_parameter.cpp",
-            "tcmalloc_parameters_gen.cpp",
-        ],
-        LIBDEPS_PRIVATE=[
-            "$BUILD_DIR/mongo/db/server_base",
-            "processinfo",
-        ],
-        LIBDEPS_TAGS=[
-            "lint-allow-bidirectional-edges",
-            "lint-allow-nonprivate-on-deps-dependents",
-        ],
-    )
-
-    tcmspEnv.Library(
-        target="tcmalloc_server_status",
-        source=[
-            "tcmalloc_server_status_section.cpp",
-            "heap_profiler.cpp",
-        ],
-        LIBDEPS_PRIVATE=[
-            "$BUILD_DIR/mongo/base",
-            "$BUILD_DIR/mongo/db/commands/server_status_core",
-            "$BUILD_DIR/mongo/db/server_base",
-            "processinfo",
-            "tcmalloc_set_parameter",
-        ],
-    )
-
     tcmspEnv.CppUnitTest(
         target="tcmalloc_set_parameters_test",
         source=[
@@ -240,16 +139,6 @@ if tcmallocAttrs:
             "processinfo",
             "tcmalloc_server_status",
             "tcmalloc_set_parameter",
-        ],
-    )
-else:
-    env.Library(
-        target="allocator_thread",
-        source=[
-            "allocator_system_thread.cpp",
-        ],
-        LIBDEPS_PRIVATE=[
-            "$BUILD_DIR/mongo/db/server_base",
         ],
     )
 
@@ -409,6 +298,7 @@ icuEnv.CppUnitTest(
         "out_of_line_executor_test.cpp",
         "overloaded_visitor_test.cpp",
         "packaged_task_test.cpp",
+        "parking_lot_test.cpp",
         "pcre_test.cpp",
         "pcre_util_test.cpp",
         "periodic_runner_impl_test.cpp",
@@ -477,6 +367,7 @@ if not env.TargetOSIs("windows"):
             "$BUILD_DIR/mongo/base",
             "$BUILD_DIR/mongo/db/service_context_non_d",
             "signal_handlers",
+            "version_impl",
         ],
     )
 

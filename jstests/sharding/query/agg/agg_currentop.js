@@ -14,12 +14,12 @@
  *
  * This test requires replica set configuration and user credentials to persist across a restart.
  * @tags: [
- *   requires_fcv_70,
  *   requires_persistence,
  *    # TODO (SERVER-88127): Re-enable this test or add an explanation why it is incompatible.
  *    embedded_router_incompatible,
  *   uses_prepare_transaction,
  *   uses_transactions,
+ *   requires_fcv_81,
  * ]
  */
 
@@ -51,7 +51,12 @@ const stParams = {
     other: {
         mongosOptions:
             {setParameter: {'failpoint.skipClusterParameterRefresh': "{'mode':'alwaysOn'}"}}
-    }
+    },
+    // By default, our test infrastructure sets the election timeout to a very high value (24
+    // hours). For this test, we need a shorter election timeout because it relies on nodes running
+    // an election when they do not detect an active primary. Therefore, we are setting the
+    // electionTimeoutMillis to its default value.
+    initiateWithDefaultElectionTimeout: true
 };
 
 // Create a new sharded cluster for testing. We set the internalQueryExecYieldIterations
@@ -920,7 +925,7 @@ assert.eq(shardAdminDB
 // Test that attempting to 'spoof' a sharded request on non-shardsvr mongoD fails.
 assert.commandFailedWithCode(
     shardAdminDB.runCommand(
-        {aggregate: 1, pipeline: [{$currentOp: {}}], fromMongos: true, cursor: {}}),
+        {aggregate: 1, pipeline: [{$currentOp: {}}], fromRouter: true, cursor: {}}),
     40465);
 
 // Test that an operation which is at the BSON user size limit does not throw an error when the

@@ -128,12 +128,6 @@ struct SelectivityTagParam {
 };
 
 struct CostCoefficientTagParam {
-    static constexpr double kMin = 0.0;
-    static constexpr double kMax = std::numeric_limits<double>::max();
-    static constexpr double kEpsilon = 1.0e-5;
-};
-
-struct CostTagParam {
     // The smallest cost coefficient is equal to the cost of the fastest QE
     // operation. This is typically the cost of a simple binary comparison of a
     // scalar value.
@@ -148,6 +142,12 @@ struct CostTagParam {
     //  model.
     static constexpr double kMax = 15000 * nsToMs;
     // TODO (SERVER-94981): Define this value based on cost model sensitivity.
+    static constexpr double kEpsilon = 1.0e-5;
+};
+
+struct CostTagParam {
+    static constexpr double kMin = 0.0;
+    static constexpr double kMax = std::numeric_limits<double>::max();
     static constexpr double kEpsilon = 1.0e-5;
 };
 
@@ -167,14 +167,14 @@ using CostTag = StrongDoubleTag<"Cost",
                                 // Cost has some abstract cost units.
                                 EstimationUnit::CostUnits,
                                 double,
-                                CostCoefficientTagParam>;
+                                CostTagParam>;
 
 using CostCoefficientTag =
     StrongDoubleTag<"Cost coefficient",
                     // Cost coefficients establish the cost of processing per one input document.
                     EstimationUnit::CostPerDataItem,
                     double,
-                    CostTagParam>;
+                    CostCoefficientTagParam>;
 
 template <typename T>
 class OptimizerEstimate;
@@ -264,7 +264,7 @@ using CostCoefficientType = StrongDouble<CostCoefficientTag>;
 class EstimateBase {
 public:
     EstimateBase() = delete;
-    EstimateBase(EstimationSource s) : _source(s){};
+    constexpr EstimateBase(EstimationSource s) : _source(s){};
 
     /**
      * Merge this estimate with another one - used in operators that combine two estimates.
@@ -286,7 +286,8 @@ class OptimizerEstimate : public EstimateBase {
 public:
     OptimizerEstimate() = delete;
 
-    OptimizerEstimate(EstimateType e, EstimationSource s) : EstimateBase(s), _estimate(e) {}
+    constexpr OptimizerEstimate(EstimateType e, EstimationSource s)
+        : EstimateBase(s), _estimate(e) {}
 
     void assertValid() const {
         _estimate.assertValid();
@@ -402,7 +403,8 @@ class CardinalityEstimate : public OptimizerEstimate<CardinalityType> {
 public:
     CardinalityEstimate() = delete;
 
-    CardinalityEstimate(CardinalityType ce, EstimationSource src) : OptimizerEstimate(ce, src) {}
+    constexpr CardinalityEstimate(CardinalityType ce, EstimationSource src)
+        : OptimizerEstimate(ce, src) {}
 
     CardinalityType cardinality() const {
         return _estimate;
@@ -466,11 +468,26 @@ class SelectivityEstimate : public OptimizerEstimate<SelectivityType> {
 public:
     SelectivityEstimate() = delete;
 
-    SelectivityEstimate(SelectivityType sel, EstimationSource src) : OptimizerEstimate(sel, src) {}
+    constexpr SelectivityEstimate(SelectivityType sel, EstimationSource src)
+        : OptimizerEstimate(sel, src) {}
 
     SelectivityEstimate operator*(const SelectivityEstimate s) {
         SelectivityEstimate result(*this);
         result._estimate._v *= s._estimate._v;
+        assertValid();
+        return result;
+    }
+
+    SelectivityEstimate pow(double exp) const {
+        SelectivityEstimate result(*this);
+        result._estimate._v = std::pow(result._estimate._v, exp);
+        assertValid();
+        return result;
+    }
+
+    SelectivityEstimate negate() const {
+        SelectivityEstimate result(*this);
+        result._estimate._v = 1 - result._estimate._v;
         assertValid();
         return result;
     }
@@ -496,8 +513,12 @@ CardinalityEstimate operator*(const SelectivityEstimate& s, const CardinalityEst
 CardinalityEstimate operator*(const CardinalityEstimate& ce, const SelectivityEstimate& s);
 
 // Predefined constants
-inline const CardinalityEstimate zeroCE(CardinalityType{0.0}, EstimationSource::Code);
-inline const CardinalityEstimate minCE(CardinalityType::minValue(), EstimationSource::Code);
-inline const CardinalityEstimate maxCE(CardinalityType::maxValue(), EstimationSource::Code);
+inline const CardinalityEstimate zeroCE{CardinalityType{0.0}, EstimationSource::Code};
+inline const CardinalityEstimate oneCE{CardinalityType{1}, EstimationSource::Code};
+inline const CardinalityEstimate minCE{CardinalityType::minValue(), EstimationSource::Code};
+inline const CardinalityEstimate maxCE{CardinalityType::maxValue(), EstimationSource::Code};
+
+inline const SelectivityEstimate zeroSel{SelectivityType{0.0}, EstimationSource::Code};
+inline const SelectivityEstimate oneSel{SelectivityType{1.0}, EstimationSource::Code};
 
 }  // namespace mongo::cost_based_ranker

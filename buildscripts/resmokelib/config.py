@@ -66,6 +66,7 @@ DEFAULTS = {
     "dry_run": None,
     "exclude_with_any_tags": None,
     "force_excluded_tests": False,
+    "skip_tests_covered_by_more_complex_suites": False,
     "fuzz_mongod_configs": None,
     "fuzz_runtime_params": None,
     "fuzz_runtime_stress": "off",
@@ -103,6 +104,7 @@ DEFAULTS = {
     "run_no_feature_flag_tests": False,
     "additional_feature_flags": None,
     "additional_feature_flags_file": None,
+    "disable_feature_flags": None,
     "seed": int(time.time() * 256),  # Taken from random.py code in Python 2.7.
     "service_executor": None,
     "shell_conn_string": None,
@@ -401,6 +403,9 @@ EXCLUDE_WITH_ANY_TAGS = None
 # Allow test files passed as positional args to run even if they are excluded on the suite config.
 FORCE_EXCLUDED_TESTS = None
 
+# Only run tests on the given suite that will not be run on a more complex suite.
+SKIP_TESTS_COVERED_BY_MORE_COMPLEX_SUITES = None
+
 # A tag which is implicited excluded. This is useful for temporarily disabling a test.
 EXCLUDED_TAG = "__TEMPORARILY_DISABLED__"
 
@@ -456,6 +461,9 @@ RUN_NO_FEATURE_FLAG_TESTS = None
 
 # the path to a file containing feature flags
 ADDITIONAL_FEATURE_FLAGS_FILE = None
+
+# List of feature flags to disable
+DISABLE_FEATURE_FLAGS = None
 
 # List of enabled feature flags.
 ENABLED_FEATURE_FLAGS = []

@@ -10,7 +10,7 @@ const name = jsTestName();
 const rst = new ReplSetTest({name: name, nodes: 3});
 
 rst.startSet();
-rst.initiateWithHighElectionTimeout();
+rst.initiate();
 rst.awaitReplication();
 
 // The default WC is majority and stopServerReplication will prevent satisfying any majority writes.
@@ -23,9 +23,9 @@ stopServerReplication(rst.nodes);
 const newPrimary = rst.getSecondary();
 assert.soonNoExcept(function() {
     assert.commandWorked(newPrimary.adminCommand({replSetStepUp: 1}));
-    rst.awaitNodesAgreeOnPrimary(rst.kDefaultTimeoutMS, rst.nodes, newPrimary);
+    rst.awaitNodesAgreeOnPrimary(rst.timeoutMS, rst.nodes, newPrimary);
     return newPrimary.adminCommand('replSetGetStatus').myState === ReplSetTest.State.PRIMARY;
-}, 'failed to step up node ' + newPrimary.host, rst.kDefaultTimeoutMS);
+}, 'failed to step up node ' + newPrimary.host, rst.timeoutMS);
 
 // Wait until the new primary completes the transition to primary and writes a no-op.
 assert.eq(rst.getPrimary(), newPrimary);

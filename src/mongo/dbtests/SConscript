@@ -128,9 +128,9 @@ env.Program(
         "$BUILD_DIR/mongo/db/auth/authserver",
         "$BUILD_DIR/mongo/db/catalog/catalog_helpers",
         "$BUILD_DIR/mongo/db/catalog/collection_options",
-        "$BUILD_DIR/mongo/db/catalog/collection_validation",
         "$BUILD_DIR/mongo/db/catalog/index_key_validate",
         "$BUILD_DIR/mongo/db/catalog/multi_index_block",
+        "$BUILD_DIR/mongo/db/catalog/validate/collection_validation",
         "$BUILD_DIR/mongo/db/collection_crud/collection_crud",
         "$BUILD_DIR/mongo/db/commands/mongod",
         "$BUILD_DIR/mongo/db/commands/test_commands_enabled",
@@ -138,6 +138,9 @@ env.Program(
         "$BUILD_DIR/mongo/db/exec/document_value/document_value_test_util",
         "$BUILD_DIR/mongo/db/index/index_access_method",
         "$BUILD_DIR/mongo/db/logical_time_metadata_hook",
+        "$BUILD_DIR/mongo/db/modules/enterprise/src/inmemory/storage_inmemory"
+        if "ldap" in env.get("MONGO_ENTERPRISE_FEATURES", []) and wiredtiger
+        else [],
         "$BUILD_DIR/mongo/db/mongohasher",
         "$BUILD_DIR/mongo/db/multitenancy",
         "$BUILD_DIR/mongo/db/op_observer/op_observer",
@@ -167,6 +170,7 @@ env.Program(
         "$BUILD_DIR/mongo/db/storage/inmemory/storage_inmemory" if inmemory else [],
         "$BUILD_DIR/mongo/db/storage/storage_engine_impl",
         "$BUILD_DIR/mongo/db/storage/storage_options",
+        "$BUILD_DIR/mongo/db/storage/wiredtiger/storage_wiredtiger" if wiredtiger else [],
         "$BUILD_DIR/mongo/db/traffic_reader",
         "$BUILD_DIR/mongo/db/transaction/transaction",
         "$BUILD_DIR/mongo/db/vector_clock",

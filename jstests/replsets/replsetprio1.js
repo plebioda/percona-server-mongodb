@@ -6,17 +6,19 @@ var replTest = new ReplSetTest({name: 'testSet', nodes: 3});
 var nodenames = replTest.nodeList();
 
 var nodes = replTest.startSet();
-replTest.initiateWithAnyNodeAsPrimary({
+replTest.initiate({
     "_id": "testSet",
     "members": [
         {"_id": 0, "host": nodenames[0], "priority": 1},
         {"_id": 1, "host": nodenames[1], "priority": 2},
         {"_id": 2, "host": nodenames[2], "priority": 3}
     ]
-});
+},
+                  null,
+                  {initiateWithDefaultElectionTimeout: true});
 
 // 2 should be primary (give this a while to happen, as other nodes might first be elected)
-replTest.awaitNodesAgreeOnPrimary(replTest.kDefaultTimeoutMS, nodes, nodes[2]);
+replTest.awaitNodesAgreeOnPrimary(replTest.timeoutMS, nodes, nodes[2]);
 
 // wait for 1 to not appear to be primary (we are about to make it primary and need a clean slate
 // here)
@@ -43,7 +45,7 @@ for (i = 0; i < 1000; i++) {
 
 // bring 2 back up, 2 should wait until caught up and then become primary
 replTest.restart(2);
-replTest.awaitNodesAgreeOnPrimary(replTest.kDefaultTimeoutMS, nodes, nodes[2]);
+replTest.awaitNodesAgreeOnPrimary(replTest.timeoutMS, nodes, nodes[2]);
 
 // make sure nothing was rolled back
 primary = replTest.getPrimary();

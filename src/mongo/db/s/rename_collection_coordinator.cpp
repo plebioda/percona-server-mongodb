@@ -102,6 +102,7 @@
 #include "mongo/s/request_types/sharded_ddl_commands_gen.h"
 #include "mongo/s/router_role.h"
 #include "mongo/s/shard_version.h"
+#include "mongo/s/shard_version_factory.h"
 #include "mongo/s/sharding_feature_flags_gen.h"
 #include "mongo/s/sharding_state.h"
 #include "mongo/s/write_ops/batched_command_request.h"
@@ -157,14 +158,12 @@ void checkDatabaseRestrictions(OperationContext* opCtx,
                                const boost::optional<CollectionType>& fromCollType,
                                const NamespaceString& toNss) {
     if (!fromCollType || fromCollType->getUnsplittable().value_or(false)) {
-        // TODO (SERVER-84243): Replace with the dedicated cache for filtering information and avoid
-        // to refresh.
-        const auto toDB = uassertStatusOK(
-            Grid::get(opCtx)->catalogCache()->getDatabaseWithRefresh(opCtx, toNss.dbName()));
+        const auto toDB = Grid::get(opCtx)->catalogClient()->getDatabase(
+            opCtx, toNss.dbName(), repl::ReadConcernLevel::kMajorityReadConcern);
 
         uassert(ErrorCodes::CommandFailed,
                 "Source and destination collections must be on same shard",
-                ShardingState::get(opCtx)->shardId() == toDB->getPrimary());
+                ShardingState::get(opCtx)->shardId() == toDB.getPrimary());
     } else {
         uassert(ErrorCodes::CommandFailed,
                 str::stream() << "Source and destination collections must be on "
@@ -1205,11 +1204,13 @@ ExecutorFuture<void> RenameCollectionCoordinator::_runImpl(
             _updateNewOptTrackedCollInfoFieldAfterBinaryUpgrade();
 
             // Retrieve the new collection version
-            const auto catalog = Grid::get(opCtx)->catalogCache();
-            const auto cri = uassertStatusOK(
-                catalog->getCollectionRoutingInfoWithRefresh(opCtx, _request.getTo()));
-            _response = RenameCollectionResponse(
-                cri.cm.hasRoutingTable() ? cri.getCollectionVersion() : ShardVersion::UNSHARDED());
+            const auto& cm = uassertStatusOK(
+                Grid::get(opCtx)->catalogCache()->getCollectionPlacementInfoWithRefresh(
+                    opCtx, _request.getTo()));
+            auto placementVersion =
+                cm.hasRoutingTable() ? cm.getVersion() : ChunkVersion::UNSHARDED();
+            _response = RenameCollectionResponse(ShardVersionFactory::make(
+                std::move(placementVersion), boost::none /* IndexVersion */));
 
             ShardingLogging::get(opCtx)->logChange(
                 opCtx,

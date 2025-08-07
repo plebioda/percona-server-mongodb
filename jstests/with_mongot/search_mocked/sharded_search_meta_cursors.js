@@ -2,6 +2,9 @@
  * Test that if a mongod gets an aggregation command from a mongoS with a $search stage it will
  * return two cursors by default or when requiresSearchMetaCursor is explicitly true, and will
  * only return one cursor when requiresSearchMetaCursor is explicitly false.
+ * @tags: [
+ *   requires_fcv_81,
+ * ]
  */
 
 import "jstests/libs/query/sbe_assert_error_override.js";
@@ -41,7 +44,6 @@ const stWithMock = new ShardingTestWithMongotMock({
     other: {
         rsOptions: nodeOptions,
         mongosOptions: nodeOptions,
-        shardOptions: nodeOptions,
     }
 });
 stWithMock.start();
@@ -150,7 +152,7 @@ function validateGetMoreResponse(getMoreRes, expectedId) {
 // Command obj to be sent to mongod. The "pipeline" field will be configured per test.
 let commandObj = {
     aggregate: collName,
-    fromMongos: true,
+    fromRouter: true,
     needsMerge: true,
     // Internal client has to provide writeConcern
     writeConcern: {w: "majority"},
@@ -269,7 +271,7 @@ runTestNoMetaCursorOnConn(shardOneDB, expectedDocs);
 commandObj = {
     aggregate: collName,
     pipeline: [shardPipelineRequiresMetaCursorImplicit],
-    fromMongos: true,
+    fromRouter: true,
     needsMerge: true,
     exchange: {policy: "roundrobin", consumers: NumberInt(4), bufferSize: NumberInt(1024)},
     writeConcern: {w: "majority"},

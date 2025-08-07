@@ -1888,6 +1888,33 @@ mongo_cc_library(
 )
 
 mongo_cc_library(
+    name = "initial_syncer_fcb",
+    srcs = [
+        "fcb_file_cloner.cpp",
+        "initial_syncer_fcb.cpp",
+    ],
+    hdrs = [
+        "fcb_file_cloner.h",
+        "initial_syncer_fcb.h",
+    ],
+    deps = [
+        ":initial_syncer",
+        ":repl_sync_shared_data",
+        ":replication_auth",
+        ":serveronly_repl",
+        "//src/mongo/db/catalog:catalog_control",
+        "//src/mongo/db:index_builds_coordinator_interface",
+        "//src/mongo/db/serverless:serverless_lock",
+        "//src/mongo/db:startup_recovery",
+        "//src/mongo/db/storage:storage_engine_common",
+        "//src/mongo/db/storage/wiredtiger:storage_wiredtiger_core",
+        "//src/mongo/executor:scoped_task_executor",
+        "//src/mongo/executor:task_executor_interface",
+        "//src/mongo/util:progress_meter",
+    ],
+)
+
+mongo_cc_library(
     name = "oplog_write",
     srcs = [
         "oplog_writer_impl.cpp",

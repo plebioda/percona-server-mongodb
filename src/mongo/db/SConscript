@@ -34,7 +34,6 @@ env.SConscript(
     dirs=[
         "admission",
         "auth",
-        "backup",
         "catalog",
         "commands",
         "concurrency",

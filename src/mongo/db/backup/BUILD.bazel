@@ -8,3 +8,21 @@ exports_files(
         "*.cpp",
     ]),
 )
+
+mongo_cc_library(
+    name = "backup",
+    srcs = [
+        "backup_commands.cpp",
+    ],
+    hdrs = [
+        "backupable.h",
+    ],
+    deps = [
+        "//src/mongo/bson/mutable:mutable_bson",
+        "//src/mongo/db/auth:auth",
+        "//src/mongo/db/auth:authprivilege",
+        "//src/mongo/db:commands",
+        "//src/mongo/db:service_context",
+        "//src/mongo/db/storage:storage_options",
+    ],
+)

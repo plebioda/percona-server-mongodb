@@ -13,7 +13,7 @@ try {
     });
 } catch (e) {
     print("mongod failed to start, checking for FIPS support");
-    let mongoOutput = rawMongoProgramOutput();
+    let mongoOutput = rawMongoProgramOutput(".*");
     assert(mongoOutput.match(/this version of mongodb was not compiled with FIPS support/) ||
            mongoOutput.match(/FIPS modes is not enabled on the operating system/) ||
            mongoOutput.match(/FIPS_mode_set:fips mode not supported/) ||

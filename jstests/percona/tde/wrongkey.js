@@ -42,7 +42,7 @@
         encryptionKeyFile: TestData.keyFileWrong,
         encryptionCipherMode: TestData.cipherMode,
     }));
-    assert(rawMongoProgramOutput().includes(
+    assert(rawMongoProgramOutput(".*").includes(
         "EncryptionKeyDB: Failed to start up WiredTiger under any compatibility version."));
 
     // Start with the correct key - ensure it succeeds and DBHash is correct

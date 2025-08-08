@@ -27,7 +27,7 @@ load('jstests/backup/_backup_helpers.js');
         storageEngine: 'inMemory',
     }));
     // The log should contain specific error message to avoid false success
-    assert(rawMongoProgramOutput().includes(
+    assert(rawMongoProgramOutput(".*").includes(
         "Location28662: Cannot start server. " +
         "Detected data files in " + backupPath +
         " created by the 'wiredTiger' storage engine, " +

@@ -20,6 +20,7 @@ load(
     "full_featured",
     "gcov",
     "http_client",
+    "inmemory",
     "js_engine",
     "libunwind",
     "linker",
@@ -1837,6 +1838,29 @@ selects.config_setting_group(
         "@platforms//os:linux",
         ":ssl_disabled",
     ],
+)
+
+# --------------------------------------
+# inmemory
+# --------------------------------------
+
+inmemory(
+    name = "inmemory",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "inmemory_enabled",
+    flag_values = {
+        "//bazel/config:inmemory": "True",
+    },
+)
+
+config_setting(
+    name = "inmemory_disabled",
+    flag_values = {
+        "//bazel/config:inmemory": "False",
+    },
 )
 
 # --------------------------------------

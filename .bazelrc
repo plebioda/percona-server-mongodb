@@ -67,6 +67,7 @@ build --flag_alias=gcov=//bazel/config:gcov
 build --flag_alias=pgo_profile=//bazel/config:pgo_profile
 build --flag_alias=server_js=//bazel/config:server_js
 build --flag_alias=ssl=//bazel/config:ssl
+build --flag_alias=inmemory=//bazel/config:inmemory
 build --flag_alias=audit=//bazel/config:audit
 build --flag_alias=full_featured=//bazel/config:full-featured
 build --flag_alias=enable_fipsmode=//bazel/config:enable-fipsmode

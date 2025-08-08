@@ -1004,6 +1004,7 @@ def generate(env: SCons.Environment.Environment) -> None:
         f'--pgo_profile={env.GetOption("pgo-profile") is not None}',
         f'--server_js={env.GetOption("server-js") == "on"}',
         f'--ssl={"True" if env.GetOption("ssl") == "on" else "False"}',
+        f'--inmemory={env.GetOption("inmemory") is not None}',
         f'--audit={env.GetOption("audit") is not None}',
         f'--full_featured={env.GetOption("full-featured") is not None}',
         f'--enable_fipsmode={env.GetOption("enable-fipsmode") is not None}',

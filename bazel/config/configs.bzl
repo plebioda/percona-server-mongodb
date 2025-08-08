@@ -487,6 +487,17 @@ ssl = rule(
 )
 
 # =========
+# inmemory
+# =========
+
+inmemory_provider = provider(doc = "Enable inMemory storage engine", fields = ["enabled"])
+
+inmemory = rule(
+    implementation = lambda ctx: inmemory_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# =========
 # audit
 # =========
 

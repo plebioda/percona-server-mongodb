@@ -7,3 +7,19 @@ idl_generator(
     src = "inmemory_global_options.idl",
 )
 
+mongo_cc_library(
+    name = "storage_inmemory",
+    srcs = [
+        ":inmemory_global_options_gen",
+        "inmemory_global_options.cpp",
+        "inmemory_init.cpp",
+        "inmemory_options_init.cpp",
+    ],
+    hdrs = [
+        "inmemory_global_options.h",
+    ],
+    deps = [
+        "//src/mongo/db/storage:storage_engine_common",
+        "//src/mongo/db/storage/wiredtiger:storage_wiredtiger",
+    ],
+)

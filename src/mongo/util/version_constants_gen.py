@@ -250,13 +250,11 @@ def generate_config_header(
     modules = ["enterprise"] if "build_enterprise_enabled" in extra_definitions_dict else []
     module_list = ",\n".join(['"{0}"_sd'.format(x) for x in modules])
 
-    psmdb_pro_features = (
-        ["FIPSMode"]
-        if "fipsmode_enabled" in extra_definitions_dict
-        else [] + ["FCBIS"]
-        if "fcbis_enabled" in extra_definitions_dict
-        else []
-    )
+    psmdb_pro_features = []
+    if "fipsmode_enabled" in extra_definitions_dict:
+        psmdb_pro_features.append("FIPSMode")
+    if "fcbis_enabled" in extra_definitions_dict:
+        psmdb_pro_features.append("FCBIS")
     psmdb_pro_feature_list = ",\n".join(['"{0}"_sd'.format(x) for x in psmdb_pro_features])
 
     replacements = {

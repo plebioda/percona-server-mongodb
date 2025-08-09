@@ -3285,6 +3285,7 @@ mongo_cc_library(
         "dbdirectclient",
         "dbhelpers",
         "default_max_time_ms_cluster_parameter",
+        "//src/mongo/db/encryption:encryption_status",
         "//src/mongo/db/exec:working_set",
         "feature_compatibility_version_metrics",
         "//src/mongo/db/ftdc:ftdc_mongod",
@@ -3299,6 +3300,7 @@ mongo_cc_library(
         "mongod_options_init",
         "periodic_runner_job_abort_expired_transactions",
         "//src/mongo/db/pipeline:aggregation",
+        "//src/mongo/db/pipeline:pipeline_mongod",
         "//src/mongo/db/pipeline/process_interface:mongod_process_interface_factory",
         "profile_collection",
         "//src/mongo/db/query/bson:dotted_path_support",
@@ -3372,6 +3374,11 @@ mongo_cc_library(
         ],
         "//conditions:default": [],
     }) + select({
+        "//bazel/config:audit_enabled": [
+            "//src/mongo/db/audit:audit_commands",
+        ],
+        "//conditions:default": [],
+    }) + select({
         "//bazel/config:enterprise_feature_encryptdb_enabled": [
             "//src/mongo/db/modules/enterprise/src/encryptdb:encryption_key_manager_aux",
         ],
@@ -3395,6 +3402,11 @@ mongo_cc_library(
     }) + select({
         "//bazel/config:enterprise_feature_inmemory_enabled": [
             "//src/mongo/db/modules/enterprise/src/inmemory:storage_inmemory",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//bazel/config:inmemory_enabled": [
+            "//src/mongo/db/storage/inmemory:storage_inmemory",
         ],
         "//conditions:default": [],
     }) + select({
@@ -3546,6 +3558,7 @@ mongo_cc_library(
         "//src/mongo/db/storage:oplog_cap_maintainer_thread",
         "//src/mongo/db/storage:storage_control",
         "system_index",
+        "//src/mongo/db/telemetry:telemetry_d",
         "//src/mongo/db/timeseries:timeseries_op_observer",
         "//src/mongo/db/ttl:ttl_d",
         "vector_clock",
@@ -3553,6 +3566,20 @@ mongo_cc_library(
     ] + select({
         "//bazel/config:enterprise_feature_audit_enabled": [
             "//src/mongo/db/modules/enterprise/src/audit:audit_enterprise",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//bazel/config:audit_enabled": [
+            "//src/mongo/db/audit:audit_impl",
+            "//src/mongo/db/audit:audit_options",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//bazel/config:full_featured_enabled": [
+            "//src/mongo/db/repl:initial_syncer_fcb",
+        ],
+        "//bazel/config:fcbis_enabled": [
+            "//src/mongo/db/repl:initial_syncer_fcb",
         ],
         "//conditions:default": [],
     }) + select({

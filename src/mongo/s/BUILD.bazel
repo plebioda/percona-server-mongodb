@@ -879,6 +879,11 @@ mongo_cc_library(
         ],
         "//conditions:default": [],
     }) + select({
+        "//bazel/config:audit_enabled": [
+            "//src/mongo/db/audit:audit_commands",
+        ],
+        "//conditions:default": [],
+    }) + select({
         "//bazel/config:enterprise_feature_encryptdb_enabled": [
             "//src/mongo/db/modules/enterprise/src/encryptdb:log_redact_options",
         ],
@@ -939,6 +944,7 @@ mongo_cc_library(
         "//src/mongo/db/commands:rwc_defaults_commands",
         "//src/mongo/db/exec:scoped_timer",
         "//src/mongo/db/ftdc:ftdc_mongos",
+        "//src/mongo/db/ldap:ldap_manager",
         "//src/mongo/db/process_health:fault_manager",
         "//src/mongo/db/query/query_settings:manager",
         "//src/mongo/db:read_write_concern_defaults",
@@ -947,6 +953,7 @@ mongo_cc_library(
         "//src/mongo/db/session:logical_session_cache_impl",
         "//src/mongo/db/session:session_catalog",
         "//src/mongo/db:startup_warnings_common",
+        "//src/mongo/db/telemetry:telemetry_s",
         "//src/mongo/idl:cluster_server_parameter_refresher",
         "//src/mongo/transport:ingress_handshake_metrics",
         "//src/mongo/transport:service_executor",
@@ -968,6 +975,12 @@ mongo_cc_library(
         "sharding_router_api",
         "startup_initialization",
     ] + select({
+        "//bazel/config:audit_enabled": [
+            "//src/mongo/db/audit:audit_impl",
+            "//src/mongo/db/audit:audit_options",
+        ],
+        "//conditions:default": [],
+    }) + select({
         "//bazel/config:use_tracing_profiler_enabled": [
             "//src/mongo/util/tracing_profiler",
         ],

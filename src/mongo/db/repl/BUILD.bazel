@@ -1903,7 +1903,6 @@ mongo_cc_library(
         ":serveronly_repl",
         "//src/mongo/db/catalog:catalog_control",
         "//src/mongo/db:index_builds_coordinator_interface",
-        "//src/mongo/db/serverless:serverless_lock",
         "//src/mongo/db:startup_recovery",
         "//src/mongo/db/storage:storage_engine_common",
         "//src/mongo/db/storage/wiredtiger:storage_wiredtiger_core",

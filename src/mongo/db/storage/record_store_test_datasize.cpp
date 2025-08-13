@@ -34,7 +34,6 @@
 #include <boost/move/utility_core.hpp>
 
 #include "mongo/base/status_with.h"
-#include "mongo/base/string_data.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/service_context.h"
@@ -57,15 +56,9 @@ TEST(RecordStoreTestHarness, DataSizeEmpty) {
     const auto harnessHelper(newRecordStoreHarnessHelper());
     unique_ptr<RecordStore> rs(harnessHelper->newRecordStore());
 
-    {
-        ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT_EQUALS(0, rs->numRecords(opCtx.get()));
-    }
+    ASSERT_EQUALS(0, rs->numRecords());
 
-    {
-        ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT(rs->dataSize(opCtx.get()) == 0);
-    }
+    ASSERT(rs->dataSize() == 0);
 }
 
 // Verify that a nonempty collection takes up some space.
@@ -73,10 +66,7 @@ TEST(RecordStoreTestHarness, DataSizeNonEmpty) {
     const auto harnessHelper(newRecordStoreHarnessHelper());
     unique_ptr<RecordStore> rs(harnessHelper->newRecordStore());
 
-    {
-        ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT_EQUALS(0, rs->numRecords(opCtx.get()));
-    }
+    ASSERT_EQUALS(0, rs->numRecords());
 
     int nToInsert = 10;
     for (int i = 0; i < nToInsert; i++) {
@@ -97,13 +87,10 @@ TEST(RecordStoreTestHarness, DataSizeNonEmpty) {
 
     {
         ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT_EQUALS(nToInsert, rs->numRecords(opCtx.get()));
+        ASSERT_EQUALS(nToInsert, rs->numRecords());
     }
 
-    {
-        ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT(rs->dataSize(opCtx.get()) > 0);
-    }
+    ASSERT(rs->dataSize() > 0);
 }
 
 }  // namespace

@@ -295,7 +295,7 @@ StatusWith<bool> SaslOIDCClientConversation::_firstStep(std::string* outputData)
     // If the username is provided, then request information needed to contact the identity provider
     // from the server.
     auth::OIDCMechanismClientStep1 firstClientRequest;
-    firstClientRequest.setPrincipalName(StringData(_principalName));
+    firstClientRequest.setPrincipalName(_principalName);
     auto firstClientRequestBSON = firstClientRequest.toBSON();
     *outputData = std::string(firstClientRequestBSON.objdata(), firstClientRequestBSON.objsize());
     return false;

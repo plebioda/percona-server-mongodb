@@ -35,8 +35,6 @@
 #include <algorithm>
 #include <boost/container/vector.hpp>
 #include <boost/move/utility_core.hpp>
-#include <map>
-#include <mutex>
 
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
@@ -46,7 +44,6 @@
 #include "mongo/db/admission/execution_admission_context.h"
 #include "mongo/db/audit.h"
 #include "mongo/db/catalog/catalog_control.h"
-#include "mongo/db/catalog/clustered_collection_options_gen.h"
 #include "mongo/db/catalog/clustered_collection_util.h"
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/catalog/collection_catalog.h"
@@ -60,10 +57,8 @@
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
-#include "mongo/db/global_settings.h"
 #include "mongo/db/index/multikey_paths.h"
 #include "mongo/db/operation_context.h"
-#include "mongo/db/repl/repl_settings.h"
 #include "mongo/db/resumable_index_builds_gen.h"
 #include "mongo/db/storage/bson_collection_catalog_entry.h"
 #include "mongo/db/storage/deferred_drop_record_store.h"
@@ -84,8 +79,6 @@
 #include "mongo/platform/compiler.h"
 #include "mongo/stdx/unordered_set.h"
 #include "mongo/util/assert_util.h"
-#include "mongo/util/database_name_util.h"
-#include "mongo/util/duration.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/str.h"
 
@@ -227,7 +220,7 @@ void StorageEngineImpl::loadCatalog(OperationContext* opCtx,
 
     LOGV2(9529901,
           "Initializing durable catalog",
-          "numRecords"_attr = _catalogRecordStore->numRecords(opCtx));
+          "numRecords"_attr = _catalogRecordStore->numRecords());
     _catalog.reset(new DurableCatalog(
         _catalogRecordStore.get(), _options.directoryPerDB, _options.directoryForIndexes, this));
     _catalog->init(opCtx);
@@ -1428,7 +1421,8 @@ int64_t StorageEngineImpl::sizeOnDiskForDb(OperationContext* opCtx, const Databa
     int64_t size = 0;
 
     auto perCollectionWork = [&](const Collection* collection) {
-        size += collection->getRecordStore()->storageSize(opCtx);
+        auto& ru = *shard_role_details::getRecoveryUnit(opCtx);
+        size += collection->getRecordStore()->storageSize(ru);
 
         auto it = collection->getIndexCatalog()->getIndexIterator(
             opCtx,

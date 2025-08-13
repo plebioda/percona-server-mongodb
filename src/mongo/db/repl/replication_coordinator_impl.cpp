@@ -2907,7 +2907,8 @@ StatusWith<OpTime> ReplicationCoordinatorImpl::getLatestWriteOpTime(
     if (!oplog) {
         return {ErrorCodes::NamespaceNotFound, "oplog collection does not exist"};
     }
-    auto latestOplogTimestampSW = oplog->getLatestOplogTimestamp(opCtx);
+    auto latestOplogTimestampSW =
+        oplog->getLatestOplogTimestamp(*shard_role_details::getRecoveryUnit(opCtx));
     if (!latestOplogTimestampSW.isOK()) {
         return latestOplogTimestampSW.getStatus();
     }

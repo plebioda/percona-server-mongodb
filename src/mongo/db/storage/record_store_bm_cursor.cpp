@@ -27,7 +27,6 @@
  *    it in the license file.
  */
 
-
 #include <benchmark/benchmark.h>
 #include <boost/move/utility_core.hpp>
 #include <boost/optional/optional.hpp>
@@ -73,7 +72,7 @@ struct Fixture {
             }
             txn.commit();
         }
-        ASSERT_EQUALS(nToInsert, rs->numRecords(opCtx.get()));
+        ASSERT_EQUALS(nToInsert, rs->numRecords());
     }
 
     const int nToInsert;

@@ -33,7 +33,6 @@
 #include <cstdint>
 #include <memory>
 #include <set>
-#include <string>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -41,7 +40,6 @@
 #include "mongo/base/error_codes.h"
 #include "mongo/base/status.h"
 #include "mongo/base/status_with.h"
-#include "mongo/base/string_data.h"
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/db/catalog/virtual_collection_options.h"
@@ -74,15 +72,15 @@ public:
         return KeyFormat::Long;
     }
 
-    long long dataSize(OperationContext*) const final {
+    long long dataSize() const final {
         return 0LL;
     }
 
-    long long numRecords(OperationContext*) const final {
+    long long numRecords() const final {
         return 0LL;
     }
 
-    int64_t storageSize(OperationContext*, BSONObjBuilder*, int) const final {
+    int64_t storageSize(RecoveryUnit&, BSONObjBuilder*, int) const final {
         return 0LL;
     }
 
@@ -109,11 +107,9 @@ public:
         return nullptr;
     }
 
-    void appendNumericCustomStats(OperationContext*, BSONObjBuilder*, double) const final {}
+    void appendNumericCustomStats(RecoveryUnit& ru, BSONObjBuilder*, double) const final {}
 
-    void updateStatsAfterRepair(OperationContext* opCtx,
-                                long long numRecords,
-                                long long dataSize) final {
+    void updateStatsAfterRepair(long long numRecords, long long dataSize) final {
         unimplementedTasserted();
     }
 

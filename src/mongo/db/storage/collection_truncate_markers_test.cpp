@@ -33,15 +33,12 @@
 
 #include <boost/optional/optional.hpp>
 
-#include "mongo/base/status_with.h"
 #include "mongo/bson/bsonmisc.h"
-#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
 #include "mongo/db/curop.h"
-#include "mongo/db/query/query_knobs_gen.h"
 #include "mongo/db/service_context_d_test_fixture.h"
 #include "mongo/db/storage/collection_truncate_markers.h"
 #include "mongo/db/storage/storage_engine_test_fixture.h"
@@ -397,7 +394,7 @@ TEST_F(CollectionMarkersTest, ScanningMarkerCreation) {
         UnyieldableCollectionIterator iterator(opCtx.get(), coll->getRecordStore());
 
         auto result = CollectionTruncateMarkers::createMarkersByScanning(
-            opCtx.get(), iterator, collNs, kMinBytes, [](const Record& record) {
+            opCtx.get(), iterator, kMinBytes, [](const Record& record) {
                 return CollectionTruncateMarkers::RecordIdAndWallTime{record.id, Date_t::now()};
             });
         ASSERT_EQ(result.methodUsed, CollectionTruncateMarkers::MarkersCreationMethod::Scanning);
@@ -445,7 +442,7 @@ TEST_F(CollectionMarkersTest, SamplingMarkerCreation) {
         UnyieldableCollectionIterator iterator(opCtx.get(), coll->getRecordStore());
 
         auto result = CollectionTruncateMarkers::createFromCollectionIterator(
-            opCtx.get(), iterator, collNs, kMinBytesPerMarker, [](const Record& record) {
+            opCtx.get(), iterator, kMinBytesPerMarker, [](const Record& record) {
                 return CollectionTruncateMarkers::RecordIdAndWallTime{record.id, Date_t::now()};
             });
 
@@ -496,7 +493,7 @@ TEST_F(CollectionMarkersTest, ScanningAutoYieldingWorks) {
         YieldableCollectionIterator iterator(opCtx.get(), &coll.getCollection());
 
         auto result = CollectionTruncateMarkers::createMarkersByScanning(
-            opCtx.get(), iterator, collNs, kMinBytes, [](const Record& record) {
+            opCtx.get(), iterator, kMinBytes, [](const Record& record) {
                 return CollectionTruncateMarkers::RecordIdAndWallTime{record.id, Date_t::now()};
             });
         ASSERT_EQ(result.methodUsed, CollectionTruncateMarkers::MarkersCreationMethod::Scanning);
@@ -556,7 +553,7 @@ TEST_F(CollectionMarkersTest, SamplingAutoYieldingWorks) {
         YieldableCollectionIterator iterator(opCtx.get(), &coll.getCollection());
 
         auto result = CollectionTruncateMarkers::createFromCollectionIterator(
-            opCtx.get(), iterator, collNs, kMinBytesPerMarker, [](const Record& record) {
+            opCtx.get(), iterator, kMinBytesPerMarker, [](const Record& record) {
                 return CollectionTruncateMarkers::RecordIdAndWallTime{record.id, Date_t::now()};
             });
 
@@ -609,8 +606,8 @@ TEST_F(CollectionMarkersTest, OplogSamplingLogging) {
 
     static constexpr auto kNumMarkers = 15;
     auto kMinBytesPerMarker = totalBytes / kNumMarkers;
-    long long numRecords = iterator.numRecords(opCtx.get());
-    long long dataSize = iterator.dataSize(opCtx.get());
+    long long numRecords = iterator.numRecords();
+    long long dataSize = iterator.dataSize();
     double avgRecordSize = double(dataSize) / double(numRecords);
     double estimatedRecordsPerMarker = std::ceil(kMinBytesPerMarker / avgRecordSize);
     double estimatedBytesPerMarker = estimatedRecordsPerMarker * avgRecordSize;
@@ -621,7 +618,6 @@ TEST_F(CollectionMarkersTest, OplogSamplingLogging) {
     CollectionTruncateMarkers::createMarkersBySampling(
         opCtx.get(),
         iterator,
-        collNs,
         estimatedRecordsPerMarker,
         estimatedBytesPerMarker,
         [](const Record& record) {

@@ -41,7 +41,6 @@
 #include "mongo/base/init.h"  // IWYU pragma: keep
 #include "mongo/base/initializer.h"
 #include "mongo/base/status_with.h"
-#include "mongo/db/client.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/repl/repl_settings.h"
@@ -113,7 +112,6 @@ std::unique_ptr<RecordStore> WiredTigerHarnessHelper::newRecordStore(
     }
 
     WiredTigerRecordStore::Params params;
-    params.nss = nss;
     params.ident = ident.toString();
     params.engineName = std::string{kWiredTigerEngineName};
     params.isCapped = collOptions.capped ? true : false;
@@ -121,6 +119,7 @@ std::unique_ptr<RecordStore> WiredTigerHarnessHelper::newRecordStore(
     params.overwrite = collOptions.clusteredIndex ? false : true;
     params.isEphemeral = false;
     params.isLogged = WiredTigerUtil::useTableLogging(nss);
+    params.isChangeCollection = nss.isChangeCollection();
     params.sizeStorer = nullptr;
     params.tracksSizeAdjustments = true;
     params.forceUpdateWithFullDocument = collOptions.timeseries != boost::none;
@@ -129,15 +128,14 @@ std::unique_ptr<RecordStore> WiredTigerHarnessHelper::newRecordStore(
         &_engine,
         WiredTigerRecoveryUnit::get(*shard_role_details::getRecoveryUnit(opCtx.get())),
         params);
-    ret->postConstructorInit(opCtx.get(), nss);
+    ret->postConstructorInit(opCtx.get());
     return std::move(ret);
 }
 
 std::unique_ptr<RecordStore> WiredTigerHarnessHelper::newOplogRecordStore() {
     auto ret = newOplogRecordStoreNoInit();
     ServiceContext::UniqueOperationContext opCtx(newOperationContext());
-    dynamic_cast<WiredTigerRecordStore*>(ret.get())->postConstructorInit(
-        opCtx.get(), NamespaceString::kRsOplogNamespace);
+    dynamic_cast<WiredTigerRecordStore*>(ret.get())->postConstructorInit(opCtx.get());
     return ret;
 }
 
@@ -172,7 +170,6 @@ std::unique_ptr<RecordStore> WiredTigerHarnessHelper::newOplogRecordStoreNoInit(
     }
 
     WiredTigerRecordStore::Params params;
-    params.nss = oplogNss;
     params.ident = ident;
     params.engineName = std::string{kWiredTigerEngineName};
     params.isCapped = true;
@@ -180,6 +177,7 @@ std::unique_ptr<RecordStore> WiredTigerHarnessHelper::newOplogRecordStoreNoInit(
     params.overwrite = true;
     params.isEphemeral = false;
     params.isLogged = true;
+    params.isChangeCollection = false;
     // Large enough not to exceed capped limits.
     params.oplogMaxSize = 1024 * 1024 * 1024;
     params.sizeStorer = nullptr;

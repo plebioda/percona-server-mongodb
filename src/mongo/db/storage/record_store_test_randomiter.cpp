@@ -36,7 +36,6 @@
 #include <boost/optional/optional.hpp>
 
 #include "mongo/base/status_with.h"
-#include "mongo/base/string_data.h"
 #include "mongo/bson/timestamp.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/service_context.h"
@@ -58,10 +57,7 @@ TEST(RecordStoreTestHarness, GetRandomIteratorEmpty) {
     const auto harnessHelper(newRecordStoreHarnessHelper());
     unique_ptr<RecordStore> rs(harnessHelper->newRecordStore());
 
-    {
-        ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT_EQUALS(0, rs->numRecords(opCtx.get()));
-    }
+    ASSERT_EQUALS(0, rs->numRecords());
 
     {
         ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
@@ -79,10 +75,7 @@ TEST(RecordStoreTestHarness, GetRandomIteratorNonEmpty) {
     const auto harnessHelper(newRecordStoreHarnessHelper());
     unique_ptr<RecordStore> rs(harnessHelper->newRecordStore());
 
-    {
-        ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT_EQUALS(0, rs->numRecords(opCtx.get()));
-    }
+    ASSERT_EQUALS(0, rs->numRecords());
 
     const unsigned nToInsert =
         5000;  // should be non-trivial amount, so we get multiple btree levels
@@ -104,10 +97,7 @@ TEST(RecordStoreTestHarness, GetRandomIteratorNonEmpty) {
         }
     }
 
-    {
-        ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT_EQUALS(nToInsert, rs->numRecords(opCtx.get()));
-    }
+    ASSERT_EQUALS(nToInsert, rs->numRecords());
 
     set<RecordId> remain(locs, locs + nToInsert);
     {
@@ -141,10 +131,7 @@ TEST(RecordStoreTestHarness, GetRandomIteratorSingleton) {
     const auto harnessHelper(newRecordStoreHarnessHelper());
     unique_ptr<RecordStore> rs(harnessHelper->newRecordStore());
 
-    {
-        ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT_EQ(0, rs->numRecords(opCtx.get()));
-    }
+    ASSERT_EQ(0, rs->numRecords());
 
     // Insert one record.
     RecordId idToRetrieve;
@@ -159,10 +146,7 @@ TEST(RecordStoreTestHarness, GetRandomIteratorSingleton) {
     }
 
     // Double-check that the record store has one record in it now.
-    {
-        ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        ASSERT_EQ(1, rs->numRecords(opCtx.get()));
-    }
+    ASSERT_EQ(1, rs->numRecords());
 
     {
         ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());

@@ -39,7 +39,6 @@
 #include "mongo/base/status.h"
 #include "mongo/base/status_with.h"
 #include "mongo/db/database_name.h"
-#include "mongo/db/jsobj.h"
 #include "mongo/db/storage/backup_block.h"
 #include "mongo/db/storage/storage_engine.h"
 

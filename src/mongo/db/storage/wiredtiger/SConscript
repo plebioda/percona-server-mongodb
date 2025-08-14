@@ -118,6 +118,7 @@ wtEnv.CppUnitTest(
     LIBDEPS=[
         "$BUILD_DIR/mongo/db/auth/authmocks",
         "$BUILD_DIR/mongo/db/multitenancy",
+        "$BUILD_DIR/mongo/db/storage/oplog_truncation",
         "$BUILD_DIR/mongo/db/storage/sorted_data_interface_tests",
         "storage_wiredtiger_core",
         "wiredtiger_index_test_harness",
@@ -154,4 +155,20 @@ wtEnv.Benchmark(
         "storage_wiredtiger_core",
     ],
     CONSOLIDATED_TARGET="wt_storage_bm",
+)
+
+wtEnv.Benchmark(
+    target="write_conflict_retry_bm",
+    source=[
+        "write_conflict_retry_bm.cpp",
+    ],
+    LIBDEPS=[
+        "$BUILD_DIR/mongo/db/auth/authmocks",
+        "$BUILD_DIR/mongo/db/multitenancy",
+        "$BUILD_DIR/mongo/db/repl/repl_coordinator_interface",
+        "$BUILD_DIR/mongo/db/service_context_d",
+        "$BUILD_DIR/mongo/db/shard_role_api",
+        "$BUILD_DIR/mongo/db/storage/durable_catalog",
+        "wiredtiger_record_store_test_harness",
+    ],
 )

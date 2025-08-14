@@ -197,7 +197,7 @@ BSONObj getUntrackedCollectionCollation(OperationContext* opCtx,
                                             << "cursor" << BSONObj());
     auto cursorResult = uassertStatusOK(
         shard->runExhaustiveCursorCommand(opCtx,
-                                          ReadPreferenceSetting{ReadPreference::SecondaryPreferred},
+                                          ReadPreferenceSetting{ReadPreference::PrimaryPreferred},
                                           nss.dbName(),
                                           cmdObj,
                                           Milliseconds(-1)));

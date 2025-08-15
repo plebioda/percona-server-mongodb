@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2020-present MongoDB, Inc.
+ *    Copyright (C) 2024-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -27,28 +27,16 @@
  *    it in the license file.
  */
 
-#include "mongo/db/repl/tenant_migration_conflict_info.h"
-#include "mongo/base/init.h"  // IWYU pragma: keep
-#include "mongo/base/string_data.h"
+#pragma once
+
+#include "mongo/bson/bsonobj.h"
 
 namespace mongo {
+namespace query_benchmark_constants {
+extern const BSONObj kComplexPredicate;
+extern const BSONObj kComplexProjection;
 
-namespace {
-
-MONGO_INIT_REGISTER_ERROR_EXTRA_INFO(TenantMigrationConflictInfo);
-MONGO_INIT_REGISTER_ERROR_EXTRA_INFO(NonRetryableTenantMigrationConflictInfo);
-
-constexpr StringData kMigrationIdFieldName = "migrationId"_sd;
-
-}  // namespace
-
-void TenantMigrationConflictInfoBase::serialize(BSONObjBuilder* bob) const {
-    _migrationId.appendToBuilder(bob, kMigrationIdFieldName);
-}
-
-std::shared_ptr<const ErrorExtraInfo> TenantMigrationConflictInfoBase::parse(const BSONObj& obj) {
-    auto uuid = uassertStatusOK(UUID::parse(obj[kMigrationIdFieldName]));
-    return std::make_shared<TenantMigrationConflictInfoBase>(std::move(uuid));
-}
-
+extern const BSONObj kChangeStreamPredicate;
+extern const BSONObj kVeryComplexProjection;
+}  // namespace query_benchmark_constants
 }  // namespace mongo

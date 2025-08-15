@@ -65,7 +65,7 @@
 #include "mongo/db/geo/geoconstants.h"
 #include "mongo/db/geo/geometry_container.h"
 #include "mongo/db/geo/hash.h"
-#include "mongo/db/index/expression_params.h"
+#include "mongo/db/index/s2_common.h"
 #include "mongo/db/matcher/expression.h"
 #include "mongo/db/query/collation/collator_interface.h"
 #include "mongo/db/query/expression_geo_index_knobs_gen.h"
@@ -254,7 +254,8 @@ void GeoNear2DStage::DensityEstimator::buildIndexScan(ExpressionContext* expCtx,
                                                       const IndexDescriptor* twoDIndex) {
     // Scan bounds on 2D indexes are only over the 2D field - other bounds aren't applicable.
     // This is handled in query planning.
-    IndexScanParams scanParams(expCtx->opCtx, _collection->getCollectionPtr(), twoDIndex);
+    IndexScanParams scanParams(
+        expCtx->getOperationContext(), _collection->getCollectionPtr(), twoDIndex);
     scanParams.bounds = _nearParams->baseBounds;
 
     // The "2d" field is always the first in the index
@@ -678,7 +679,7 @@ GeoNear2DSphereStage::GeoNear2DSphereStage(const GeoNearParams& nearParams,
     // _nearParams.baseBounds should have collator-generated comparison keys in place of raw
     // strings, and _nearParams.filter should have the collator.
     const CollatorInterface* collator = nullptr;
-    ExpressionParams::initialize2dsphereParams(s2Index->infoObj(), collator, &_indexParams);
+    index2dsphere::initialize2dsphereParams(s2Index->infoObj(), collator, &_indexParams);
 }
 
 namespace {
@@ -759,7 +760,8 @@ GeoNear2DSphereStage::DensityEstimator::DensityEstimator(
 void GeoNear2DSphereStage::DensityEstimator::buildIndexScan(ExpressionContext* expCtx,
                                                             WorkingSet* workingSet,
                                                             const IndexDescriptor* s2Index) {
-    IndexScanParams scanParams(expCtx->opCtx, _collection->getCollectionPtr(), s2Index);
+    IndexScanParams scanParams(
+        expCtx->getOperationContext(), _collection->getCollectionPtr(), s2Index);
     scanParams.bounds = _nearParams->baseBounds;
 
     // Because the planner doesn't yet set up 2D index bounds, do it ourselves here

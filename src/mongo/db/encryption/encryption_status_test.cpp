@@ -59,7 +59,7 @@ public:
 
     EncryptionStatusTest()
         : _section(nullptr),
-          _serviceContext(std::make_unique<ServiceContext>()),
+          _serviceContext(ServiceContext::make()),
           _client(_serviceContext->getService()->makeClient("EncryptionStatusTestClient")),
           _operationContext(_serviceContext->makeOperationContext(_client.get())) {
 
@@ -140,7 +140,7 @@ protected:
     ServerStatusSection* _section;
 
 private:
-    std::unique_ptr<ServiceContext> _serviceContext;
+    ServiceContext::UniqueServiceContext _serviceContext;
     ServiceContext::UniqueClient _client;
     ServiceContext::UniqueOperationContext _operationContext;
 };

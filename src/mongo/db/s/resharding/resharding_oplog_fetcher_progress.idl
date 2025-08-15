@@ -1,4 +1,4 @@
-# Copyright (C) 2019-present MongoDB, Inc.
+# Copyright (C) 2024-present MongoDB, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the Server Side Public License, version 1,
@@ -26,29 +26,29 @@
 # it in the license file.
 #
 
+# This file defines the document used for storing progress by the resharding oplog applier.
+
 global:
-  cpp_namespace: "mongo::transport"
-  cpp_includes:
-    - "mongo/transport/service_executor.h"
+    cpp_namespace: "mongo"
 
-server_parameters:
-  initialServiceExecutorUseDedicatedThread:
-    description: >-
-        If true, each client will use a dedicated thread.
-    set_at: [ startup ]
-    cpp_vartype: bool
-    cpp_varname: gInitialServiceExecutorUseDedicatedThread
-    default: true
-    redact: false
+imports:
+    - "mongo/db/basic_types.idl"
+    - "mongo/s/resharding/common_types.idl"
 
-  fixedServiceExecutorThreadLimit:
-    description: >-
-        The fixed service executor (thread model "borrowed") can only maintain a count of threads
-        less than this value.
-    set_at: [ startup ]
-    cpp_vartype: "int"
-    cpp_varname: "fixedServiceExecutorThreadLimit"
-    default: 1000
-    validator:
-        gte: 10
-    redact: false
+structs:
+    ReshardingOplogFetcherProgress:
+        description: "Used for storing the progress made by the resharding oplog fetcher."
+        # Use strict:false to avoid complications around upgrade/downgrade. This isn't technically
+        # required for resharding because durable state from all resharding operations is cleaned up
+        # before the upgrade or downgrade can complete.
+        strict: false
+        fields:
+            _id:
+                type: ReshardingSourceId
+                description: "The identifier for the source of the oplog entries."
+                cpp_name: oplogSourceId
+            numEntriesFetched:
+                type: long
+                description: >-
+                    The total number of oplog entries that have been fetched by the
+                    ReshardingOplogFetcher for this source.

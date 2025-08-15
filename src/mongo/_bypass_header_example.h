@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2020-present MongoDB, Inc.
+ *    Copyright (C) 2024-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -27,34 +27,6 @@
  *    it in the license file.
  */
 
-#include "mongo/bson/bsonelement.h"
-#include "mongo/bson/bsonobj.h"
-#include "mongo/bson/bsonobjbuilder.h"
-#include "mongo/db/commands/server_status.h"
-#include "mongo/db/operation_context.h"
-#include "mongo/db/repl/tenant_migration_access_blocker_registry.h"
+#pragma once
 
-namespace mongo {
-
-namespace {
-class TenantMigrationAccessBlockerServerStatus final : public ServerStatusSection {
-public:
-    using ServerStatusSection::ServerStatusSection;
-
-    bool includeByDefault() const override {
-        return true;
-    }
-    BSONObj generateSection(OperationContext* opCtx,
-                            const BSONElement& configElement) const override {
-        BSONObjBuilder result;
-        TenantMigrationAccessBlockerRegistry::get(opCtx->getServiceContext())
-            .appendInfoForServerStatus(&result);
-        return result.obj();
-    }
-};
-auto& tenantMigrationAccessBlockerServerStatus =
-    *ServerStatusSectionBuilder<TenantMigrationAccessBlockerServerStatus>(
-         "tenantMigrationAccessBlocker")
-         .forShard();
-}  // namespace
-}  // namespace mongo
+// Unused, delete when there is another global bypass header

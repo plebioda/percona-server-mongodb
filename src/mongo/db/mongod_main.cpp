@@ -170,7 +170,6 @@
 #include "mongo/db/repl/replication_recovery.h"
 #include "mongo/db/repl/storage_interface.h"
 #include "mongo/db/repl/storage_interface_impl.h"
-#include "mongo/db/repl/tenant_migration_access_blocker_registry.h"
 #include "mongo/db/repl/tenant_migration_util.h"
 #include "mongo/db/repl/topology_coordinator.h"
 #include "mongo/db/repl/wait_for_majority_service.h"
@@ -1895,20 +1894,6 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
             }
         }
 
-        {
-            // Clear tenant migration access blockers after killing all operation contexts to ensure
-            // that no operation context cancellation token continuation holds the last reference to
-            // the TenantMigrationAccessBlockerExecutor.
-            TimeElapsedBuilderScopedTimer scopedTimer(
-                serviceContext->getFastClockSource(),
-                "Shut down all tenant migration access blockers on global shutdown",
-                &shutdownTimeElapsedBuilder);
-            LOGV2_OPTIONS(5093807,
-                          {LogComponent::kTenantMigration},
-                          "Shutting down all TenantMigrationAccessBlockers on global shutdown");
-            TenantMigrationAccessBlockerRegistry::get(serviceContext).shutDown();
-        }
-
         // Destroy all stashed transaction resources, in order to release locks.
         {
             TimeElapsedBuilderScopedTimer scopedTimer(serviceContext->getFastClockSource(),
@@ -2225,10 +2210,6 @@ int mongod_main(int argc, char* argv[]) {
         // exits directly and so never reaches here either.
     }
 #endif
-
-    LOGV2_OPTIONS(
-        7091600, {LogComponent::kTenantMigration}, "Starting TenantMigrationAccessBlockerRegistry");
-    TenantMigrationAccessBlockerRegistry::get(service).startup();
 
     ExitCode exitCode = initAndListen(service);
     exitCleanly(exitCode);

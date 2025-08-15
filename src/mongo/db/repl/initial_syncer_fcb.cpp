@@ -83,7 +83,6 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/repl/replication_process.h"
 #include "mongo/db/repl/storage_interface.h"
 #include "mongo/db/repl/sync_source_selector.h"
-#include "mongo/db/repl/tenant_migration_access_blocker_util.h"
 #include "mongo/db/repl/transaction_oplog_application.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/server_recovery.h"
@@ -565,9 +564,6 @@ void InitialSyncerFCB::_tearDown(WithLock lk,
     const bool orderedCommit = true;
     _storage->oplogDiskLocRegister(opCtx, initialDataTimestamp, orderedCommit);
 
-    if (ReplicationCoordinator::get(opCtx)->getSettings().isServerless()) {
-        tenant_migration_access_blocker::recoverTenantMigrationAccessBlockers(opCtx);
-    }
     reconstructPreparedTransactions(opCtx, repl::OplogApplication::Mode::kInitialSync);
 
     // The storage engine is created with dummy callback for oldest active timestamp, so we need

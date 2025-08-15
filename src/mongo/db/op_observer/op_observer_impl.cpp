@@ -70,7 +70,6 @@
 #include "mongo/db/repl/oplog_entry_gen.h"
 #include "mongo/db/repl/read_concern_args.h"
 #include "mongo/db/repl/replication_coordinator.h"
-#include "mongo/db/repl/tenant_migration_access_blocker_util.h"
 #include "mongo/db/repl/tenant_migration_decoration.h"
 #include "mongo/db/s/scoped_collection_metadata.h"
 #include "mongo/db/s/sharding_write_router.h"
@@ -519,20 +518,6 @@ std::vector<repl::OpTime> _logInsertOps(OperationContext* opCtx,
     // need to check 'fromMigrate' for inserts that are not replicated. See SERVER-75829.
     invariant(std::distance(fromMigrate.begin(), fromMigrate.end()) == std::distance(begin, end),
               oplogEntryTemplate->toReplOperation().toBSON().toString());
-
-    // If this oplog entry is from a tenant migration, include the tenant migration
-    // UUID and optional donor timeline metadata.
-    if (const auto& recipientInfo = repl::tenantMigrationInfo(opCtx)) {
-        oplogEntryTemplate->setFromTenantMigration(recipientInfo->uuid);
-        if (oplogEntryTemplate->getTid() &&
-            change_stream_serverless_helpers::isChangeStreamEnabled(
-                opCtx, *oplogEntryTemplate->getTid()) &&
-            recipientInfo->donorOplogEntryData) {
-            oplogEntryTemplate->setDonorOpTime(recipientInfo->donorOplogEntryData->donorOpTime);
-            oplogEntryTemplate->setDonorApplyOpsIndex(
-                recipientInfo->donorOplogEntryData->applyOpsIndex);
-        }
-    }
 
     const size_t count = end - begin;
     // Either no recordIds were passed in, or the number passed in is equal to the number
@@ -1585,12 +1570,6 @@ void OpObserverImpl::onUnpreparedTransactionCommit(
     const auto& oplogSlots = reservedSlots;
     const auto& applyOpsOplogSlotAndOperationAssignment = applyOpsOperationAssignment;
 
-    // Throw TenantMigrationConflict error if the database for the transaction statements is being
-    // migrated. We only need check the namespace of the first statement since a transaction's
-    // statements must all be for the same tenant.
-    tenant_migration_access_blocker::checkIfCanWriteOrThrow(
-        opCtx, statements.begin()->getNss().dbName(), oplogSlots.back().getTimestamp());
-
     if (MONGO_unlikely(hangAndFailUnpreparedCommitAfterReservingOplogSlot.shouldFail())) {
         hangAndFailUnpreparedCommitAfterReservingOplogSlot.pauseWhileSet(opCtx);
         uasserted(51268, "hangAndFailUnpreparedCommitAfterReservingOplogSlot fail point enabled");
@@ -1706,14 +1685,6 @@ void OpObserverImpl::onBatchedWriteCommit(OperationContext* opCtx,
     auto oplogSlots = _operationLogger->getNextOpTimes(
         opCtx, applyOpsOplogSlotAndOperationAssignment.numberOfOplogSlotsRequired);
 
-    // Throw TenantMigrationConflict error if the database for the transaction statements is being
-    // migrated. We only need check the namespace of the first statement since a batch's statements
-    // must all be for the same tenant.
-    const auto& statements = batchedOps->getOperationsForOpObserver();
-    const auto& firstOpNss = statements.begin()->getNss();
-    tenant_migration_access_blocker::checkIfCanWriteOrThrow(
-        opCtx, firstOpNss.dbName(), oplogSlots.back().getTimestamp());
-
     boost::optional<repl::ReplOperation::ImageBundle> noPrePostImage;
 
     if (!gFeatureFlagLargeBatchedOperations.isEnabled(
@@ -1801,6 +1772,7 @@ void OpObserverImpl::onBatchedWriteCommit(OperationContext* opCtx,
     // retryable batched write.
     auto txnParticipant = TransactionParticipant::get(opCtx);
     if (txnParticipant) {
+        const auto& statements = batchedOps->getOperationsForOpObserver();
         for (const auto& statement : statements) {
             txnParticipant.addToAffectedNamespaces(opCtx, statement.getNss());
         }

@@ -57,7 +57,6 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/repl/replication_process.h"
 #include "mongo/db/repl/rollback_checker.h"
 #include "mongo/db/repl/storage_interface.h"
-#include "mongo/db/repl/tenant_migration_shared_data.h"
 #include "mongo/db/startup_recovery.h"
 #include "mongo/executor/scoped_task_executor.h"
 #include "mongo/executor/task_executor.h"
@@ -77,6 +76,7 @@ namespace repl {
 struct InitialSyncState;
 class ReplicationProcess;
 class StorageInterface;
+
 
 /**
  * The initial syncer provides services to keep collection in sync by replicating
@@ -570,6 +570,18 @@ private:
     std::vector<BackupFile> _remoteFiles;                              // TODO:
     UUID _backupId;                                                    // TODO:
     std::string _remoteDBPath;                                         // TODO:
+
+    struct BackupCursorInfo {
+        BackupCursorInfo() = default;
+        BackupCursorInfo(CursorId cursorId, NamespaceString nss, Timestamp checkpointTimestamp)
+            : cursorId(cursorId),
+            nss(std::move(nss)),
+            checkpointTimestamp(std::move(checkpointTimestamp)) {}
+
+        CursorId cursorId = 0;
+        NamespaceString nss;
+        Timestamp checkpointTimestamp;
+    };
 
     // This is set in two places:
     // - to the 'oplogEnd' field from the backup cursor metadata when it is received

@@ -9,8 +9,8 @@
  */
 
 let testCount = 0;
-const collNamePrefix = "validate_timeseries_id_timestamp";
-const bucketNamePrefix = "system.buckets.validate_timeseries_id_timestamp";
+const collNamePrefix = jsTestName();
+const bucketNamePrefix = "system.buckets." + jsTestName();
 let collName = collNamePrefix + testCount;
 let bucketName = bucketNamePrefix + testCount;
 let coll = null;
@@ -61,12 +61,11 @@ coll.insertMany(
                               })),
     {ordered: false});
 bucket.updateOne({"meta.sensorId": testCount}, {"$set": {"control.min.timestamp": ISODate()}});
-res = coll.validate();
 
-// TODO SERVER-87065: Validation should catch the timestamp error.
-assert(res.valid, tojson(res));
-assert.eq(res.nNonCompliantDocuments, 0);
-assert.eq(res.errors.length, 0);
+res = coll.validate();
+assert(!res.valid, tojson(res));
+assert.eq(res.nNonCompliantDocuments, 1);
+assert.eq(res.errors.length, 1);
 
 // As of SERVER-86451, time-series inconsistencies detected during validation
 // will error in testing, instead of being warnings. In this case,

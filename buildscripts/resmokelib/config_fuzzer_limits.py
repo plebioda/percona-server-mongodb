@@ -357,12 +357,6 @@ config_fuzzer_params = {
             "choices": [{"mode": "off"}, {"mode": "alwaysOn"}],
             "fuzz_at": ["startup"],
         },
-        "logLevel": {
-            "min": 0,
-            "max": 5,
-            "period": 5,
-            "fuzz_at": ["startup", "runtime"],
-        },
         "enableDetailedConnectionHealthMetricLogLines": {
             "choices": [True, False],
             "period": 5,
@@ -414,16 +408,6 @@ config_fuzzer_params = {
             "max": 86400,
             "period": 5,
             "fuzz_at": ["runtime"],
-        },
-        "replicaSetMonitorProtocol": {
-            "choices": ["streamable", "sdam"],
-            "fuzz_at": ["startup"],
-        },
-        "logLevel": {
-            "min": 0,
-            "max": 5,
-            "period": 5,
-            "fuzz_at": ["startup", "runtime"],
         },
         "enableDetailedConnectionHealthMetricLogLines": {
             "choices": [True, False],

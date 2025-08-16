@@ -27,25 +27,18 @@
  *    it in the license file.
  */
 
-
-#include <boost/none.hpp>
-#include <boost/optional/optional.hpp>
-
 #include <wiredtiger.h>
 
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/exception_util.h"
-#include "mongo/db/curop.h"
 #include "mongo/db/prepare_conflict_tracker.h"
 #include "mongo/db/storage/recovery_unit.h"
+#include "mongo/db/storage/storage_metrics.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_prepare_conflict.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_recovery_unit.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_session_cache.h"
 #include "mongo/logv2/log.h"
-#include "mongo/logv2/log_attr.h"
-#include "mongo/platform/compiler.h"
 #include "mongo/util/fail_point.h"
-#include "mongo/util/scopeguard.h"
 #include "mongo/util/str.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kStorage
@@ -73,7 +66,7 @@ int wiredTigerPrepareConflictRetrySlow(OperationContext* opCtx,
                                        RecoveryUnit& ru,
                                        std::function<int()> func) {
     int attempts = 1;
-    CurOp::get(opCtx)->debug().additiveMetrics.incrementPrepareReadConflicts(1);
+    ru.getStorageMetrics().incrementPrepareReadConflicts(1);
     wiredTigerPrepareConflictLog(attempts);
 
     if (!ru.getBlockingAllowed()) {
@@ -92,12 +85,10 @@ int wiredTigerPrepareConflictRetrySlow(OperationContext* opCtx,
         *opCtx->getServiceContext()->getTickSource());
 
     auto client = opCtx->getClient();
-    if (client->isFromSystemConnection()) {
-        // System (internal) connections that hit a prepare conflict should be killable to prevent
-        // deadlocks with prepared transactions on replica set step up and step down.
-        stdx::lock_guard<Client> lk(*client);
-        invariant(client->canKillSystemOperationInStepdown(lk));
-    }
+
+    // All operations that hit a prepare conflict should be killable to prevent deadlocks with
+    // prepared transactions on replica set step up and step down.
+    invariant(client->canKillOperationInStepdown());
 
     // It is contradictory to be running into a prepare conflict when we are ignoring interruptions,
     // particularly when running code inside an

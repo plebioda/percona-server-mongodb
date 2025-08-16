@@ -118,8 +118,7 @@ public:
         chunk.setShard(shard0.getName());
         chunk.setOnCurrentShardSince(Timestamp(1, 1));
         chunk.setHistory({ChunkHistory(*chunk.getOnCurrentShardSince(), shard0.getName())});
-        chunk.setMin(kMinBSONKey);
-        chunk.setMax(kMaxBSONKey);
+        chunk.setRange({kMinBSONKey, kMaxBSONKey});
 
         // Initialize the sharded collection
         return setupCollection(nss, KeyPattern(BSON("x" << 1)), {chunk});
@@ -128,21 +127,6 @@ public:
 
 const NamespaceString kFromNss = NamespaceString::createNamespaceString_forTest("test.from");
 const NamespaceString kToNss = NamespaceString::createNamespaceString_forTest("test.to");
-
-// Query 'limit' objects from the database into an array.
-void findN(DBClientBase& client,
-           FindCommandRequest findRequest,
-           int limit,
-           std::vector<BSONObj>& out) {
-    out.reserve(limit);
-    findRequest.setLimit(limit);
-    std::unique_ptr<DBClientCursor> c = client.find(std::move(findRequest));
-    ASSERT(c.get());
-
-    while (c->more()) {
-        out.push_back(c->nextSafe());
-    }
-}
 
 TEST_F(ShardingDDLUtilTest, SerializeDeserializeErrorStatusWithoutExtraInfo) {
     const Status sample{ErrorCodes::ForTestingOptionalErrorExtraInfo, "Dummy reason"};
@@ -337,8 +321,7 @@ TEST_F(ShardingDDLUtilTest, RenamePreconditionTargetCollectionHasTags) {
     // Associate a tag to the target collection
     TagsType tagDoc;
     tagDoc.setNS(kToNss);
-    tagDoc.setMinKey(BSON("x" << 0));
-    tagDoc.setMaxKey(BSON("x" << 1));
+    tagDoc.setRange({BSON("x" << 0), BSON("x" << 1)});
     tagDoc.setTag("z");
     ASSERT_OK(insertToConfigCollection(operationContext(), TagsType::ConfigNS, tagDoc.toBSON()));
 

@@ -59,7 +59,6 @@ namespace mongo {
 namespace {
 
 const ReadPreferenceSetting kPrimaryOnlyReadPreference{ReadPreference::PrimaryOnly};
-const char kShardAdded[] = "shardAdded";
 
 class AddShardCmd : public BasicCommand {
 public:

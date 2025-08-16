@@ -130,7 +130,7 @@ intrusive_ptr<DocumentSource> DocumentSourceBackupCursor::createFromBson(
     // consuming the results, as well as the ability to send "heartbeats" to prevent the client
     // cursor manager from timing out the backup cursor. A backup cursor does consume resources;
     // in the event the calling process crashes, the cursors should eventually be timed out.
-    pExpCtx->tailableMode = TailableModeEnum::kTailable;
+    pExpCtx->setTailableMode(TailableModeEnum::kTailable);
 
     uassert(ErrorCodes::FailedToParse,
             str::stream() << kStageName << " parameters must be specified in an object, but found: "
@@ -201,15 +201,15 @@ DocumentSourceBackupCursor::DocumentSourceBackupCursor(
     StorageEngine::BackupOptions&& options, const intrusive_ptr<ExpressionContext>& expCtx)
     : DocumentSource(kStageName, expCtx),
       _backupOptions(options),
-      _backupCursorState(
-          pExpCtx->mongoProcessInterface->openBackupCursor(pExpCtx->opCtx, _backupOptions)),
+      _backupCursorState(pExpCtx->getMongoProcessInterface()->openBackupCursor(
+          pExpCtx->getOperationContext(), _backupOptions)),
       _backupBlocks(std::move(_backupCursorState.otherBackupBlocks)),
       _docIt(_backupBlocks.cbegin()) {}
 
 DocumentSourceBackupCursor::~DocumentSourceBackupCursor() {
     try {
-        pExpCtx->mongoProcessInterface->closeBackupCursor(pExpCtx->opCtx,
-                                                          _backupCursorState.backupId);
+        pExpCtx->getMongoProcessInterface()->closeBackupCursor(pExpCtx->getOperationContext(),
+                                                               _backupCursorState.backupId);
     } catch (DBException& exc) {
         LOGV2_FATAL(
             29091, "Error closing a backup cursor.", "backupId"_attr = _backupCursorState.backupId);

@@ -141,8 +141,8 @@ DocumentSourceBackupCursorExtend::DocumentSourceBackupCursorExtend(
     : DocumentSource(kStageName, expCtx),
       _backupId(backupId),
       _extendTo(extendTo),
-      _backupCursorExtendState(
-          pExpCtx->mongoProcessInterface->extendBackupCursor(pExpCtx->opCtx, backupId, extendTo)),
+      _backupCursorExtendState(pExpCtx->getMongoProcessInterface()->extendBackupCursor(
+          pExpCtx->getOperationContext(), backupId, extendTo)),
       _filenames(_backupCursorExtendState.filePaths),
       _fileIt(_filenames.begin()) {}
 

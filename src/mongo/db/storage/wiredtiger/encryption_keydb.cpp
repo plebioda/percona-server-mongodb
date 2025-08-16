@@ -513,42 +513,42 @@ void EncryptionKeyDB::reconfigure(const char *newCfg) {
     LOGV2(29079, "KeyDB reconfigure complete", "duration"_attr = Date_t::now() - startTime);
 }
 
+}  // namespace mongo
+
 extern "C" void store_pseudo_bytes(uint8_t *buf, int len) {
-    invariant(encryptionKeyDB);
-    encryptionKeyDB->store_pseudo_bytes(buf, len);
+    invariant(mongo::encryptionKeyDB);
+    mongo::encryptionKeyDB->store_pseudo_bytes(buf, len);
 }
 
 extern "C" void rotation_store_pseudo_bytes(uint8_t *buf, int len) {
-    invariant(rotationKeyDB);
-    rotationKeyDB->store_pseudo_bytes(buf, len);
+    invariant(mongo::rotationKeyDB);
+    mongo::rotationKeyDB->store_pseudo_bytes(buf, len);
 }
 
 extern "C" int get_iv_gcm(uint8_t *buf, int len) {
-    invariant(encryptionKeyDB);
-    return encryptionKeyDB->get_iv_gcm(buf, len);
+    invariant(mongo::encryptionKeyDB);
+    return mongo::encryptionKeyDB->get_iv_gcm(buf, len);
 }
 
 extern "C" int rotation_get_iv_gcm(uint8_t *buf, int len) {
-    invariant(rotationKeyDB);
-    return rotationKeyDB->get_iv_gcm(buf, len);
+    invariant(mongo::rotationKeyDB);
+    return mongo::rotationKeyDB->get_iv_gcm(buf, len);
 }
 
 // returns encryption key from keys DB
 // create key if it does not exists
 // return key from keyfile if len == 0
 extern "C" int get_key_by_id(const char *keyid, size_t len, unsigned char *key, void *pe) {
-    invariant(encryptionKeyDB);
-    return encryptionKeyDB->get_key_by_id(keyid, len, key, pe);
+    invariant(mongo::encryptionKeyDB);
+    return mongo::encryptionKeyDB->get_key_by_id(keyid, len, key, pe);
 }
 
 extern "C" int rotation_get_key_by_id(const char *keyid, size_t len, unsigned char *key, void *pe) {
-    invariant(rotationKeyDB);
-    return rotationKeyDB->get_key_by_id(keyid, len, key, pe);
+    invariant(mongo::rotationKeyDB);
+    return mongo::rotationKeyDB->get_key_by_id(keyid, len, key, pe);
 }
 
 extern "C" void generate_secure_key(unsigned char* key) {
-    invariant(encryptionKeyDB);
-    encryptionKeyDB->generate_secure_key(key);
+    invariant(mongo::encryptionKeyDB);
+    mongo::encryptionKeyDB->generate_secure_key(key);
 }
-
-}  // namespace mongo

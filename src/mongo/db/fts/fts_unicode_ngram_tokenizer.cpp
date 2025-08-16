@@ -34,7 +34,7 @@ using std::string;
  * 0x0d : CARRIAGE-RETURN (\r)
  * 0x20 : SPACE
  */
-bool codepointIsDelimiter(char32_t codepoint){
+inline bool codepointIsDelimiter(char32_t codepoint){
     if (codepoint <= 0x7f) {
       if(codepoint==0x09 || codepoint==0x0a || codepoint==0x0b || codepoint==0x0d || codepoint==0x20)
         return true;

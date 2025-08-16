@@ -56,6 +56,7 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/bson/bsonobj.h"
 #include "mongo/bson/json.h"
 #include "mongo/db/audit.h"
+#include "mongo/db/audit/audit.h"
 #include "mongo/db/audit/audit_parameters_gen.h"
 #include "mongo/db/audit/auditlog.h"
 #include "mongo/db/audit_interface.h"

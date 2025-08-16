@@ -54,6 +54,7 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #endif
 #include "mongo/db/telemetry/telemetry_parameter_gen.h"
 #include "mongo/db/telemetry/telemetry_path.h"
+#include "mongo/db/telemetry/telemetry_thread.h"
 #include "mongo/logv2/log.h"
 #include "mongo/stdx/mutex.h"
 #include "mongo/util/assert_util.h"

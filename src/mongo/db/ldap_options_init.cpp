@@ -37,7 +37,7 @@ Copyright (C) 2019-present Percona and/or its affiliates. All rights reserved.
 
 namespace mongo {
 
-Status storeLDAPOptions(const moe::Environment& params) {
+inline Status storeLDAPOptions(const moe::Environment& params) {
     if (params.count("security.ldap.servers")) {
         std::string ldap_servers = params["security.ldap.servers"].as<std::string>();
         ldapGlobalParams.setServersStr(ldap_servers);

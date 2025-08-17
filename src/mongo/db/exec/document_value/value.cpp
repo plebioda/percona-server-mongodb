@@ -164,7 +164,7 @@ Value::Value(const BSONElement& elem) : _storage(elem.type()) {
 
         case Array: {
             auto vec = make_intrusive<RCVector<Value>>();
-            BSONForEach(sub, elem.embeddedObject()) {
+            for (auto&& sub : elem.embeddedObject()) {
                 vec->vec.push_back(Value(sub));
             }
             _storage.putVector(std::move(vec));
@@ -226,7 +226,7 @@ Value::Value(const BSONElement& elem) : _storage(elem.type()) {
 
 Value::Value(const BSONArray& arr) : _storage(Array) {
     auto vec = make_intrusive<RCVector<Value>>();
-    BSONForEach(sub, arr) {
+    for (auto&& sub : arr) {
         vec->vec.push_back(Value(sub));
     }
     _storage.putVector(std::move(vec));

@@ -336,7 +336,6 @@ private:
     stdx::condition_variable _condvar;
 };
 
-namespace {
 std::string toString(const StorageEngine::OldestActiveTransactionTimestampResult& r) {
     if (r.isOK()) {
         if (r.getValue()) {
@@ -350,7 +349,6 @@ std::string toString(const StorageEngine::OldestActiveTransactionTimestampResult
         return r.getStatus().toString();
     }
 }
-}  // namespace
 
 namespace {
 constexpr auto kKeyDbDirBasename = "key.db";
@@ -4328,7 +4326,8 @@ std::uint64_t WiredTigerKVEngine::_getCheckpointTimestamp() const {
 }
 
 void WiredTigerKVEngine::dump() const {
-    int ret = _conn->debug_info(_conn, "cursors=true,handles=true,log=true,sessions=true,txn=true");
+    int ret = _conn->debug_info(
+        _conn, "cache=true,cursors=true,handles=true,log=true,sessions=true,txn=true");
     auto status = wtRCToStatus(ret, nullptr, "WiredTigerKVEngine::dump()");
     if (status.isOK()) {
         LOGV2(6117700, "WiredTigerKVEngine::dump() completed successfully");

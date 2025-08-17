@@ -33,7 +33,6 @@
 
 #include <absl/container/flat_hash_set.h>
 #include <boost/optional.hpp>
-#include <cstddef>
 #include <fmt/format.h>
 #include <ostream>
 #include <tuple>
@@ -65,6 +64,7 @@
 #include "mongo/db/query/plan_summary_stats.h"
 #include "mongo/db/repl/read_concern_args.h"
 #include "mongo/db/server_options.h"
+#include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/session/logical_session_id_gen.h"
 #include "mongo/db/stats/timer_stats.h"
@@ -205,10 +205,7 @@ private:
             auto locker = shard_role_details::getLocker(opCtx());
             const boost::optional<ExecutionAdmissionContext> admCtx =
                 ExecutionAdmissionContext::get(opCtx());
-            auto& storageMetrics =
-                shard_role_details::getRecoveryUnit(opCtx())->getStorageMetrics();
-            curOp->_resourceStatsBase =
-                CurOp::getAdditiveResourceStats(locker, storageMetrics, admCtx);
+            curOp->_resourceStatsBase = CurOp::getAdditiveResourceStats(locker, admCtx);
         }
 
         _top = curOp;
@@ -295,7 +292,7 @@ void CurOp::reportCurrentOpForClient(const boost::intrusive_ptr<ExpressionContex
 
     infoBuilder->appendBool("isFromUserConnection", client->isFromUserConnection());
 
-    if (const auto seCtx = transport::ServiceExecutorContext::get(client)) {
+    if (transport::ServiceExecutorContext::get(client)) {
         infoBuilder->append("threaded"_sd, true);
     }
 
@@ -475,39 +472,26 @@ ProgressMeter& CurOp::setProgress(WithLock lk,
 }
 
 void CurOp::updateStatsOnTransactionUnstash() {
-    // Store lock stats and storage metrics from the locker and recovery unit after unstashing.
-    // These stats have accrued outside of this CurOp instance so we will ignore/subtract them when
-    // reporting on this operation.
+    // Store lock stats and ticket wait times from the locker after unstashing. These stats have
+    // accrued outside of this CurOp instance so we will ignore/subtract them when reporting on this
+    // operation.
+    auto locker = shard_role_details::getLocker(opCtx());
     if (!_resourceStatsBase) {
         _resourceStatsBase.emplace();
     }
-    auto locker = shard_role_details::getLocker(opCtx());
-    auto& storageMetrics = shard_role_details::getRecoveryUnit(opCtx())->getStorageMetrics();
-    _resourceStatsBase->addForUnstash(
-        getAdditiveResourceStats(locker, storageMetrics, boost::none));
+    _resourceStatsBase->addForUnstash(getAdditiveResourceStats(locker, boost::none));
 }
 
 void CurOp::updateStatsOnTransactionStash() {
-    // Store lock stats and storage metrics that happened during this operation before the locker
-    // and recovery unit are stashed. We take the delta of the stats before stashing and the base
-    // stats which includes the snapshot of stats when it was unstashed. This stats delta on
-    // stashing is added when reporting on this operation.
+    // Store lock stats and ticket wait times that happened during this operation before locker is
+    // stashed. We take the delta of locker stats before stashing and the base stats which includes
+    // the snapshot of locker stats when it was unstashed. This stats delta on stashing is added
+    // when reporting on this operation.
+    auto locker = shard_role_details::getLocker(opCtx());
     if (!_resourceStatsBase) {
         _resourceStatsBase.emplace();
     }
-    auto locker = shard_role_details::getLocker(opCtx());
-    auto& storageMetrics = shard_role_details::getRecoveryUnit(opCtx())->getStorageMetrics();
-    _resourceStatsBase->subtractForStash(
-        getAdditiveResourceStats(locker, storageMetrics, boost::none));
-}
-
-void CurOp::updateStorageMetricsOnRecoveryUnitChange(const AtomicStorageMetrics& storageMetrics) {
-    if (!storageMetrics.isEmpty()) {
-        if (!_resourceStatsBase) {
-            _resourceStatsBase.emplace();
-        }
-        _resourceStatsBase->storageMetrics -= storageMetrics;
-    }
+    _resourceStatsBase->subtractForStash(getAdditiveResourceStats(locker, boost::none));
 }
 
 void CurOp::setNS(WithLock, NamespaceString nss) {
@@ -611,9 +595,8 @@ void CurOp::raiseDbProfileLevel(int dbProfileLevel) {
     _dbprofile = std::max(dbProfileLevel, _dbprofile);
 }
 
-static constexpr size_t appendMaxElementSize = 50ull * 1024;
+static constexpr size_t appendMaxElementSize = 50 * 1024;
 
-namespace {
 bool shouldOmitDiagnosticInformation(CurOp* curop) {
     do {
         if (curop->getShouldOmitDiagnosticInformation()) {
@@ -625,7 +608,6 @@ bool shouldOmitDiagnosticInformation(CurOp* curop) {
 
     return false;
 }
-}  // namespace
 
 bool CurOp::completeAndLogOperation(const logv2::LogOptions& logOptions,
                                     std::shared_ptr<const ProfileFilter> filter,
@@ -725,11 +707,8 @@ bool CurOp::completeAndLogOperation(const logv2::LogOptions& logOptions,
             return nullptr;
         }();
 
-        auto storageMetrics = getOperationStorageMetrics(
-            shard_role_details::getRecoveryUnit(opCtx)->getStorageMetrics());
-
         logv2::DynamicAttributes attr;
-        _debug.report(opCtx, &lockStats, operationMetricsPtr, storageMetrics, &attr);
+        _debug.report(opCtx, &lockStats, operationMetricsPtr, &attr);
 
         LOGV2_OPTIONS(51803, logOptions, "Slow query", attr);
 
@@ -968,13 +947,9 @@ void CurOp::reportState(BSONObjBuilder* builder,
         builder->append("failpointMsg", _failPointMessage);
     }
 
-
-    auto storageMetrics =
-        getOperationStorageMetrics(shard_role_details::getRecoveryUnit(opCtx)->getStorageMetrics());
-    if (auto n = storageMetrics.prepareReadConflicts; n > 0) {
+    if (auto n = _debug.additiveMetrics.prepareReadConflicts.load(); n > 0) {
         builder->append("prepareReadConflicts", n);
     }
-
     if (auto n = _debug.additiveMetrics.writeConflicts.load(); n > 0) {
         builder->append("writeConflicts", n);
     }
@@ -1058,33 +1033,20 @@ bool CurOp::_shouldDBProfileWithRateLimit(long long slowMS) {
 }
 
 CurOp::AdditiveResourceStats CurOp::getAdditiveResourceStats(
-    const Locker* locker,
-    const AtomicStorageMetrics& storageMetrics,
-    const boost::optional<ExecutionAdmissionContext>& admCtx) {
+    const Locker* locker, const boost::optional<ExecutionAdmissionContext>& admCtx) {
     CurOp::AdditiveResourceStats stats;
     stats.lockStats = locker->stats();
     stats.cumulativeLockWaitTime = Microseconds(stats.lockStats.getCumulativeWaitTimeMicros());
     stats.timeQueuedForFlowControl =
         Microseconds(locker->getFlowControlStats().timeAcquiringMicros);
-    stats.storageMetrics = storageMetrics;
     if (admCtx != boost::none) {
         stats.timeQueuedForTickets = admCtx->totalTimeQueuedMicros();
     }
     return stats;
 }
 
-SingleThreadedStorageMetrics CurOp::getOperationStorageMetrics(
-    const AtomicStorageMetrics& storageMetrics) const {
-    auto singleThreadedMetrics = storageMetrics;
-    if (_resourceStatsBase) {
-        singleThreadedMetrics -= _resourceStatsBase->storageMetrics;
-    }
-    return singleThreadedMetrics;
-}
-
 void CurOp::AdditiveResourceStats::addForUnstash(const CurOp::AdditiveResourceStats& other) {
     lockStats.append(other.lockStats);
-    storageMetrics += other.storageMetrics;
     cumulativeLockWaitTime += other.cumulativeLockWaitTime;
     timeQueuedForFlowControl += other.timeQueuedForFlowControl;
     // timeQueuedForTickets is intentionally excluded as it is tracked separately
@@ -1092,7 +1054,6 @@ void CurOp::AdditiveResourceStats::addForUnstash(const CurOp::AdditiveResourceSt
 
 void CurOp::AdditiveResourceStats::subtractForStash(const CurOp::AdditiveResourceStats& other) {
     lockStats.subtract(other.lockStats);
-    storageMetrics -= other.storageMetrics;
     cumulativeLockWaitTime -= other.cumulativeLockWaitTime;
     timeQueuedForFlowControl -= other.timeQueuedForFlowControl;
     // timeQueuedForTickets is intentionally excluded as it is tracked separately
@@ -1139,7 +1100,6 @@ StringData getProtoString(int op) {
 void OpDebug::report(OperationContext* opCtx,
                      const SingleThreadedLockStats* lockStats,
                      const ResourceConsumption::OperationMetrics* operationMetrics,
-                     const SingleThreadedStorageMetrics& storageMetrics,
                      logv2::DynamicAttributes* pAttrs) const {
     Client* client = opCtx->getClient();
     auto& curop = *CurOp::get(opCtx);
@@ -1277,10 +1237,7 @@ void OpDebug::report(OperationContext* opCtx,
 
     OPDEBUG_TOATTR_HELP_OPTIONAL("keysInserted", additiveMetrics.keysInserted);
     OPDEBUG_TOATTR_HELP_OPTIONAL("keysDeleted", additiveMetrics.keysDeleted);
-
-    if (storageMetrics.prepareReadConflicts > 0) {
-        pAttrs->add("prepareReadConflicts", storageMetrics.prepareReadConflicts);
-    }
+    OPDEBUG_TOATTR_HELP_ATOMIC("prepareReadConflicts", additiveMetrics.prepareReadConflicts);
     OPDEBUG_TOATTR_HELP_ATOMIC("writeConflicts", additiveMetrics.writeConflicts);
     OPDEBUG_TOATTR_HELP_ATOMIC("temporarilyUnavailableErrors",
                                additiveMetrics.temporarilyUnavailableErrors);
@@ -1447,7 +1404,6 @@ void OpDebug::reportStorageStats(logv2::DynamicAttributes* pAttrs) const {
 void OpDebug::append(OperationContext* opCtx,
                      const SingleThreadedLockStats& lockStats,
                      FlowControlTicketholder::CurOp flowControlStats,
-                     const SingleThreadedStorageMetrics& storageMetrics,
                      bool omitCommand,
                      BSONObjBuilder& b) const {
     auto& curop = *CurOp::get(opCtx);
@@ -1500,9 +1456,7 @@ void OpDebug::append(OperationContext* opCtx,
 
     OPDEBUG_APPEND_OPTIONAL(b, "keysInserted", additiveMetrics.keysInserted);
     OPDEBUG_APPEND_OPTIONAL(b, "keysDeleted", additiveMetrics.keysDeleted);
-    if (storageMetrics.prepareReadConflicts > 0) {
-        b.append("prepareReadConflicts", storageMetrics.prepareReadConflicts);
-    }
+    OPDEBUG_APPEND_ATOMIC(b, "prepareReadConflicts", additiveMetrics.prepareReadConflicts);
     OPDEBUG_APPEND_ATOMIC(b, "writeConflicts", additiveMetrics.writeConflicts);
     OPDEBUG_APPEND_ATOMIC(
         b, "temporarilyUnavailableErrors", additiveMetrics.temporarilyUnavailableErrors);
@@ -1800,16 +1754,9 @@ std::function<BSONObj(ProfileFilter::Args)> OpDebug::appendStaged(StringSet requ
     addIfNeeded("keysDeleted", [](auto field, auto args, auto& b) {
         OPDEBUG_APPEND_OPTIONAL(b, field, args.op.additiveMetrics.keysDeleted);
     });
-
     addIfNeeded("prepareReadConflicts", [](auto field, auto args, auto& b) {
-        const auto storageMetrics = args.curop.getOperationStorageMetrics(
-            shard_role_details::getRecoveryUnit(args.opCtx)->getStorageMetrics());
-
-        if (storageMetrics.prepareReadConflicts > 0) {
-            b.append(field, storageMetrics.prepareReadConflicts);
-        }
+        OPDEBUG_APPEND_ATOMIC(b, field, args.op.additiveMetrics.prepareReadConflicts);
     });
-
     addIfNeeded("writeConflicts", [](auto field, auto args, auto& b) {
         OPDEBUG_APPEND_ATOMIC(b, field, args.op.additiveMetrics.writeConflicts);
     });
@@ -2243,6 +2190,7 @@ void OpDebug::AdditiveMetrics::add(const AdditiveMetrics& otherMetrics) {
     keysDeleted = addOptionals(keysDeleted, otherMetrics.keysDeleted);
     readingTime = addOptionals(readingTime, otherMetrics.readingTime);
     clusterWorkingTime = addOptionals(clusterWorkingTime, otherMetrics.clusterWorkingTime);
+    prepareReadConflicts.fetchAndAdd(otherMetrics.prepareReadConflicts.load());
     writeConflicts.fetchAndAdd(otherMetrics.writeConflicts.load());
     temporarilyUnavailableErrors.fetchAndAdd(otherMetrics.temporarilyUnavailableErrors.load());
     executionTime = addOptionals(executionTime, otherMetrics.executionTime);
@@ -2315,6 +2263,7 @@ void OpDebug::AdditiveMetrics::reset() {
     nUpserted = boost::none;
     keysInserted = boost::none;
     keysDeleted = boost::none;
+    prepareReadConflicts.store(0);
     writeConflicts.store(0);
     temporarilyUnavailableErrors.store(0);
     executionTime = boost::none;
@@ -2327,6 +2276,7 @@ bool OpDebug::AdditiveMetrics::equals(const AdditiveMetrics& otherMetrics) const
         ninserted == otherMetrics.ninserted && ndeleted == otherMetrics.ndeleted &&
         nUpserted == otherMetrics.nUpserted && keysInserted == otherMetrics.keysInserted &&
         keysDeleted == otherMetrics.keysDeleted &&
+        prepareReadConflicts.load() == otherMetrics.prepareReadConflicts.load() &&
         writeConflicts.load() == otherMetrics.writeConflicts.load() &&
         temporarilyUnavailableErrors.load() == otherMetrics.temporarilyUnavailableErrors.load() &&
         executionTime == otherMetrics.executionTime;
@@ -2396,6 +2346,10 @@ void OpDebug::AdditiveMetrics::incrementExecutionTime(Microseconds n) {
     *executionTime += n;
 }
 
+void OpDebug::AdditiveMetrics::incrementPrepareReadConflicts(long long n) {
+    prepareReadConflicts.fetchAndAdd(n);
+}
+
 std::string OpDebug::AdditiveMetrics::report() const {
     StringBuilder s;
 
@@ -2410,6 +2364,7 @@ std::string OpDebug::AdditiveMetrics::report() const {
     OPDEBUG_TOSTRING_HELP_OPTIONAL("nUpserted", nUpserted);
     OPDEBUG_TOSTRING_HELP_OPTIONAL("keysInserted", keysInserted);
     OPDEBUG_TOSTRING_HELP_OPTIONAL("keysDeleted", keysDeleted);
+    OPDEBUG_TOSTRING_HELP_ATOMIC("prepareReadConflicts", prepareReadConflicts);
     OPDEBUG_TOSTRING_HELP_ATOMIC("writeConflicts", writeConflicts);
     OPDEBUG_TOSTRING_HELP_ATOMIC("temporarilyUnavailableErrors", temporarilyUnavailableErrors);
     if (executionTime) {
@@ -2431,6 +2386,7 @@ void OpDebug::AdditiveMetrics::report(logv2::DynamicAttributes* pAttrs) const {
     OPDEBUG_TOATTR_HELP_OPTIONAL("nUpserted", nUpserted);
     OPDEBUG_TOATTR_HELP_OPTIONAL("keysInserted", keysInserted);
     OPDEBUG_TOATTR_HELP_OPTIONAL("keysDeleted", keysDeleted);
+    OPDEBUG_TOATTR_HELP_ATOMIC("prepareReadConflicts", prepareReadConflicts);
     OPDEBUG_TOATTR_HELP_ATOMIC("writeConflicts", writeConflicts);
     OPDEBUG_TOATTR_HELP_ATOMIC("temporarilyUnavailableErrors", temporarilyUnavailableErrors);
     if (executionTime) {
@@ -2451,6 +2407,7 @@ BSONObj OpDebug::AdditiveMetrics::reportBSON() const {
     OPDEBUG_APPEND_OPTIONAL(b, "nUpserted", nUpserted);
     OPDEBUG_APPEND_OPTIONAL(b, "keysInserted", keysInserted);
     OPDEBUG_APPEND_OPTIONAL(b, "keysDeleted", keysDeleted);
+    OPDEBUG_APPEND_ATOMIC(b, "prepareReadConflicts", prepareReadConflicts);
     OPDEBUG_APPEND_ATOMIC(b, "writeConflicts", writeConflicts);
     OPDEBUG_APPEND_ATOMIC(b, "temporarilyUnavailableErrors", temporarilyUnavailableErrors);
     if (executionTime) {

@@ -380,6 +380,14 @@ private:
     stdx::mutex _m;
 };
 
+inline std::ostream& operator<<(std::ostream& s, const AsyncMockAsyncRPCRunner::Request& o) {
+    return s << o.toBSON();
+}
+
+inline std::ostream& operator<<(std::ostream& s, const AsyncMockAsyncRPCRunner::Expectation& o) {
+    return s << o.name;
+}
+
 /**
  * The NoopMockAsyncRPCRunner is a mock implementation that returns silently and successfully when a
  * command is sent.

@@ -126,6 +126,12 @@ public:
 
     std::vector<AuthorizationRouter::CachedUserInfo> getUserCacheInfo() const override;
 
+    /**
+     * @brief Get the Authorization Router object
+     * Should only be used in test.
+     */
+    AuthorizationRouter* getAuthorizationRouter_forTest();
+
 private:
     /**
      * ldap user cache invalidator class

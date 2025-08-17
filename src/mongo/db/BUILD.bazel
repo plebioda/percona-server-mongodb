@@ -3337,6 +3337,7 @@ mongo_cc_library(
         # private libdep of mongod_initializers.
         "//src/mongo/client:clientdriver_minimal",
         "//src/mongo/db/auth:user_cache_invalidator",
+        "//src/mongo/db/query/search:search_task_executors",
         "//src/mongo/idl:cluster_server_parameter",
         "//src/mongo/idl:cluster_server_parameter_initializer",
         "//src/mongo/idl:cluster_server_parameter_op_observer",
@@ -3510,6 +3511,35 @@ mongo_cc_binary(
         # dep of mongod_initializers.
         "mongod_main",
         "server_base",
+    ],
+)
+
+mongo_cc_library(
+    name = "service_context_d_test_fixture",
+    srcs = [
+        "service_context_d_test_fixture.cpp",
+    ],
+    hdrs = [
+        "service_context_d_test_fixture.h",
+    ],
+    deps = [
+        ":service_context_d",
+        ":service_context_test_fixture",
+        "//src/mongo/db/auth:auth_impl_internal",
+        "//src/mongo/db/auth:authserver",
+        "//src/mongo/db/catalog:catalog_impl",
+        "//src/mongo/db/commands:mongod",
+        "//src/mongo/db/index_builds:index_builds_coordinator_mongod",
+        "//src/mongo/db/op_observer",
+        "//src/mongo/db/repl:replmocks",
+        "//src/mongo/db/s:sharding_runtime_d",
+        "//src/mongo/db/storage:storage_control",
+        "//src/mongo/db/storage:storage_options",
+        "//src/mongo/db/storage/devnull:storage_devnull",
+        "//src/mongo/db/storage/wiredtiger:storage_wiredtiger",
+        "//src/mongo/util:clock_source_mock",
+        "//src/mongo/util:periodic_runner_factory",
+        "//src/mongo/util:tick_source_mock",
     ],
 )
 

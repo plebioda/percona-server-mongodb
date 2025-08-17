@@ -30,6 +30,7 @@
 #pragma once
 
 #include <cstddef>
+#include <random>
 #include <string>
 
 #include <absl/container/flat_hash_map.h>
@@ -187,7 +188,7 @@ private:
         mutable unsigned int _sleepTime;
 
         mutable SecureUrbg _rd;
-        mutable std::mt19937 _gen{_rd()};
+        mutable std::mt19937_64 _gen{_rd()};
     };
 
 public:

@@ -28,8 +28,11 @@
  */
 #include "mongo/db/service_entry_point_shard_role.h"
 
-#include <boost/move/utility_core.hpp>
 #include <memory>
+#include <mutex>
+#include <string>
+
+#include <boost/move/utility_core.hpp>
 
 #include "mongo/base/error_codes.h"
 #include "mongo/base/status.h"
@@ -50,6 +53,7 @@
 #include "mongo/db/repl/repl_client_info.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/repl/speculative_majority_read_info.h"
+#include "mongo/db/replica_set_endpoint_util.h"
 #include "mongo/db/s/resharding/resharding_metrics_helpers.h"
 #include "mongo/db/s/shard_filtering_metadata_refresh.h"
 #include "mongo/db/s/transaction_coordinator_service.h"
@@ -62,13 +66,19 @@
 #include "mongo/idl/generic_argument_gen.h"
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
+#include "mongo/logv2/log_component.h"
 #include "mongo/logv2/redaction.h"
+#include "mongo/rpc/check_allowed_op_query_cmd.h"
+#include "mongo/rpc/factory.h"
 #include "mongo/rpc/get_status_from_command_result.h"
 #include "mongo/rpc/op_msg.h"
+#include "mongo/rpc/op_msg_rpc_impls.h"
 #include "mongo/s/catalog_cache.h"
 #include "mongo/s/chunk_version.h"
+#include "mongo/s/database_version.h"
 #include "mongo/s/gossiped_routing_cache_gen.h"
 #include "mongo/s/grid.h"
+#include "mongo/s/service_entry_point_router_role.h"
 #include "mongo/s/shard_cannot_refresh_due_to_locks_held_exception.h"
 #include "mongo/s/shard_version.h"
 #include "mongo/s/stale_exception.h"
@@ -78,6 +88,7 @@
 #include "mongo/util/namespace_string_util.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kCommand
+
 
 namespace mongo {
 namespace service_entry_point_shard_role_helpers {

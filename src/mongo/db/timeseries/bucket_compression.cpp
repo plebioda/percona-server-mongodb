@@ -372,11 +372,9 @@ CompressionResult compressBucket(const BSONObj& bucketDoc,
                                 redact(base64::encode(bucketDoc.objdata(), bucketDoc.objsize())),
                             "ns"_attr = ns.toStringForErrorMsg());
         // Also log without any risk of PII
-        BSONElement id;
-        bucketDoc.getObjectID(id);
         LOGV2_ERROR(9547401,
                     "Couldn't compress time-series bucket",
-                    "bucketId"_attr = id,
+                    "bucketId"_attr = bucketDoc["_id"],
                     "ns"_attr = ns.toStringForErrorMsg());
         return {};
     }
@@ -455,7 +453,8 @@ bool isCompressedBucket(const BSONObj& bucketDoc) {
             "Time-series bucket documents must have 'control' object present",
             controlField && controlField.type() == BSONType::Object);
 
-    auto&& versionField = controlField.Obj()[timeseries::kBucketControlVersionFieldName];
+    auto&& controlFieldObj = controlField.Obj();
+    auto&& versionField = controlFieldObj[timeseries::kBucketControlVersionFieldName];
     uassert(6540601,
             "Time-series bucket documents must have 'control.version' field present",
             versionField && isNumericBSONType(versionField.type()));

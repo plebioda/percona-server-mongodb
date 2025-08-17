@@ -29,7 +29,6 @@
 
 
 #include <iterator>
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,7 +39,7 @@
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
 
-#include "mongo/base/error_codes.h"
+#include "mongo/base/status_with.h"
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/bsonobj.h"
@@ -51,7 +50,6 @@
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/auth/privilege.h"
 #include "mongo/db/auth/resource_pattern.h"
-#include "mongo/db/basic_types_gen.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/concurrency/d_concurrency.h"
 #include "mongo/db/concurrency/lock_manager_defs.h"
@@ -76,11 +74,8 @@
 #include "mongo/db/s/shard_filtering_metadata_refresh.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/shard_id.h"
-#include "mongo/executor/task_executor_pool.h"
-#include "mongo/idl/idl_parser.h"
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
-#include "mongo/logv2/log_component.h"
 #include "mongo/logv2/redaction.h"
 #include "mongo/s/catalog/type_database_gen.h"
 #include "mongo/s/client/shard.h"
@@ -205,6 +200,72 @@ public:
         }
 
     private:
+        std::vector<RemoteCursor> _getCursorsOnParticipants(OperationContext* opCtx,
+                                                            const NamespaceString& nss,
+                                                            const auto& lockFunction) {
+            auto getCursors = [&]() {
+                try {
+                    const auto lock = lockFunction(opCtx, nss);
+
+                    return StatusWith<std::vector<RemoteCursor>>(
+                        _establishCursorOnParticipants(opCtx, nss));
+                } catch (const ExceptionFor<ErrorCodes::StaleDbVersion>& ex) {
+                    // Receiving a StaleDbVersion is because of one of these scenarios:
+                    // - A movePrimary is changing the db primary shard.
+                    // - The database is being dropped.
+                    // - This shard doesn't know about the existence of the db.
+                    LOGV2_DEBUG(8840400,
+                                1,
+                                "Received StaleDbVersion error while trying to run database "
+                                "metadata checks",
+                                logAttrs(nss.dbName()),
+                                "error"_attr = redact(ex));
+                    return StatusWith<std::vector<RemoteCursor>>(ex.toStatus());
+                }
+            };
+
+            const auto logSkipping = [&]() {
+                LOGV2_DEBUG(7328700,
+                            1,
+                            "Skipping database metadata check since the database version is stale",
+                            logAttrs(nss.dbName()));
+            };
+
+            StatusWith<std::vector<RemoteCursor>> status = getCursors();
+            if (status.isOK()) {
+                std::vector<RemoteCursor> cursors;
+                cursors.insert(cursors.end(),
+                               std::make_move_iterator(status.getValue().begin()),
+                               std::make_move_iterator(status.getValue().end()));
+                return cursors;
+            }
+
+            const auto extraInfo = status.getStatus().extraInfo<StaleDbRoutingVersion>();
+            if (!extraInfo || extraInfo->getVersionWanted()) {
+                // In case there is a wanted shard version means that the metadata is stale and we
+                // are going to skip the checks.
+                logSkipping();
+                return {};
+            }
+            // In case the shard doesn't know about the database, we perform a refresh and re-try
+            // the metadata checks.
+            (void)FilteringMetadataCache::get(opCtx)->onDbVersionMismatch(
+                opCtx, nss.dbName(), extraInfo->getVersionReceived());
+
+            status = getCursors();
+            if (status.isOK()) {
+                std::vector<RemoteCursor> cursors;
+                cursors.insert(cursors.end(),
+                               std::make_move_iterator(status.getValue().begin()),
+                               std::make_move_iterator(status.getValue().end()));
+                return cursors;
+            }
+
+            // We still don't know about the database, so we log and do nothing
+            logSkipping();
+            return {};
+        }
+
         Response _runClusterLevel(OperationContext* opCtx, const NamespaceString& nss) {
             uassert(ErrorCodes::InvalidNamespace,
                     str::stream() << Request::kCommandName
@@ -224,86 +285,42 @@ public:
                                                       boost::none /* shardVersion */,
                                                       db.getVersion() /* databaseVersion */);
 
-                auto checkMetadataForDb = [&]() {
-                    try {
+                auto dbCursors = _getCursorsOnParticipants(
+                    opCtx, dbNss, [](OperationContext* opCtx, const NamespaceString& nss) {
                         auto backoffStrategy = getBackoffStrategy();
 
-                        DDLLockManager::ScopedDatabaseDDLLock dbDDLLock{
-                            opCtx, dbNss.dbName(), kDDLLockReason, MODE_S, backoffStrategy};
+                        return DDLLockManager::ScopedDatabaseDDLLock{
+                            opCtx, nss.dbName(), kDDLLockReason, MODE_S, backoffStrategy};
+                    });
 
-                        auto dbCursors = _establishCursorOnParticipants(opCtx, dbNss);
-                        cursors.insert(cursors.end(),
-                                       std::make_move_iterator(dbCursors.begin()),
-                                       std::make_move_iterator(dbCursors.end()));
-                        return Status::OK();
-                    } catch (const ExceptionFor<ErrorCodes::StaleDbVersion>& ex) {
-                        // Receiving a StaleDbVersion is because of one of these scenarios:
-                        // - A movePrimary is changing the db primary shard.
-                        // - The database is being dropped.
-                        // - This shard doesn't know about the existence of the db.
-                        LOGV2_DEBUG(8840400,
-                                    1,
-                                    "Received StaleDbVersion error while trying to run database "
-                                    "metadata checks",
-                                    logAttrs(dbNss.dbName()),
-                                    "error"_attr = redact(ex));
-                        return ex.toStatus();
-                    }
-                };
-
-                bool skippedMetadataChecks = false;
-                auto status = checkMetadataForDb();
-                if (!status.isOK()) {
-                    auto extraInfo = status.extraInfo<StaleDbRoutingVersion>();
-                    if (!extraInfo || extraInfo->getVersionWanted()) {
-                        // In case there is a wanted shard version means that the metadata is stale
-                        // and we are going to skip the checks.
-                        skippedMetadataChecks = true;
-                    } else {
-                        // In case the shard doesn't know about the database, we perform a refresh
-                        // and re-try the metadata checks.
-                        (void)FilteringMetadataCache::get(opCtx)->onDbVersionMismatch(
-                            opCtx, dbNss.dbName(), extraInfo->getVersionReceived());
-
-                        skippedMetadataChecks = !checkMetadataForDb().isOK();
-                    }
-                }
-
-                // All the other scenarios, we skip the metadata checks for this db.
-                if (skippedMetadataChecks) {
-                    LOGV2_DEBUG(
-                        7328700,
-                        1,
-                        "Skipping database metadata check since the database version is stale",
-                        logAttrs(dbNss.dbName()));
-                }
+                cursors.insert(cursors.end(),
+                               std::make_move_iterator(dbCursors.begin()),
+                               std::make_move_iterator(dbCursors.end()));
             }
 
             return _mergeCursors(opCtx, nss, std::move(cursors));
         }
 
         Response _runDatabaseLevel(OperationContext* opCtx, const NamespaceString& nss) {
-            auto dbCursors = [&]() {
-                auto backoffStrategy = getBackoffStrategy();
+            auto dbCursors = _getCursorsOnParticipants(
+                opCtx, nss, [](OperationContext* opCtx, const NamespaceString& nss) {
+                    auto backoffStrategy = getBackoffStrategy();
 
-                DDLLockManager::ScopedDatabaseDDLLock dbDDLLock{
-                    opCtx, nss.dbName(), kDDLLockReason, MODE_S, backoffStrategy};
-
-                return _establishCursorOnParticipants(opCtx, nss);
-            }();
+                    return DDLLockManager::ScopedDatabaseDDLLock{
+                        opCtx, nss.dbName(), kDDLLockReason, MODE_S, backoffStrategy};
+                });
 
             return _mergeCursors(opCtx, nss, std::move(dbCursors));
         }
 
         Response _runCollectionLevel(OperationContext* opCtx, const NamespaceString& nss) {
-            auto collCursors = [&]() {
-                auto backoffStrategy = getBackoffStrategy();
+            auto collCursors = _getCursorsOnParticipants(
+                opCtx, nss, [](OperationContext* opCtx, const NamespaceString& nss) {
+                    auto backoffStrategy = getBackoffStrategy();
 
-                DDLLockManager::ScopedCollectionDDLLock dbDDLLock{
-                    opCtx, nss, kDDLLockReason, MODE_S, backoffStrategy};
-
-                return _establishCursorOnParticipants(opCtx, nss);
-            }();
+                    return DDLLockManager::ScopedCollectionDDLLock{
+                        opCtx, nss, kDDLLockReason, MODE_S, backoffStrategy};
+                });
 
             return _mergeCursors(opCtx, nss, std::move(collCursors));
         }

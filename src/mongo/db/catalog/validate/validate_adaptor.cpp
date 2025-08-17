@@ -29,18 +29,14 @@
 
 
 #include <absl/container/flat_hash_map.h>
-#include <algorithm>
 #include <boost/move/utility_core.hpp>
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
 #include <climits>
 #include <fmt/format.h>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <string>
-#include <utility>
-#include <vector>
 
 #include "mongo/base/error_codes.h"
 #include "mongo/base/status_with.h"
@@ -413,7 +409,7 @@ Status _validateTimeSeriesDataTimeField(const CollectionPtr& coll,
                                         int version,
                                         int* bucketCount,
                                         bool shouldDecompressBSON) {
-    TrackingContext trackingContext;
+    tracking::Context trackingContext;
     timeseries::bucket_catalog::MinMax minmax{trackingContext};
     if (version == timeseries::kTimeseriesControlUncompressedVersion) {
         for (const auto& metric : timeField.Obj()) {
@@ -517,7 +513,7 @@ Status _validateTimeSeriesDataField(const CollectionPtr& coll,
                                     int version,
                                     int bucketCount,
                                     bool shouldDecompressBSON) {
-    TrackingContext trackingContext;
+    tracking::Context trackingContext;
     timeseries::bucket_catalog::MinMax minmax{trackingContext};
     if (version == timeseries::kTimeseriesControlUncompressedVersion) {
         // Checks that indices are in increasing order and within the correct range.
@@ -883,7 +879,6 @@ void ValidateAdaptor::traverseRecordStore(OperationContext* opCtx,
                 results->addWarning(kSchemaValidationFailedReason);
             } else if (coll->getTimeseriesOptions()) {
                 BSONObj recordBson = record->data.toBson();
-                _enforceTimeseriesBucketsAreAlwaysCompressed(recordBson, results);
 
                 // Checks for time-series collection consistency.
                 Status bucketStatus =
@@ -1033,27 +1028,6 @@ void ValidateAdaptor::repairIndexEntries(OperationContext* opCtx, ValidateResult
 
 void ValidateAdaptor::addIndexEntryErrors(OperationContext* opCtx, ValidateResults* results) {
     _keyBasedIndexConsistency.addIndexEntryErrors(opCtx, results);
-}
-
-void ValidateAdaptor::_enforceTimeseriesBucketsAreAlwaysCompressed(const BSONObj& recordBson,
-                                                                   ValidateResults* results) {
-    if (!_validateState->enforceTimeseriesBucketsAreAlwaysCompressed()) {
-        return;
-    }
-
-    int bucketVersion = recordBson.getField(timeseries::kBucketControlFieldName)
-                            .Obj()
-                            .getIntField(timeseries::kBucketControlVersionFieldName);
-
-    if (bucketVersion != timeseries::kTimeseriesControlCompressedSortedVersion &&
-        bucketVersion != timeseries::kTimeseriesControlCompressedUnsortedVersion) {
-        LOGV2(7735100,
-              "Expected time-series bucket to be compressed",
-              "bucket"_attr = recordBson.toString());
-        results->addError(
-            "Expected time-series bucket to be compressed. Search logs for message "
-            "with id 7735100.");
-    }
 }
 
 }  // namespace mongo

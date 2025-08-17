@@ -119,6 +119,7 @@ mongo_cc_library(
     deps = [
         "storage_wiredtiger_customization_hooks",
         "//src/mongo/db:dbhelpers",
+        "//src/mongo/db:commands",
         "//src/mongo/db:global_settings",
         "//src/mongo/db:mongod_options",
         "//src/mongo/db:prepare_conflict_tracker",

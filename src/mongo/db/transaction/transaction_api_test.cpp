@@ -308,6 +308,7 @@ private:
     mutable StatusWith<BSONObj> _lastResponse{BSONObj()};
     mutable std::queue<StatusWith<BSONObj>> _responses;
     mutable std::vector<BSONObj> _sentRequests;
+    bool _runningLocalTransaction{false};
 
     mutable stdx::mutex _mutex;
     mutable stdx::condition_variable _hangNextCommitOrAbortCommandCV;
@@ -419,7 +420,8 @@ void assertTxnMetadata(BSONObj obj,
     }
 }
 
-class TxnAPITest : public SharedClockSourceAdapterServiceContextTest {
+class TxnAPITest : service_context_test::WithSetupTransportLayer,
+                   public SharedClockSourceAdapterServiceContextTest {
     explicit TxnAPITest(std::shared_ptr<ClockSourceMock> mockClock)
         : SharedClockSourceAdapterServiceContextTest(mockClock), _mockClock(std::move(mockClock)) {}
 

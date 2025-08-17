@@ -31,7 +31,7 @@
 #include "mongo/db/exec/sbe/values/value.h"
 #include "mongo/db/query/index_bounds.h"
 #include "mongo/db/query/index_bounds_builder.h"
-#include "mongo/db/query/index_bounds_builder_test.h"
+#include "mongo/db/query/index_bounds_builder_test_fixture.h"
 
 #include "mongo/db/query/interval.h"
 #include "mongo/unittest/assert.h"
@@ -41,12 +41,12 @@
 
 namespace mongo::stats {
 
-namespace {
 using DoubleLimits = std::numeric_limits<double>;
 double numberMin = -DoubleLimits::max();
 double numberMax = DoubleLimits::max();
 double negativeInfinity = -DoubleLimits::infinity();
 double positiveInfinity = DoubleLimits::infinity();
+double NaN = DoubleLimits::quiet_NaN();
 
 class ValueUtilsTest : public unittest::Test {
 public:
@@ -73,7 +73,6 @@ void assertSameTypeBracketedInterval(const Interval& interval) {
 
     ASSERT(sameTypeBracketInterval(startTag, interval.endInclusive, endTag, endVal));
 }
-}  // namespace
 
 TEST_F(ValueUtilsTest, SameTypeBracketedIntervalEqual) {
     BSONObj obj = BSON("a" << 4);

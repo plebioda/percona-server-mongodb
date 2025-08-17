@@ -29,6 +29,7 @@
 
 #include "mongo/util/signal_handlers_synchronous.h"
 
+#include "signal_handlers_synchronous.h"
 #include <boost/exception/diagnostic_information.hpp>
 #include <boost/exception/exception.hpp>
 #include <cerrno>
@@ -242,10 +243,9 @@ void printStackTraceNoRecursion() {
 }
 
 // must hold MallocFreeOStreamGuard to call
-void printSignalAndBacktrace(int signalNum) {
+void printSignal(int signalNum) {
     mallocFreeOStream << "Got signal: " << signalNum << " (" << strsignal(signalNum) << ").";
     writeMallocFreeStreamToLog();
-    printStackTraceNoRecursion();
 }
 
 void dumpScopedDebugInfo(std::ostream& os) {
@@ -261,6 +261,14 @@ void dumpScopedDebugInfo(std::ostream& os) {
     os << "]\n";
 }
 
+// must hold MallocFreeOStreamGuard to call
+void printErrorBlock() {
+    printStackTraceNoRecursion();
+    writeMallocFreeStreamToLog();
+    dumpScopedDebugInfo(mallocFreeOStream);
+    writeMallocFreeStreamToLog();
+}
+
 // this will be called in certain c++ error cases, for example if there are two active
 // exceptions
 void myTerminate() {
@@ -274,19 +282,15 @@ void myTerminate() {
         mallocFreeOStream << " No exception is active";
     }
     writeMallocFreeStreamToLog();
-    dumpScopedDebugInfo(mallocFreeOStream);
-    writeMallocFreeStreamToLog();
-    printStackTraceNoRecursion();
+    printErrorBlock();
     breakpoint();
     endProcessWithSignal(SIGABRT);
 }
 
-extern "C" void abruptQuit(int signalNum);
 extern "C" void abruptQuit(int signalNum) {
     MallocFreeOStreamGuard lk(signalNum);
-    dumpScopedDebugInfo(mallocFreeOStream);
-    writeMallocFreeStreamToLog();
-    printSignalAndBacktrace(signalNum);
+    printSignal(signalNum);
+    printErrorBlock();
     breakpoint();
     endProcessWithSignal(signalNum);
 }
@@ -313,7 +317,6 @@ void myPureCallHandler() {
 
 #else
 
-extern "C" void abruptQuitAction(int signalNum, siginfo_t*, void*);
 extern "C" void abruptQuitAction(int signalNum, siginfo_t*, void*) {
     abruptQuit(signalNum);
 };
@@ -330,7 +333,6 @@ void printSigInfo(const siginfo_t* siginfo) {
     writeMallocFreeStreamToLog();
 }
 
-extern "C" void abruptQuitWithAddrSignal(int signalNum, siginfo_t* siginfo, void* ucontext_erased);
 extern "C" void abruptQuitWithAddrSignal(int signalNum, siginfo_t* siginfo, void* ucontext_erased) {
     // For convenient debugger access.
     [[maybe_unused]] auto ucontext = static_cast<const ucontext_t*>(ucontext_erased);
@@ -346,19 +348,45 @@ extern "C" void abruptQuitWithAddrSignal(int signalNum, siginfo_t* siginfo, void
     writeMallocFreeStreamToLog();
 
     printSigInfo(siginfo);
+    printSignal(signalNum);
+    printErrorBlock();
 
-    printSignalAndBacktrace(signalNum);
     breakpoint();
     endProcessWithSignal(signalNum);
+}
+
+extern "C" void noopSignalHandler(int signalNum, siginfo_t*, void*) {}
+
+extern "C" typedef void(sigAction_t)(int signum, siginfo_t* info, void* context);
+
+void installSignalHandler(int signal, sigAction_t handler) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sigemptyset(&sa.sa_mask);
+    if (handler == nullptr) {
+        sa.sa_handler = SIG_IGN;
+    } else {
+        sa.sa_sigaction = handler;
+        sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    }
+    if (sigaction(signal, &sa, nullptr) != 0) {
+        int savedErr = errno;
+        LOGV2_FATAL(31334,
+                    "Failed to install sigaction for signal",
+                    "signal"_attr = signal,
+                    "error"_attr = strerror(savedErr));
+    }
+}
+
+void setupSignalTestingHandler() {
+#ifdef __linux__
+    installSignalHandler(interruptResilienceTestingSignal(), noopSignalHandler);
+#endif
 }
 
 #endif
 
 }  // namespace
-
-#if !defined(_WIN32)
-extern "C" typedef void(sigAction_t)(int signum, siginfo_t* info, void* context);
-#endif
 
 void setupSynchronousSignalHandlers() {
     stdx::set_terminate(myTerminate);
@@ -384,24 +412,12 @@ void setupSynchronousSignalHandlers() {
         {SIGILL, &abruptQuitWithAddrSignal},
         {SIGFPE, &abruptQuitWithAddrSignal},
     };
+
     for (const auto& spec : kSignalSpecs) {
-        struct sigaction sa;
-        memset(&sa, 0, sizeof(sa));
-        sigemptyset(&sa.sa_mask);
-        if (spec.function == nullptr) {
-            sa.sa_handler = SIG_IGN;
-        } else {
-            sa.sa_sigaction = spec.function;
-            sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
-        }
-        if (sigaction(spec.signal, &sa, nullptr) != 0) {
-            int savedErr = errno;
-            LOGV2_FATAL(31334,
-                        "Failed to install sigaction for signal",
-                        "signal"_attr = spec.signal,
-                        "error"_attr = strerror(savedErr));
-        }
+        installSignalHandler(spec.signal, spec.function);
     }
+
+    setupSignalTestingHandler();
     setupSIGTRAPforDebugger();
 #if defined(MONGO_STACKTRACE_CAN_DUMP_ALL_THREADS)
     setupStackTraceSignalAction(stackTraceSignal());
@@ -431,6 +447,14 @@ int stackTraceSignal() {
     return SIGUSR2;
 }
 #endif
+
+int interruptResilienceTestingSignal() {
+#ifdef __linux__
+    return SIGRTMIN;
+#else
+    return 0;
+#endif
+}
 
 ActiveExceptionWitness::ActiveExceptionWitness() {
     // Later entries in the catch chain will become the innermost catch blocks, so

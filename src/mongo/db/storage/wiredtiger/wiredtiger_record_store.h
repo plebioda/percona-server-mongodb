@@ -369,8 +369,6 @@ public:
 
     ~Oplog() override;
 
-    void postConstructorInit(OperationContext* opCtx);
-
     std::unique_ptr<SeekableRecordCursor> getCursor(OperationContext*,
                                                     bool forward = true) const override;
 
@@ -395,7 +393,7 @@ public:
 
     int64_t getMaxSize() const;
 
-    WiredTigerOplogTruncateMarkers* truncateMarkers() const;
+    void setTruncateMarkers(std::shared_ptr<WiredTigerOplogTruncateMarkers> markers);
 
 private:
     Status _insertRecords(OperationContext*,
@@ -608,9 +606,4 @@ private:
 // WT failpoint to throw write conflict exceptions randomly
 extern FailPoint WTWriteConflictException;
 extern FailPoint WTWriteConflictExceptionForReads;
-
-// Prevents oplog writes from becoming visible asynchronously. Once activated, new writes will not
-// be seen by regular readers until deactivated. It is unspecified whether writes that commit before
-// activation will become visible while active.
-extern FailPoint WTPauseOplogVisibilityUpdateLoop;
 }  // namespace mongo

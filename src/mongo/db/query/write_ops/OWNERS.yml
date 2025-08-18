@@ -4,10 +4,10 @@ filters:
   # by QO by default.
   - "*":
     approvers:
-      - 10gen/query-optimization
+      - 10gen/query-optimization-parsers
   - "write_ops_exec*":
     approvers:
-      - 10gen/query-execution
+      - 10gen/query-execution-write-exec
 
   # These files contain high-level APIs for running write operations which are not currently owned
   # by a particular query subteam.

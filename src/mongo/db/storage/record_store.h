@@ -69,9 +69,11 @@ class MAdvise;
 class OperationContext;
 class RecordStore;
 class RecoveryUnit;
-
 class ValidateResults;
-class ValidateAdaptor;
+
+namespace CollectionValidation {
+class ValidationOptions;
+}
 
 /**
  * The data items stored in a RecordStore.
@@ -453,9 +455,7 @@ public:
      * If provided, saves any valid timestamps (startTs, startDurableTs, stopTs, stopDurableTs)
      * related to this record in 'recordTimestamps'.
      */
-    virtual void printRecordMetadata(OperationContext*,
-                                     const RecordId&,
-                                     std::set<Timestamp>*) const = 0;
+    virtual void printRecordMetadata(const RecordId&, std::set<Timestamp>*) const = 0;
 
     /**
      * Returns a new cursor over this record store.
@@ -518,7 +518,9 @@ public:
      * Performs record store specific validation to ensure consistency of underlying data
      * structures. If corruption is found, details of the errors will be in the results parameter.
      */
-    virtual void validate(RecoveryUnit&, bool full, ValidateResults*) = 0;
+    virtual void validate(RecoveryUnit&,
+                          const CollectionValidation::ValidationOptions&,
+                          ValidateResults*) = 0;
 
     /**
      * @param scaleSize - amount by which to scale size metrics

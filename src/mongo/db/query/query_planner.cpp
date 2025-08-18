@@ -80,7 +80,8 @@
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/collation/collation_index_key.h"
 #include "mongo/db/query/collation/collator_interface.h"
-#include "mongo/db/query/cost_based_ranker/qsn_estimator.h"
+#include "mongo/db/query/cost_based_ranker/cardinality_estimator.h"
+#include "mongo/db/query/cost_based_ranker/cost_estimator.h"
 #include "mongo/db/query/distinct_access.h"
 #include "mongo/db/query/eof_node_type.h"
 #include "mongo/db/query/find_command.h"
@@ -1614,6 +1615,18 @@ StatusWith<std::vector<std::unique_ptr<QuerySolution>>> QueryPlanner::plan(
                       "No indexed plans available, and running with 'notablescan' 2");
     }
 
+    // If CanonicalQuery is distinct-like and we haven't generated a plan that features
+    // a DISTINCT_SCAN, we should use SBE instead.
+    if (query.isSbeCompatible() && query.getDistinct()) {
+        const bool noDistinctScans = std::none_of(out.begin(), out.end(), [](const auto& soln) {
+            return soln->hasNode(STAGE_DISTINCT_SCAN);
+        });
+        if (noDistinctScans) {
+            return Status(ErrorCodes::NoDistinctScansForDistinctEligibleQuery,
+                          "No DISTINCT_SCAN plans available");
+        }
+    }
+
     return {std::move(out)};
 }  // QueryPlanner::plan
 
@@ -1625,15 +1638,20 @@ StatusWith<QueryPlanner::CostBasedRankerResult> QueryPlanner::planWithCostBasedR
     if (!statusWithMultiPlanSolns.isOK()) {
         return statusWithMultiPlanSolns.getStatus();
     }
-    // This is a temporary stub implementation of CBR which arbitrarily picks the last of the
-    // enumerated plans.
+
+    // TODO SERVER-97529: This is a temporary stub implementation of CBR which arbitrarily picks
+    // the last of the enumerated plans.
 
     EstimateMap estimates;
+    CardinalityEstimator cardEstimator(
+        *params.mainCollectionInfo.collStats,
+        estimates,
+        query.getExpCtx()->getQueryKnobConfiguration().getPlanRankerMode());
+    CostEstimator costEstimator(estimates);
+
     for (auto&& soln : statusWithMultiPlanSolns.getValue()) {
-        estimatePlanCost(*soln,
-                         query.getExpCtx()->getQueryKnobConfiguration().getPlanRankerMode(),
-                         *params.mainCollectionInfo.collStats,
-                         estimates);
+        cardEstimator.estimatePlan(*soln);
+        costEstimator.estimatePlan(*soln);
     }
 
     std::vector<std::unique_ptr<QuerySolution>> acceptedSoln;

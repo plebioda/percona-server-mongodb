@@ -146,6 +146,7 @@ tasks:
       - func: "activate task"
         vars:
           task_to_activate: ${archive_dist_test_debug_task_name|archive_dist_test_debug}
+          skip_for_patch_author: sys-perf-user
       - func: "scons compile"
         vars:
           targets: >-
@@ -209,6 +210,7 @@ tasks:
             - "src/src/mongo/db/modules/enterprise/docs/**"
             - "src/src/mongo/db/modules/enterprise/jstests/**"
             - "src/src/mongo/db/modules/subscription/jstests/**"
+            - "src/src/mongo/db/query/query_tester/tests/**"
             - "src/src/mongo/util/options_parser/test_config_files/**"
             - "src/src/third_party/JSON-Schema-Test-Suite/tests/draft4/**"
             - "src/src/third_party/mock_ocsp_responder/**"

@@ -214,6 +214,20 @@ TEST_F(GRPCTransportLayerTest, RunLargeCommand) {
     runCommandThroughServiceEntryPoint(largeMessage);
 }
 
+TEST_F(GRPCTransportLayerTest, TransportLayerStartsEgressReactor) {
+    runWithTL(
+        makeNoopRPCHandler(),
+        [](GRPCTransportLayer& tl) {
+            auto reactor = tl.getReactor(TransportLayer::WhichReactor::kEgress);
+
+            // Schedule a single task on the reactor to make sure it is working.
+            auto pf = makePromiseFuture<void>();
+            reactor->schedule([&](Status status) { pf.promise.setFrom(status); });
+            ASSERT_OK(std::move(pf.future).getNoThrow());
+        },
+        CommandServiceTestFixtures::makeTLOptions());
+}
+
 /**
  * Modifies the `ServiceContext` with `PeriodicRunnerMock`, a custom `PeriodicRunner` that maintains
  * a list of all instances of `PeriodicJob` and allows monitoring their internal state. We use this
@@ -414,6 +428,24 @@ TEST_F(GRPCTransportLayerTest, ConnectionError) {
                 auto status = tl.connect(HostAndPort("localhost", 1235),
                                          ConnectSSLMode::kGlobalSSLMode,
                                          Milliseconds(50));
+                ASSERT_NOT_OK(status);
+                ASSERT_TRUE(ErrorCodes::isNetworkError(status.getStatus()));
+            };
+            tryConnect();
+            // Ensure second attempt on already created channel object also gracefully fails.
+            tryConnect();
+        },
+        CommandServiceTestFixtures::makeTLOptions());
+}
+
+TEST_F(GRPCTransportLayerTest, SSLModeMismatch) {
+    runWithTL(
+        makeNoopRPCHandler(),
+        [&](auto& tl) {
+            auto tryConnect = [&] {
+                auto status = tl.connect(tl.getListeningAddresses().at(0),
+                                         ConnectSSLMode::kDisableSSL,
+                                         CommandServiceTestFixtures::kDefaultConnectTimeout);
                 ASSERT_NOT_OK(status);
                 ASSERT_TRUE(ErrorCodes::isNetworkError(status.getStatus()));
             };

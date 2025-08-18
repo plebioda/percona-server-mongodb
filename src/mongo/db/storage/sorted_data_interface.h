@@ -47,6 +47,10 @@ class SortedDataBuilderInterface;
 class IndexValidateResults;
 class SortedDataKeyValueView;
 
+namespace CollectionValidation {
+class ValidationOptions;
+}
+
 /**
  * This is the uniform interface for storing indexes and supporting point queries as well as range
  * queries. The actual implementation is up to the storage engine. All the storage engines must
@@ -154,7 +158,8 @@ public:
      * data. If 'full' is true, additionally traverses the data and validates its internal
      * structure.
      */
-    virtual IndexValidateResults validate(OperationContext* opCtx, bool full) const = 0;
+    virtual IndexValidateResults validate(
+        OperationContext* opCtx, const CollectionValidation::ValidationOptions& options) const = 0;
 
     virtual bool appendCustomStats(OperationContext* opCtx,
                                    BSONObjBuilder* output,
@@ -420,7 +425,7 @@ public:
     // Index creation
     //
 
-    virtual Status initAsEmpty(OperationContext* opCtx) = 0;
+    virtual Status initAsEmpty() = 0;
 
 protected:
     std::shared_ptr<Ident> _ident;

@@ -113,8 +113,7 @@ public:
                                              const char* damageSource,
                                              const DamageVector& damages) override;
 
-    void printRecordMetadata(OperationContext* opCtx,
-                             const RecordId& recordId,
+    void printRecordMetadata(const RecordId& recordId,
                              std::set<Timestamp>* recordTimestamps) const override {}
 
     std::unique_ptr<SeekableRecordCursor> getCursor(OperationContext* opCtx,
@@ -133,7 +132,9 @@ public:
 
     StatusWith<int64_t> compact(OperationContext*, const CompactOptions&) override;
 
-    void validate(RecoveryUnit&, bool full, ValidateResults*) override;
+    void validate(RecoveryUnit&,
+                  const CollectionValidation::ValidationOptions&,
+                  ValidateResults*) override;
 
     void appendNumericCustomStats(RecoveryUnit& ru,
                                   BSONObjBuilder* result,

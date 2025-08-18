@@ -56,19 +56,19 @@ filters:
       - 10gen/server-security
   - "*change_stream*":
     approvers:
-      - 10gen/query-execution
+      - 10gen/query-execution-change-streams
   - "aggregated_index_usage_tracker*":
     approvers:
-      - 10gen/query-execution
+      - 10gen/query-execution-index-access-stats
   - "collection_index_usage_tracker*":
     approvers:
-      - 10gen/query-execution
+      - 10gen/query-execution-index-access-stats
   - "curop*":
     approvers:
       - 10gen/query-integration-observability
   - "update_index_data*":
     approvers:
-      - 10gen/query-execution
+      - 10gen/query-execution-write-exec
   - "create*":
     approvers:
       - 10gen/server-catalog-and-routing
@@ -154,3 +154,15 @@ filters:
   - "dbcommands.idl":
     approvers:
       - 10gen/server-storage-execution
+  - "bulk_write_shard_test.cpp":
+    approvers:
+      - 10gen/query-execution-write-exec
+  - "change_collection_expired*":
+    approvers:
+      - 10gen/query-execution-change-streams
+  - "multi_key_path_tracker*":
+    approvers:
+      - 10gen/query-execution-indexing
+  - "yieldable.h":
+    approvers:
+      - 10gen/query-execution-yielding

@@ -196,7 +196,6 @@ mongo_cc_library(
     hdrs = [
         "cloner_utils.h",
         "database_cloner_common.h",
-        "//src/mongo/db/serverless:serverless_types_gen",
     ],
     deps = [
         ":read_concern_args",  # TODO(SERVER-93876): Remove.
@@ -681,6 +680,7 @@ mongo_cc_library(
         "//src/mongo/db:index_names.h",
         "//src/mongo/db:json.h",
         "//src/mongo/db:keypattern.h",
+        "//src/mongo/db:list_collections_gen",
         "//src/mongo/db:namespace_spec_gen",
         "//src/mongo/db:read_concern_support_result.h",
         "//src/mongo/db:request_execution_context.h",

@@ -192,6 +192,7 @@
 #include "mongo/db/s/resharding/resharding_donor_service.h"
 #include "mongo/db/s/resharding/resharding_op_observer.h"
 #include "mongo/db/s/resharding/resharding_recipient_service.h"
+#include "mongo/db/s/shard_filtering_metadata_refresh.h"
 #include "mongo/db/s/shard_server_op_observer.h"
 #include "mongo/db/s/sharding_ddl_coordinator_service.h"
 #include "mongo/db/s/sharding_initialization_mongod.h"
@@ -567,10 +568,12 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
         serviceContext->setPeriodicRunner(std::move(runner));
     }
 
-    // When starting the server with --queryableBackupMode or --recoverFromOplogAsStandalone, we are
-    // in read-only mode and don't allow user-originating operations to perform writes
+    // When starting the server with --queryableBackupMode, --recoverFromOplogAsStandalone or
+    // --magicRestore, we are in read-only mode and don't allow user-originating operations to
+    // perform writes
     if (storageGlobalParams.queryableBackupMode ||
-        repl::ReplSettings::shouldRecoverFromOplogAsStandalone()) {
+        repl::ReplSettings::shouldRecoverFromOplogAsStandalone() ||
+        storageGlobalParams.magicRestore) {
         serviceContext->disallowUserWrites();
     }
 
@@ -905,6 +908,7 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
                               << "startupRecoveryForRestore at the same time",
                 !repl::startupRecoveryForRestore);
 
+        // This uassert will also cover if we are running magic restore.
         uassert(ErrorCodes::BadValue,
                 str::stream() << "Cannot use queryableBackupMode in a replica set",
                 !replCoord->getSettings().isReplSet());
@@ -1033,14 +1037,6 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
 
         if (replSettings.isReplSet() || !gInternalValidateFeaturesAsPrimary) {
             serverGlobalParams.validateFeaturesAsPrimary.store(false);
-        }
-
-        if (replSettings.isReplSet()) {
-            TimeElapsedBuilderScopedTimer scopedTimer(serviceContext->getFastClockSource(),
-                                                      "Create an oplog view for tenant migrations",
-                                                      &startupTimeElapsedBuilder);
-            Lock::GlobalWrite lk(startupOpCtx.get());
-            OldClientContext ctx(startupOpCtx.get(), NamespaceString::kRsOplogNamespace);
         }
 
         storageEngine->startTimestampMonitor();
@@ -1240,16 +1236,6 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
     if (MONGO_unlikely(shutdownAtStartup.shouldFail())) {
         LOGV2(20556, "Starting clean exit via failpoint");
         exitCleanly(ExitCode::clean);
-    }
-
-    if (storageGlobalParams.magicRestore) {
-        TimeElapsedBuilderScopedTimer scopedTimer(
-            serviceContext->getFastClockSource(), "Magic restore", &startupTimeElapsedBuilder);
-        if (getMagicRestoreMain() == nullptr) {
-            LOGV2_ERROR(7180701, "--magicRestore cannot be used with a community build");
-            exitCleanly(ExitCode::badOptions);
-        }
-        return getMagicRestoreMain()(serviceContext);
     }
 
     globalServerLifecycleMonitor().onFinishingStartup();
@@ -1992,6 +1978,9 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
         LOGV2_OPTIONS(6773201, {LogComponent::kSharding}, "Shutting down the CatalogCache");
         Grid::get(serviceContext)->catalogCache()->shutDownAndJoin();
     }
+
+    LOGV2_OPTIONS(9439300, {LogComponent::kSharding}, "Shutting down the filtering metadata cache");
+    FilteringMetadataCache::get(opCtx)->shutDown();
 
     if (auto configServerRoutingInfoCache = RoutingInformationCache::get(serviceContext)) {
         LOGV2_OPTIONS(

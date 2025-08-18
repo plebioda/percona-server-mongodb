@@ -126,8 +126,7 @@ public:
         return false;
     }
 
-    void printRecordMetadata(OperationContext* opCtx,
-                             const RecordId& recordId,
+    void printRecordMetadata(const RecordId& recordId,
                              std::set<Timestamp>* recordTimestamps) const override {
         MONGO_UNREACHABLE;
     }
@@ -145,7 +144,9 @@ public:
         return false;
     }
 
-    void validate(RecoveryUnit&, bool full, ValidateResults*) override {}
+    void validate(RecoveryUnit&,
+                  const CollectionValidation::ValidationOptions&,
+                  ValidateResults*) override {}
 
     void appendNumericCustomStats(RecoveryUnit& ru,
                                   BSONObjBuilder* result,
@@ -340,7 +341,9 @@ public:
         return boost::none;
     }
 
-    IndexValidateResults validate(OperationContext* opCtx, bool full) const override {
+    IndexValidateResults validate(
+        OperationContext* opCtx,
+        const CollectionValidation::ValidationOptions& options) const override {
         return IndexValidateResults{};
     }
 
@@ -374,7 +377,7 @@ public:
         return {};
     }
 
-    Status initAsEmpty(OperationContext* opCtx) override {
+    Status initAsEmpty() override {
         return Status::OK();
     }
 };

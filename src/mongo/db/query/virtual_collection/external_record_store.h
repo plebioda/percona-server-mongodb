@@ -160,9 +160,7 @@ public:
         return {ErrorCodes::Error::UnknownError, "Unknown error"};
     }
 
-    void printRecordMetadata(OperationContext*,
-                             const RecordId&,
-                             std::set<Timestamp>* recordTimestamps) const final {
+    void printRecordMetadata(const RecordId&, std::set<Timestamp>* recordTimestamps) const final {
         unimplementedTasserted();
     }
 
@@ -197,7 +195,9 @@ public:
         return {ErrorCodes::Error::UnknownError, "Unknown error"};
     }
 
-    void validate(RecoveryUnit&, bool full, ValidateResults*) final {
+    void validate(RecoveryUnit&,
+                  const CollectionValidation::ValidationOptions&,
+                  ValidateResults*) final {
         unimplementedTasserted();
     }
 

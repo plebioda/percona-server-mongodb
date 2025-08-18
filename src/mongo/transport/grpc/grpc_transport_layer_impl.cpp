@@ -60,7 +60,10 @@ GRPCTransportLayerImpl::Options::Options(const ServerGlobalParams& params) {
 GRPCTransportLayerImpl::GRPCTransportLayerImpl(ServiceContext* svcCtx,
                                                Options options,
                                                std::unique_ptr<SessionManager> sm)
-    : _svcCtx{svcCtx}, _options{std::move(options)}, _sessionManager(std::move(sm)) {}
+    : _svcCtx{svcCtx},
+      _egressReactor(std::make_shared<GRPCReactor>()),
+      _options{std::move(options)},
+      _sessionManager(std::move(sm)) {}
 
 std::unique_ptr<GRPCTransportLayerImpl> GRPCTransportLayerImpl::createWithConfig(
     ServiceContext* svcCtx,
@@ -201,6 +204,14 @@ Status GRPCTransportLayerImpl::start() {
             }
         }
         if (_client) {
+            _ioThread = stdx::thread([this] {
+                setThreadName("GRPCDefaultEgressReactor");
+                LOGV2_DEBUG(9715105, 2, "Starting the default egress gRPC reactor");
+                _egressReactor->run();
+                LOGV2_DEBUG(9715106, 2, "Draining the default egress gRPC reactor");
+                _egressReactor->drain();
+                LOGV2_DEBUG(9715107, 2, "Finished drain of the default egress gRPC reactor");
+            });
             _client->start(_svcCtx);
         }
         return Status::OK();
@@ -210,10 +221,13 @@ Status GRPCTransportLayerImpl::start() {
 }
 
 StatusWith<std::shared_ptr<Session>> GRPCTransportLayerImpl::connectWithAuthToken(
-    HostAndPort peer, Milliseconds timeout, boost::optional<std::string> authToken) {
+    HostAndPort peer,
+    ConnectSSLMode sslMode,
+    Milliseconds timeout,
+    boost::optional<std::string> authToken) {
     try {
         invariant(_client);
-        return _client->connect(std::move(peer), timeout, {std::move(authToken)});
+        return _client->connect(std::move(peer), timeout, {std::move(authToken), sslMode});
     } catch (const DBException& e) {
         return e.toStatus();
     }
@@ -226,14 +240,9 @@ StatusWith<std::shared_ptr<Session>> GRPCTransportLayerImpl::connect(
     const boost::optional<TransientSSLParams>& transientSSLParams) {
     try {
         iassert(ErrorCodes::InvalidSSLConfiguration,
-                "SSL must be enabled when using gRPC",
-                sslMode == ConnectSSLMode::kEnableSSL ||
-                    (sslMode == transport::ConnectSSLMode::kGlobalSSLMode &&
-                     sslGlobalParams.sslMode.load() != SSLParams::SSLModes::SSLMode_disabled));
-        iassert(ErrorCodes::InvalidSSLConfiguration,
                 "Transient SSL parameters are not supported when using gRPC",
                 !transientSSLParams);
-        return connectWithAuthToken(std::move(peer), timeout);
+        return connectWithAuthToken(std::move(peer), sslMode, timeout);
     } catch (const DBException& e) {
         return e.toStatus();
     }
@@ -250,6 +259,10 @@ void GRPCTransportLayerImpl::shutdown() {
     }
     if (_client) {
         _client->shutdown();
+        LOGV2_DEBUG(9715108, 2, "Stopping default egress gRPC reactor");
+        _egressReactor->stop();
+        LOGV2_DEBUG(9715109, 2, "Joining the default egress gRPC reactor thread");
+        _ioThread.join();
     }
 
     if (_sessionManager) {

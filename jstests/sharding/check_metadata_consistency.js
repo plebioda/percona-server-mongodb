@@ -6,6 +6,7 @@
  * ]
  */
 
+import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {ShardingTest} from "jstests/libs/shardingtest.js";
 
 // Configure initial sharding cluster
@@ -515,12 +516,6 @@ function isFcvGraterOrEqualTo(fcvRequired) {
 (function testTimeseriesOptionsMismatch() {
     jsTest.log("Executing testTimeseriesOptionsMismatch");
 
-    // TODO SERVER-79304 Remove FCV check when 8.0 becomes last LTS.
-    if (!isFcvGraterOrEqualTo('8.0')) {
-        jsTestLog("Skipping timeseriesOptionsMismatch test because required FCV is less than 8.0.");
-        return;
-    }
-
     const db = getNewDb();
     const kSourceCollName = "tracked_collection";
     const kNss = db.getName() + "." + kSourceCollName;
@@ -559,20 +554,19 @@ function isFcvGraterOrEqualTo(fcvRequired) {
     assertNoInconsistencies();
 })();
 
-(function testTimeseriesAuxiliaryMetadataMismatch() {
-    jsTest.log("Executing testTimeseriesAuxiliaryMetadataMismatch");
+(function testCollectionAuxiliaryMetadataMismatch() {
+    jsTest.log("Executing testCollectionAuxiliaryMetadataMismatch");
 
     // TODO SERVER-95414 Remove FCV check when 9.0 becomes last LTS.
     if (!isFcvGraterOrEqualTo('8.1')) {
         jsTestLog(
-            "Skipping timeseriesMetadataMismatch test because required FCV is less than 8.1.");
+            "Skipping testCollectionAuxiliaryMetadataMismatch test because required FCV is less than 8.1.");
         return;
     }
 
     const db = getNewDb();
-    const kSourceCollName = "ts_metadata_inconsistent";
+    const kSourceCollName = "toplevel_metadata_inconsistent";
     const kNss = db.getName() + "." + kSourceCollName;
-    const kBucketNss = db.getName() + ".system.buckets." + kSourceCollName;
     const primaryShard = st.shard0;
     const anotherShard = st.shard1;
 
@@ -580,39 +574,31 @@ function isFcvGraterOrEqualTo(fcvRequired) {
     assert.commandWorked(
         mongos.adminCommand({enableSharding: db.getName(), primaryShard: primaryShard.shardName}));
 
-    // Create a timeseries sharded collection and place data in 2 shards.
-    assert.commandWorked(db.adminCommand({
-        shardCollection: kNss,
-        key: {meta: 1},
-        timeseries: {timeField: "time", metaField: "meta"}
-    }));
-    assert.commandWorked(st.s.adminCommand({split: kBucketNss, middle: {meta: 0}}));
+    // Create a tracked collection and place data in 2 shards.
+    assert.commandWorked(db.adminCommand({shardCollection: kNss, key: {x: 1}}));
+    assert.commandWorked(st.s.adminCommand({split: kNss, middle: {x: 0}}));
     assert.commandWorked(
-        st.s.adminCommand({moveChunk: kBucketNss, find: {meta: 0}, to: anotherShard.shardName}));
+        st.s.adminCommand({moveChunk: kNss, find: {x: 0}, to: anotherShard.shardName}));
     assertNoInconsistencies();
 
-    // Set the timeseriesBucketsMayHaveMixedSchemaData field directly on a single shard and
-    // catch the inconsistency.
-    assert.commandWorked(primaryShard.getDB(db.getName()).runCommand({
-        collMod: kSourceCollName,
-        timeseriesBucketsMayHaveMixedSchemaData: true
-    }));
+    // Insert a catalog top level metadata inconsistency and check that it's detected.
+    const fpsimulateCatalogTopLevelMetadataInconsistency =
+        configureFailPoint(primaryShard, 'simulateCatalogTopLevelMetadataInconsistency');
 
     const inconsistencies = db.checkMetadataConsistency().toArray();
-    // Note that due to SERVER-91195, in addition to the CollectionAuxiliaryMetadataMismatch,
-    // there will be a CollectionOptionsMismatch as the timeseriesBucketsMayHaveMixedSchemaData
-    // field is also stored in the options.storageEngine.wiredTiger.configString field.
-    assert.eq(2, inconsistencies.length);
+    assert.eq(1, inconsistencies.length);
     assertCollectionAuxiliaryMetadataMismatch(inconsistencies, [
         {
             shards: [primaryShard.shardName],
-            md: {ns: kBucketNss, timeseriesBucketsMayHaveMixedSchemaData: true}
+            md: {ns: kNss, testOnlyInconsistentField: primaryShard.shardName}
         },
         {
             shards: [anotherShard.shardName],
-            md: {ns: kBucketNss, timeseriesBucketsMayHaveMixedSchemaData: false}
+            md: {ns: kNss, testOnlyInconsistentField: anotherShard.shardName}
         }
     ]);
+
+    fpsimulateCatalogTopLevelMetadataInconsistency.off();
 
     // Clean up the database to pass the hooks that detect inconsistencies.
     db.dropDatabase();
@@ -621,13 +607,6 @@ function isFcvGraterOrEqualTo(fcvRequired) {
 
 (function testDefaultCollationMismatch1() {
     jsTest.log("Executing testDefaultCollationMismatch1");
-
-    // TODO SERVER-79304 Remove FCV check when 8.0 becomes last LTS.
-    if (!isFcvGraterOrEqualTo('8.0')) {
-        jsTestLog(
-            "Skipping testDefaultCollationMismatch2 test because required FCV is less than 8.0.");
-        return;
-    }
 
     const db = getNewDb();
     const kSourceCollName = "tracked_collection";
@@ -673,13 +652,6 @@ function isFcvGraterOrEqualTo(fcvRequired) {
 
 (function testCappedCollectionCantBeSharded() {
     jsTest.log("Executing testCappedCollectionCantBeSharded");
-
-    // TODO SERVER-79304 Remove FCV check when 8.0 becomes last LTS.
-    if (!isFcvGraterOrEqualTo('8.0')) {
-        jsTestLog(
-            "Skipping testCappedCollectionCantBeSharded test because required FCV is less than 8.0.");
-        return;
-    }
 
     const db = getNewDb();
     const kSourceCollName = "capped_collection";

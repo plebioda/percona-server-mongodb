@@ -66,6 +66,10 @@ struct InsertDeleteOptions;
 class SortedDataIndexAccessMethod;
 struct CollectionOptions;
 
+namespace CollectionValidation {
+class ValidationOptions;
+}
+
 /**
  * An IndexAccessMethod is the interface through which all the mutation, lookup, and
  * traversal of index entries is done. The class is designed so that the underlying index
@@ -155,14 +159,15 @@ public:
      * only called once for the lifetime of the index
      * if called multiple times, is an error
      */
-    virtual Status initializeAsEmpty(OperationContext* opCtx) = 0;
+    virtual Status initializeAsEmpty() = 0;
 
     /**
      * Validates the index. If 'full' is false, only performs checks which do not traverse the
      * index. If 'full' is true, additionally traverses the index and validates its internal
      * structure.
      */
-    virtual IndexValidateResults validate(OperationContext* opCtx, bool full) const = 0;
+    virtual IndexValidateResults validate(
+        OperationContext* opCtx, const CollectionValidation::ValidationOptions& options) const = 0;
 
     /**
      * Returns the number of keys in the index, traversing the index to do so.
@@ -567,9 +572,11 @@ public:
                   int64_t* numInserted,
                   int64_t* numDeleted) final;
 
-    Status initializeAsEmpty(OperationContext* opCtx) final;
+    Status initializeAsEmpty() final;
 
-    IndexValidateResults validate(OperationContext* opCtx, bool full) const final;
+    IndexValidateResults validate(
+        OperationContext* opCtx,
+        const CollectionValidation::ValidationOptions& options) const final;
 
     int64_t numKeys(OperationContext* opCtx) const final;
 

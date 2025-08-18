@@ -279,6 +279,8 @@ void removeIndexBuildEntryAfterCommitOrAbort(OperationContext* opCtx,
         return;
     }
 
+    // In magic restore we finish in-progress index builds unlike in standalone recovery, so we
+    // should not halt execution for magic restore.
     if (replCoord->getSettings().shouldRecoverFromOplogAsStandalone()) {
         // Writes to the 'config.system.indexBuilds' collection are replicated and the index entry
         // will be removed when the delete oplog entry is replayed at a later time.
@@ -1281,7 +1283,8 @@ void IndexBuildsCoordinator::applyAbortIndexBuild(OperationContext* opCtx,
     if (replCoord->getSettings().shouldRecoverFromOplogAsStandalone()) {
         // Unfinished index builds are not restarted in standalone mode. That means there will be no
         // index builder threads to abort. Instead, we should drop the unfinished indexes that were
-        // aborted.
+        // aborted. In magic restore we do restart unfinished index builds so we do not need to
+        // worry about this.
         AutoGetCollection autoColl{opCtx, nss, MODE_X};
 
         WriteUnitOfWork wuow(opCtx);
@@ -1716,21 +1719,12 @@ void IndexBuildsCoordinator::onStepUp(OperationContext* opCtx) {
         _stepUpThread.join();
     }
 
-    PromiseAndFuture<void> promiseAndFuture;
-    _stepUpThread = stdx::thread([this, &promiseAndFuture] {
+    _stepUpThread = stdx::thread([this] {
         Client::initThread("IndexBuildsCoordinator-StepUp",
                            getGlobalServiceContext()->getService(ClusterRole::ShardServer));
         auto threadCtx = Client::getCurrent()->makeOperationContext();
-        threadCtx->setAlwaysInterruptAtStepDownOrUp_UNSAFE();
-        promiseAndFuture.promise.emplaceValue();
-
         _onStepUpAsyncTaskFn(threadCtx.get());
-        return;
     });
-
-    // Wait until the async thread has started and marked its opCtx to always be interrupted at
-    // step-down. We ensure the RSTL is taken and no interrupts are lost.
-    promiseAndFuture.future.wait(opCtx);
 }
 
 void IndexBuildsCoordinator::_onStepUpAsyncTaskFn(OperationContext* opCtx) {
@@ -1742,14 +1736,18 @@ void IndexBuildsCoordinator::_onStepUpAsyncTaskFn(OperationContext* opCtx) {
                     return;
                 }
 
-                // We don't need to check if we are primary because the opCtx is interrupted at
-                // stepdown, so it is guaranteed that if taking the locks succeeds, we are primary.
                 // Take an intent lock, the actual index build should keep running in parallel.
                 // This also prevents the concurrent index build from aborting or committing
                 // while we check if the commit quorum has to be signaled or check the skipped
                 // records.
                 const NamespaceStringOrUUID dbAndUUID(replState->dbName, replState->collectionUUID);
                 AutoGetCollection autoColl(opCtx, dbAndUUID, MODE_IX);
+
+                // We've taken the RSTL, now make sure we are still primary.
+                uassert(
+                    ErrorCodes::InterruptedDueToReplStateChange,
+                    "Index build step up task interrupted due to repl state change",
+                    repl::ReplicationCoordinator::get(opCtx)->canAcceptWritesFor(opCtx, dbAndUUID));
 
                 // The index build hasn't yet completed its initial setup, and persisted state like
                 // commit quorum information is absent. There's nothing to do here.
@@ -1798,6 +1796,8 @@ void IndexBuildsCoordinator::_onStepUpAsyncTaskFn(OperationContext* opCtx) {
                     autoColl.getCollection(),
                     IndexBuildsManager::RetrySkippedRecordMode::kKeyGeneration));
 
+            } catch (const ExceptionFor<ErrorCodes::InterruptedDueToReplStateChange>&) {
+                throw;
             } catch (const DBException& ex) {
                 // If the operation context is interrupted (shutdown, stepdown, killOp), stop the
                 // verification process and exit.

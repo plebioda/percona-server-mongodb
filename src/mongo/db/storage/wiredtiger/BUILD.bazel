@@ -131,6 +131,7 @@ mongo_cc_library(
         "//src/mongo/db/catalog:collection_catalog",
         "//src/mongo/db/catalog:collection_options",
         "//src/mongo/db/catalog:health_log_interface",
+        "//src/mongo/db/catalog/validate:validate_options",
         "//src/mongo/db/concurrency:exception_util",
         "//src/mongo/db/encryption:key_management",
         "//src/mongo/db/query/bson:dotted_path_support",

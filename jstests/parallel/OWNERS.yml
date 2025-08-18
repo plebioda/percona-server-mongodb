@@ -1,8 +1,14 @@
 version: 1.0.0
 filters:
+  - "*":
+    approvers:
+      - 10gen/server-programmability
   - "insert.js":
     approvers:
       - 10gen/server-storage-execution
   - "del.js":
     approvers:
       - 10gen/server-storage-execution
+  - "update_serializability*":
+    approvers:
+      - 10gen/query-execution-write-exec

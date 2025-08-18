@@ -83,6 +83,7 @@ public:
 
     virtual StatusWith<std::shared_ptr<Session>> connectWithAuthToken(
         HostAndPort peer,
+        ConnectSSLMode sslMode,
         Milliseconds timeout,
         boost::optional<std::string> authToken = boost::none) = 0;
 
@@ -102,13 +103,6 @@ public:
 
     StringData getNameForLogging() const override {
         return "gRPC"_sd;
-    }
-
-    /**
-     * Not applicable to gRPC networking.
-     */
-    ReactorHandle getReactor(WhichReactor) override {
-        MONGO_UNIMPLEMENTED;
     }
 
     /**

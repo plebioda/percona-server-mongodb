@@ -4,7 +4,7 @@
  *
  *  @tags: [
  *    multiversion_incompatible,
- *    # TODO (SERVER-88126): Re-enable this test or add an explanation why it is incompatible.
+ *    # TODO (SERVER-97257): Re-enable this test or add an explanation why it is incompatible.
  *    embedded_router_incompatible,
  *    # TODO (SERVER-94095): Re-enable this test in aubsan and tsan once DEVPROD-10102 is resolved.
  *    incompatible_aubsan,
@@ -18,6 +18,9 @@ const kActiveFaultDurationSec = 12;
 
 // Crashed mongos will remain holding its socket as a zombie for some time.
 TestData.ignoreUnterminatedProcesses = true;
+// Because this test intentionally causes the server to crash, we need to instruct the
+// shell to clean up the core dump that is left behind.
+TestData.cleanUpCoreDumpsFromExpectedCrash = true;
 
 // Checking index consistency involves talking to the primary config server which is blackholed from
 // the mongos in this test.

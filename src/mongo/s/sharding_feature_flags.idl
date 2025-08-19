@@ -159,13 +159,6 @@ feature_flags:
     default: true
     version: 7.3
     shouldBeFCVGated: true
-  # TODO (SERVER-87196): remove the flag below after 8.0 is released
-  featureFlagEnforceRoutingByNamespace:
-    description: "Bans routing by UUID"
-    cpp_varname: feature_flags::gEnforceRoutingByNamespace
-    default: true
-    version: 8.0
-    shouldBeFCVGated: true
   featureFlagStopDDLCoordinatorsDuringTopologyChanges:
     description: "Feature flag to stop ShardingDDLCoordinators during sharding topology changes (i.e.
                   addShard and removeShard)."
@@ -182,7 +175,8 @@ feature_flags:
   featureFlagCreateDatabaseDDLCoordinator:
     description: "Feature flag for enabling the sharding DDL coordinator for database creation."
     cpp_varname: feature_flags::gCreateDatabaseDDLCoordinator
-    default: false
+    default: true
+    version: 8.1
     shouldBeFCVGated: true
   # TODO (SERVER-95599): remove once 9.0 becomes last LTS.
   featureFlagConfigDebugDumpSupported:
@@ -204,3 +198,8 @@ feature_flags:
     cpp_varname: feature_flags::gDualCatalogCache
     default: false
     shouldBeFCVGated: false
+  featureFlagUseTopologyChangeCoordinators:
+    description: "Feature flag for enabling the coordinator based topology changes."
+    cpp_varname: feature_flags::gUseTopologyChangeCoordinators
+    default: false
+    shouldBeFCVGated: true

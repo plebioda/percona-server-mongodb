@@ -1,4 +1,4 @@
-load("//bazel:mongo_src_rules.bzl", "mongo_cc_library")
+load("//bazel:mongo_src_rules.bzl", "mongo_cc_library", "mongo_cc_unit_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -133,6 +133,8 @@ mongo_cc_library(
         "//src/mongo/db:cluster_role.h",
         "//src/mongo/db:database_name.h",
         "//src/mongo/db:database_name_reserved.def.h",
+        "//src/mongo/db:feature_compatibility_version_parser.h",
+        "//src/mongo/db:feature_flag.h",
         "//src/mongo/db:field_ref.h",
         "//src/mongo/db:logical_time.h",
         "//src/mongo/db:namespace_string.h",
@@ -189,6 +191,7 @@ mongo_cc_library(
         "//src/mongo/db/query:explain_verbosity_gen",
         "//src/mongo/db/query:plan_summary_stats.h",
         "//src/mongo/db/query:plan_summary_stats_visitor.h",
+        "//src/mongo/db/query:query_feature_flags_gen",
         "//src/mongo/db/query:record_id_bound.h",
         "//src/mongo/db/query:stage_types.h",
         "//src/mongo/db/query:tree_walker.h",
@@ -398,5 +401,69 @@ mongo_cc_library(
         ":query_sbe_stages",
         ":query_sbe_storage",
         "//src/mongo/db/query/optimizer:optimizer_base",
+    ],
+)
+
+# Lightweight test utils.
+mongo_cc_library(
+    name = "abt_unit_test_utils",
+    srcs = [
+        "//src/mongo/db/exec/sbe/abt:abt_unit_test_utils.cpp",
+    ],
+    hdrs = [
+        "//src/mongo/db/exec/sbe/abt:abt_unit_test_literals.h",
+        "//src/mongo/db/exec/sbe/abt:abt_unit_test_utils.h",
+    ],
+    deps = [
+        "//src/mongo/db/query/bson:dotted_path_support",
+        "//src/mongo/db/query/optimizer:optimizer_base",
+        "//src/mongo/unittest",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "abt_unit_test_infra_test",
+    srcs = [
+        "//src/mongo/db/exec/sbe/abt:abt_unit_test_infra_test.cpp",
+    ],
+    tags = ["mongo_unittest_third_group"],
+    deps = [
+        ":abt_unit_test_utils",
+        "//src/mongo/db/exec/sbe:query_sbe",  # needed to register extended type destruction for MakeObjSpec :(
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "makeobj_spec_hash_test",
+    srcs = [
+        "expression_test_base.h",
+        "makeobj_spec_hash_test.cpp",
+        "sbe_unittest.h",
+    ],
+    tags = ["mongo_unittest_first_group"],
+    deps = [
+        ":query_sbe_abt",
+        ":query_sbe_makeobj_spec",
+        "//src/mongo/db/pipeline:expression_context_for_test",
+        "//src/mongo/db/query:query_test_service_context",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "sbe_abt_test",
+    srcs = [
+        "//src/mongo/db/exec/sbe:expression_test_base.h",
+        "//src/mongo/db/exec/sbe:sbe_unittest.h",
+        "//src/mongo/db/exec/sbe/abt:sbe_abt_test.cpp",
+    ],
+    tags = ["mongo_unittest_fourth_group"],
+    deps = [
+        ":abt_unit_test_utils",
+        ":query_sbe_abt",
+        "//src/mongo/db:query_exec",
+        "//src/mongo/db:service_context_d_test_fixture",
+        "//src/mongo/db/pipeline:expression_context_for_test",
+        "//src/mongo/db/query:query_test_service_context",
+        "//src/mongo/db/query/collation:collator_interface_mock",
     ],
 )

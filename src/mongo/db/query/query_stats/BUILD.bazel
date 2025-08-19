@@ -1,4 +1,4 @@
-load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library")
+load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library", "mongo_cc_unit_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -31,6 +31,7 @@ mongo_cc_library(
         "optimizer_metrics_stats_entry.cpp",
         "query_stats.cpp",
         "query_stats_entry.cpp",
+        "query_stats_failed_to_record_info.cpp",
         "query_stats_helpers.h",
         "supplemental_metrics_stats.cpp",
         "vector_search_stats_entry.cpp",
@@ -41,6 +42,7 @@ mongo_cc_library(
         "optimizer_metrics_stats_entry.h",
         "query_stats.h",
         "query_stats_entry.h",
+        "query_stats_failed_to_record_info.h",
         "supplemental_metrics_stats.h",
         "vector_search_stats_entry.h",
     ],
@@ -60,6 +62,7 @@ mongo_cc_library(
         "//src/mongo/db/query/query_shape",  # TODO(SERVER-93876): Remove.
         "//src/mongo/db/stats:counters",  # TODO(SERVER-93876): Remove.
         "//src/mongo/rpc:client_metadata",  # TODO(SERVER-93876): Remove.
+        "//src/mongo/util:buildinfo",
         "//src/mongo/util:fail_point",  # TODO(SERVER-93876): Remove.
         "//src/mongo/util:processinfo",  # TODO(SERVER-93876): Remove.
         "//src/mongo/util/net:network",  # TODO(SERVER-93876): Remove.
@@ -78,5 +81,34 @@ mongo_cc_library(
     ],
     deps = [
         "//src/mongo/db:server_base",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "db_query_query_stats_test",
+    srcs = [
+        "agg_key_test.cpp",
+        "count_key_test.cpp",
+        "distinct_key_test.cpp",
+        "find_key_test.cpp",
+        "key_test.cpp",
+        "query_stats_store_test.cpp",
+        "query_stats_test.cpp",
+        "rate_limiting_test.cpp",
+        "supplemental_metrics_test.cpp",
+    ],
+    tags = ["mongo_unittest_second_group"],
+    deps = [
+        ":query_stats",
+        ":rate_limiting",
+        "//src/mongo/db:service_context_d_test_fixture",
+        "//src/mongo/db/auth:authmocks",
+        "//src/mongo/db/exec/sbe:abt_unit_test_utils",
+        "//src/mongo/db/pipeline:expression_context_for_test",
+        "//src/mongo/db/query:query_common",
+        "//src/mongo/db/query:query_test_service_context",
+        "//src/mongo/db/query/query_shape",
+        "//src/mongo/idl:server_parameter_test_util",
+        "//src/mongo/util:version_impl",
     ],
 )

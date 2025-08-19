@@ -27,12 +27,10 @@
  *    it in the license file.
  */
 
-
 #include "mongo/logv2/log_severity.h"
 #include <boost/optional.hpp>
 #include <boost/smart_ptr.hpp>
 #include <fmt/format.h>
-#include <mutex>
 #include <string>
 #include <utility>
 
@@ -118,15 +116,12 @@
 #include "mongo/s/transaction_participant_failed_unyield_exception.h"
 #include "mongo/s/transaction_router.h"
 #include "mongo/transport/hello_metrics.h"
-#include "mongo/transport/service_executor.h"
-#include "mongo/transport/session.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/decorable.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/namespace_string_util.h"
 #include "mongo/util/scopeguard.h"
-#include "mongo/util/string_map.h"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kSharding
 
@@ -712,8 +707,7 @@ Status ParseAndRunCommand::RunInvocation::_setup() {
 
     if (canApplyDefaultWC) {
         auto getDefaultWC = ([&]() {
-            auto rwcDefaults =
-                ReadWriteConcernDefaults::get(opCtx->getServiceContext()).getDefault(opCtx);
+            auto rwcDefaults = ReadWriteConcernDefaults::get(opCtx).getDefault(opCtx);
             auto wcDefault = rwcDefaults.getDefaultWriteConcern();
             const auto defaultWriteConcernSource = rwcDefaults.getDefaultWriteConcernSource();
             customDefaultWriteConcernWasApplied = defaultWriteConcernSource &&
@@ -820,8 +814,7 @@ Status ParseAndRunCommand::RunInvocation::_setup() {
     auto shouldApplyDefaults = startTransaction || !TransactionRouter::get(opCtx);
     if (readConcernSupport.defaultReadConcernPermit.isOK() && shouldApplyDefaults) {
         if (readConcernArgs.isEmpty()) {
-            const auto rwcDefaults =
-                ReadWriteConcernDefaults::get(opCtx->getServiceContext()).getDefault(opCtx);
+            const auto rwcDefaults = ReadWriteConcernDefaults::get(opCtx).getDefault(opCtx);
             const auto rcDefault = rwcDefaults.getDefaultReadConcern();
             if (rcDefault) {
                 const auto readConcernSource = rwcDefaults.getDefaultReadConcernSource();
@@ -839,8 +832,7 @@ Status ParseAndRunCommand::RunInvocation::_setup() {
     if (!readConcernSupport.defaultReadConcernPermit.isOK() &&
         readConcernSupport.implicitDefaultReadConcernPermit.isOK() && shouldApplyDefaults &&
         readConcernArgs.isEmpty()) {
-        const auto rcDefault = ReadWriteConcernDefaults::get(opCtx->getServiceContext())
-                                   .getImplicitDefaultReadConcern();
+        const auto rcDefault = ReadWriteConcernDefaults::get(opCtx).getImplicitDefaultReadConcern();
         applyDefaultReadConcern(rcDefault);
     }
 

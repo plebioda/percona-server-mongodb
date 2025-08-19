@@ -35,13 +35,12 @@
 #include "mongo/db/matcher/expression_leaf.h"
 #include "mongo/db/matcher/expression_tree.h"
 #include "mongo/db/namespace_string.h"
-#include "mongo/db/query/ce/sampling_estimator.h"
+#include "mongo/db/query/ce/sampling_estimator_impl.h"
 #include "mongo/db/query/cost_based_ranker/estimates.h"
 #include "mongo/db/query/multiple_collection_accessor.h"
 #include "mongo/db/storage/write_unit_of_work.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/framework.h"
-
 
 namespace mongo::ce {
 
@@ -51,9 +50,9 @@ const NamespaceString kTestNss =
     NamespaceString::createNamespaceString_forTest("TestDB", "TestColl");
 const size_t kSampleSize = 5;
 
-class SamplingEstimatorForTesting : public SamplingEstimator {
+class SamplingEstimatorForTesting : public SamplingEstimatorImpl {
 public:
-    using SamplingEstimator::SamplingEstimator;
+    using SamplingEstimatorImpl::SamplingEstimatorImpl;
 
     const std::vector<BSONObj>& getSample() {
         return _sample;
@@ -62,11 +61,15 @@ public:
     static std::unique_ptr<CanonicalQuery> makeCanonicalQuery(const NamespaceString& nss,
                                                               OperationContext* opCtx,
                                                               size_t sampleSize) {
-        return SamplingEstimator::makeCanonicalQuery(nss, opCtx, sampleSize);
+        return SamplingEstimatorImpl::makeCanonicalQuery(nss, opCtx, sampleSize);
+    }
+
+    static size_t calculateSampleSize(SamplingConfidenceIntervalEnum ci, double marginOfError) {
+        return SamplingEstimatorImpl::calculateSampleSize(ci, marginOfError);
     }
 
     double getCollCard() {
-        return SamplingEstimator::getCollCard();
+        return SamplingEstimatorImpl::getCollCard();
     }
 
     // Help function to compute the margin of error for the given sample size. The z parameter
@@ -77,7 +80,6 @@ public:
 
     // Help function to compute confidence interval for a cardinality value. The z parameter
     // corresponds to the confidence %. Default value of z is for 95% confidence.
-
     std::pair<CardinalityEstimate, CardinalityEstimate> confidenceInterval(double card,
                                                                            double z = 1.96) {
         auto moe = marginOfError(z);
@@ -175,7 +177,7 @@ TEST_F(SamplingEstimatorTest, RandomSamplingProcess) {
     SamplingEstimatorForTesting samplingEstimator(operationContext(),
                                                   colls,
                                                   kSampleSize,
-                                                  SamplingEstimator::SamplingStyle::kRandom,
+                                                  SamplingEstimatorImpl::SamplingStyle::kRandom,
                                                   makeCardinalityEstimate(10));
 
     auto sample = samplingEstimator.getSample();
@@ -193,11 +195,12 @@ TEST_F(SamplingEstimatorTest, DrawANewSample) {
                                             {});
 
     // A sample was generated on construction with size being the pre-determined size.
-    SamplingEstimatorForTesting samplingEstimator(operationContext(),
-                                                  colls,
-                                                  kSampleSize,
-                                                  SamplingEstimator::SamplingStyle::kRandom,
-                                                  makeCardinalityEstimate(10));
+    SamplingEstimatorForTesting samplingEstimator(
+        operationContext(),
+        colls,
+        kSampleSize,
+        SamplingEstimatorForTesting::SamplingStyle::kRandom,
+        makeCardinalityEstimate(10));
 
     auto sample = samplingEstimator.getSample();
     ASSERT_EQUALS(sample.size(), kSampleSize);
@@ -207,6 +210,42 @@ TEST_F(SamplingEstimatorTest, DrawANewSample) {
     samplingEstimator.generateRandomSample(3);
     auto newSample = samplingEstimator.getSample();
     ASSERT_EQUALS(newSample.size(), 3);
+}
+
+TEST_F(SamplingEstimatorTest, SampleSize) {
+    std::map<std::pair<SamplingConfidenceIntervalEnum, double>, size_t> sampleSizes = {
+        {std::make_pair(SamplingConfidenceIntervalEnum::k90, 2), 1691},
+        {std::make_pair(SamplingConfidenceIntervalEnum::k95, 2), 2401},
+        {std::make_pair(SamplingConfidenceIntervalEnum::k99, 2), 4147},
+        {std::make_pair(SamplingConfidenceIntervalEnum::k90, 5), 271},
+        {std::make_pair(SamplingConfidenceIntervalEnum::k95, 5), 384},
+        {std::make_pair(SamplingConfidenceIntervalEnum::k99, 5), 664},
+    };
+    for (auto& el : sampleSizes) {
+        auto size =
+            SamplingEstimatorForTesting::calculateSampleSize(el.first.first, el.first.second);
+        ASSERT_EQUALS(size, el.second);
+    }
+}
+
+TEST_F(SamplingEstimatorTest, SampleSizeError) {
+    const size_t card = 100;
+    const size_t sampleSize = 400;
+
+    AutoGetCollection collPtr(operationContext(), kTestNss, LockMode::MODE_IX);
+    auto colls = MultipleCollectionAccessor(operationContext(),
+                                            &collPtr.getCollection(),
+                                            kTestNss,
+                                            false /* isAnySecondaryNamespaceAViewOrNotFullyLocal */,
+                                            {});
+
+    ASSERT_THROWS_CODE(SamplingEstimatorImpl(operationContext(),
+                                             colls,
+                                             sampleSize,
+                                             SamplingEstimatorImpl::SamplingStyle::kRandom,
+                                             makeCardinalityEstimate(card)),
+                       DBException,
+                       9406300);
 }
 
 TEST_F(SamplingEstimatorTest, EstimateCardinality) {
@@ -221,11 +260,12 @@ TEST_F(SamplingEstimatorTest, EstimateCardinality) {
                                             false /* isAnySecondaryNamespaceAViewOrNotFullyLocal */,
                                             {});
 
-    SamplingEstimatorForTesting samplingEstimator(operationContext(),
-                                                  colls,
-                                                  sampleSize,
-                                                  SamplingEstimator::SamplingStyle::kRandom,
-                                                  makeCardinalityEstimate(card));
+    SamplingEstimatorForTesting samplingEstimator(
+        operationContext(),
+        colls,
+        sampleSize,
+        SamplingEstimatorForTesting::SamplingStyle::kRandom,
+        makeCardinalityEstimate(card));
 
     {  // All documents in the collection satisfy the predicate.
         auto operand = BSON("$lt" << 100);
@@ -274,11 +314,12 @@ TEST_F(SamplingEstimatorTest, EstimateCardinalityLogicalExpressions) {
                                             false /* isAnySecondaryNamespaceAViewOrNotFullyLocal */,
                                             {});
 
-    SamplingEstimatorForTesting samplingEstimator(operationContext(),
-                                                  colls,
-                                                  sampleSize,
-                                                  SamplingEstimator::SamplingStyle::kRandom,
-                                                  makeCardinalityEstimate(card));
+    SamplingEstimatorForTesting samplingEstimator(
+        operationContext(),
+        colls,
+        sampleSize,
+        SamplingEstimatorForTesting::SamplingStyle::kRandom,
+        makeCardinalityEstimate(card));
 
     {  // Range predicate on "a" with 20% selectivity: a > 40 && a < 60.
         auto operand1 = BSON("$gte" << 40);
@@ -353,11 +394,12 @@ TEST_F(SamplingEstimatorTest, EstimateCardinalityMultipleExpressions) {
                                             false /* isAnySecondaryNamespaceAViewOrNotFullyLocal */,
                                             {});
 
-    SamplingEstimatorForTesting samplingEstimator(operationContext(),
-                                                  colls,
-                                                  sampleSize,
-                                                  SamplingEstimator::SamplingStyle::kRandom,
-                                                  makeCardinalityEstimate(card));
+    SamplingEstimatorForTesting samplingEstimator(
+        operationContext(),
+        colls,
+        sampleSize,
+        SamplingEstimatorForTesting::SamplingStyle::kRandom,
+        makeCardinalityEstimate(card));
 
     auto operand1 = BSON("$lt" << 30);
     LTMatchExpression lt("a"_sd, operand1["$lt"]);

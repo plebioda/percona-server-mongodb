@@ -21,7 +21,6 @@ from typing import Any, Dict, List, Set, Tuple
 
 import distro
 import git
-import mongo.platform as mongo_platform
 import psutil
 import requests
 import SCons
@@ -109,6 +108,11 @@ class Globals:
 
     # Flag to signal that scons is ready to build, but needs to wait on bazel
     waiting_on_bazel_flag: bool = False
+
+    # Flag to signal that scons is ready to build, but needs to wait on bazel
+    bazel_build_success: bool = False
+
+    bazel_build_exitcode: int = 1
 
     # a IO object to hold the bazel output in place of stdout
     bazel_thread_terminal_output = StringIO()
@@ -227,13 +231,20 @@ def bazel_builder_action(
                 # Check if the current directory and .cache files are on the same mount
                 # because hardlinking doesn't work between drives and when it fails
                 # it leaves behind a symlink that is hard to clean up
-                if os.stat(".").st_dev == os.stat(s, follow_symlinks=True).st_dev:
+                # We don't hardlink on windows because SCons will run link commands against
+                # the files in the bazel directory, and if its running the link command
+                # while SCons cleans up files in the output directory you get file permission errors
+                if (
+                    platform.system() != "Windows"
+                    and os.stat(".").st_dev == os.stat(s, follow_symlinks=True).st_dev
+                ):
                     if os.path.exists(str(t)):
                         os.remove(str(t))
                     os.link(s, str(t))
+                    os.chmod(str(t), os.stat(str(t)).st_mode | stat.S_IWUSR)
                 else:
                     print(
-                        f"Copying {s} to {t} instead of hardlinking because files are on different mounts."
+                        f"Copying {s} to {t} instead of hardlinking because files are on different mounts or we are on Windows."
                     )
                     shutil.copy(s, str(t))
                     os.chmod(str(t), os.stat(str(t)).st_mode | stat.S_IWUSR)
@@ -400,6 +411,8 @@ def perform_tty_bazel_build(bazel_cmd: str) -> None:
             bazel_proc.kill()
         bazel_proc.wait()
 
+    Globals.bazel_build_exitcode = bazel_proc.returncode
+
     if bazel_proc.returncode != 0:
         raise subprocess.CalledProcessError(bazel_proc.returncode, bazel_cmd, "", "")
 
@@ -421,6 +434,7 @@ def perform_non_tty_bazel_build(bazel_cmd: str) -> None:
 
     stdout, stderr = bazel_proc.communicate()
 
+    Globals.bazel_build_exitcode = bazel_proc.returncode
     if bazel_proc.returncode != 0:
         raise subprocess.CalledProcessError(bazel_proc.returncode, bazel_cmd, stdout, stderr)
 
@@ -451,9 +465,11 @@ def run_bazel_command(env, bazel_cmd, tries_so_far=0):
     except subprocess.CalledProcessError as ex:
         if platform.system() == "Windows" and tries_so_far == 0:
             print(
-                "Build failed, retrying with --jobs=1 in case linking failed due to hitting concurrency limits..."
+                "Build failed, retrying with --jobs=4 in case linking failed due to hitting concurrency limits..."
             )
-            run_bazel_command(env, bazel_cmd + ["--jobs", "1"], tries_so_far=1)
+            run_bazel_command(
+                env, bazel_cmd + ["--jobs", "4", "--link_timeout_8min=False"], tries_so_far=1
+            )
             return
 
         print("ERROR: Bazel build failed:")
@@ -465,6 +481,7 @@ def run_bazel_command(env, bazel_cmd, tries_so_far=0):
             print(ex.output)
 
         raise ex
+    Globals.bazel_build_success = True
 
 
 def bazel_build_thread_func(env, log_dir: str, verbose: bool, ninja_generate: bool) -> None:
@@ -486,6 +503,12 @@ def bazel_build_thread_func(env, log_dir: str, verbose: bool, ninja_generate: bo
         bazel_cmd = Globals.bazel_base_build_command + extra_args + ["//:compiledb", "//src/..."]
 
     else:
+        build_tags = env.GetOption("bazel-build-tag")
+        if not build_tags:
+            build_tags += ["all"]
+        if "all" not in build_tags:
+            build_tags += ["scons_link_lists", "gen_source"]
+            extra_args += [f"--build_tag_filters={','.join(build_tags)}"]
         bazel_cmd = Globals.bazel_base_build_command + extra_args + ["//src/..."]
 
     if ninja_generate:
@@ -813,8 +836,6 @@ def auto_archive_bazel(env, node, already_archived, search_stack):
         try:
             bazel_child = env["SCONS2BAZEL_TARGETS"].bazel_output(bazel_child.path)
         except KeyError:
-            if env.Verbose():
-                print("BazelAutoArchive not processing non bazel target:\n{bazel_child}}")
             return
 
     if str(bazel_child) not in already_archived:
@@ -1014,14 +1035,8 @@ common --bes_keywords=engflow:BuildScmStatus={status}
 
 def setup_bazel_env_vars() -> None:
     # Set the JAVA_HOME directories for ppc64le and s390x since their bazel binaries are not compiled with a built-in JDK.
-    if platform.machine().lower() == "ppc64le":
-        Globals.bazel_env_variables["JAVA_HOME"] = (
-            "/usr/lib/jvm/java-21-openjdk-21.0.4.0.7-1.el8.ppc64le"
-        )
-    elif platform.machine().lower() == "s390x":
-        Globals.bazel_env_variables["JAVA_HOME"] = (
-            "/usr/lib/jvm/java-21-openjdk-21.0.4.0.7-1.el8.s390x"
-        )
+    if platform.machine().lower() in {"ppc64le", "s390x"}:
+        Globals.bazel_env_variables["JAVA_HOME"] = "/usr/lib/jvm/java-21-openjdk"
 
 
 def setup_max_retry_attempts() -> None:
@@ -1138,6 +1153,12 @@ def generate(env: SCons.Environment.Environment) -> None:
         "--dynamic_mode=off",
     ]
 
+    # Timeout linking on windows at 5 minutes to retry with a lower concurrency.
+    if platform.system() == "Windows":
+        bazel_internal_flags += [
+            "--link_timeout_8min=True",
+        ]
+
     if not os.environ.get("USE_NATIVE_TOOLCHAIN"):
         bazel_internal_flags += [
             f"--platforms=//bazel/platforms:{distro_or_os}_{normalized_arch}",
@@ -1236,7 +1257,7 @@ def generate(env: SCons.Environment.Environment) -> None:
         if not validate_remote_execution_certs(env):
             sys.exit(1)
 
-        if env.GetOption("bazel-dynamic-execution") == True:
+        if env.GetOption("bazel-dynamic-execution"):
             try:
                 docker_detected = (
                     subprocess.run(["docker", "info"], capture_output=True).returncode == 0
@@ -1432,6 +1453,12 @@ def generate(env: SCons.Environment.Environment) -> None:
         if Globals.bazel_thread_terminal_output is not None:
             Globals.bazel_thread_terminal_output.seek(0)
             sys.stdout.write(Globals.bazel_thread_terminal_output.read())
+        if not Globals.bazel_build_success:
+            raise SCons.Errors.BuildError(
+                errstr=f"Bazel Build failed with {Globals.bazel_build_exitcode}!",
+                status=Globals.bazel_build_exitcode,
+                exitstatus=1,
+            )
 
     env.AddMethod(wait_for_bazel, "WaitForBazel")
 

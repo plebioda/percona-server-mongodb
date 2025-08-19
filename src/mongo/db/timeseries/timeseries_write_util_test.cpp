@@ -57,6 +57,8 @@
 #include "mongo/db/timeseries/timeseries_constants.h"
 #include "mongo/db/timeseries/timeseries_options.h"
 #include "mongo/db/timeseries/timeseries_write_util.h"
+#include "mongo/db/timeseries/write_ops/measurement.h"
+#include "mongo/db/timeseries/write_ops/timeseries_write_ops_utils_internal.h"
 #include "mongo/idl/server_parameter_test_util.h"
 #include "mongo/logv2/log.h"
 #include "mongo/unittest/assert.h"
@@ -65,33 +67,6 @@
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kStorage
 
 namespace mongo::timeseries {
-namespace details {
-inline bool operator==(const Measurement& lhs, const Measurement& rhs) {
-    bool timeFieldEqual = (lhs.timeField.woCompare(rhs.timeField) == 0);
-    if (!timeFieldEqual || (lhs.dataFields.size() != rhs.dataFields.size())) {
-        return false;
-    }
-
-    StringMap<BSONElement> rhsFields;
-    for (auto& field : rhs.dataFields) {
-        rhsFields.insert({field.fieldNameStringData().toString(), field});
-    }
-
-    for (size_t i = 0; i < lhs.dataFields.size(); ++i) {
-        auto& lhsField = lhs.dataFields[i];
-        auto it = rhsFields.find(lhsField.fieldNameStringData().toString());
-        if (it == rhsFields.end()) {
-            return false;
-        }
-
-        if (it->second.woCompare(lhsField) != 0) {
-            return false;
-        }
-    }
-    return true;
-}
-}  // namespace details
-
 namespace {
 
 const std::string testDbName = "db_timeseries_write_util_test";
@@ -149,8 +124,8 @@ TEST_F(TimeseriesWriteUtilTest, MakeNewBucketFromWriteBatch) {
     batch->max = fromjson(R"({"time":{"$date":"2022-06-06T15:34:30.000Z"},"a":3,"b":3})");
 
     // Makes the new document for write.
-    auto newDoc =
-        timeseries::makeNewDocumentForWrite(ns, batch, /*metadata=*/{}).uncompressedBucket;
+    auto newDoc = timeseries::write_ops_utils::makeNewDocumentForWrite(ns, batch, /*metadata=*/{})
+                      .uncompressedBucket;
 
     // Checks the measurements are stored in the bucket format.
     const BSONObj bucketDoc = fromjson(
@@ -183,7 +158,8 @@ TEST_F(TimeseriesWriteUtilTest, MakeNewBucketFromWriteBatchWithMeta) {
     auto metadata = fromjson(R"({"meta":{"tag":1}})");
 
     // Makes the new document for write.
-    auto newDoc = timeseries::makeNewDocumentForWrite(ns, batch, metadata).uncompressedBucket;
+    auto newDoc = timeseries::write_ops_utils::makeNewDocumentForWrite(ns, batch, metadata)
+                      .uncompressedBucket;
 
     // Checks the measurements are stored in the bucket format.
     const BSONObj bucketDoc = fromjson(
@@ -218,7 +194,8 @@ TEST_F(TimeseriesWriteUtilTest, MakeNewCompressedBucketFromWriteBatch) {
     batch->max = fromjson(R"({"time":{"$date":"2022-06-06T15:34:50.000Z"},"a":3,"b":3})");
 
     // Makes the new compressed document for write.
-    auto bucketDoc = timeseries::makeNewDocumentForWrite(ns, batch, /*metadata=*/{});
+    auto bucketDoc =
+        timeseries::write_ops_utils::makeNewDocumentForWrite(ns, batch, /*metadata=*/{});
 
     // makeNewDocumentForWrite() can return the uncompressed bucket if an error was encountered
     // during compression. Check that compression was successful.
@@ -263,7 +240,7 @@ TEST_F(TimeseriesWriteUtilTest, MakeNewCompressedBucketFromWriteBatchWithMeta) {
     auto metadata = fromjson(R"({"meta":{"tag":1}})");
 
     // Makes the new compressed document for write.
-    auto bucketDoc = timeseries::makeNewDocumentForWrite(ns, batch, metadata);
+    auto bucketDoc = timeseries::write_ops_utils::makeNewDocumentForWrite(ns, batch, metadata);
 
     // makeNewDocumentForWrite() can return the uncompressed bucket if an error was encountered
     // during compression. Check that compression was successful.
@@ -304,14 +281,14 @@ TEST_F(TimeseriesWriteUtilTest, MakeNewBucketFromMeasurements) {
         fromjson(R"({"time":{"$date":"2022-06-06T15:33:30.000Z"},"a":3,"b":3})")};
 
     // Makes the new document for write.
-    auto newDoc = timeseries::makeNewDocumentForWrite(ns,
-                                                      uuid,
-                                                      oid,
-                                                      measurements,
-                                                      /*metadata=*/{},
-                                                      options,
-                                                      /*comparator=*/nullptr,
-                                                      boost::none)
+    auto newDoc = timeseries::write_ops_utils::makeNewDocumentForWrite(ns,
+                                                                       uuid,
+                                                                       oid,
+                                                                       measurements,
+                                                                       /*metadata=*/{},
+                                                                       options,
+                                                                       /*comparator=*/nullptr,
+                                                                       boost::none)
                       .uncompressedBucket;
 
     // Checks the measurements are stored in the bucket format.
@@ -344,7 +321,7 @@ TEST_F(TimeseriesWriteUtilTest, MakeNewBucketFromMeasurementsWithMeta) {
 
     // Makes the new document for write.
     auto newDoc =
-        timeseries::makeNewDocumentForWrite(
+        timeseries::write_ops_utils::makeNewDocumentForWrite(
             ns, uuid, oid, measurements, metadata, options, /*comparator=*/nullptr, boost::none)
             .uncompressedBucket;
 
@@ -419,7 +396,7 @@ TEST_F(TimeseriesWriteUtilTest, MakeTimeseriesCompressedDiffUpdateOp) {
                  "b":{"o":6,"d":{"$binary":"gCsAEAAUABAAAA==","$type":"00"}}}}
         })");
 
-    auto request = makeTimeseriesCompressedDiffUpdateOp(
+    auto request = write_ops_utils::makeTimeseriesCompressedDiffUpdateOp(
         operationContext(), batch, ns.makeTimeseriesBucketsNamespace());
     auto& updates = request.getUpdates();
 
@@ -492,7 +469,7 @@ TEST_F(TimeseriesWriteUtilTest, MakeTimeseriesCompressedDiffUpdateOpWithMeta) {
                  "b":{"o":6,"d":{"$binary":"gCsAEAAUABAAAA==","$type":"00"}}}}
         })");
 
-    auto request = makeTimeseriesCompressedDiffUpdateOp(
+    auto request = write_ops_utils::makeTimeseriesCompressedDiffUpdateOp(
         operationContext(), batch, ns.makeTimeseriesBucketsNamespace());
     auto& updates = request.getUpdates();
 
@@ -537,24 +514,26 @@ TEST_F(TimeseriesWriteUtilTest, PerformAtomicDelete) {
 
     // Deletes the bucket document.
     {
-        write_ops::DeleteOpEntry deleteEntry(BSON("_id" << bucketId), false);
-        write_ops::DeleteCommandRequest op(ns.makeTimeseriesBucketsNamespace(), {deleteEntry});
+        mongo::write_ops::DeleteOpEntry deleteEntry(BSON("_id" << bucketId), false);
+        mongo::write_ops::DeleteCommandRequest op(ns.makeTimeseriesBucketsNamespace(),
+                                                  {deleteEntry});
 
-        write_ops::WriteCommandRequestBase base;
+        mongo::write_ops::WriteCommandRequestBase base;
         base.setBypassDocumentValidation(true);
         base.setStmtIds(std::vector<StmtId>{kUninitializedStmtId});
 
         op.setWriteCommandRequestBase(std::move(base));
 
-        ASSERT_DOES_NOT_THROW(performAtomicWrites(
-            opCtx,
-            bucketsColl.getCollection(),
-            recordId,
-            std::variant<write_ops::UpdateCommandRequest, write_ops::DeleteCommandRequest>{op},
-            {},
-            {},
-            /*fromMigrate=*/false,
-            /*stmtId=*/kUninitializedStmtId));
+        ASSERT_DOES_NOT_THROW(
+            performAtomicWrites(opCtx,
+                                bucketsColl.getCollection(),
+                                recordId,
+                                std::variant<mongo::write_ops::UpdateCommandRequest,
+                                             mongo::write_ops::DeleteCommandRequest>{op},
+                                {},
+                                {},
+                                /*fromMigrate=*/false,
+                                /*stmtId=*/kUninitializedStmtId));
     }
 
     // Checks the document is removed.
@@ -606,25 +585,26 @@ TEST_F(TimeseriesWriteUtilTest, PerformAtomicUpdate) {
                     "b":{"0":3}}})");
 
     {
-        write_ops::UpdateModification u(replaceDoc);
-        write_ops::UpdateOpEntry update(BSON("_id" << bucketId), std::move(u));
-        write_ops::UpdateCommandRequest op(ns.makeTimeseriesBucketsNamespace(), {update});
+        mongo::write_ops::UpdateModification u(replaceDoc);
+        mongo::write_ops::UpdateOpEntry update(BSON("_id" << bucketId), std::move(u));
+        mongo::write_ops::UpdateCommandRequest op(ns.makeTimeseriesBucketsNamespace(), {update});
 
-        write_ops::WriteCommandRequestBase base;
+        mongo::write_ops::WriteCommandRequestBase base;
         base.setBypassDocumentValidation(true);
         base.setStmtIds(std::vector<StmtId>{kUninitializedStmtId});
 
         op.setWriteCommandRequestBase(std::move(base));
 
-        ASSERT_DOES_NOT_THROW(performAtomicWrites(
-            opCtx,
-            bucketsColl.getCollection(),
-            recordId,
-            std::variant<write_ops::UpdateCommandRequest, write_ops::DeleteCommandRequest>{op},
-            {},
-            {},
-            /*fromMigrate=*/false,
-            /*stmtId=*/kUninitializedStmtId));
+        ASSERT_DOES_NOT_THROW(
+            performAtomicWrites(opCtx,
+                                bucketsColl.getCollection(),
+                                recordId,
+                                std::variant<mongo::write_ops::UpdateCommandRequest,
+                                             mongo::write_ops::DeleteCommandRequest>{op},
+                                {},
+                                {},
+                                /*fromMigrate=*/false,
+                                /*stmtId=*/kUninitializedStmtId));
     }
 
     // Checks the document is updated.
@@ -686,27 +666,28 @@ TEST_F(TimeseriesWriteUtilTest, PerformAtomicDeleteAndInsert) {
     OID bucketId2 = bucketDoc2["_id"].OID();
     auto recordId2 = record_id_helpers::keyForOID(bucketId2);
     {
-        write_ops::DeleteOpEntry deleteEntry(BSON("_id" << bucketId1), false);
-        write_ops::DeleteCommandRequest deleteOp(ns.makeTimeseriesBucketsNamespace(),
-                                                 {deleteEntry});
-        write_ops::WriteCommandRequestBase base;
+        mongo::write_ops::DeleteOpEntry deleteEntry(BSON("_id" << bucketId1), false);
+        mongo::write_ops::DeleteCommandRequest deleteOp(ns.makeTimeseriesBucketsNamespace(),
+                                                        {deleteEntry});
+        mongo::write_ops::WriteCommandRequestBase base;
         base.setBypassDocumentValidation(true);
         base.setStmtIds(std::vector<StmtId>{kUninitializedStmtId});
         deleteOp.setWriteCommandRequestBase(base);
 
-        write_ops::InsertCommandRequest insertOp(ns.makeTimeseriesBucketsNamespace(), {bucketDoc2});
+        mongo::write_ops::InsertCommandRequest insertOp(ns.makeTimeseriesBucketsNamespace(),
+                                                        {bucketDoc2});
         insertOp.setWriteCommandRequestBase(base);
 
-        ASSERT_DOES_NOT_THROW(performAtomicWrites(
-            opCtx,
-            bucketsColl.getCollection(),
-            recordId1,
-            std::variant<write_ops::UpdateCommandRequest, write_ops::DeleteCommandRequest>{
-                deleteOp},
-            {insertOp},
-            {},
-            /*fromMigrate=*/false,
-            /*stmtId=*/kUninitializedStmtId));
+        ASSERT_DOES_NOT_THROW(
+            performAtomicWrites(opCtx,
+                                bucketsColl.getCollection(),
+                                recordId1,
+                                std::variant<mongo::write_ops::UpdateCommandRequest,
+                                             mongo::write_ops::DeleteCommandRequest>{deleteOp},
+                                {insertOp},
+                                {},
+                                /*fromMigrate=*/false,
+                                /*stmtId=*/kUninitializedStmtId));
     }
 
     // Checks document1 is removed and document2 is added.
@@ -792,31 +773,32 @@ TEST_F(TimeseriesWriteUtilTest, PerformAtomicUpdateAndInserts) {
     OID bucketId3 = bucketDoc3["_id"].OID();
     auto recordId3 = record_id_helpers::keyForOID(bucketId3);
     {
-        write_ops::UpdateModification u(replaceDoc);
-        write_ops::UpdateOpEntry update(BSON("_id" << bucketId1), std::move(u));
-        write_ops::UpdateCommandRequest updateOp(ns.makeTimeseriesBucketsNamespace(), {update});
-        write_ops::WriteCommandRequestBase base;
+        mongo::write_ops::UpdateModification u(replaceDoc);
+        mongo::write_ops::UpdateOpEntry update(BSON("_id" << bucketId1), std::move(u));
+        mongo::write_ops::UpdateCommandRequest updateOp(ns.makeTimeseriesBucketsNamespace(),
+                                                        {update});
+        mongo::write_ops::WriteCommandRequestBase base;
         base.setBypassDocumentValidation(true);
         base.setStmtIds(std::vector<StmtId>{kUninitializedStmtId});
         updateOp.setWriteCommandRequestBase(base);
 
-        write_ops::InsertCommandRequest insertOp1(ns.makeTimeseriesBucketsNamespace(),
-                                                  {bucketDoc2});
+        mongo::write_ops::InsertCommandRequest insertOp1(ns.makeTimeseriesBucketsNamespace(),
+                                                         {bucketDoc2});
         insertOp1.setWriteCommandRequestBase(base);
-        write_ops::InsertCommandRequest insertOp2(ns.makeTimeseriesBucketsNamespace(),
-                                                  {bucketDoc3});
+        mongo::write_ops::InsertCommandRequest insertOp2(ns.makeTimeseriesBucketsNamespace(),
+                                                         {bucketDoc3});
         insertOp2.setWriteCommandRequestBase(base);
 
-        ASSERT_DOES_NOT_THROW(performAtomicWrites(
-            opCtx,
-            bucketsColl.getCollection(),
-            recordId1,
-            std::variant<write_ops::UpdateCommandRequest, write_ops::DeleteCommandRequest>{
-                updateOp},
-            {insertOp1, insertOp2},
-            {},
-            /*fromMigrate=*/false,
-            /*stmtId=*/kUninitializedStmtId));
+        ASSERT_DOES_NOT_THROW(
+            performAtomicWrites(opCtx,
+                                bucketsColl.getCollection(),
+                                recordId1,
+                                std::variant<mongo::write_ops::UpdateCommandRequest,
+                                             mongo::write_ops::DeleteCommandRequest>{updateOp},
+                                {insertOp1, insertOp2},
+                                {},
+                                /*fromMigrate=*/false,
+                                /*stmtId=*/kUninitializedStmtId));
     }
 
     // Checks document1 is updated and document2 and document3 are added.
@@ -1152,7 +1134,8 @@ TEST_F(TimeseriesWriteUtilTest, SortMeasurementsOnTimeField) {
     batch->max = fromjson(R"({"time":{"$date":"2022-06-06T15:34:30.000Z"},"a":3,"b":3})");
     batch->timeField = kTimeseriesOptions.getTimeField();
 
-    std::vector testMeasurements = details::sortMeasurementsOnTimeField(batch);
+    std::vector<timeseries::write_ops_utils::details::Measurement> testMeasurements =
+        timeseries::write_ops_utils::sortMeasurementsOnTimeField(batch);
 
     const std::vector<BSONObj> sortedMeasurements = {
         fromjson(R"({"time":{"$date":"2022-06-06T15:34:30.000Z"},"a":3,"b":3})"),
@@ -1166,7 +1149,7 @@ TEST_F(TimeseriesWriteUtilTest, SortMeasurementsOnTimeField) {
 
     ASSERT_EQ(testMeasurements.size(), sortedMeasurements.size());
     for (size_t i = 0; i < sortedMeasurements.size(); ++i) {
-        details::Measurement m;
+        timeseries::write_ops_utils::details::Measurement m;
         m.timeField = sortedTimeFields[i].getField("time");
         m.dataFields.push_back(sortedMeasurements[i].getField("time"));
         m.dataFields.push_back(sortedMeasurements[i].getField("a"));
@@ -1205,12 +1188,13 @@ TEST_F(TimeseriesWriteUtilTest, SortMeasurementsOnTimeFieldExtendedRange) {
     batch->max = measurements[0];
     batch->timeField = kTimeseriesOptions.getTimeField();
 
-    const std::vector testMeasurements = details::sortMeasurementsOnTimeField(batch);
+    std::vector<timeseries::write_ops_utils::details::Measurement> testMeasurements =
+        timeseries::write_ops_utils::sortMeasurementsOnTimeField(batch);
 
     ASSERT_EQ(testMeasurements.size(), measurements.size());
 
     auto compare = [&](int inputIdx, int outputIdx) {
-        details::Measurement m;
+        timeseries::write_ops_utils::details::Measurement m;
         m.timeField = measurements[inputIdx].getField("time");
         m.dataFields.push_back(measurements[inputIdx].getField("time"));
         m.dataFields.push_back(measurements[inputIdx].getField("a"));

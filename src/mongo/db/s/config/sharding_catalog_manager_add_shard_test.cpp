@@ -100,6 +100,7 @@
 #include "mongo/executor/network_test_env.h"
 #include "mongo/executor/remote_command_request.h"
 #include "mongo/idl/idl_parser.h"
+#include "mongo/idl/server_parameter_test_util.h"
 #include "mongo/rpc/metadata.h"
 #include "mongo/rpc/op_msg.h"
 #include "mongo/s/catalog/sharding_catalog_client.h"
@@ -147,7 +148,7 @@ protected:
         _clusterId = clusterIdLoader->getClusterId();
 
         // Manually instantiate the ReadWriteConcernDefaults decoration on the service
-        ReadWriteConcernDefaults::create(getServiceContext(), _lookupMock.getFetchDefaultsFn());
+        ReadWriteConcernDefaults::create(getService(), _lookupMock.getFetchDefaultsFn());
         // Create config.transactions collection
         auto opCtx = operationContext();
         DBDirectClient client(opCtx);
@@ -157,7 +158,7 @@ protected:
 
         LogicalSessionCache::set(getServiceContext(), std::make_unique<LogicalSessionCacheNoop>());
         TransactionCoordinatorService::get(operationContext())
-            ->onShardingInitialization(operationContext(), true);
+            ->initializeIfNeeded(operationContext(), /* term */ 1);
         WaitForMajorityService::get(getServiceContext()).startup(getServiceContext());
 
         _skipShardingEventNotificationFP =
@@ -180,7 +181,7 @@ protected:
         _skipUpdatingCardinalityParamFP->setMode(FailPoint::off);
         _skipBlockingDDLCoordinatorsDuringAddAndRemoveShardFP->setMode(FailPoint::off);
         WaitForMajorityService::get(getServiceContext()).shutDown();
-        TransactionCoordinatorService::get(operationContext())->onStepDown();
+        TransactionCoordinatorService::get(operationContext())->interrupt();
         ConfigServerTestFixture::tearDown();
     }
 
@@ -680,6 +681,16 @@ protected:
     FailPoint* _skipBlockingDDLCoordinatorsDuringAddAndRemoveShardFP;
 };
 
+/**
+ * This class is used for tests that require the `multitenancySupport` feature to be enabled.
+ * It sets the global server parameter before test initialization to prevent data race issues
+ * when the parameter is accessed from other threads.
+ */
+class AddMultitenancyShardTest : public AddShardTest {
+private:
+    RAIIServerParameterControllerForTest _multitenancyController{"multitenancySupport", true};
+};
+
 TEST_F(AddShardTest, CreateShardIdentityUpsertForAddShard) {
     std::string shardName = "shardName";
 
@@ -886,9 +897,7 @@ TEST_F(AddShardTest, StandaloneBasicPushSuccess) {
     assertChangeWasLogged(expectedShard);
 }
 
-TEST_F(AddShardTest, StandaloneMultitenantPullSuccess) {
-    gMultitenancySupport = true;
-    ScopeGuard guard([] { gMultitenancySupport = false; });
+TEST_F(AddMultitenancyShardTest, StandaloneMultitenantPullSuccess) {
     std::unique_ptr<RemoteCommandTargeterMock> targeter(
         std::make_unique<RemoteCommandTargeterMock>());
     HostAndPort shardTarget("StandaloneHost:12345");
@@ -982,9 +991,7 @@ TEST_F(AddShardTest, StandaloneMultitenantPullSuccess) {
     checkLocalClusterParametersAfterPull(tenantsOnTarget);
 }
 
-TEST_F(AddShardTest, StandaloneMultitenantPushSuccess) {
-    gMultitenancySupport = true;
-    ScopeGuard guard([] { gMultitenancySupport = false; });
+TEST_F(AddMultitenancyShardTest, StandaloneMultitenantPushSuccess) {
     std::unique_ptr<RemoteCommandTargeterMock> targeter(
         std::make_unique<RemoteCommandTargeterMock>());
     HostAndPort shardTarget("StandaloneHost:12345");

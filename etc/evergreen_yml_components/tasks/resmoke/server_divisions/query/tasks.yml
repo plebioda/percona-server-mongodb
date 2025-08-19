@@ -136,8 +136,6 @@ tasks:
         "auth",
         "common",
       ]
-    depends_on:
-      - name: aggregation
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -181,8 +179,6 @@ tasks:
         "aggregation",
         "unwind",
       ]
-    depends_on:
-      - name: aggregation
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -205,8 +201,6 @@ tasks:
         "no_async",
         "requires_large_host",
       ]
-    depends_on:
-      - name: aggregation
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -296,8 +290,6 @@ tasks:
         "no_async",
         "sharded",
       ]
-    depends_on:
-      - name: aggregation
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -313,8 +305,6 @@ tasks:
         "read_write_concern",
         "requires_large_host",
       ]
-    depends_on:
-      - name: aggregation
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -347,8 +337,6 @@ tasks:
         "sharded",
         "requires_large_host",
       ]
-    depends_on:
-      - name: aggregation
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -365,8 +353,6 @@ tasks:
         "sharded",
         "requires_large_host",
       ]
-    depends_on:
-      - name: aggregation
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -874,6 +860,7 @@ tasks:
       [
         "assigned_to_jira_team_server_query_execution",
         "incompatible_aubsan",
+        "incompatible_debug_mode",
         "incompatible_tsan",
         "default",
       ]
@@ -930,6 +917,7 @@ tasks:
       [
         "assigned_to_jira_team_server_query_execution",
         "incompatible_aubsan",
+        "incompatible_debug_mode",
         "incompatible_tsan",
         "default",
       ]
@@ -1210,20 +1198,6 @@ tasks:
           suite: jstestfuzz
           resmoke_args: "--mongodSetParameters='{logComponentVerbosity: {command: 2}}'"
           npm_command: jstestfuzz
-
-  - <<: *gen_task_template
-    name: parallel_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_query_execution",
-        "release_critical",
-        "misc_js",
-        "parallel",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-        vars:
-          resmoke_jobs_max: 1
 
   ## jstestfuzz standalone fuzzer for checking find equivalence with and without plan cache ##
   - <<: *jstestfuzz_template
@@ -1524,8 +1498,6 @@ tasks:
         "aggregation",
         "common",
       ]
-    depends_on:
-      - name: aggregation
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -1618,8 +1590,6 @@ tasks:
   - <<: *task_template
     name: aggregation_repeat_queries_multiplan_single_solutions
     tags: ["assigned_to_jira_team_server_query_optimization", "default"]
-    depends_on:
-      - name: aggregation
     commands:
       - func: "do setup"
       - func: "run tests"

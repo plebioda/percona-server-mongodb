@@ -53,7 +53,7 @@ let newNode = rs.add({
 //let psw = passwordPrompt();
 
 addNodeConfig(rs, basenodes + 1, newNode);
-rs.waitForState(newNode, ReplSetTest.State.SECONDARY);
+rs.awaitSecondaryNodes(null, [newNode]);
 rs.waitForAllNewlyAddedRemovals();
 
 jsTest.log("--XXXX-- Added new member");

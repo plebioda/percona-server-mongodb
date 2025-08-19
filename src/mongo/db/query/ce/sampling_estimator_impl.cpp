@@ -1,0 +1,254 @@
+/**
+ *    Copyright (C) 2024-present MongoDB, Inc.
+ *
+ *    This program is free software: you can redistribute it and/or modify
+ *    it under the terms of the Server Side Public License, version 1,
+ *    as published by MongoDB, Inc.
+ *
+ *    This program is distributed in the hope that it will be useful,
+ *    but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *    Server Side Public License for more details.
+ *
+ *    You should have received a copy of the Server Side Public License
+ *    along with this program. If not, see
+ *    <http://www.mongodb.com/licensing/server-side-public-license>.
+ *
+ *    As a special exception, the copyright holders give permission to link the
+ *    code of portions of this program with the OpenSSL library under certain
+ *    conditions as described in each individual source file and distribute
+ *    linked combinations including the program with the OpenSSL library. You
+ *    must comply with the Server Side Public License in all respects for
+ *    all of the code used other than as permitted herein. If you modify file(s)
+ *    with this exception, you may extend this exception to your version of the
+ *    file(s), but you are not obligated to do so. If you do not wish to do so,
+ *    delete this exception statement from your version. If you delete this
+ *    exception statement from all source files in the program, then also delete
+ *    it in the license file.
+ */
+
+#include "mongo/db/query/ce/sampling_estimator_impl.h"
+
+#include <cmath>
+
+#include "mongo/db/exec/sbe/stages/limit_skip.h"
+#include "mongo/db/exec/sbe/stages/scan.h"
+#include "mongo/db/exec/sbe/stages/stages.h"
+#include "mongo/db/query/canonical_query.h"
+#include "mongo/db/query/cost_based_ranker/estimates.h"
+#include "mongo/db/query/find_command.h"
+#include "mongo/db/query/plan_executor_factory.h"
+#include "mongo/db/query/query_planner_params.h"
+#include "mongo/db/query/stage_builder/sbe/builder.h"
+#include "mongo/platform/basic.h"
+#include "mongo/util/assert_util.h"
+
+namespace mongo::ce {
+std::unique_ptr<CanonicalQuery> SamplingEstimatorImpl::makeCanonicalQuery(
+    const NamespaceString& nss, OperationContext* opCtx, size_t sampleSize) {
+    auto findCommand = std::make_unique<FindCommandRequest>(NamespaceStringOrUUID(nss));
+    findCommand->setLimit(sampleSize);
+
+    auto expCtx = ExpressionContextBuilder{}.fromRequest(opCtx, *findCommand).build();
+
+    auto statusWithCQ = CanonicalQuery::make(
+        {.expCtx = expCtx,
+         .parsedFind = ParsedFindCommandParams{.findCommand = std::move(findCommand)}});
+
+    return std::move(statusWithCQ.getValue());
+}
+
+namespace {
+/**
+ * Help function mapping confidence intervals to Z-scores.
+ * A "95 confidence interval" means that 95% of the observations (in our case CEs computed from
+ * samples) lie within that interval. The interval is defined based on a number of standard
+ * deviations(Z-score) from the mean. The Z-score for 95% interval is 1.96, meaning that 95% of the
+ * observations lie within 1.96 standard deviations from the mean.
+ * https://en.wikipedia.org/wiki/Standard_score
+ */
+double getZScore(SamplingConfidenceIntervalEnum confidenceInterval) {
+    switch (confidenceInterval) {
+        case SamplingConfidenceIntervalEnum::k90:
+            return 1.645;
+        case SamplingConfidenceIntervalEnum::k95:
+            return 1.96;
+        case SamplingConfidenceIntervalEnum::k99:
+            return 2.576;
+        default:
+            MONGO_UNREACHABLE;
+    }
+}
+}  // namespace
+
+/*
+ * The sample size is calculated based on the confidence level and margin of error(MoE) required.
+ * n = Z^2 / W^2
+ * where Z is the z-score for the confidence interval and
+ * W is the width of the confidence interval, W = 2 * MoE.
+ */
+size_t SamplingEstimatorImpl::calculateSampleSize(SamplingConfidenceIntervalEnum ci,
+                                                  double marginOfError) {
+    uassert(9406301, "Margin of error should be larger than 0.", marginOfError > 0);
+    double z = getZScore(ci);
+    double ciWidth = 2 * marginOfError / 100.0;
+
+    return static_cast<size_t>(std::lround((z * z) / (ciWidth * ciWidth)));
+}
+
+std::pair<std::unique_ptr<sbe::PlanStage>, mongo::stage_builder::PlanStageData>
+SamplingEstimatorImpl::generateRandomSamplingPlan(PlanYieldPolicy* sbeYieldPolicy) {
+    auto staticData = std::make_unique<stage_builder::PlanStageStaticData>();
+    sbe::value::SlotIdGenerator ids;
+    staticData->resultSlot = ids.generate();
+    const CollectionPtr& collection = _collections.getMainCollection();
+    auto stage = sbe::makeS<sbe::ScanStage>(collection->uuid(),
+                                            collection->ns().dbName(),
+                                            staticData->resultSlot,
+                                            boost::none /* recordIdSlot */,
+                                            boost::none /* snapshotIdSlot */,
+                                            boost::none /* indexIdentSlot */,
+                                            boost::none /* indexKeySlot */,
+                                            boost::none /* keyPatternSlot */,
+                                            boost::none /* oplogTsSlot */,
+                                            std::vector<std::string>{} /* scanFieldNames */,
+                                            sbe::value::SlotVector{} /* scanFieldSlots */,
+                                            boost::none /* seekRecordIdSlot */,
+                                            boost::none /* minRecordIdSlot */,
+                                            boost::none /* maxRecordIdSlot */,
+                                            true /* forward */,
+                                            sbeYieldPolicy,
+                                            0 /* nodeId */,
+                                            sbe::ScanCallbacks{},
+                                            false /* lowPriority */,
+                                            true /* useRandomCursor */);
+
+    stage = sbe::makeS<sbe::LimitSkipStage>(
+        std::move(stage),
+        sbe::makeE<sbe::EConstant>(sbe::value::TypeTags::NumberInt64,
+                                   sbe::value::bitcastFrom<int64_t>(_sampleSize)),
+        nullptr /* skip */,
+        0 /* nodeId */);
+
+    stage_builder::PlanStageData data{
+        stage_builder::Environment{std::make_unique<sbe::RuntimeEnvironment>()},
+        std::move(staticData)};
+
+    return {std::move(stage), std::move(data)};
+}
+
+void SamplingEstimatorImpl::generateRandomSample(size_t sampleSize) {
+    // Create a CanonicalQuery for the sampling plan.
+    auto cq = makeCanonicalQuery(_collections.getMainCollection()->ns(), _opCtx, sampleSize);
+    _sampleSize = sampleSize;
+    auto sbeYieldPolicy = PlanYieldPolicySBE::make(
+        _opCtx, PlanYieldPolicy::YieldPolicy::YIELD_AUTO, _collections, cq->nss());
+
+    auto plan = generateRandomSamplingPlan(sbeYieldPolicy.get());
+
+    // Prepare the SBE plan for execution.
+    prepareSlotBasedExecutableTree(_opCtx,
+                                   plan.first.get(),
+                                   &plan.second,
+                                   *cq,
+                                   _collections,
+                                   sbeYieldPolicy.get(),
+                                   false /* preparingFromCache */);
+
+    // Create a PlanExecutor for the execution of the sampling plan.
+    auto exec = std::move(mongo::plan_executor_factory::make(_opCtx,
+                                                             std::move(cq),
+                                                             nullptr /*solution*/,
+                                                             std::move(plan),
+                                                             QueryPlannerParams::DEFAULT,
+                                                             _collections.getMainCollection()->ns(),
+                                                             std::move(sbeYieldPolicy),
+                                                             false /* isFromPlanCache */,
+                                                             false /* cachedPlanHash */)
+                              .getValue());
+
+    // This function call could be a re-sample request, so the previous sample should be cleared.
+    _sample.clear();
+    BSONObj obj;
+    // Execute the plan, exhaust results and cache the sample.
+    while (PlanExecutor::ADVANCED == exec->getNext(&obj, nullptr)) {
+        _sample.push_back(obj.getOwned());
+    }
+    return;
+}
+
+void SamplingEstimatorImpl::generateRandomSample() {
+    generateRandomSample(_sampleSize);
+    return;
+}
+
+void SamplingEstimatorImpl::generateChunkSample(size_t sampleSize) {
+    // TODO SERVER-93729: Implement chunk-based sampling CE approach.
+    return;
+}
+
+void SamplingEstimatorImpl::generateChunkSample() {
+    generateChunkSample(_sampleSize);
+    return;
+}
+
+CardinalityEstimate SamplingEstimatorImpl::estimateCardinality(const MatchExpression* expr) const {
+    size_t cnt = 0;
+    for (const auto& doc : _sample) {
+        if (expr->matchesBSON(doc, nullptr)) {
+            cnt++;
+        }
+    }
+    double estimate = (cnt * getCollCard()) / _sampleSize;
+    CardinalityEstimate ce(mongo::cost_based_ranker::CardinalityType{estimate},
+                           mongo::cost_based_ranker::EstimationSource::Sampling);
+    return ce;
+}
+
+std::vector<CardinalityEstimate> SamplingEstimatorImpl::estimateCardinality(
+    const std::vector<MatchExpression*>& expressions) const {
+    std::vector<CardinalityEstimate> estimates;
+    for (auto& expr : expressions) {
+        estimates.push_back(estimateCardinality(expr));
+    }
+
+    return estimates;
+}
+
+SamplingEstimatorImpl::SamplingEstimatorImpl(OperationContext* opCtx,
+                                             const MultipleCollectionAccessor& collections,
+                                             size_t sampleSize,
+                                             SamplingStyle samplingStyle,
+                                             CardinalityEstimate collectionCard)
+    : _opCtx(opCtx),
+      _collections(collections),
+      _sampleSize(sampleSize),
+      _collectionCard(collectionCard) {
+
+    uassert(9406300,
+            "Sample size cannot be larger than collection cardinality. The sample size can be "
+            "reduced by choosing a larger margin of error.",
+            (double)sampleSize <= collectionCard.cardinality().v());
+
+    if (samplingStyle == SamplingStyle::kRandom) {
+        generateRandomSample();
+    } else {
+        generateChunkSample();
+    }
+}
+
+SamplingEstimatorImpl::SamplingEstimatorImpl(OperationContext* opCtx,
+                                             const MultipleCollectionAccessor& collections,
+                                             SamplingStyle samplingStyle,
+                                             CardinalityEstimate collectionCard,
+                                             SamplingConfidenceIntervalEnum ci,
+                                             double marginOfError)
+    : SamplingEstimatorImpl(opCtx,
+                            collections,
+                            calculateSampleSize(ci, marginOfError),
+                            samplingStyle,
+                            collectionCard) {}
+
+SamplingEstimatorImpl::~SamplingEstimatorImpl() {}
+
+}  // namespace mongo::ce

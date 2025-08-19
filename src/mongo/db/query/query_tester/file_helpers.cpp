@@ -171,34 +171,10 @@ void displayFailingQueryFeatures(const std::filesystem::path& queryFeaturesFile)
     }
 }
 
-// Returns a {collName, fileName} tuple.
-std::tuple<std::string, std::filesystem::path> getCollAndFileName(const std::string& collSpec) {
-    if (auto ss = std::stringstream{collSpec}; !ss.eof()) {
-        auto filePath = std::string{};
-        ss >> filePath;
-        uassert(9670429,
-                str::stream{} << "Expected collection file name to end in .coll, but it is "
-                              << filePath,
-                filePath.ends_with(".coll"));
-        if (!ss.eof()) {
-            auto token = std::string{};
-            ss >> token;
-            uassert(9670430,
-                    str::stream{} << "Expected token 'as' after collection name, but got " << token,
-                    token == "as");
-            auto collName = std::string{};
-            ss >> collName;
-            return {collName, filePath};
-        } else {
-            return {
-                getTestNameFromFilePath(filePath),
-                filePath,
-            };
-        }
-    } else {
-        uassert(9670431, str::stream{} << "Unexpected empty line.", !ss.eof());
-        MONGO_UNREACHABLE;
-    }
+std::string getBaseNameFromFilePath(const std::filesystem::path& filePath) {
+    auto fileName = filePath.filename().string();
+    auto extension = fileName.find('.');
+    return fileName.substr(0, extension);
 }
 
 std::vector<size_t> getFailedTestNums(const std::string& diffOutput) {
@@ -220,13 +196,9 @@ std::string getMongoRepoRoot() {
     return repoRoot;
 }
 
-std::string getTestNameFromFilePath(const std::filesystem::path& filePath) {
-    auto fileName = filePath.filename().string();
-    auto extension = fileName.find('.');
-    return fileName.substr(0, extension);
-}
-
-std::string gitDiff(const std::filesystem::path& expected, const std::filesystem::path& actual) {
+std::string gitDiff(const std::filesystem::path& expected,
+                    const std::filesystem::path& actual,
+                    const DiffStyle diffStyle) {
     const auto gitDiffCmd =
         (std::stringstream{}
          << "git"
@@ -239,7 +211,8 @@ std::string gitDiff(const std::filesystem::path& expected, const std::filesystem
          // The --no-index option allows us to compare files that are not in any repository. -U0
          // removes any lines of context around the diff so that the correct test number directly
          // preceding the diff will be captured.
-         << " --no-index --word-diff=color -U0 -- " << expected << " " << actual << " 2>&1")
+         << " --no-index " << (diffStyle == DiffStyle::kWord ? "--word-diff=color" : "--color")
+         << " -U0 -- " << expected << " " << actual << " 2>&1")
             .str();
 
     // Need to ignore exit status because the implied --exit-code will return an error sttatus when
@@ -297,6 +270,17 @@ std::vector<std::string> readLine(std::fstream& fs, std::string& lineFromFile) {
     return comments;
 }
 
+DiffStyle stringToDiffStyle(const std::string& style) {
+    static const auto kStringToDiffStyleMap =
+        std::map<std::string, DiffStyle>{{"line", DiffStyle::kLine}, {"word", DiffStyle::kWord}};
+
+    if (auto it = kStringToDiffStyleMap.find(style); it != kStringToDiffStyleMap.end()) {
+        return it->second;
+    } else {
+        uasserted(9764301, str::stream{} << "Unexpected diff style " << style);
+    }
+}
+
 WriteOutOptions stringToWriteOutOpt(const std::string& opt) {
     static const auto kStringToWriteOutOptMap = std::map<std::string, WriteOutOptions>{
         {"result", WriteOutOptions::kResult}, {"oneline", WriteOutOptions::kOnelineResult}};
@@ -305,6 +289,33 @@ WriteOutOptions stringToWriteOutOpt(const std::string& opt) {
         return it->second;
     } else {
         uasserted(9670453, str::stream{} << "Unexpected write opt " << opt);
+    }
+}
+
+CollectionSpec toCollectionSpec(const std::string& collSpecString) {
+    if (auto ss = std::stringstream{collSpecString}; !ss.eof()) {
+        auto filePath = std::string{};
+        ss >> filePath;
+        uassert(9670429,
+                str::stream{} << "Expected collection file name to end in .coll, but it is "
+                              << filePath,
+                filePath.ends_with(".coll"));
+        if (!ss.eof()) {
+            auto token = std::string{};
+            ss >> token;
+            uassert(9670430,
+                    str::stream{} << "Expected token 'as' after collection name, but got " << token,
+                    token == "as");
+            // The aliased collection name is read into collName using the "as" syntax.
+            auto collName = std::string{};
+            ss >> collName;
+            return {collName, filePath, collSpecString};
+        } else {
+            return {getBaseNameFromFilePath(filePath), filePath, collSpecString};
+        }
+    } else {
+        uassert(9670431, str::stream{} << "Unexpected empty line.", !ss.eof());
+        MONGO_UNREACHABLE;
     }
 }
 

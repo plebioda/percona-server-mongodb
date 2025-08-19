@@ -904,36 +904,35 @@ void ValidateAdaptor::traverseRecordStore(OperationContext* opCtx,
                     } else {
                         results->addWarning(kTimeseriesValidationInconsistencyReason);
                     }
-                } else {
-                    auto containsMixedSchemaDataResponse =
-                        coll->doesTimeseriesBucketsDocContainMixedSchemaData(recordBson);
-                    if (!containsMixedSchemaDataResponse.isOK() &&
-                        results->addError(kMalformedMinMaxTimeseriesBucket)) {
-                        LOGV2_WARNING(8469900,
-                                      kMalformedMinMaxTimeseriesBucket,
+                }
+                auto containsMixedSchemaDataResponse =
+                    coll->doesTimeseriesBucketsDocContainMixedSchemaData(recordBson);
+                if (!containsMixedSchemaDataResponse.isOK() &&
+                    results->addError(kMalformedMinMaxTimeseriesBucket)) {
+                    LOGV2_WARNING(8469900,
+                                  kMalformedMinMaxTimeseriesBucket,
+                                  logAttrs(coll->ns()),
+                                  "bucketId"_attr = record->id,
+                                  "error"_attr = containsMixedSchemaDataResponse.getStatus());
+                    ;
+                } else if (containsMixedSchemaDataResponse.isOK() &&
+                           containsMixedSchemaDataResponse.getValue()) {
+                    bool mixedSchemaAllowed =
+                        coll->getTimeseriesBucketsMayHaveMixedSchemaData().get();
+                    if (mixedSchemaAllowed &&
+                        results->addWarning(kExpectedMixedSchemaTimeseriesWarning)) {
+                        LOGV2_WARNING(8469901,
+                                      kExpectedMixedSchemaTimeseriesWarning,
                                       logAttrs(coll->ns()),
-                                      "bucketId"_attr = record->id,
-                                      "error"_attr = containsMixedSchemaDataResponse.getStatus());
+                                      "bucketId"_attr = record->id);
                         ;
-                    } else if (containsMixedSchemaDataResponse.isOK() &&
-                               containsMixedSchemaDataResponse.getValue()) {
-                        bool mixedSchemaAllowed =
-                            coll->getTimeseriesBucketsMayHaveMixedSchemaData().get();
-                        if (mixedSchemaAllowed &&
-                            results->addWarning(kExpectedMixedSchemaTimeseriesWarning)) {
-                            LOGV2_WARNING(8469901,
-                                          kExpectedMixedSchemaTimeseriesWarning,
-                                          logAttrs(coll->ns()),
-                                          "bucketId"_attr = record->id);
-                            ;
-                        } else if (!mixedSchemaAllowed &&
-                                   results->addError(kUnexpectedMixedSchemaTimeseriesError)) {
-                            LOGV2_WARNING(8469902,
-                                          kUnexpectedMixedSchemaTimeseriesError,
-                                          logAttrs(coll->ns()),
-                                          "bucketId"_attr = record->id);
-                            ;
-                        }
+                    } else if (!mixedSchemaAllowed &&
+                               results->addError(kUnexpectedMixedSchemaTimeseriesError)) {
+                        LOGV2_WARNING(8469902,
+                                      kUnexpectedMixedSchemaTimeseriesError,
+                                      logAttrs(coll->ns()),
+                                      "bucketId"_attr = record->id);
+                        ;
                     }
                 }
             }
@@ -959,7 +958,7 @@ void ValidateAdaptor::traverseRecordStore(OperationContext* opCtx,
     }
 
     const auto fastCount = coll->numRecords(opCtx);
-    if (_validateState->shouldEnforceFastCount() && fastCount != _numRecords) {
+    if (_validateState->shouldEnforceFastCount(opCtx) && fastCount != _numRecords) {
         results->addError(str::stream()
                           << "fast count (" << fastCount << ") does not match number of records ("
                           << _numRecords << ") for collection '" << coll->ns().toStringForErrorMsg()

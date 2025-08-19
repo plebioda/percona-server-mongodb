@@ -27,165 +27,21 @@
  *    it in the license file.
  */
 
-#include "mongo/db/query/cost_based_ranker/cardinality_estimator.h"
-
 #include <limits>
 
-#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/json.h"
-#include "mongo/db/pipeline/expression_context_for_test.h"
-#include "mongo/db/query/ce/test_utils.h"
-#include "mongo/db/query/index_bounds.h"
+#include "mongo/db/query/cost_based_ranker/cbr_test_utils.h"
 #include "mongo/db/query/index_bounds_builder.h"
-#include "mongo/db/query/query_solution.h"
-#include "mongo/db/query/stats/collection_statistics_impl.h"
-#include "mongo/db/query/stats/collection_statistics_mock.h"
 #include "mongo/unittest/assert.h"
 #include "mongo/unittest/framework.h"
 
 namespace mongo::cost_based_ranker {
 namespace {
 
-CardinalityEstimate makeCard(double d) {
-    return CardinalityEstimate(CardinalityType(d), EstimationSource::Code);
-}
-
-SelectivityEstimate makeSel(double d) {
-    return SelectivityEstimate(SelectivityType(d), EstimationSource::Code);
-}
-
-std::unique_ptr<MatchExpression> parse(const BSONObj& bson) {
-    auto expCtx = make_intrusive<ExpressionContextForTest>();
-    auto expr = MatchExpressionParser::parse(
-        bson, expCtx, ExtensionsCallbackNoop(), MatchExpressionParser::kAllowAllSpecialFeatures);
-    ASSERT_OK(expr);
-    return std::move(expr.getValue());
-}
-
-IndexEntry buildSimpleIndexEntry(const std::vector<std::string>& indexFields) {
-    BSONObjBuilder bob;
-    for (auto& fieldName : indexFields) {
-        bob.append(fieldName, 1);
-    }
-    BSONObj kp = bob.obj();
-
-    return {kp,
-            IndexNames::nameToType(IndexNames::findPluginName(kp)),
-            IndexDescriptor::kLatestIndexVersion,
-            false,
-            {},
-            {},
-            false,
-            false,
-            CoreIndexInfo::Identifier("test_foo"),
-            nullptr,
-            {},
-            nullptr,
-            nullptr};
-}
-
-std::unique_ptr<IndexScanNode> makeIndexScan(IndexBounds bounds,
-                                             std::vector<std::string> indexFields,
-                                             std::unique_ptr<MatchExpression> filter = nullptr) {
-    auto indexScan = std::make_unique<IndexScanNode>(buildSimpleIndexEntry(indexFields));
-    indexScan->bounds = std::move(bounds);
-    if (filter) {
-        indexScan->filter = std::move(filter);
-    }
-    return indexScan;
-}
-
-std::unique_ptr<QuerySolution> makeIndexScanFetchPlan(
-    IndexBounds bounds,
-    std::vector<std::string> indexFields,
-    std::unique_ptr<MatchExpression> indexFilter = nullptr,
-    std::unique_ptr<MatchExpression> fetchFilter = nullptr) {
-
-    auto fetch =
-        std::make_unique<FetchNode>(makeIndexScan(bounds, indexFields, std::move(indexFilter)));
-    if (fetchFilter) {
-        fetch->filter = std::move(fetchFilter);
-    }
-
-    auto solution = std::make_unique<QuerySolution>();
-    solution->setRoot(std::move(fetch));
-    return solution;
-}
-
-std::unique_ptr<QuerySolution> makeCollScanPlan(std::unique_ptr<MatchExpression> filter) {
-    auto scan = std::make_unique<CollectionScanNode>();
-    if (filter) {
-        scan->filter = std::move(filter);
-    }
-
-    auto solution = std::make_unique<QuerySolution>();
-    solution->setRoot(std::move(scan));
-    return solution;
-}
-
-OrderedIntervalList makePointInterval(double point, std::string fieldName) {
-    OrderedIntervalList oil(fieldName);
-    oil.intervals.emplace_back(IndexBoundsBuilder::makePointInterval(point));
-    return oil;
-}
-
-IndexBounds makePointIntervalBounds(double point, std::string fieldName) {
-    IndexBounds bounds;
-    bounds.fields.emplace_back(makePointInterval(point, fieldName));
-    return bounds;
-}
-
-IndexBounds makeRangeIntervalBounds(const BSONObj& range,
-                                    BoundInclusion boundInclusion,
-                                    std::string fieldName) {
-    OrderedIntervalList oilRange(fieldName);
-    oilRange.intervals.push_back(IndexBoundsBuilder::makeRangeInterval(range, boundInclusion));
-    IndexBounds rangeBounds;
-    rangeBounds.fields.push_back(oilRange);
-    return rangeBounds;
-}
-
-CardinalityEstimate getPlanCE(const QuerySolution& plan, double collCE) {
-    EstimateMap qsnEstimates;
-    const NamespaceString kNss = NamespaceString::createNamespaceString_forTest("test", "coll");
-    stats::CollectionStatisticsImpl stats(collCE, kNss);
-    CardinalityEstimator estimator{stats, qsnEstimates, QueryPlanRankerModeEnum::kHeuristicCE};
-    estimator.estimatePlan(plan);
-    return qsnEstimates.at(plan.root()).outCE;
-}
-
-CardinalityEstimate getPlanHistogramCE(const QuerySolution& plan,
-                                       stats::CollectionStatisticsMock stats) {
-    EstimateMap qsnEstimates;
-    const NamespaceString kNss = NamespaceString::createNamespaceString_forTest("test", "coll");
-    CardinalityEstimator estimator{stats, qsnEstimates, QueryPlanRankerModeEnum::kHistogramCE};
-    estimator.estimatePlan(plan);
-    return qsnEstimates.at(plan.root()).outCE;
-}
-
-stats::CollectionStatisticsMock makeCollStatsWithHistograms() {
-    stats::CollectionStatisticsMock stats(1000);
-    std::vector<ce::BucketData> data{
-        {0 /*bucketBoundary*/, 10 /*equalFreq*/, 90 /*rangeFreq*/, 5 /*ndv*/},
-        {5, 100, 100, 0},
-        {6, 700, 0, 0}};
-    stats.addHistogram(
-        "a",
-        stats::CEHistogram::make(ce::createHistogram(data),
-                                 stats::TypeCounts{{sbe::value::TypeTags::NumberInt64, 1000}},
-                                 1000));
-    stats.addHistogram(
-        "b",
-        stats::CEHistogram::make(ce::createHistogram(data),
-                                 stats::TypeCounts{{sbe::value::TypeTags::NumberInt64, 1000}},
-                                 1000));
-    return stats;
-}
-
 TEST(CardinalityEstimator, PointInterval) {
     std::vector<std::string> indexFields = {"a"};
     auto plan = makeIndexScanFetchPlan(makePointIntervalBounds(5.0, indexFields[0]), indexFields);
-    ASSERT_EQ(getPlanCE(*plan, 100.0), makeCard(10.0));
+    ASSERT_EQ(getPlanHeuristicCE(*plan, 100.0), makeCard(10.0));
 }
 
 TEST(CardinalityEstimator, ManyPointIntervals) {
@@ -197,7 +53,7 @@ TEST(CardinalityEstimator, ManyPointIntervals) {
     IndexBounds bounds;
     bounds.fields.push_back(oil);
     auto plan = makeIndexScanFetchPlan(std::move(bounds), indexFields);
-    ASSERT_EQ(getPlanCE(*plan, 100.0), makeCard(50.0));
+    ASSERT_EQ(getPlanHeuristicCE(*plan, 100.0), makeCard(50.0));
 }
 
 TEST(CardinalityEstimator, CompoundIndex) {
@@ -211,7 +67,7 @@ TEST(CardinalityEstimator, CompoundIndex) {
         bounds.fields.push_back(oil);
     }
     auto plan = makeIndexScanFetchPlan(std::move(bounds), indexFields);
-    ASSERT_EQ(getPlanCE(*plan, 100.0), makeCard(51.2341));
+    ASSERT_EQ(getPlanHeuristicCE(*plan, 100.0), makeCard(51.2341));
 }
 
 TEST(CardinalityEstimator, PointMoreSelectiveThanRange) {
@@ -223,7 +79,7 @@ TEST(CardinalityEstimator, PointMoreSelectiveThanRange) {
         BSON("" << 5 << " " << 6), BoundInclusion::kIncludeBothStartAndEndKeys, indexFields[0]);
     auto rangePlan = makeIndexScanFetchPlan(std::move(rangeBounds), indexFields);
 
-    ASSERT_LT(getPlanCE(*pointPlan, 100.0), getPlanCE(*rangePlan, 100.0));
+    ASSERT_LT(getPlanHeuristicCE(*pointPlan, 100.0), getPlanHeuristicCE(*rangePlan, 100.0));
 }
 
 TEST(CardinalityEstimator, CompoundBoundsMoreSelectiveThanSingleField) {
@@ -242,15 +98,16 @@ TEST(CardinalityEstimator, CompoundBoundsMoreSelectiveThanSingleField) {
     compoundBounds.fields.push_back(oil2);
     auto compoundBoundsPlan = makeIndexScanFetchPlan(std::move(compoundBounds), indexFields);
 
-    ASSERT_LT(getPlanCE(*compoundBoundsPlan, 100.0), getPlanCE(*singleFieldPlan, 100.0));
+    ASSERT_LT(getPlanHeuristicCE(*compoundBoundsPlan, 100.0),
+              getPlanHeuristicCE(*singleFieldPlan, 100.0));
 }
 
 TEST(CardinalityEstimator, PointIntervalSelectivityDependsOnInputCard) {
     std::vector<std::string> indexFields = {"a"};
     auto plan = makeIndexScanFetchPlan(makePointIntervalBounds(5.0, indexFields[0]), indexFields);
 
-    ASSERT_LT(getPlanCE(*plan, 10000.0).toDouble() / 10000.0,
-              getPlanCE(*plan, 100.0).toDouble() / 100.0);
+    ASSERT_LT(getPlanHeuristicCE(*plan, 10000.0).toDouble() / 10000.0,
+              getPlanHeuristicCE(*plan, 100.0).toDouble() / 100.0);
 }
 
 TEST(CardinalityEstimator, EqualityMatchesIndexPointInterval) {
@@ -265,7 +122,7 @@ TEST(CardinalityEstimator, EqualityMatchesIndexPointInterval) {
     auto collPlan = makeCollScanPlan(std::move(expr));
 
     auto collCard = 100;
-    ASSERT_EQ(getPlanCE(*indexPlan, collCard), getPlanCE(*collPlan, collCard));
+    ASSERT_EQ(getPlanHeuristicCE(*indexPlan, collCard), getPlanHeuristicCE(*collPlan, collCard));
 }
 
 TEST(CardinalityEstimator, InequalityMatchesRangeOpenInterval) {
@@ -283,7 +140,7 @@ TEST(CardinalityEstimator, InequalityMatchesRangeOpenInterval) {
     auto collPlan = makeCollScanPlan(std::move(expr));
 
     auto collCard = 100;
-    ASSERT_EQ(getPlanCE(*indexPlan, collCard), getPlanCE(*collPlan, collCard));
+    ASSERT_EQ(getPlanHeuristicCE(*indexPlan, collCard), getPlanHeuristicCE(*collPlan, collCard));
 }
 
 TEST(CardinalityEstimator, InequalityMatchesRangeClosedInterval) {
@@ -301,7 +158,7 @@ TEST(CardinalityEstimator, InequalityMatchesRangeClosedInterval) {
     auto collPlan = makeCollScanPlan(std::move(expr));
 
     auto collCard = 100;
-    ASSERT_EQ(getPlanCE(*indexPlan, collCard), getPlanCE(*collPlan, collCard));
+    ASSERT_EQ(getPlanHeuristicCE(*indexPlan, collCard), getPlanHeuristicCE(*collPlan, collCard));
 }
 
 TEST(CardinalityEstimator, InExpressionMatchesIntervals) {
@@ -320,7 +177,7 @@ TEST(CardinalityEstimator, InExpressionMatchesIntervals) {
     auto collPlan = makeCollScanPlan(std::move(expr));
 
     auto collCard = 100;
-    ASSERT_EQ(getPlanCE(*indexPlan, collCard), getPlanCE(*collPlan, collCard));
+    ASSERT_EQ(getPlanHeuristicCE(*indexPlan, collCard), getPlanHeuristicCE(*collPlan, collCard));
 }
 
 TEST(CardinalityEstimator, TypeExpressionMatchesIntervals) {
@@ -340,7 +197,7 @@ TEST(CardinalityEstimator, TypeExpressionMatchesIntervals) {
     auto collPlan = makeCollScanPlan(std::move(expr));
 
     auto collCard = 100;
-    ASSERT_EQ(getPlanCE(*indexPlan, collCard), getPlanCE(*collPlan, collCard));
+    ASSERT_EQ(getPlanHeuristicCE(*indexPlan, collCard), getPlanHeuristicCE(*collPlan, collCard));
 }
 
 TEST(CardinalityEstimator, ThreeOrsWithImplicitAnd) {
@@ -361,7 +218,7 @@ TEST(CardinalityEstimator, ThreeOrsWithImplicitAnd) {
 
     auto indexPlan =
         makeIndexScanFetchPlan(bounds, indexFields, std::move(indexExpr), std::move(fetchExpr));
-    ASSERT_EQ(getPlanCE(*indexPlan, 1000), makeCard(14.9523));
+    ASSERT_EQ(getPlanHeuristicCE(*indexPlan, 1000), makeCard(14.9523));
 }
 
 TEST(CardinalityEstimator, ThreeOrsWithAndChildrenImplicitAnd) {
@@ -379,7 +236,7 @@ TEST(CardinalityEstimator, ThreeOrsWithAndChildrenImplicitAnd) {
 
     auto indexPlan =
         makeIndexScanFetchPlan(bounds, indexFields, std::move(indexExpr), std::move(fetchExpr));
-    ASSERT_EQ(getPlanCE(*indexPlan, 1000), makeCard(10.5793));
+    ASSERT_EQ(getPlanHeuristicCE(*indexPlan, 1000), makeCard(10.5793));
 }
 
 TEST(CardinalityEstimator, IndexIntersectionWithFetchFilter) {
@@ -424,8 +281,8 @@ TEST(CardinalityEstimator, IndexIntersectionWithFetchFilter) {
     intersectionPlan1->setRoot(std::move(fetch1));
     intersectionPlan2->setRoot(std::move(fetch2));
 
-    CardinalityEstimate e1 = getPlanCE(*intersectionPlan1, 1000);
-    CardinalityEstimate e2 = getPlanCE(*intersectionPlan2, 1000);
+    CardinalityEstimate e1 = getPlanHeuristicCE(*intersectionPlan1, 1000);
+    CardinalityEstimate e2 = getPlanHeuristicCE(*intersectionPlan2, 1000);
 
     ASSERT_EQ(e1, e2);
     ASSERT_EQ(e1, makeCard(3.8222));
@@ -473,8 +330,8 @@ TEST(CardinalityEstimator, IndexUnionWithFetchFilter) {
     unionPlan1->setRoot(std::move(fetch1));
     unionPlan2->setRoot(std::move(fetch2));
 
-    CardinalityEstimate e1 = getPlanCE(*unionPlan1, 1000);
-    CardinalityEstimate e2 = getPlanCE(*unionPlan2, 1000);
+    CardinalityEstimate e1 = getPlanHeuristicCE(*unionPlan1, 1000);
+    CardinalityEstimate e2 = getPlanHeuristicCE(*unionPlan2, 1000);
 
     ASSERT_EQ(e1, e2);
     ASSERT_EQ(e1, makeCard(20.8395));
@@ -483,6 +340,7 @@ TEST(CardinalityEstimator, IndexUnionWithFetchFilter) {
 TEST(CardinalityEstimator, HistogramIndexedAndNonIndexedSolutionHaveSameCardinality) {
     // Plan 1: Ixscan(a: (5, inf]) -> Fetch
     std::vector<std::string> indexFields = {"a"};
+    auto histFields = indexFields;
     IndexBounds bounds =
         makeRangeIntervalBounds(BSON("" << 5 << " " << std::numeric_limits<double>::infinity()),
                                 BoundInclusion::kIncludeEndKeyOnly,
@@ -493,7 +351,7 @@ TEST(CardinalityEstimator, HistogramIndexedAndNonIndexedSolutionHaveSameCardinal
     BSONObj query = fromjson("{a: {$gt: 5}}");
     auto plan2 = makeCollScanPlan(parse(query));
 
-    auto collStats = makeCollStatsWithHistograms();
+    auto collStats = makeCollStatsWithHistograms(histFields, 1000.0);
     CardinalityEstimate e1 = getPlanHistogramCE(*plan1, collStats);
     CardinalityEstimate e2 = getPlanHistogramCE(*plan2, collStats);
     ASSERT_EQ(e1, e2);
@@ -503,6 +361,7 @@ TEST(CardinalityEstimator, HistogramIndexedAndNonIndexedSolutionHaveSameCardinal
 TEST(CardinalityEstimator, HistogramIndexedAndNonIndexedSolutionConjunctionHaveSameCardinality) {
     // Plan 1: Ixscan(a: [5, 5], b: [6, 6]) -> Fetch
     std::vector<std::string> indexFields = {"a", "b"};
+    auto histFields = indexFields;
     IndexBounds bounds;
     bounds.fields.push_back(makePointInterval(5, indexFields[0]));
     bounds.fields.push_back(makePointInterval(6, indexFields[1]));
@@ -512,11 +371,19 @@ TEST(CardinalityEstimator, HistogramIndexedAndNonIndexedSolutionConjunctionHaveS
     BSONObj query = fromjson("{a: 5, b: 6}");
     auto plan2 = makeCollScanPlan(parse(query));
 
-    auto collStats = makeCollStatsWithHistograms();
+    auto collStats = makeCollStatsWithHistograms(histFields, 1000.0);
     CardinalityEstimate e1 = getPlanHistogramCE(*plan1, collStats);
     CardinalityEstimate e2 = getPlanHistogramCE(*plan2, collStats);
     ASSERT_EQ(e1, e2);
     ASSERT_GT(e1, zeroCE);
+}
+
+TEST(CardinalityEstimator, NoHistogramForPath) {
+    BSONObj query = fromjson("{a: {$gt: 5}}");
+    auto plan = makeCollScanPlan(parse(query));
+    auto collStats = makeCollStatsWithHistograms({"b"}, 1000.0);
+    const auto ceRes = getPlanCE(*plan, collStats, QueryPlanRankerModeEnum::kHistogramCE);
+    ASSERT(!ceRes.isOK() && ceRes.getStatus().code() == ErrorCodes::HistogramCEFailure);
 }
 
 }  // unnamed namespace

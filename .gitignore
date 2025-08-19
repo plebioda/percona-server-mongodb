@@ -279,6 +279,7 @@ jstestfuzz/
 bazel-*
 bazelisk
 buildifier
+buildozer
 .bazelrc.local
 .bazelrc.gitinfo
 .bazelrc.workstation

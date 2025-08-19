@@ -50,9 +50,9 @@ void dropCollections(DBClientConnection* const conn,
                      const std::vector<std::string>& collections) {
     auto cmd = BSON("drop"
                     << "");
-    for (const auto& coll : collections) {
+    for (const auto& collName : collections) {
         auto bob = BSONObjBuilder{};
-        bob.append("drop", std::get<0>(getCollAndFileName(coll)));
+        bob.append("drop", collName);
         // Allow NamespaceNotFound.
         runCommandAssertOK(conn, bob.done(), dbName, {ErrorCodes::NamespaceNotFound});
     }
@@ -137,8 +137,15 @@ bool readAndInsertNextBatch(DBClientConnection* const conn,
     auto docBuilder = BSONArrayBuilder{};
     auto currentObjSize = 0;
     auto lineFromFile = std::string{};
-    for (readLine(fileToRead, lineFromFile); !fileToRead.eof();
-         readLine(fileToRead, lineFromFile)) {
+
+    // Protect from reading past the end of file. Only read one line at a time for each check here.
+    while (!fileToRead.eof()) {
+        readLine(fileToRead, lineFromFile);
+        // Protect from inserting a malformed empty string as a document. Treat an empty line as an
+        // indication to end document insertion.
+        if (lineFromFile.empty()) {
+            break;
+        }
         currentObjSize += lineFromFile.size();
         docBuilder.append(fromFuzzerJson(lineFromFile));
         if (currentObjSize > 100000) {
@@ -148,9 +155,17 @@ bool readAndInsertNextBatch(DBClientConnection* const conn,
             return true;
         }
     }
-    bob.append("documents", docBuilder.arr());
-    auto cmd = bob.done();
-    runCommandAssertOK(conn, cmd, dbName);
+    // Protect from if the last document put currentObjSize over the hardcoded size limit, causing a
+    // flush. This then leaves the BSOn array empty for this final insertion attempt, but inserting
+    // an empty array causes an error, so we try to avoid it.
+    if (currentObjSize > 0) {
+        bob.append("documents", docBuilder.arr());
+        auto cmd = bob.done();
+        runCommandAssertOK(conn, cmd, dbName);
+    } else {
+        std::cerr << "Found no further documents to insert, so skipping the insert call."
+                  << std::endl;
+    }
     return false;
 }
 
@@ -162,7 +177,8 @@ bool readAndLoadCollFile(DBClientConnection* const conn,
     verifyFileStreamGood(collFile, filePath, "Failed to open file");
     // Read in indexes.
     readAndBuildIndexes(conn, dbName, collName, collFile);
-    for (auto needMore = readAndInsertNextBatch(conn, dbName, collName, collFile); needMore;
+    for (auto needMore = readAndInsertNextBatch(conn, dbName, collName, collFile);
+         needMore && !collFile.eof();
          needMore = readAndInsertNextBatch(conn, dbName, collName, collFile)) {
         verifyFileStreamGood(collFile, filePath, "Failed to read batch");
     }
@@ -189,11 +205,11 @@ void runCommandAssertOK(DBClientConnection* const conn,
 }  // namespace
 
 void QueryFile::dropStaleCollections(DBClientConnection* const conn,
-                                     const std::set<std::string>& prevFileCollections) const {
-    std::vector<std::string> collectionsToDrop;
-    for (const auto& collFileName : _collectionsNeeded) {
-        if (prevFileCollections.find(collFileName) == prevFileCollections.end()) {
-            collectionsToDrop.emplace_back(collFileName);
+                                     const std::set<CollectionSpec>& prevFileCollections) const {
+    auto collectionsToDrop = std::vector<std::string>{};
+    for (const auto& collSpec : _collectionsNeeded) {
+        if (prevFileCollections.find(collSpec) == prevFileCollections.end()) {
+            collectionsToDrop.emplace_back(collSpec.collName);
         }
     }
     if (!collectionsToDrop.empty()) {
@@ -201,7 +217,7 @@ void QueryFile::dropStaleCollections(DBClientConnection* const conn,
     }
 }
 
-std::vector<std::string>& QueryFile::getCollectionsNeeded() {
+const std::vector<CollectionSpec>& QueryFile::getCollectionsNeeded() const {
     return _collectionsNeeded;
 }
 
@@ -216,7 +232,7 @@ size_t QueryFile::getTestsRun() const {
 void QueryFile::loadCollections(DBClientConnection* const conn,
                                 const bool dropData,
                                 const bool loadData,
-                                const std::set<std::string>& prevFileCollections) const {
+                                const std::set<CollectionSpec>& prevFileCollections) const {
     if (dropData) {
         dropStaleCollections(conn, prevFileCollections);
     }
@@ -230,11 +246,9 @@ void QueryFile::loadCollections(DBClientConnection* const conn,
         const auto pathPrefix = std::filesystem::path{_filePath}.remove_filename();
         // Deduce collection file.
         for (const auto& collSpec : _collectionsNeeded) {
-            const auto [collName, fileName] = getCollAndFileName(collSpec);
-            const auto fullPath = pathPrefix / fileName;
-            if (prevFileCollections.find(collName) == prevFileCollections.end()) {
+            if (prevFileCollections.find(collSpec) == prevFileCollections.end()) {
                 // Only load a collection if it wasn't marked as loaded by the previous file.
-                readAndLoadCollFile(conn, _databaseNeeded, collName, fullPath);
+                readAndLoadCollFile(conn, _databaseNeeded, collSpec.collName, collSpec.filePath);
             }
         }
     }
@@ -246,7 +260,7 @@ void QueryFile::parseHeader(std::fstream& fs) {
     _comments.preName = readLine(fs, lineFromFile);
     verifyFileStreamGood(fs, _filePath, "Failed to read header line");
     // The first line of a file is required to be the filename.
-    const auto nameNoExtension = getTestNameFromFilePath(_filePath);
+    const auto nameNoExtension = getBaseNameFromFilePath(_filePath);
     uassert(9670402,
             str::stream{} << "Expected first test line of " << _filePath.string()
                           << " to match the test name, but got " << nameNoExtension,
@@ -263,7 +277,13 @@ void QueryFile::parseHeader(std::fstream& fs) {
     for (_comments.preCollFiles.push_back(readLine(fs, lineFromFile));
          !lineFromFile.empty() && !fs.eof();
          _comments.preCollFiles.push_back(readLine(fs, lineFromFile))) {
-        _collectionsNeeded.push_back(lineFromFile);
+        const auto& relativeSpec = toCollectionSpec(lineFromFile);
+        _collectionsNeeded.push_back(
+            {relativeSpec.collName,
+             // Compute the absolute path to the desired .coll file.
+             std::filesystem::absolute(
+                 std::filesystem::path{_filePath}.replace_filename(relativeSpec.filePath)),
+             relativeSpec.rawString});
     }
 
     // Final header line should be a newline.
@@ -312,7 +332,7 @@ void QueryFile::printFailedQueriesHelper(const std::vector<size_t>& failedTestNu
                                          std::fstream* fs) const {
     std::cout << applyRed() << "------------------------------------------------------------"
               << applyReset() << std::endl
-              << applyCyan() << "FAIL: " << getTestNameFromFilePath(_filePath) << applyReset()
+              << applyCyan() << "FAIL: " << getBaseNameFromFilePath(_filePath) << applyReset()
               << std::endl;
     for (const auto& testNum : failedTestNums) {
         uassert(9699600,
@@ -393,7 +413,7 @@ std::string QueryFile::serializeStateForDebug() const {
     auto ss = std::stringstream{};
     ss << "_filePath: " << _filePath.string() << " | db: " << _databaseNeeded + " | ";
     for (const auto& coll : _collectionsNeeded) {
-        ss << coll << " , ";
+        ss << coll.rawString << " , ";
     }
     ss << " NumTests: " << _tests.size() << " | ";
     return ss.str();
@@ -401,8 +421,10 @@ std::string QueryFile::serializeStateForDebug() const {
 
 bool QueryFile::textBasedCompare(const std::filesystem::path& expectedPath,
                                  const std::filesystem::path& actualPath,
-                                 const ErrorLogLevel errorLogLevel) {
-    if (const auto& diffOutput = gitDiff(expectedPath, actualPath); !diffOutput.empty()) {
+                                 const ErrorLogLevel errorLogLevel,
+                                 const DiffStyle diffStyle) {
+    if (const auto& diffOutput = gitDiff(expectedPath, actualPath, diffStyle);
+        !diffOutput.empty()) {
         // Write out the diff output.
         std::cout << diffOutput << std::endl;
 
@@ -428,7 +450,8 @@ bool QueryFile::textBasedCompare(const std::filesystem::path& expectedPath,
 
 bool QueryFile::writeAndValidate(const ModeOption mode,
                                  const WriteOutOptions writeOutOpts,
-                                 const ErrorLogLevel errorLogLevel) {
+                                 const ErrorLogLevel errorLogLevel,
+                                 const DiffStyle diffStyle) {
     // Set up the text-based diff environment.
     std::filesystem::create_directories(_actualPath.parent_path());
     auto actualStream = std::fstream{_actualPath, std::ios::out | std::ios::trunc};
@@ -441,7 +464,7 @@ bool QueryFile::writeAndValidate(const ModeOption mode,
     // One big comparison, all at once.
     if (mode == ModeOption::Compare ||
         (mode == ModeOption::Normalize && writeOutOpts == WriteOutOptions::kNone)) {
-        return textBasedCompare(_expectedPath, _actualPath, errorLogLevel);
+        return textBasedCompare(_expectedPath, _actualPath, errorLogLevel, diffStyle);
     } else {
         const bool includeResults = writeOutOpts == WriteOutOptions::kResult ||
             writeOutOpts == WriteOutOptions::kOnelineResult;
@@ -472,7 +495,7 @@ bool QueryFile::writeOutAndNumber(std::fstream& fs, const WriteOutOptions opt) {
 template <bool IncludeComments>
 void QueryFile::writeOutHeader(std::fstream& fs) const {
     // Write the test name, without extension.
-    auto nameNoExtension = getTestNameFromFilePath(_filePath);
+    auto nameNoExtension = getBaseNameFromFilePath(_filePath);
     if constexpr (IncludeComments) {
         for (const auto& comment : _comments.preName) {
             fs << comment << std::endl;
@@ -498,7 +521,7 @@ void QueryFile::writeOutHeader(std::fstream& fs) const {
                 }
                 ++commentItr;
             }
-            fs << coll << std::endl;
+            fs << coll.rawString << std::endl;
         }
 
         // Drain the remaining comments. In practice, there should only be at most one more entry in
@@ -511,7 +534,7 @@ void QueryFile::writeOutHeader(std::fstream& fs) const {
     } else {
         // Write out collection files.
         for (const auto& coll : _collectionsNeeded) {
-            fs << coll << std::endl;
+            fs << coll.rawString << std::endl;
         }
     }
 }

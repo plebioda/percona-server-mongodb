@@ -688,6 +688,13 @@ add_option(
 )
 
 add_option(
+    "bazel-build-tag",
+    default=[],
+    action="append",
+    help="Specify additional tags to aggregate for --build_tag_filters",
+)
+
+add_option(
     "streams-release-build",
     default=False,
     action="store_true",
@@ -3975,46 +3982,8 @@ def doConfigure(myenv):
         # TODO SERVER-58675 - Remove this suppression after abseil is upgraded
         myenv.AddToCXXFLAGSIfSupported("-Wno-deprecated-builtins")
 
-        # Check if we can set "-Wnon-virtual-dtor" when "-Werror" is set. The only time we can't set it is on
-        # clang 3.4, where a class with virtual function(s) and a non-virtual destructor throws a warning when
-        # it shouldn't.
-        def CheckNonVirtualDtor(context):
-            test_body = """
-            class Base {
-            public:
-                virtual void foo() const = 0;
-            protected:
-                ~Base() {};
-            };
-
-            class Derived : public Base {
-            public:
-                virtual void foo() const {}
-            };
-            """
-
-            context.Message("Checking if -Wnon-virtual-dtor works reasonably... ")
-            ret = context.TryCompile(textwrap.dedent(test_body), ".cpp")
-            context.Result(ret)
-            return ret
-
-        myenvClone = myenv.Clone()
-        myenvClone.Append(
-            CCFLAGS=[
-                "$CCFLAGS_WERROR",
-                "-Wnon-virtual-dtor",
-            ],
-        )
-        conf = Configure(
-            myenvClone,
-            help=False,
-            custom_tests={
-                "CheckNonVirtualDtor": CheckNonVirtualDtor,
-            },
-        )
-        if conf.CheckNonVirtualDtor():
-            myenv.Append(CXXFLAGS=["-Wnon-virtual-dtor"])
-        conf.Finish()
+        # This warning overzealously warns on uses of non-virtual destructors which are benign.
+        myenv.AddToCXXFLAGSIfSupported("-Wno-non-virtual-dtor")
 
         # TODO(SERVER-97447): Remove this once we're fully on the v5 toolchain. In the meantime, we
         # need to suppress some warnings that are only recognized by the new compilers.
@@ -6753,8 +6722,7 @@ if env.get("__NINJA_NO") != "1":
                         env.GetAutoInstalledFiles(bazel_libdep),
                     )
             except KeyError:
-                if env.Verbose():
-                    print(f"BazelAutoInstall not processing non bazel target:\n{libdep_node}")
+                pass
 
         return target, source
 

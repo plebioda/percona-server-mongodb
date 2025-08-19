@@ -37,6 +37,7 @@ error_categories:
   # never be returned to the client in a network response.
   - InternalOnly
   - CursorInvalidatedError
+  - PlannerEstimationError
 
 error_codes:
   - {code: 0, name: OK}
@@ -812,6 +813,11 @@ error_codes:
   - {code: 432, name: OfflineValidationFailedToComplete}
   - {code: 433, name: AdmissionQueueOverflow}
   - {code: 434, name: NoDistinctScansForDistinctEligibleQuery}
+  - {
+      code: 435,
+      name: QueryStatsFailedToRecord,
+      extra: QueryStatsFailedToRecordInfo,
+    }
 
   # Error codes 4000-8999 are reserved.
 
@@ -904,3 +910,15 @@ error_codes:
       categories: [Interruption, RetriableError],
     }
   - {code: 4938500, name: IndexNotFoundCachedPlan}
+
+  # CBR error codes
+  - {
+      code: 9751901,
+      name: HistogramCEFailure,
+      categories: [PlannerEstimationError],
+    }
+  - {
+      code: 9751902,
+      name: SamplingCEFailure,
+      categories: [PlannerEstimationError],
+    }

@@ -88,7 +88,7 @@ checkLog.containsJson(newNode, 128455);
 jsTest.log("--XXXX-- Found backup cursor extend message in the log");
 
 // Wait for the new node to finish initial sync
-rs.waitForState(newNode, ReplSetTest.State.SECONDARY);
+rs.awaitSecondaryNodes(null, [newNode]);
 rs.waitForAllNewlyAddedRemovals();
 
 jsTest.log("--XXXX-- Added new member");

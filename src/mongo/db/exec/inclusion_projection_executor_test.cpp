@@ -53,6 +53,7 @@
 #include "mongo/db/query/projection.h"
 #include "mongo/db/query/projection_parser.h"
 #include "mongo/db/record_id.h"
+#include "mongo/idl/server_parameter_test_util.h"
 #include "mongo/logv2/log.h"
 #include "mongo/logv2/log_attr.h"
 #include "mongo/logv2/log_component.h"
@@ -291,15 +292,16 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
                           "{y: {$const: 4}}}"));
 
     // Should be the same if we're serializing for explain or for internal use.
-    ASSERT_DOCUMENT_EQ(expectedSerialization, inclusion->serializeTransformation(boost::none));
-    ASSERT_DOCUMENT_EQ(
-        expectedSerialization,
-        inclusion->serializeTransformation(ExplainOptions::Verbosity::kQueryPlanner));
+    ASSERT_DOCUMENT_EQ(expectedSerialization, inclusion->serializeTransformation());
     ASSERT_DOCUMENT_EQ(expectedSerialization,
-                       inclusion->serializeTransformation(ExplainOptions::Verbosity::kExecStats));
-    ASSERT_DOCUMENT_EQ(
-        expectedSerialization,
-        inclusion->serializeTransformation(ExplainOptions::Verbosity::kExecAllPlans));
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kQueryPlanner}));
+    ASSERT_DOCUMENT_EQ(expectedSerialization,
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kExecStats}));
+    ASSERT_DOCUMENT_EQ(expectedSerialization,
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kExecAllPlans}));
 }
 
 TEST_F(InclusionProjectionExecutionTestWithoutFallBackToDefault,
@@ -311,27 +313,28 @@ TEST_F(InclusionProjectionExecutionTestWithoutFallBackToDefault,
     auto expectedSerialization = Document{{"a", true}, {"_id", false}};
 
     // Should be the same if we're serializing for explain or for internal use.
-    ASSERT_DOCUMENT_EQ(expectedSerialization, inclusion->serializeTransformation(boost::none));
-    ASSERT_DOCUMENT_EQ(
-        expectedSerialization,
-        inclusion->serializeTransformation(ExplainOptions::Verbosity::kQueryPlanner));
+    ASSERT_DOCUMENT_EQ(expectedSerialization, inclusion->serializeTransformation());
     ASSERT_DOCUMENT_EQ(expectedSerialization,
-                       inclusion->serializeTransformation(ExplainOptions::Verbosity::kExecStats));
-    ASSERT_DOCUMENT_EQ(
-        expectedSerialization,
-        inclusion->serializeTransformation(ExplainOptions::Verbosity::kExecAllPlans));
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kQueryPlanner}));
+    ASSERT_DOCUMENT_EQ(expectedSerialization,
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kExecStats}));
+    ASSERT_DOCUMENT_EQ(expectedSerialization,
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kExecAllPlans}));
 }
 
 TEST_F(InclusionProjectionExecutionTestWithoutFallBackToDefault, ShouldSerializeWithTopLevelID) {
     auto inclusion = makeInclusionProjectionWithDefaultPolicies(BSON("a" << 1 << "b" << 1));
-    auto serialization = inclusion->serializeTransformation(boost::none);
+    auto serialization = inclusion->serializeTransformation();
     ASSERT_VALUE_EQ(serialization["a"], Value(true));
     ASSERT_VALUE_EQ(serialization["b"], Value(true));
     ASSERT_VALUE_EQ(serialization["_id"], Value(true));
 
     inclusion = makeInclusionProjectionWithDefaultPolicies(
         BSON("a" << 1 << "b" << BSON("c" << 1 << "d" << 1)));
-    serialization = inclusion->serializeTransformation(boost::none);
+    serialization = inclusion->serializeTransformation();
     ASSERT_VALUE_EQ(serialization["a"], Value(true));
     ASSERT_VALUE_EQ(serialization["b"]["c"], Value(true));
     ASSERT_VALUE_EQ(serialization["b"]["d"], Value(true));
@@ -339,21 +342,21 @@ TEST_F(InclusionProjectionExecutionTestWithoutFallBackToDefault, ShouldSerialize
     ASSERT_VALUE_EQ(serialization["b"]["_id"], Value());
 
     inclusion = makeInclusionProjectionWithDefaultIdExclusion(BSON("a" << true << "b" << true));
-    serialization = inclusion->serializeTransformation(boost::none);
+    serialization = inclusion->serializeTransformation();
     ASSERT_VALUE_EQ(serialization["a"], Value(true));
     ASSERT_VALUE_EQ(serialization["b"], Value(true));
     ASSERT_VALUE_EQ(serialization["_id"], Value(false));
 
     inclusion = makeInclusionProjectionWithDefaultIdExclusion(
         BSON("a" << true << "b" << true << "_id" << false));
-    serialization = inclusion->serializeTransformation(boost::none);
+    serialization = inclusion->serializeTransformation();
     ASSERT_VALUE_EQ(serialization["a"], Value(true));
     ASSERT_VALUE_EQ(serialization["b"], Value(true));
     ASSERT_VALUE_EQ(serialization["_id"], Value(false));
 
     inclusion = makeInclusionProjectionWithDefaultIdExclusion(
         BSON("a" << true << "b" << true << "_id" << true));
-    serialization = inclusion->serializeTransformation(boost::none);
+    serialization = inclusion->serializeTransformation();
     ASSERT_VALUE_EQ(serialization["a"], Value(true));
     ASSERT_VALUE_EQ(serialization["b"], Value(true));
     ASSERT_VALUE_EQ(serialization["_id"], Value(true));
@@ -368,15 +371,16 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault, ShouldOptimizeTopL
     auto expectedSerialization = Document{{"_id", true}, {"a", Document{{"$const", 3}}}};
 
     // Should be the same if we're serializing for explain or for internal use.
-    ASSERT_DOCUMENT_EQ(expectedSerialization, inclusion->serializeTransformation(boost::none));
-    ASSERT_DOCUMENT_EQ(
-        expectedSerialization,
-        inclusion->serializeTransformation(ExplainOptions::Verbosity::kQueryPlanner));
+    ASSERT_DOCUMENT_EQ(expectedSerialization, inclusion->serializeTransformation());
     ASSERT_DOCUMENT_EQ(expectedSerialization,
-                       inclusion->serializeTransformation(ExplainOptions::Verbosity::kExecStats));
-    ASSERT_DOCUMENT_EQ(
-        expectedSerialization,
-        inclusion->serializeTransformation(ExplainOptions::Verbosity::kExecAllPlans));
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kQueryPlanner}));
+    ASSERT_DOCUMENT_EQ(expectedSerialization,
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kExecStats}));
+    ASSERT_DOCUMENT_EQ(expectedSerialization,
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kExecAllPlans}));
 }
 
 TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault, ShouldOptimizeNestedExpressions) {
@@ -389,15 +393,16 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault, ShouldOptimizeNest
         Document{{"_id", true}, {"a", Document{{"b", Document{{"$const", 3}}}}}};
 
     // Should be the same if we're serializing for explain or for internal use.
-    ASSERT_DOCUMENT_EQ(expectedSerialization, inclusion->serializeTransformation(boost::none));
-    ASSERT_DOCUMENT_EQ(
-        expectedSerialization,
-        inclusion->serializeTransformation(ExplainOptions::Verbosity::kQueryPlanner));
+    ASSERT_DOCUMENT_EQ(expectedSerialization, inclusion->serializeTransformation());
     ASSERT_DOCUMENT_EQ(expectedSerialization,
-                       inclusion->serializeTransformation(ExplainOptions::Verbosity::kExecStats));
-    ASSERT_DOCUMENT_EQ(
-        expectedSerialization,
-        inclusion->serializeTransformation(ExplainOptions::Verbosity::kExecAllPlans));
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kQueryPlanner}));
+    ASSERT_DOCUMENT_EQ(expectedSerialization,
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kExecStats}));
+    ASSERT_DOCUMENT_EQ(expectedSerialization,
+                       inclusion->serializeTransformation(SerializationOptions{
+                           .verbosity = ExplainOptions::Verbosity::kExecAllPlans}));
 }
 
 TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
@@ -853,6 +858,9 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
 }
 
 TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault, ShouldEvaluateMetaExpressions) {
+    // Used to set 'score' metadata.
+    RAIIServerParameterControllerForTest searchHybridScoringPrerequisitesController(
+        "featureFlagSearchHybridScoringPrerequisites", true);
     auto inclusion =
         makeInclusionProjectionWithDefaultPolicies(fromjson("{a: 1, c: {$meta: 'textScore'}, "
                                                             "d: {$meta: 'randVal'}, "
@@ -1087,7 +1095,7 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault, ExtractComputedPro
     auto expectedProjection =
         Document(fromjson("{_id: true, computedMeta1: true, computed2: {$add: [{$const: "
                           "1}, \"$c\"]}, computedMeta3: \"$computedMeta3\"}"));
-    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation(boost::none));
+    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation());
 }
 
 TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
@@ -1106,7 +1114,7 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
     ASSERT_EQ(deleteFlag, false);
 
     auto expectedProjection = Document(fromjson("{_id: true, a: '$myMeta', b: '$a'}"));
-    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation(boost::none));
+    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation());
 }
 
 TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
@@ -1124,7 +1132,7 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
     ASSERT_EQ(deleteFlag, false);
 
     auto expectedProjection = Document(fromjson("{_id: true, a: {$sum: ['$myMeta', '$_id']}}"));
-    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation(boost::none));
+    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation());
 }
 
 TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
@@ -1143,7 +1151,7 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
     ASSERT_EQ(deleteFlag, false);
 
     auto expectedProjection = Document(fromjson("{_id: true, a: '$myMeta', b: '$a.x'}"));
-    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation(boost::none));
+    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation());
 }
 
 TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
@@ -1162,7 +1170,7 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault,
     ASSERT_EQ(deleteFlag, false);
 
     auto expectedProjection = Document(fromjson("{_id: true, a: '$myMeta', c: {b: '$a.x'}}"));
-    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation(boost::none));
+    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation());
 }
 
 TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault, ApplyProjectionAfterSplit) {
@@ -1208,7 +1216,7 @@ TEST_F(InclusionProjectionExecutionTestWithFallBackToDefault, DoNotExtractReserv
 
     auto expectedProjection = Document(fromjson(
         "{_id: true, a: true, data: {\"$toUpper\" : [\"$myMeta.x\"]}, newMeta: \"$newMeta\"}"));
-    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation(boost::none));
+    ASSERT_DOCUMENT_EQ(expectedProjection, inclusion->serializeTransformation());
 }
 }  // namespace
 

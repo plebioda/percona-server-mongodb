@@ -33,7 +33,6 @@
 #include <boost/optional/optional.hpp>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <utility>
 #include <variant>
@@ -41,7 +40,6 @@
 
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonelementvalue.h"
-#include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/bsonobj.h"
 #include "mongo/bson/bsontypes.h"
 #include "mongo/bson/bsontypes_util.h"
@@ -282,7 +280,9 @@ struct EncodingState {
 template <class Allocator = std::allocator<void>>
 class BSONColumnBuilder {
 public:
-    explicit BSONColumnBuilder(const Allocator& = {});
+    template <typename A = Allocator>
+    BSONColumnBuilder() : BSONColumnBuilder{A{}} {}
+    explicit BSONColumnBuilder(const Allocator&);
     explicit BSONColumnBuilder(allocator_aware::BufBuilder<Allocator>, const Allocator& = {});
 
     /**

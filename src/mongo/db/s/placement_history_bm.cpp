@@ -85,11 +85,11 @@ public:
         client.createIndexes(NamespaceString::kSessionTransactionsTableNamespace,
                              {MongoDSessionCatalog::getConfigTxnPartialIndexSpec()});
 
-        ReadWriteConcernDefaults::create(getServiceContext(), _lookupMock.getFetchDefaultsFn());
+        ReadWriteConcernDefaults::create(getService(), _lookupMock.getFetchDefaultsFn());
 
         LogicalSessionCache::set(getServiceContext(), std::make_unique<LogicalSessionCacheNoop>());
         TransactionCoordinatorService::get(operationContext())
-            ->onShardingInitialization(operationContext(), true);
+            ->initializeIfNeeded(operationContext(), /* term */ 1);
 
         WaitForMajorityService::get(getServiceContext()).startup(getServiceContext());
 
@@ -99,7 +99,7 @@ public:
     }
 
     ~BenchmarkConfigServerTestFixture() override {
-        TransactionCoordinatorService::get(operationContext())->onStepDown();
+        TransactionCoordinatorService::get(operationContext())->interrupt();
         WaitForMajorityService::get(getServiceContext()).shutDown();
         ShardingCatalogManager::get(operationContext())->shutDown();
         ConfigServerTestFixture::tearDown();

@@ -27,6 +27,7 @@
  *    it in the license file.
  */
 
+#include <boost/container_hash/hash.hpp>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -50,8 +51,25 @@ static constexpr auto kFeatureExtractorDir = std::string_view{"/home/ubuntu/feat
 static constexpr auto kShellMaxLen = std::numeric_limits<size_t>::max();
 static constexpr auto kShellTimeout = Milliseconds{60 * 60 * 1000};  // 1 hour
 
+enum class DiffStyle { kLine, kWord };
 enum class ErrorLogLevel { kSimple, kVerbose, kExtractFeatures };
 enum class WriteOutOptions { kNone, kResult, kOnelineResult };
+
+struct CollectionSpec {
+    // Implements spaceship-compare for CollectionSpec, which implicitly also implements the
+    // operators <, <=, >, >=, ==, and !=.
+    auto operator<=>(const CollectionSpec& other) const {
+        if (const auto compare = (collName <=> other.collName); !std::is_eq(compare)) {
+            return compare;
+        } else {
+            return filePath <=> other.filePath;
+        }
+    }
+
+    const std::string collName;
+    const std::filesystem::path filePath;
+    const std::string rawString;
+};
 
 class ConditionalColor {
 public:
@@ -124,20 +142,18 @@ ConditionalColor applyReset();
 ConditionalColor applyYellow();
 
 void displayFailingQueryFeatures(const std::filesystem::path&);
-// Returns a {collName, fileName} tuple.
-std::tuple<std::string, std::filesystem::path> getCollAndFileName(const std::string&);
+std::string getBaseNameFromFilePath(const std::filesystem::path&);
 /**
  * Extracts the test numbers associated with failing queries from hunk headers in the git diff
  * output and stores them in a vector.
  */
 std::vector<size_t> getFailedTestNums(const std::string& diffOutput);
 std::string getMongoRepoRoot();
-std::string getTestNameFromFilePath(const std::filesystem::path&);
 /**
  * Performs a text-based diff between the expected and actual result test files and returns the diff
  * output.
  */
-std::string gitDiff(const std::filesystem::path&, const std::filesystem::path&);
+std::string gitDiff(const std::filesystem::path&, const std::filesystem::path&, DiffStyle);
 
 inline bool isTerminal() {
     static const bool isTerminal = isatty(STDOUT_FILENO) != 0;
@@ -149,6 +165,18 @@ void printFailureSummary(const std::vector<std::filesystem::path>& failedTestFil
                          size_t totalTestsRun);
 std::vector<std::string> readAndAssertNewline(std::fstream&, const std::string& context);
 std::vector<std::string> readLine(std::fstream&, std::string& lineFromFile);
+DiffStyle stringToDiffStyle(const std::string&);
 WriteOutOptions stringToWriteOutOpt(const std::string& opt);
+CollectionSpec toCollectionSpec(const std::string&);
 void verifyFileStreamGood(std::fstream&, const std::filesystem::path&, const std::string& op);
 }  // namespace mongo::query_tester
+
+template <>
+struct std::hash<mongo::query_tester::CollectionSpec> {
+    std::size_t operator()(const mongo::query_tester::CollectionSpec& spec) const noexcept {
+        auto value = size_t{0};
+        boost::hash_combine(value, spec.collName);
+        boost::hash_combine(value, spec.filePath);
+        return value;
+    }
+};

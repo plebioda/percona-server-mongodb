@@ -116,13 +116,13 @@
 #include "mongo/s/balancer_configuration.h"
 #include "mongo/s/catalog/sharding_catalog_client.h"
 #include "mongo/s/catalog_cache.h"
-#include "mongo/s/catalog_cache_loader.h"
 #include "mongo/s/client/shard_factory.h"
 #include "mongo/s/client/shard_registry.h"
 #include "mongo/s/client/shard_remote.h"
 #include "mongo/s/client/sharding_connection_hook.h"
 #include "mongo/s/client_transport_observer_mongos.h"
 #include "mongo/s/config_server_catalog_cache_loader.h"
+#include "mongo/s/config_server_catalog_cache_loader_impl.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/load_balancer_support.h"
 #include "mongo/s/mongos_options.h"
@@ -604,7 +604,7 @@ Status initializeSharding(
         std::make_unique<ShardFactory>(std::move(buildersMap), std::move(targeterFactory));
 
     auto catalogCache = std::make_unique<CatalogCache>(
-        opCtx->getServiceContext(), std::make_shared<ConfigServerCatalogCacheLoader>());
+        opCtx->getServiceContext(), std::make_shared<ConfigServerCatalogCacheLoaderImpl>());
 
     // List of hooks which will be called by the ShardRegistry when it discovers a shard has been
     // removed.
@@ -826,7 +826,8 @@ ExitCode runMongosServer(ServiceContext* serviceContext) {
         quickExit(ExitCode::badOptions);
     }
 
-    ReadWriteConcernDefaults::create(serviceContext, readWriteConcernDefaultsCacheLookupMongoS);
+    ReadWriteConcernDefaults::create(serviceContext->getService(ClusterRole::RouterServer),
+                                     readWriteConcernDefaultsCacheLookupMongoS);
     ChangeStreamOptionsManager::create(serviceContext);
     query_settings::QuerySettingsManager::create(serviceContext, [](OperationContext* opCtx) {
         // QuerySettingsManager modifies a cluster-wide parameter and thus a refresh of the
@@ -874,7 +875,7 @@ ExitCode runMongosServer(ServiceContext* serviceContext) {
         TimeElapsedBuilderScopedTimer scopedTimer(serviceContext->getFastClockSource(),
                                                   "Update read write concern defaults",
                                                   &startupTimeElapsedBuilder);
-        ReadWriteConcernDefaults::get(serviceContext).refreshIfNecessary(opCtx);
+        ReadWriteConcernDefaults::get(opCtx).refreshIfNecessary(opCtx);
     } catch (const DBException& ex) {
         LOGV2_WARNING(22855,
                       "Error loading read and write concern defaults at startup",

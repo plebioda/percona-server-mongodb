@@ -4224,8 +4224,7 @@ Status ReplicationCoordinatorImpl::_doReplSetReconfig(OperationContext* opCtx,
         // corresponding definition still exists in the new config.
         if (serverGlobalParams.clusterRole.has(ClusterRole::None)) {
             try {
-                const auto rwcDefaults =
-                    ReadWriteConcernDefaults::get(opCtx->getServiceContext()).getDefault(opCtx);
+                const auto rwcDefaults = ReadWriteConcernDefaults::get(opCtx).getDefault(opCtx);
                 const auto wcDefault = rwcDefaults.getDefaultWriteConcern();
                 // Default WC can be 'boost::none' if the implicit default is used and set to 'w:1'.
                 if (wcDefault) {
@@ -6400,6 +6399,9 @@ void ReplicationCoordinatorImpl::createWMajorityWriteAvailabilityDateWaiter(OpTi
             _primaryMajorityReadsAvailability.allowReads();
         } else {
             _primaryMajorityReadsAvailability.disallowReads(status);
+            LOGV2_ERROR(8639800,
+                        "Failed to wait for write concern majority",
+                        "error"_attr = redact(status));
         }
     };
 
@@ -6411,7 +6413,7 @@ void ReplicationCoordinatorImpl::createWMajorityWriteAvailabilityDateWaiter(OpTi
 
     auto pf = makePromiseFuture<void>();
     auto waiter = std::make_shared<Waiter>(std::move(pf.promise), writeConcern);
-    auto future = std::move(pf.future).onCompletion(setOpTimeCB);
+    std::move(pf.future).getAsync(setOpTimeCB);
     _replicationWaiterList.add(lk, opTime, waiter);
 }
 

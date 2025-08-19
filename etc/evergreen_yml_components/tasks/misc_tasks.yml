@@ -621,7 +621,7 @@ tasks:
           jepsen_storage_engine: --storage-engine wiredTiger
           jepsen_test_name: set
 
-  # TODO: rename if display_name appears on the evergreen UI
+  # TODO(SERVER-97804): rename if display_name appears on the evergreen UI
   - name: bazel_run_//:format
     tags:
       [
@@ -654,7 +654,7 @@ tasks:
           target: >-
             //:format -- --check
 
-  # TODO: rename if display_name appears on the evergreen UI
+  # TODO(SERVER-97804): rename if display_name appears on the evergreen UI
   - name: bazel_run_//:codeowners
     tags:
       [
@@ -686,6 +686,39 @@ tasks:
         vars:
           target: >-
             //:codeowners -- --check
+
+  # TODO(SERVER-97804): rename if display_name appears on the evergreen UI
+  - name: bazel_run_//buildscripts:resmoke
+    tags:
+      [
+        "assigned_to_jira_team_devprod_build",
+        "development_critical_single_variant",
+        "lint",
+        "bazel_check",
+      ]
+    depends_on:
+      - name: version_expansions_gen
+        variant: generate-tasks-for-version
+    commands:
+      - command: timeout.update
+        params:
+          # 10 minutes
+          exec_timeout_secs: 600
+      - func: "f_expansions_write"
+      - command: manifest.load
+      - func: "git get project and add git tag"
+      - func: "f_expansions_write"
+      - func: "kill processes"
+      - func: "cleanup environment"
+      - func: "set up venv"
+      - func: "upload pip requirements"
+      - func: "get engflow creds"
+      # TODO SERVER-81038: Remove "fetch bazel" once bazelisk is self-hosted.
+      - func: "fetch bazel"
+      - func: "bazel run"
+        vars:
+          target: >-
+            //buildscripts:resmoke -- --help
 
   - name: lint_clang_format
     tags:
@@ -1102,7 +1135,7 @@ tasks:
           #   bazel test $targets
           # TODO(SERVER-97069): Change to //src/... when unit tests are compatible with bazel sandboxing
           target: >-
-            //src/mongo/platform:visibility_test1
+            //src/mongo/platform:visibility1_test
           args: >-
             --test_output=all
             --config=local
@@ -1356,6 +1389,17 @@ tasks:
         vars:
           <<: *powercycle_remote_credentials
         timeout_secs: 1800 # 30 minute timeout for no output
+
+  - name: run_smoke_tests_gen
+    tags:
+      [
+        "assigned_to_jira_team_devprod_correctness",
+        "development_critical_single_variant",
+        "requires_large_host",
+        "incompatible_windows",
+      ]
+    commands:
+      - func: "generate smoke test tasks"
 
   - name: selinux_rhel8_enterprise
     tags: ["assigned_to_jira_team_server_security", "experimental"]

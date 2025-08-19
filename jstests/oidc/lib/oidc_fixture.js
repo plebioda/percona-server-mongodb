@@ -128,7 +128,7 @@ export class ShardedCluster {
             other: {
                 keyFile: 'jstests/libs/key1',
                 configOptions: {auth: ""},
-                shardOptions: {auth: ""},
+                rsOptions: {auth: ""},
                 mongosOptions: _createCommonConfig(oidcProviders, auditLogPath),
             }
         };

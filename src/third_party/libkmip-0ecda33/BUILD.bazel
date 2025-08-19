@@ -14,7 +14,13 @@ mongo_cc_library(
     includes = [
         "libkmip/include",
     ],
+    no_undefined_ref_DO_NOT_USE = False,
+    linkopts = [
+        "-lcrypto",
+        "-lssl",
+    ],
 )
+
 
 mongo_cc_library(
     name = "kmippp",

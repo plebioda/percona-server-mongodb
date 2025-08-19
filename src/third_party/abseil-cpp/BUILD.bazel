@@ -1033,9 +1033,6 @@ mongo_cc_library(
         "dist/absl/flags/reflection.cc",
     ],
     hdrs = ABSEIL_HEADERS,
-    features = [
-        "no_warn_non_virtual_detour",
-    ],
     includes = ["dist"],
     skip_global_deps = ABSEIL_SKIP_GLOBAL_DEPS,
     deps = [
@@ -2266,6 +2263,10 @@ mongo_cc_library(
         "dist/absl/strings/substitute.cc",
     ],
     hdrs = ABSEIL_HEADERS,
+    copts = select({
+        "//bazel/config:compiler_type_gcc": ["-Wno-array-bounds"],
+        "//conditions:default": [],
+    }),
     includes = ["dist"],
     skip_global_deps = ABSEIL_SKIP_GLOBAL_DEPS,
     deps = [

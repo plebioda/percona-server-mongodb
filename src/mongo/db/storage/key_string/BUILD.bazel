@@ -1,4 +1,4 @@
-load("//bazel:mongo_src_rules.bzl", "mongo_cc_library")
+load("//bazel:mongo_src_rules.bzl", "mongo_cc_library", "mongo_cc_unit_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -23,8 +23,14 @@ mongo_cc_library(
     ],
 )
 
-# TODO(SERVER-96862): Remove cycle created by moving //src/mongo/db/storage/key_string:key_string.h to //src/mongo/db/storage/key_string:key_string
-filegroup(
-    name = "key_string_hdrs",
-    srcs = [":key_string.h"],
+mongo_cc_unit_test(
+    name = "key_string_test",
+    srcs = [
+        "key_string_test.cpp",
+        "//src/mongo/bson:bsonobj_comparator.h",
+    ],
+    tags = ["mongo_unittest_second_group"],
+    deps = [
+        "key_string",
+    ],
 )

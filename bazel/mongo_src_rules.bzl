@@ -1229,6 +1229,14 @@ COVERAGE_FLAGS = select({
     "//conditions:default": [],
 })
 
+# Passed to both the compiler and linker
+PGO_PROFILE_FLAGS = select({
+    "//bazel/config:pgo_profile_enabled": [
+        "-fprofile-instr-generate",
+    ],
+    "//conditions:default": [],
+})
+
 MACOS_SSL_LINKFLAGS = select({
     "//bazel/config:ssl_enabled_macos": [
         "-framework CoreFoundation",
@@ -1305,7 +1313,8 @@ MONGO_GLOBAL_COPTS = (
     SYMBOL_ORDER_COPTS +
     GCC_WARNINGS_COPTS +
     SASL_WINDOWS_COPTS +
-    COVERAGE_FLAGS
+    COVERAGE_FLAGS +
+    PGO_PROFILE_FLAGS
 )
 
 MONGO_GLOBAL_LINKFLAGS = (
@@ -1333,7 +1342,8 @@ MONGO_GLOBAL_LINKFLAGS = (
     COVERAGE_FLAGS +
     GLOBAL_WINDOWS_LIBRAY_LINKFLAGS +
     SASL_WINDOWS_LINKFLAGS +
-    MACOS_SSL_LINKFLAGS
+    MACOS_SSL_LINKFLAGS +
+    PGO_PROFILE_FLAGS
 )
 
 MONGO_GLOBAL_ADDITIONAL_LINKER_INPUTS = SYMBOL_ORDER_FILES
@@ -1719,6 +1729,7 @@ def _mongo_cc_binary_and_program(
         additional_linker_inputs = [],
         features = [],
         exec_properties = {},
+        skip_global_deps = [],
         _program_type = "",
         **kwargs):
     if linkstatic == True:
@@ -1772,7 +1783,13 @@ def _mongo_cc_binary_and_program(
     package_specific_copts = package_specific_copt(native.package_name())
     package_specific_linkflags = package_specific_linkflag(native.package_name())
 
-    all_deps = deps + LIBUNWIND_DEPS + TCMALLOC_DEPS
+    all_deps = deps
+
+    if "libunwind" not in skip_global_deps:
+        all_deps += LIBUNWIND_DEPS
+
+    if "allocator" not in skip_global_deps:
+        all_deps += TCMALLOC_DEPS
 
     linux_rpath_flags = [
         "-Wl,-z,origin",
@@ -1892,6 +1909,7 @@ def mongo_cc_binary(
         additional_linker_inputs = [],
         features = [],
         exec_properties = {},
+        skip_global_deps = [],
         **kwargs):
     """Wrapper around cc_binary.
 
@@ -1919,6 +1937,8 @@ def mongo_cc_binary(
         depend on this.
       additional_linker_inputs: Any additional files that you may want to pass
         to the linker, for example, linker scripts.
+      skip_global_deps: Globally injected dependencies to skip adding as a
+        dependency (options: "libunwind", "allocator").
     """
     _mongo_cc_binary_and_program(
         name,
@@ -1939,6 +1959,7 @@ def mongo_cc_binary(
         additional_linker_inputs,
         features,
         exec_properties,
+        skip_global_deps,
         _program_type = "binary",
         **kwargs
     )
@@ -2193,7 +2214,7 @@ def symlink_impl(ctx):
 
     return [DefaultInfo(files = depset([ctx.outputs.output]))]
 
-symlink = rule(
+symlink_rule = rule(
     symlink_impl,
     attrs = {
         "input": attr.label(
@@ -2205,6 +2226,13 @@ symlink = rule(
         ),
     },
 )
+
+def symlink(name, tags = [], **kwargs):
+    symlink_rule(
+        name = name,
+        tags = tags + ["gen_source"],
+        **kwargs
+    )
 
 def strip_deps_impl(ctx):
     cc_toolchain = find_cpp_toolchain(ctx)

@@ -23,18 +23,11 @@ if [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
   abs_path=$(cygpath -w "$TMPDIR" | tr '\\' '/')
   echo "startup --output_user_root=Z:/bazel_tmp" > .bazelrc.evergreen
   echo "BAZELISK_HOME=${abs_path}/bazelisk_home" >> .bazeliskrc
+  echo "build --define GIT_COMMIT_HASH=$(git rev-parse HEAD)" >> .bazelrc.gitinfo
 else
   echo "startup --output_user_root=${TMPDIR}/bazel-output-root" > .bazelrc.evergreen
   echo "BAZELISK_HOME=${TMPDIR}/bazelisk_home" >> .bazeliskrc
-fi
-
-source ./evergreen/bazel_RBE_supported.sh
-
-if bazel_rbe_supported && [[ "${evergreen_remote_exec}" == "off" ]]; then
-  # Temporarily disable remote exec and only use remote cache
-  echo "common --remote_executor=" >> .bazelrc.evergreen
-  echo "common --modify_execution_info=.*=+no-remote-exec" >> .bazelrc.evergreen
-  echo "common --jobs=auto" >> .bazelrc.evergreen
+  echo "build --define GIT_COMMIT_HASH=$(git rev-parse HEAD)" >> .bazelrc.gitinfo
 fi
 
 uri="https://spruce.mongodb.com/task/${task_id:?}?execution=${execution:?}"

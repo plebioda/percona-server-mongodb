@@ -173,6 +173,7 @@ MONGO_FAIL_POINT_DEFINE(WTSetOldestTSToStableTS);
 MONGO_FAIL_POINT_DEFINE(WTRollbackToStableReturnOnEBUSY);
 MONGO_FAIL_POINT_DEFINE(hangBeforeUnrecoverableRollbackError);
 MONGO_FAIL_POINT_DEFINE(WTDisableFastShutDown);
+MONGO_FAIL_POINT_DEFINE(WTFailImportSortedDataInterface);
 
 const std::string kPinOldestTimestampAtStartupName = "_wt_startup";
 
@@ -3134,6 +3135,9 @@ Status WiredTigerKVEngine::importSortedDataInterface(RecoveryUnit& ru,
                 "WiredTigerKVEngine::importSortedDataInterface",
                 "ident"_attr = ident,
                 "config"_attr = config);
+    if (WTFailImportSortedDataInterface.shouldFail()) {
+        return Status(ErrorCodes::UnknownError, "WTFailImportSortedDataInterface Mock Error");
+    }
     return WiredTigerIndex::create(WiredTigerRecoveryUnit::get(ru), _uri(ident), config);
 }
 

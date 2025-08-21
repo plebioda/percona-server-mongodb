@@ -6938,6 +6938,7 @@ names = [
     "install-fourth-quarter-unittests",
     # TODO SERVER-97990 Not all unittests are being excluded.
     "install-mongo-crypt-test",
+    "install-stitch-support-test",
 ]
 
 env.Alias(

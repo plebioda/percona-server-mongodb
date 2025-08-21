@@ -705,10 +705,10 @@ tasks:
       - func: "scons compile"
         vars:
           targets: install-unittests install-unittests-debug
-          bazel_build_tags: --bazel-build-tag=mongo_unittest
+          bazel_build_tags: --bazel-build-tag=mongo_unittest --bazel-build-tag=mongo_binary_unittest
           compiling_for_test: true
 
-  - name: compile_and_run_unittests_first_quarter
+  - name: compile_libraries_for_unittests
     tags: ["assigned_to_jira_team_devprod_build", "auxiliary"]
     depends_on:
       - name: version_expansions_gen
@@ -717,10 +717,26 @@ tasks:
     commands:
       - func: "scons compile"
         vars:
+          # Target the conf to just run the bazel part of the build
+          targets: \$BUILD_ROOT/scons/\$VARIANT_DIR/sconf_temp
+          compiling_for_test: true
+          task_compile_flags: ${unittest_compile_flags}
+          bazel_build_tags: --bazel-build-tag=mongo_library
+
+  - name: compile_and_run_unittests_first_quarter
+    tags: ["assigned_to_jira_team_devprod_build", "auxiliary"]
+    depends_on:
+      - name: version_expansions_gen
+        variant: generate-tasks-for-version
+      - name: compile_libraries_for_unittests
+    exec_timeout_secs: 32400 # 9 hours
+    commands:
+      - func: "scons compile"
+        vars:
           targets: install-first-quarter-unittests install-first-quarter-unittests-debug
           compiling_for_test: true
           task_compile_flags: ${unittest_compile_flags}
-          bazel_build_tags: --bazel-build-tag=mongo_unittest_first_group --bazel-build-tag=mongo_library
+          bazel_build_tags: --bazel-build-tag=mongo_unittest_first_group --bazel-build-tag=mongo_binary_unittest --bazel-build-tag=mongo_library
       - func: "f_expansions_write"
       - func: "run diskstats"
       - func: "f_expansions_write"
@@ -737,6 +753,7 @@ tasks:
     depends_on:
       - name: version_expansions_gen
         variant: generate-tasks-for-version
+      - name: compile_libraries_for_unittests
     exec_timeout_secs: 32400 # 9 hours
     commands:
       - func: "scons compile"
@@ -744,7 +761,7 @@ tasks:
           targets: install-second-quarter-unittests install-second-quarter-unittests-debug
           compiling_for_test: true
           task_compile_flags: ${unittest_compile_flags}
-          bazel_build_tags: --bazel-build-tag=mongo_unittest_second_group --bazel-build-tag=mongo_library
+          bazel_build_tags: --bazel-build-tag=mongo_unittest_second_group --bazel-build-tag=mongo_binary_unittest --bazel-build-tag=stitch_support_test --bazel-build-tag=mongo_library
       - func: "f_expansions_write"
       - func: "run diskstats"
       - func: "f_expansions_write"
@@ -761,6 +778,7 @@ tasks:
     depends_on:
       - name: version_expansions_gen
         variant: generate-tasks-for-version
+      - name: compile_libraries_for_unittests
     exec_timeout_secs: 32400 # 9 hours
     commands:
       - func: "scons compile"
@@ -768,7 +786,7 @@ tasks:
           targets: install-third-quarter-unittests install-third-quarter-unittests-debug
           compiling_for_test: true
           task_compile_flags: ${unittest_compile_flags}
-          bazel_build_tags: --bazel-build-tag=mongo_unittest_third_group --bazel-build-tag=mongo_library
+          bazel_build_tags: --bazel-build-tag=mongo_unittest_third_group --bazel-build-tag=mongo_binary_unittest --bazel-build-tag=mongo_library
       - func: "f_expansions_write"
       - func: "run diskstats"
       - func: "f_expansions_write"
@@ -785,6 +803,7 @@ tasks:
     depends_on:
       - name: version_expansions_gen
         variant: generate-tasks-for-version
+      - name: compile_libraries_for_unittests
     exec_timeout_secs: 32400 # 9 hours
     commands:
       - func: "scons compile"
@@ -792,7 +811,7 @@ tasks:
           targets: install-fourth-quarter-unittests install-fourth-quarter-unittests-debug
           compiling_for_test: true
           task_compile_flags: ${unittest_compile_flags}
-          bazel_build_tags: --bazel-build-tag=mongo_unittest_fourth_group --bazel-build-tag=mongo_library
+          bazel_build_tags: --bazel-build-tag=mongo_unittest_fourth_group --bazel-build-tag=mongo_binary_unittest --bazel-build-tag=mongo_library
       - func: "f_expansions_write"
       - func: "run diskstats"
       - func: "f_expansions_write"
@@ -923,6 +942,7 @@ tasks:
           targets: archive-jstestshell
           compiling_for_test: true
           separate_debug: on
+          bazel_build_tags: --bazel-build-tag=jstestshell
           task_compile_flags: >-
             PREFIX=dist-test
             --link-model=static
@@ -980,7 +1000,7 @@ tasks:
       - func: "scons compile"
         vars:
           targets: install-stitch-support install-stitch-support-debug install-stitch-support-dev
-          bazel_build_tags: --bazel-build-tag=mongo_library
+          bazel_build_tags: --bazel-build-tag=stitch_support
           task_compile_flags: >-
             --link-model=dynamic-sdk
             --ssl=off
@@ -1023,7 +1043,7 @@ tasks:
       - func: "scons compile"
         vars:
           targets: install-stitch-support-test
-          bazel_build_tags: --bazel-build-tag=mongo_library
+          bazel_build_tags: --bazel-build-tag=stitch_support_test
           compiling_for_test: true
           task_compile_flags: >-
             --ssl=off
@@ -2261,10 +2281,17 @@ task_groups:
     name: compile_test_parallel_unittest_stream_TG
     max_hosts: -1
     tasks:
+      - compile_libraries_for_unittests
       - compile_and_run_unittests_first_quarter
       - compile_and_run_unittests_second_quarter
       - compile_and_run_unittests_third_quarter
       - compile_and_run_unittests_fourth_quarter
+
+  - <<: *compile_task_group_template
+    name: compile_unittest_libaries_TG
+    max_hosts: -1
+    tasks:
+      - compile_libraries_for_unittests
 
   # These `parallel` task groups are only appropriate for builders that
   # use --link-model=dynamic, and have scons_cache_scope: shared and

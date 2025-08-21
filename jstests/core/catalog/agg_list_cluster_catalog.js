@@ -6,7 +6,8 @@
  *    requires_fcv_81,
  *    # $listClusterCatalog only supports local read concern
  *    assumes_read_concern_unchanged,
- *    # TODO SERVER-97215: remove `command_not_supported_in_serverless`
+ *    # There is no need to support multitenancy, as it has been canceled and was never in
+ *    # production (see SERVER-97215 for more information)
  *    command_not_supported_in_serverless,
  *    does_not_support_transactions,
  *    # In a clustered environment, the $listClusterCatalog will eventually target the CSRS to
@@ -173,6 +174,13 @@ jsTest.log("The stage must run collectionless.");
         9621301);
 }
 
+jsTest.log("The stage must take an object.");
+{
+    assert.commandFailedWithCode(
+        db.runCommand({aggregate: 1, pipeline: [{$listClusterCatalog: "wrong"}], cursor: {}}),
+        9621302);
+}
+
 jsTest.log("The stage must return the collection for the specified user db.");
 {
     setupUserCollections(db, kDb1);
@@ -214,10 +222,8 @@ jsTest.log("The stage must return every database if run against the admin db.");
 {
     let listCollectionResult = runListCollectionsOnDbs(db, [kDb1, kDb2]);
 
-    let stageResult = assert
-                          .commandWorked(db.getSiblingDB("admin").runCommand(
-                              {aggregate: 1, pipeline: [{$listClusterCatalog: {}}], cursor: {}}))
-                          .cursor.firstBatch;
+    let dbAdmin = db.getSiblingDB("admin");
+    let stageResult = dbAdmin.aggregate([{$listClusterCatalog: {}}], {cursor: {}}).toArray();
     verifyAgainstListCollections(listCollectionResult, stageResult, {});
 }
 
@@ -225,17 +231,13 @@ jsTest.log("The stage must work under any combination of specs.");
 {
     // Get the listCollections result.
     let listCollectionResult = runListCollectionsOnDbs(db, [kDb1, kDb2]);
+    let dbAdmin = db.getSiblingDB("admin");
 
     // Test all the combination of specs.
     let allSpecs = generateSpecCombinations(kSpecsList);
     allSpecs.forEach((specs) => {
         jsTest.log("Verify the stage reports the correct result for specs " + tojson(specs));
-        let stageResult =
-            assert
-                .commandWorked(db.getSiblingDB("admin").runCommand(
-                    {aggregate: 1, pipeline: [{$listClusterCatalog: specs}], cursor: {}}))
-                .cursor.firstBatch;
-
+        let stageResult = dbAdmin.aggregate([{$listClusterCatalog: specs}], {cursor: {}}).toArray();
         verifyAgainstListCollections(listCollectionResult, stageResult, specs);
     });
 }

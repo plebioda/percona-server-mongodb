@@ -774,7 +774,6 @@ mongo_cc_unit_test(
         "db_raii_multi_collection_test.cpp",
         "db_raii_test.cpp",
         "shard_role_test.cpp",
-        "//src/mongo/db/catalog:database_holder_mock.h",
     ],
     tags = ["mongo_unittest_second_group"],
     deps = [
@@ -785,6 +784,7 @@ mongo_cc_unit_test(
         "//src/mongo/db/catalog:catalog_test_fixture",
         "//src/mongo/db/catalog:collection_uuid_mismatch_info",
         "//src/mongo/db/catalog:database_holder",
+        "//src/mongo/db/catalog:database_holder_mock",
         "//src/mongo/db/collection_crud",
         "//src/mongo/db/concurrency:exception_util",
         "//src/mongo/db/query/client_cursor",
@@ -793,6 +793,35 @@ mongo_cc_unit_test(
         "//src/mongo/idl:server_parameter_test_util",
         "//src/mongo/util:progress_meter",
         "//src/mongo/util/concurrency:ticketholder",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "vector_clock_test",
+    srcs = [
+        "keys_collection_document_test.cpp",
+        "logical_time_test.cpp",
+        "read_write_concern_defaults_test.cpp",
+        "time_proof_service_test.cpp",
+        "vector_clock_mongod_test.cpp",
+        "vector_clock_test.cpp",
+        "vector_clock_test_fixture.cpp",
+        "vector_clock_test_fixture.h",
+    ],
+    tags = ["mongo_unittest_third_group"],
+    deps = [
+        ":keys_collection_client_direct",
+        ":keys_collection_document",
+        ":read_write_concern_defaults_mock",
+        ":signed_logical_time",
+        ":vector_clock",
+        ":vector_clock_mutable",
+        "//src/mongo/db/op_observer",
+        "//src/mongo/db/op_observer:op_observer_impl",
+        "//src/mongo/db/op_observer:operation_logger_impl",
+        "//src/mongo/db/op_observer:operation_logger_mock",
+        "//src/mongo/db/s:shard_server_test_fixture",
+        "//src/mongo/util:clock_source_mock",
     ],
 )
 
@@ -1368,7 +1397,6 @@ mongo_cc_library(
         "//src/mongo/db/query/write_ops:parsed_update.h",
         "//src/mongo/db/query/write_ops:update_result.h",
         "//src/mongo/db/stats:single_transaction_stats.h",
-        "//src/mongo/db/storage:test_harness_helper.h",
         "//src/mongo/util:roaring_bitmaps.h",
         "//src/mongo/util/concurrency:ticketholder_queue_stats.h",
     ],
@@ -3596,6 +3624,44 @@ mongo_cc_library(
 )
 
 mongo_cc_binary(
+    name = "mongotrafficreader",
+    srcs = [
+        "traffic_reader_main.cpp",
+    ],
+    exec_properties = select({
+        "@platforms//cpu:x86_64": {
+            "Pool": "large_mem_x86_64",
+        },
+        "@platforms//cpu:aarch64": {
+            "Pool": "large_memory_arm64",
+        },
+        "//conditions:default": {},
+    }),
+    linkopts = select({
+        "@platforms//os:linux": [
+            "-ldl",
+            "-lrt",
+            "-latomic",
+        ],
+        "@platforms//os:windows": [
+            "-latomic",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "devcore",
+        "dist_test",
+    ],
+    deps = [
+        ":traffic_reader",
+        "//src/mongo:base",
+        "//src/mongo/db/concurrency:lock_manager",
+        "//src/mongo/rpc:message",
+        "//src/mongo/util:signal_handlers",
+    ],
+)
+
+mongo_cc_binary(
     name = "mongod",
     srcs = [
         "mongod.cpp",
@@ -4085,6 +4151,23 @@ mongo_cc_library(
         "//src/mongo/transport:transport_layer_mock",
         "//src/mongo/unittest",
         "//src/mongo/util:periodic_runner_factory",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "read_write_concern_test",
+    srcs = [
+        "read_write_concern_provenance_test.cpp",
+        "write_concern_options_test.cpp",
+        "write_concern_test.cpp",
+    ],
+    tags = ["mongo_unittest_third_group"],
+    deps = [
+        ":rw_concern_d",
+        ":service_context_test_fixture",
+        "//src/mongo/db/repl:repl_settings",
+        "//src/mongo/db/repl:replmocks",
+        "//src/mongo/transport:service_entry_point_test_fixture",
     ],
 )
 

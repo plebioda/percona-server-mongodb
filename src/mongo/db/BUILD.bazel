@@ -3544,6 +3544,7 @@ mongo_cc_library(
         "//src/mongo/db/pipeline:change_stream_expired_pre_image_remover",
         "//src/mongo/db/pipeline/process_interface:mongod_process_interface_factory",
         "//src/mongo/db/query/query_settings:manager",
+        "//src/mongo/db/query/query_settings:utils",
         "//src/mongo/db/query/stats",
         "//src/mongo/db/repl:initial_syncer",
         "//src/mongo/db/repl:repl_coordinator_impl",
@@ -3628,15 +3629,6 @@ mongo_cc_binary(
     srcs = [
         "traffic_reader_main.cpp",
     ],
-    exec_properties = select({
-        "@platforms//cpu:x86_64": {
-            "Pool": "large_mem_x86_64",
-        },
-        "@platforms//cpu:aarch64": {
-            "Pool": "large_memory_arm64",
-        },
-        "//conditions:default": {},
-    }),
     linkopts = select({
         "@platforms//os:linux": [
             "-ldl",
@@ -3649,6 +3641,7 @@ mongo_cc_binary(
         "//conditions:default": [],
     }),
     tags = [
+        "compile_requires_large_memory_gcc",
         "devcore",
         "dist_test",
     ],

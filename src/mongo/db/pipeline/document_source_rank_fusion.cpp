@@ -63,12 +63,11 @@
 
 namespace mongo {
 
-REGISTER_DOCUMENT_SOURCE_WITH_FEATURE_FLAG(
-    rankFusion,
-    DocumentSourceRankFusion::LiteParsed::parse,
-    DocumentSourceRankFusion::createFromBson,
-    AllowedWithApiStrict::kNeverInVersion1,
-    feature_flags::gFeatureFlagSearchHybridScoringPrerequisites);
+REGISTER_DOCUMENT_SOURCE_WITH_FEATURE_FLAG(rankFusion,
+                                           DocumentSourceRankFusion::LiteParsed::parse,
+                                           DocumentSourceRankFusion::createFromBson,
+                                           AllowedWithApiStrict::kNeverInVersion1,
+                                           feature_flags::gFeatureFlagRankFusionFull);
 
 namespace {
 /**
@@ -355,7 +354,9 @@ std::list<boost::intrusive_ptr<DocumentSource>> DocumentSourceRankFusion::create
         rankFusionPipelineValidator(*pipeline);
 
         auto inputName = elem.fieldName();
-        FieldPath::uassertValidFieldName(inputName);
+        uassertStatusOKWithContext(
+            FieldPath::validateFieldName(inputName),
+            "$rankFusion pipeline names must follow the naming rules of field path expressions.");
         inputPipelines[inputName] = std::move(pipeline);
     }
 

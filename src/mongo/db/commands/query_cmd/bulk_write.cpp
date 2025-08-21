@@ -769,12 +769,6 @@ bool handleGroupedInserts(OperationContext* opCtx,
         }
     }
 
-    boost::optional<ScopedAdmissionPriority<ExecutionAdmissionContext>> priority;
-    if (nsString == NamespaceString::kConfigSampledQueriesNamespace ||
-        nsString == NamespaceString::kConfigSampledQueriesDiffNamespace) {
-        priority.emplace(opCtx, AdmissionContext::Priority::kLow);
-    }
-
     auto txnParticipant = TransactionParticipant::get(opCtx);
 
     size_t bytesInBatch = 0;
@@ -1741,7 +1735,10 @@ bool handleUpdateOp(OperationContext* opCtx,
                     auto cq = uassertStatusOK(
                         parseWriteQueryToCQ(opCtx, nullptr /* expCtx */, updateRequest));
                     if (!write_ops_exec::shouldRetryDuplicateKeyException(
-                            updateRequest, *cq, *ex.extraInfo<DuplicateKeyErrorInfo>())) {
+                            updateRequest,
+                            *cq,
+                            *ex.extraInfo<DuplicateKeyErrorInfo>(),
+                            retryAttempts)) {
                         throw;
                     }
 

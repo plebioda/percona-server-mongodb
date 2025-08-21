@@ -1,4 +1,4 @@
-load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library", "mongo_cc_unit_test")
+load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_benchmark", "mongo_cc_library", "mongo_cc_unit_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -1818,9 +1818,11 @@ mongo_cc_library(
         "check_quorum_for_config_change.cpp",
         "repl_set_config_checks.cpp",
         "replication_coordinator_impl.cpp",
+        "replication_coordinator_impl_catchup.cpp",
         "replication_coordinator_impl_elect_v1.cpp",
         "replication_coordinator_impl_gen",
         "replication_coordinator_impl_heartbeat.cpp",
+        "replication_coordinator_impl_step_up_step_down.cpp",
         "vote_requester.cpp",
     ],
     hdrs = [
@@ -1830,17 +1832,6 @@ mongo_cc_library(
         "sync_source_resolver.h",
         "vote_requester.h",
     ],
-    # TODO(SERVER-97808)
-    # replication_coordinator_impl.cpp needs more than 3.5GB of ram for gcc+fission builds
-    exec_properties = select({
-        "//bazel/config:linux_gcc_fission_x86_64": {
-            "Pool": "large_memory_x86_64",
-        },
-        "//bazel/config:linux_gcc_fission_aarch64": {
-            "Pool": "large_memory_arm64",
-        },
-        "//conditions:default": {},
-    }),
     deps = [
         "data_replicator_external_state_initial_sync",
         "delayable_timeout_callback",
@@ -2637,5 +2628,146 @@ mongo_cc_unit_test(
         ":replica_set_aware_service",
         "//src/mongo/db:service_context_test_fixture",
         "//src/mongo/db/catalog:database_holder",
+    ],
+)
+
+mongo_cc_benchmark(
+    name = "oplog_entry_bm",
+    srcs = [
+        "oplog_entry_bm.cpp",
+    ],
+    tags = ["repl_bm"],
+    deps = [
+        ":apply_ops_command_info",
+        ":oplog_entry",
+        "//src/mongo/db/concurrency:lock_manager",
+        "//src/mongo/unittest",
+    ],
+)
+
+mongo_cc_benchmark(
+    name = "oplog_application_bm",
+    srcs = [
+        "oplog_application_bm.cpp",
+        "//src/mongo/db:session_manager_mongod.h",
+    ],
+    tags = ["repl_bm"],
+    deps = [
+        ":repl_coordinator_impl",
+        ":repl_coordinator_interface",
+        ":replication_consistency_markers_impl",
+        ":replication_recovery",
+        ":replmocks",
+        ":storage_interface_impl",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:service_context_d",
+        "//src/mongo/db/auth:authmocks",
+        "//src/mongo/db/catalog:catalog_helpers",
+        "//src/mongo/db/catalog:catalog_impl",
+        "//src/mongo/db/index_builds:index_builds_coordinator_mongod",
+        "//src/mongo/db/op_observer",
+        "//src/mongo/db/op_observer:op_observer_impl",
+        "//src/mongo/db/op_observer:operation_logger_impl",
+        "//src/mongo/db/query/client_cursor",
+        "//src/mongo/db/s:sharding_runtime_d",
+        "//src/mongo/db/session:session_catalog_mongod",
+        "//src/mongo/db/storage:storage_control",
+        "//src/mongo/db/storage:storage_options",
+        "//src/mongo/db/storage/wiredtiger:storage_wiredtiger",
+        "//src/mongo/transport:session_manager",
+        "//src/mongo/unittest",
+        "//src/mongo/util:periodic_runner_factory",
+    ],
+)
+
+mongo_cc_benchmark(
+    name = "oplog_applier_utils_bm",
+    srcs = [
+        "oplog_applier_utils_bm.cpp",
+    ],
+    tags = ["repl_bm"],
+    deps = [
+        ":oplog_application",
+        "//src/mongo/db/auth:authmocks",
+        "//src/mongo/db/query/stats:stats_test_utils",
+    ],
+)
+
+mongo_cc_benchmark(
+    name = "replication_consistency_markers_impl_bm",
+    srcs = [
+        "replication_consistency_markers_impl_bm.cpp",
+    ],
+    deps = [
+        ":primary_only_service",
+        ":replication_consistency_markers_impl",
+        ":replmocks",
+        ":storage_interface_impl",
+        "//src/mongo/db:service_context_d_test_fixture",
+        "//src/mongo/db/auth:auth_op_observer",
+        "//src/mongo/db/auth:authserver",
+        "//src/mongo/db/catalog:database_holder_mock",
+        "//src/mongo/db/op_observer:change_stream_pre_images_op_observer",
+        "//src/mongo/db/op_observer:fallback_op_observer",
+        "//src/mongo/db/op_observer:fcv_op_observer",
+        "//src/mongo/db/op_observer:find_and_modify_images_op_observer",
+        "//src/mongo/db/op_observer:op_observer_impl",
+        "//src/mongo/db/op_observer:operation_logger_impl",
+        "//src/mongo/db/op_observer:operation_logger_transaction_proxy",
+        "//src/mongo/db/op_observer:user_write_block_mode_op_observer",
+        "//src/mongo/db/s:sharding_runtime_d",
+        "//src/mongo/db/storage:storage_options",
+        "//src/mongo/db/timeseries:timeseries_op_observer",
+        "//src/mongo/idl:cluster_server_parameter_op_observer",
+    ],
+)
+
+mongo_cc_benchmark(
+    name = "oplog_write_bm",
+    srcs = [
+        "oplog_write_bm.cpp",
+        "//src/mongo/db:session_manager_mongod.h",
+    ],
+    tags = ["repl_bm"],
+    deps = [
+        ":repl_coordinator_impl",
+        ":repl_coordinator_interface",
+        ":repl_server_parameters",
+        ":replication_consistency_markers_impl",
+        ":replication_recovery",
+        ":replmocks",
+        ":storage_interface_impl",
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:service_context_d",
+        "//src/mongo/db/auth:authmocks",
+        "//src/mongo/db/catalog:catalog_helpers",
+        "//src/mongo/db/catalog:catalog_impl",
+        "//src/mongo/db/catalog:database_holder_mock",
+        "//src/mongo/db/index_builds:index_builds_coordinator_mongod",
+        "//src/mongo/db/op_observer",
+        "//src/mongo/db/op_observer:op_observer_impl",
+        "//src/mongo/db/op_observer:operation_logger_impl",
+        "//src/mongo/db/query/client_cursor",
+        "//src/mongo/db/s:sharding_runtime_d",
+        "//src/mongo/db/session:session_catalog_mongod",
+        "//src/mongo/db/storage:storage_control",
+        "//src/mongo/db/storage:storage_options",
+        "//src/mongo/db/storage/wiredtiger:storage_wiredtiger",
+        "//src/mongo/transport:session_manager",
+        "//src/mongo/unittest",
+        "//src/mongo/util:periodic_runner_factory",
+    ],
+)
+
+mongo_cc_benchmark(
+    name = "replication_waiter_list_bm",
+    srcs = [
+        "replication_waiter_list_bm.cpp",
+    ],
+    tags = ["repl_bm"],
+    deps = [
+        ":repl_coordinator_impl",
+        ":repl_coordinator_test_fixture",
+        "//src/mongo/unittest",
     ],
 )

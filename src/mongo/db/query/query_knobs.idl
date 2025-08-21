@@ -1221,7 +1221,7 @@ server_parameters:
     redact: false
 
   internalRoaringBitmapsMinimalDensity:
-    description: "The minimal denstity required for the hybrid container to switch from hash table to Roaring Bitmaps."
+    description: "The minimal density required for the hybrid container to switch from hash table to Roaring Bitmaps."
     set_at: [ startup, runtime ]
     cpp_varname: internalRoaringBitmapsMinimalDensity
     cpp_vartype: AtomicDouble
@@ -1345,22 +1345,6 @@ server_parameters:
     validator:
       gt: 0
     redact: false
-
-  deprioritizeUnboundedUserCollectionScans:
-   description: "Unbounded user collection scans are executed with low storage admission priority"
-   set_at: [ startup, runtime ]
-   cpp_varname: gDeprioritizeUnboundedUserCollectionScans
-   cpp_vartype: AtomicWord<bool>
-   default: true
-   redact: false
-
-  deprioritizeUnboundedUserIndexScans:
-   description: "Unbounded user index scans are executed with low storage admission priority"
-   set_at: [ startup, runtime ]
-   cpp_varname: gDeprioritizeUnboundedUserIndexScans
-   cpp_vartype: AtomicWord<bool>
-   default: true
-   redact: false
 
   internalQueryDocumentSourceWriterBatchExtraReservedBytes:
     description: "Space to reserve in document source writer batches for miscellaneous metadata"

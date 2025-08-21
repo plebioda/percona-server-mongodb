@@ -147,6 +147,8 @@ void logNumberOfSolutions(size_t numSolutions) {
 }  // namespace log_detail
 
 namespace {
+MONGO_FAIL_POINT_DEFINE(queryPlannerAlwaysFails);
+
 /**
  * Attempts to apply the index tags from 'branchCacheData' to 'orChild'. If the index assignments
  * cannot be applied, return the error from the process. Otherwise the tags are applied and success
@@ -1009,6 +1011,10 @@ StatusWith<std::vector<std::unique_ptr<QuerySolution>>> QueryPlanner::plan(
                 "options"_attr = optionString(params.mainCollectionInfo.options),
                 "query"_attr = redact(query.toString()));
 
+    if (auto scoped = queryPlannerAlwaysFails.scoped(); MONGO_unlikely(scoped.isActive())) {
+        tasserted(9656400, "Hit queryPlannerAlwaysFails fail point");
+    }
+
     for (size_t i = 0; i < params.mainCollectionInfo.indexes.size(); ++i) {
         LOGV2_DEBUG(20968,
                     5,
@@ -1641,8 +1647,6 @@ StatusWith<QueryPlanner::CostBasedRankerResult> QueryPlanner::planWithCostBasedR
         return statusWithMultiPlanSolns.getStatus();
     }
 
-    // TODO SERVER-97529: This is a temporary stub implementation of CBR which arbitrarily picks
-    // the last of the enumerated plans.
     auto cbrMode = query.getExpCtx()->getQueryKnobConfiguration().getPlanRankerMode();
     EstimateMap estimates;
     CardinalityEstimator cardEstimator(

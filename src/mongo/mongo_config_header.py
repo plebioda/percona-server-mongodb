@@ -465,6 +465,7 @@ def get_config_header_substs():
             "MONGO_CONFIG_HAVE_BASIC_STRINGBUF_STR_RVALUE",
         ),
         ("@mongo_config_streams@", "MONGO_CONFIG_STREAMS"),
+        ("@mongo_config_otel@", "MONGO_CONFIG_OTEL"),
     )
     return config_header_substs
 

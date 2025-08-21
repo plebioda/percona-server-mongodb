@@ -99,10 +99,25 @@ private:
     CEResult estimate(const OrMatchExpression* node);
     // Intervals
     CEResult estimate(const IndexBounds* node);
-    CEResult estimate(const OrderedIntervalList* node);
+    CEResult estimate(const OrderedIntervalList* node, bool forceHistogram = false);
 
     // Internal helper functions
-    CEResult histogramCE(const ComparisonMatchExpression* node);
+
+    /**
+     * Attempt to use histograms to estimate all predicates of the given AndMatchExpression. If
+     * estimatation of any of the children is unable to be done with histograms (non-sargable
+     * predicate, missing histogram, etc.), returns a non-OK status.
+     */
+    CEResult tryHistogramAnd(const AndMatchExpression* node);
+
+    /**
+     * Estimate the conjunction of MatchExpressions in 'nodes', which are all predicates over
+     * 'path', using the histogram over 'path'. This is done by converting each expression in
+     * 'nodes' to an Interval, intersecting all the intervals and finally invoking histogram
+     * estimation. This function assumes that 'path' is non-multikey.
+     */
+    CEResult estimateConjWithHistogram(StringData path,
+                                       const std::vector<const MatchExpression*>& nodes);
 
     CEResult scanCard(const QuerySolutionNode* node, const CardinalityEstimate& card);
 
@@ -111,6 +126,10 @@ private:
 
     template <UnionType T>
     CEResult indexUnionCard(const T* node);
+
+    // Cardinality of nodes that do not affect the number of documents - their output cardinality
+    // is the same as their input.
+    CEResult passThroughNodeCard(const QuerySolutionNode* node);
 
     CardinalityEstimate conjCard(size_t offset, CardinalityEstimate inputCard) {
         std::span selsToEstimate(std::span(_conjSels.begin() + offset, _conjSels.end()));

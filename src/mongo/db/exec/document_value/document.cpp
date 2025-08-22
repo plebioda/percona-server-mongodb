@@ -105,7 +105,9 @@ const StringDataSet Document::allMetadataFieldNames{Document::metaFieldTextScore
                                                     Document::metaFieldSearchScoreDetails,
                                                     Document::metaFieldVectorSearchScore,
                                                     Document::metaFieldSearchSequenceToken,
-                                                    Document::metaFieldScore};
+                                                    Document::metaFieldScore,
+                                                    Document::metaFieldScoreDetails,
+                                                    Document::metaFieldStream};
 
 DocumentStorageIterator::DocumentStorageIterator(DocumentStorage* storage, BSONObjIterator bsonIt)
     : _bsonIt(std::move(bsonIt)),
@@ -518,6 +520,10 @@ void DocumentStorage::loadLazyMetadata() const {
                 _metadataFields.setSearchSequenceToken(Value(elem));
             } else if (fieldName == Document::metaFieldScore) {
                 _metadataFields.setScore(elem.Double());
+            } else if (fieldName == Document::metaFieldScoreDetails) {
+                _metadataFields.setScoreDetails(Value(elem));
+            } else if (fieldName == Document::metaFieldStream) {
+                _metadataFields.setStream(Value(elem));
             }
         }
     }
@@ -590,6 +596,7 @@ constexpr StringData Document::metaFieldSearchScoreDetails;
 constexpr StringData Document::metaFieldSearchSortValues;
 constexpr StringData Document::metaFieldVectorSearchScore;
 constexpr StringData Document::metaFieldScore;
+constexpr StringData Document::metaFieldStream;
 
 void Document::toBsonWithMetaData(BSONObjBuilder* builder) const {
     toBson(builder);
@@ -628,6 +635,9 @@ void Document::toBsonWithMetaData(BSONObjBuilder* builder) const {
     }
     if (metadata().hasScore()) {
         builder->append(metaFieldScore, metadata().getScore());
+    }
+    if (metadata().hasStream()) {
+        metadata().getStream().addToBsonObj(builder, metaFieldStream);
     }
 }
 

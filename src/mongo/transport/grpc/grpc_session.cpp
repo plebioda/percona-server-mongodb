@@ -45,6 +45,7 @@ GRPCSession::GRPCSession(TransportLayer* tl, HostAndPort remote)
     SockAddr remoteAddr;
     try {
         remoteAddr = SockAddr::create(_remote.host(), _remote.port(), AF_UNSPEC);
+        _local = HostAndPort();
     } catch (const DBException& ex) {
         // If {remote} fails to parse for any reason, allow the session to continue anyway.
         // {_restrictionEnvironment} will end up with an AF_UNSPEC remote address
@@ -61,11 +62,6 @@ GRPCSession::GRPCSession(TransportLayer* tl, HostAndPort remote)
     // This means that any attempt to use a {serverAddress} authentication restriction
     // with the GRPC protocol will fail to permit login.
     _restrictionEnvironment = RestrictionEnvironment(std::move(remoteAddr), SockAddr());
-}
-
-GRPCSession::~GRPCSession() {
-    if (_cleanupCallback)
-        (*_cleanupCallback)(*this);
 }
 
 StatusWith<Message> GRPCSession::sourceMessage() noexcept {
@@ -121,7 +117,6 @@ boost::optional<Status> GRPCSession::terminationStatus() const {
     }
     return *status;
 }
-
 
 bool GRPCSession::_setTerminationStatus(Status status) {
     auto ts = _terminationStatus.synchronize();
@@ -244,11 +239,17 @@ EgressSession::EgressSession(TransportLayer* tl,
 
 EgressSession::~EgressSession() {
     end();
+
+    auto status = terminationStatus();
+    invariant(status.has_value());
     LOGV2_DEBUG(7401403,
                 2,
                 "Finished cleaning up a gRPC egress session",
                 "session"_attr = toBSON(),
-                "status"_attr = terminationStatus());
+                "status"_attr = status);
+
+    if (_cleanupCallback)
+        (*_cleanupCallback)();
 }
 
 Future<Message> EgressSession::_asyncReadFromStream() {

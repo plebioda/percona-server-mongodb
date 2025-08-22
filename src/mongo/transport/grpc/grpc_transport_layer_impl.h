@@ -33,6 +33,7 @@
 #include <memory>
 
 #include "mongo/transport/client_transport_observer.h"
+#include "mongo/transport/grpc/client.h"
 #include "mongo/transport/grpc/grpc_transport_layer.h"
 #include "mongo/transport/grpc/reactor.h"
 #include "mongo/transport/session_manager.h"
@@ -40,7 +41,6 @@
 
 namespace mongo::transport::grpc {
 
-class Client;
 class Server;
 
 class GRPCTransportLayerImpl : public GRPCTransportLayer {
@@ -84,6 +84,30 @@ public:
         ConnectSSLMode sslMode,
         Milliseconds timeout,
         const boost::optional<TransientSSLParams>& transientSSLParams = boost::none) override;
+
+    Future<std::shared_ptr<Session>> asyncConnectWithAuthToken(
+        HostAndPort peer,
+        ConnectSSLMode sslMode,
+        const ReactorHandle& reactor,
+        Milliseconds timeout,
+        std::shared_ptr<ConnectionMetrics> connectionMetrics,
+        boost::optional<std::string> authToken = boost::none) override;
+
+    Future<std::shared_ptr<Session>> asyncConnect(
+        HostAndPort peer,
+        ConnectSSLMode sslMode,
+        const ReactorHandle& reactor,
+        Milliseconds timeout,
+        std::shared_ptr<ConnectionMetrics> connectionMetrics,
+        std::shared_ptr<const SSLConnectionContext> transientSSLContext) override;
+
+    void appendStatsForServerStatus(BSONObjBuilder* bob) const override {
+        if (!_client) {
+            return;
+        }
+
+        _client->appendStats(bob);
+    }
 
 #ifdef MONGO_CONFIG_SSL
     Status rotateCertificates(std::shared_ptr<SSLManagerInterface> manager,

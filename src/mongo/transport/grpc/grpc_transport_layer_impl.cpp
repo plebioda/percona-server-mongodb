@@ -29,11 +29,13 @@
 
 #include "mongo/transport/grpc/grpc_transport_layer_impl.h"
 
+#include "mongo/db/commands/server_status.h"
 #include "mongo/db/server_options.h"
 #include "mongo/stdx/mutex.h"
 #include "mongo/transport/grpc/client.h"
 #include "mongo/transport/grpc/grpc_session_manager.h"
 #include "mongo/transport/grpc/service.h"
+#include "mongo/transport/transport_layer_manager.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/net/socket_utils.h"
 #include "mongo/util/net/ssl_options.h"
@@ -47,6 +49,42 @@ const Seconds kSessionManagerShutdownTimeout{10};
 inline std::string makeGRPCUnixSockPath(int port) {
     return makeUnixSockPath(port, "grpc");
 }
+
+class GRPCSection : public ServerStatusSection {
+public:
+    using ServerStatusSection::ServerStatusSection;
+
+    bool includeByDefault() const override {
+        return true;
+    }
+
+    BSONObj generateSection(OperationContext* opCtx, const BSONElement&) const override {
+        BSONObjBuilder section;
+        auto tl = opCtx->getServiceContext()->getTransportLayerManager()->getTransportLayer(
+            TransportProtocol::GRPC);
+
+        if (!tl) {
+            return section.obj();
+        }
+
+        if (tl->isIngress()) {
+            BSONObjBuilder ingressSection(section.subobjStart("ingress"_sd));
+            if (auto sm = dynamic_cast<GRPCSessionManager*>(tl->getSessionManager())) {
+                sm->appendStats(&ingressSection);
+            };
+        }
+
+        if (tl->isEgress()) {
+            BSONObjBuilder egressSection(section.subobjStart("egress"));
+            tl->appendStatsForServerStatus(&egressSection);
+        }
+
+        return section.obj();
+    }
+};
+
+auto& grpcSection = *ServerStatusSectionBuilder<GRPCSection>("gRPC").forShard().forRouter();
+
 }  // namespace
 
 GRPCTransportLayerImpl::Options::Options(const ServerGlobalParams& params) {
@@ -166,7 +204,7 @@ Status GRPCTransportLayerImpl::setup() {
                     "gRPC egress networking enabled but no client metadata document was provided",
                     _options.clientMetadata.has_value());
             _client = std::make_shared<GRPCClient>(
-                this, *_options.clientMetadata, std::move(clientOptions));
+                this, _svcCtx, *_options.clientMetadata, std::move(clientOptions));
         }
 
         iassert(ErrorCodes::InvalidOptions,
@@ -226,7 +264,7 @@ Status GRPCTransportLayerImpl::start() {
                 _egressReactor->drain();
                 LOGV2_DEBUG(9715107, 2, "Finished drain of the default egress gRPC reactor");
             });
-            _client->start(_svcCtx);
+            _client->start();
         }
         return Status::OK();
     } catch (const DBException& ex) {
@@ -239,13 +277,10 @@ StatusWith<std::shared_ptr<Session>> GRPCTransportLayerImpl::connectWithAuthToke
     ConnectSSLMode sslMode,
     Milliseconds timeout,
     boost::optional<std::string> authToken) {
-    try {
-        invariant(_client);
-        return _client->connect(
-            std::move(peer), _egressReactor, timeout, {std::move(authToken), sslMode});
-    } catch (const DBException& e) {
-        return e.toStatus();
-    }
+    invariant(_client);
+    return _client
+        ->connect(std::move(peer), _egressReactor, timeout, {std::move(authToken), sslMode})
+        .getNoThrow();
 }
 
 StatusWith<std::shared_ptr<Session>> GRPCTransportLayerImpl::connect(
@@ -253,14 +288,45 @@ StatusWith<std::shared_ptr<Session>> GRPCTransportLayerImpl::connect(
     ConnectSSLMode sslMode,
     Milliseconds timeout,
     const boost::optional<TransientSSLParams>& transientSSLParams) {
-    try {
-        iassert(ErrorCodes::InvalidSSLConfiguration,
-                "Transient SSL parameters are not supported when using gRPC",
-                !transientSSLParams);
-        return connectWithAuthToken(std::move(peer), sslMode, timeout);
-    } catch (const DBException& e) {
-        return e.toStatus();
+    if (transientSSLParams) {
+        return Status(ErrorCodes::InvalidSSLConfiguration,
+                      "Transient SSL parameters are not supported when using gRPC");
     }
+    return connectWithAuthToken(std::move(peer), sslMode, timeout);
+}
+
+Future<std::shared_ptr<Session>> GRPCTransportLayerImpl::asyncConnectWithAuthToken(
+    HostAndPort peer,
+    ConnectSSLMode sslMode,
+    const ReactorHandle& reactor,
+    Milliseconds timeout,
+    std::shared_ptr<ConnectionMetrics> connectionMetrics,
+    boost::optional<std::string> authToken) {
+    invariant(_client);
+    return _client
+        ->connect(std::move(peer),
+                  checked_pointer_cast<GRPCReactor>(reactor),
+                  timeout,
+                  {std::move(authToken), sslMode},
+                  connectionMetrics)
+        .then([](std::shared_ptr<EgressSession> egressSession) -> std::shared_ptr<Session> {
+            return egressSession;
+        });
+}
+
+Future<std::shared_ptr<Session>> GRPCTransportLayerImpl::asyncConnect(
+    HostAndPort peer,
+    ConnectSSLMode sslMode,
+    const ReactorHandle& reactor,
+    Milliseconds timeout,
+    std::shared_ptr<ConnectionMetrics> connectionMetrics,
+    std::shared_ptr<const SSLConnectionContext> transientSSLContext) {
+    if (transientSSLContext) {
+        return Future<std::shared_ptr<Session>>::makeReady(
+            Status(ErrorCodes::InvalidSSLConfiguration,
+                   "Transient SSL parameters are not supported when using gRPC"));
+    }
+    return asyncConnectWithAuthToken(std::move(peer), sslMode, reactor, timeout, connectionMetrics);
 }
 
 void GRPCTransportLayerImpl::shutdown() {

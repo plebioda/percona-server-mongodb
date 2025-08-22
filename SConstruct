@@ -151,10 +151,10 @@ add_option(
     help="Configures the path to the evergreen configured tmp directory.",
     default=None,
 )
-# Preload to perform early fetch fo repositories
-tool = Tool("integrate_bazel")
-tool.exists(DefaultEnvironment())
-mongo_toolchain_execroot = DefaultEnvironment().PrefetchToolchain()
+
+integrate_bazel = Tool("integrate_bazel")
+integrate_bazel.exists(DefaultEnvironment())
+mongo_toolchain_execroot = DefaultEnvironment().BazelExecroot()
 
 build_profile = build_profiles.get_build_profile(get_option("build-profile"))
 
@@ -398,14 +398,12 @@ add_option(
     type="choice",
 )
 
-
 add_option(
     "debug-symbols",
-    choices=["on", "off"],
-    const="on",
+    choices=["on", "off", "minimal"],
     default=build_profile.debug_symbols,
     help="Enable producing debug symbols",
-    nargs="?",
+    nargs=1,
     type="choice",
 )
 
@@ -805,31 +803,6 @@ add_option(
     default=mongo_toolchain_execroot if mongo_toolchain_execroot else "",
     help="Name a toolchain root for use with toolchain selection Variables files in etc/scons",
 )
-
-if mongo_toolchain_execroot:
-    bin_dir = os.path.join(mongo_toolchain_execroot, "external/mongo_toolchain/v4/bin")
-    gcc_path = os.path.dirname(
-        os.path.realpath(os.path.join(bin_dir, os.readlink(os.path.join(bin_dir, "g++"))))
-    )
-    clang_path = os.path.dirname(
-        os.path.realpath(os.path.join(bin_dir, os.readlink(os.path.join(bin_dir, "clang++"))))
-    )
-else:
-    gcc_path = ""
-    clang_path = ""
-
-add_option(
-    "bazel-toolchain-clang",
-    default=clang_path,
-    help="used in Variables files to help find the real bazel toolchain location.",
-)
-
-add_option(
-    "bazel-toolchain-gcc",
-    default=gcc_path,
-    help="used in Variables files to help find the real bazel toolchain location.",
-)
-
 
 add_option(
     "msvc-debugging-format",
@@ -1245,6 +1218,12 @@ env_vars.Add(
     help="Path to the dsymutil utility",
 )
 
+env_vars.Add(
+    "MONGO_TOOLCHAIN_VERSION",
+    default="v4",
+    help="Version of the mongo toolchain to use in bazel.",
+)
+
 
 def validate_dwarf_version(key, val, env):
     if val == "4" or val == "5" or val == "":
@@ -1631,13 +1610,6 @@ env_vars.Add(
 )
 
 env_vars.Add(
-    "ENABLE_OTEL_BUILD",
-    help="Set the boolean (auto, on/off true/false 1/0) to enable building otel and protobuf compiler.",
-    converter=functools.partial(bool_var_converter, var="ENABLE_OTEL_BUILD"),
-    default="0",
-)
-
-env_vars.Add(
     "GDB",
     help="Configures the path to the 'gdb' debugger binary.",
 )
@@ -1871,6 +1843,7 @@ if ARGUMENTS.get("CC") and ARGUMENTS.get("CXX"):
 # Early load to setup env functions
 tool = Tool("integrate_bazel")
 tool.exists(env)
+env.PrefetchToolchain(env.get("MONGO_TOOLCHAIN_VERSION"))
 
 # The placement of this is intentional. Here we setup an atexit method to store tooling metrics.
 # We should only register this function after env, env_vars and the parser have been properly initialized.
@@ -2202,7 +2175,7 @@ env.AddMethod(is_toolchain, "ToolchainIs")
 
 releaseBuild = get_option("release") == "on"
 debugBuild = get_option("dbg") == "on"
-debug_symbols = get_option("debug-symbols") == "on"
+debug_symbols = get_option("debug-symbols") != "off"
 optBuild = mongo_generators.get_opt_options(env)
 
 if env.get("ENABLE_BUILD_RETRY"):
@@ -4562,7 +4535,11 @@ def doConfigure(myenv):
             llvm_symbolizer = env["LLVM_SYMBOLIZER"]
 
             if not os.path.isabs(llvm_symbolizer):
-                llvm_symbolizer = myenv.WhereIs(llvm_symbolizer)
+                # WhereIs looks at the path, but not the PWD. If it fails, try assuming
+                # the path is relative to the PWD.
+                llvm_symbolizer = myenv.WhereIs(llvm_symbolizer) or os.path.realpath(
+                    llvm_symbolizer
+                )
 
             if not myenv.File(llvm_symbolizer).exists():
                 myenv.FatalError(f"Symbolizer binary at path {llvm_symbolizer} does not exist")
@@ -4593,8 +4570,6 @@ def doConfigure(myenv):
                 "handle_abort=1",
                 "strict_string_checks=true",
                 "detect_invalid_pointer_pairs=1",
-                "detect_stack_use_after_return=1",
-                "max_uar_stack_size_log=16",
             ]
             asan_options = ":".join(asan_options_clear)
             lsan_options = (
@@ -4777,8 +4752,10 @@ def doConfigure(myenv):
         # Turn off debug symbols. Due to g0 disabling any previously added debugging flags,
         # it is easier to append g0 near the end rather than trying to not add all the other
         # debug flags. This should be added after any debug flags.
-        if not debug_symbols:
+        if get_option("debug-symbols") == "off":
             myenv.AppendUnique(LINKFLAGS=["-g0"], CCFLAGS=["-g0"])
+        elif get_option("debug-symbols") == "minimal":
+            myenv.AppendUnique(LINKFLAGS=["-g1"], CCFLAGS=["-g1"])
 
         # Our build is already parallel.
         if not myenv.AddToLINKFLAGSIfSupported("-Wl,--no-threads"):

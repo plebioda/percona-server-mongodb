@@ -180,6 +180,8 @@ struct ServerGlobalParams {
 #ifdef MONGO_CONFIG_GRPC
     int grpcPort = DefaultGRPCServerPort;
     int grpcServerMaxThreads = 1000;
+    int grpcKeepAliveTimeMs = INT_MAX;
+    int grpcKeepAliveTimeoutMs = 20000;
 #endif
 
     /**

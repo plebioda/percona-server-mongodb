@@ -29,6 +29,7 @@ load(
     "linker",
     "linkstatic",
     "lsan",
+    "mongo_toolchain_version",
     "msan",
     "opt",
     "pgo_profile",
@@ -293,6 +294,29 @@ selects.config_setting_group(
         ":compiler_type_gcc",
         "@platforms//cpu:aarch64",
     ],
+)
+
+# --------------------------------------
+# mongo_toolchain_version options
+# --------------------------------------
+
+mongo_toolchain_version(
+    name = "mongo_toolchain_version",
+    build_setting_default = "v4",
+)
+
+config_setting(
+    name = "mongo_toolchain_v4",
+    flag_values = {
+        "//bazel/config:mongo_toolchain_version": "v4",
+    },
+)
+
+config_setting(
+    name = "mongo_toolchain_v5",
+    flag_values = {
+        "//bazel/config:mongo_toolchain_version": "v5",
+    },
 )
 
 # ==========
@@ -1206,7 +1230,7 @@ config_setting(
 
 build_otel(
     name = "build_otel",
-    build_setting_default = False,
+    build_setting_default = True,
 )
 
 config_setting(
@@ -1496,8 +1520,19 @@ selects.config_setting_group(
 )
 
 selects.config_setting_group(
+    name = "sanitize_without_tsan",
+    match_all = [
+        ":any_enabled_sanitizer",
+        ":tsan_disabled",
+    ],
+)
+
+selects.config_setting_group(
     name = "sanitize_fuzzer_required_settings",
-    match_all = [":fsan_enabled"],
+    match_all = [
+        ":fsan_enabled",
+        ":system_allocator_enabled",
+    ],
 )
 
 selects.config_setting_group(

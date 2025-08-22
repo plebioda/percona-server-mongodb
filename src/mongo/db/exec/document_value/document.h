@@ -127,6 +127,8 @@ public:
     static constexpr StringData metaFieldVectorSearchScore = "$vectorSearchScore"_sd;
     static constexpr StringData metaFieldSearchSequenceToken = "$searchSequenceToken"_sd;
     static constexpr StringData metaFieldScore = "$score"_sd;
+    static constexpr StringData metaFieldScoreDetails = "$scoreDetails"_sd;
+    static constexpr StringData metaFieldStream = "$stream"_sd;
 
     static const StringDataSet allMetadataFieldNames;
 

@@ -87,6 +87,10 @@ Value evaluate(const ExpressionMeta& expr, const Document& root, Variables* vari
             return metadata.hasTimeseriesBucketMaxTime()
                 ? Value(metadata.getTimeseriesBucketMaxTime())
                 : Value();
+        case DocumentMetadataFields::MetaType::kScoreDetails:
+            return metadata.hasScoreDetails() ? metadata.getScoreDetails() : Value();
+        case DocumentMetadataFields::MetaType::kStream:
+            return metadata.hasStream() ? metadata.getStream() : Value();
         default:
             MONGO_UNREACHABLE;
     }

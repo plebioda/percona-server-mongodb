@@ -31,6 +31,7 @@
 #include "mongo/db/collection_crud/capped_utils.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/commands/feature_compatibility_version.h"
+#include "mongo/db/curop.h"
 #include "mongo/db/profile_settings.h"
 #include "mongo/db/s/convert_to_capped_coordinator.h"
 #include "mongo/s/request_types/sharded_ddl_commands_gen.h"
@@ -77,30 +78,16 @@ public:
 
             const auto& nss = ns();
 
-            boost::optional<SharedSemiFuture<void>> coordinatorCompletionFuture;
-            {
-                FixedFCVRegion fixedFcvRegion{opCtx};
-                bool mustUseCoordinator = feature_flags::gConvertToCappedCoordinator.isEnabled(
-                    (*fixedFcvRegion).acquireFCVSnapshot());
+            auto coordinatorDoc = ConvertToCappedCoordinatorDocument();
+            coordinatorDoc.setShardsvrConvertToCappedRequest(
+                request().getShardsvrConvertToCappedRequest());
+            coordinatorDoc.setShardingDDLCoordinatorMetadata(
+                {{nss, DDLCoordinatorTypeEnum::kConvertToCapped}});
 
-                if (!mustUseCoordinator) {
-                    convertToCapped(opCtx, nss, request().getSize());
-                    return;
-                }
-
-                auto coordinatorDoc = ConvertToCappedCoordinatorDocument();
-                coordinatorDoc.setShardsvrConvertToCappedRequest(
-                    request().getShardsvrConvertToCappedRequest());
-                coordinatorDoc.setShardingDDLCoordinatorMetadata(
-                    {{nss, DDLCoordinatorTypeEnum::kConvertToCapped}});
-
-                auto service = ShardingDDLCoordinatorService::getService(opCtx);
-                auto coordinator = checked_pointer_cast<ConvertToCappedCoordinator>(
-                    service->getOrCreateInstance(opCtx, coordinatorDoc.toBSON()));
-                coordinatorCompletionFuture.emplace(coordinator->getCompletionFuture());
-            }
-
-            coordinatorCompletionFuture->get(opCtx);
+            auto service = ShardingDDLCoordinatorService::getService(opCtx);
+            auto coordinator = checked_pointer_cast<ConvertToCappedCoordinator>(
+                service->getOrCreateInstance(opCtx, coordinatorDoc.toBSON()));
+            coordinator->getCompletionFuture().get(opCtx);
         }
 
     private:

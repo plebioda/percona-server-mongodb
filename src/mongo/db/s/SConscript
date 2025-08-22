@@ -31,6 +31,7 @@ env.Benchmark(
     target="chunk_manager_refresh_bm",
     source=[],
     LIBDEPS=[],
+    BAZEL_BENCHMARK_TAG="sharding_bm",
 )
 
 env.Benchmark(
@@ -49,6 +50,7 @@ env.Benchmark(
     target="sharding_write_router_bm",
     source=[],
     LIBDEPS=[],
+    BAZEL_BENCHMARK_TAG="sharding_bm",
 )
 
 env.Benchmark(

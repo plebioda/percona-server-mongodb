@@ -777,8 +777,8 @@ private:
     AtomicWord<unsigned> _lastSyncTime;
     stdx::mutex _lastSyncMutex;
 
-    // owned, and never explicitly closed (uses connection close to clean up)
-    WT_SESSION* _waitUntilDurableSession = nullptr;
+    // A long-lived session for ensuring data is preiodically flushed to disk.
+    std::unique_ptr<WiredTigerSession> _waitUntilDurableSession = nullptr;
 
     // keyDB analog of _waitUntilDurableSession
     WT_SESSION* _keyDBSession = nullptr;

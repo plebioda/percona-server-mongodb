@@ -1229,6 +1229,8 @@ void WiredTigerKVEngine::cleanShutdown() {
     // released sessions will skip flushing the size storer.
     _sizeStorer.reset();
 
+    _waitUntilDurableSession.reset();
+
     // We want WiredTiger to leak memory for faster shutdown except when we are running tools to
     // look for memory leaks.
     bool leak_memory = !kAddressSanitizerEnabled;
@@ -4291,9 +4293,7 @@ void WiredTigerKVEngine::waitUntilDurable(OperationContext* opCtx,
 
     // Initialize on first use.
     if (!_waitUntilDurableSession) {
-        invariantWTOK(
-            _conn->open_session(_conn, nullptr, "isolation=snapshot", &_waitUntilDurableSession),
-            nullptr);
+        _waitUntilDurableSession = std::make_unique<WiredTigerSession>(_conn);
     }
     if (!_keyDBSession) {
         auto encryptionKeyDB = getEncryptionKeyDB();
@@ -4310,8 +4310,9 @@ void WiredTigerKVEngine::waitUntilDurable(OperationContext* opCtx,
 #endif
 
     // Flush the journal.
-    invariantWTOK(_waitUntilDurableSession->log_flush(_waitUntilDurableSession, "sync=on"),
-                  _waitUntilDurableSession);
+    invariantWTOK(_waitUntilDurableSession->getSession()->log_flush(
+                      _waitUntilDurableSession->getSession(), "sync=on"),
+                  _waitUntilDurableSession->getSession());
     LOGV2_DEBUG(22419, 4, "flushed journal");
 
     // keyDB is always durable (opened with journal enabled)
@@ -4322,7 +4323,7 @@ void WiredTigerKVEngine::waitUntilDurable(OperationContext* opCtx,
     // The session is reset periodically so that WT doesn't consider it a rogue session and log
     // about it. The session doesn't actually pin any resources that need to be released.
     if (_timeSinceLastDurabilitySessionReset.millis() > (5 * 60 * 1000 /* 5 minutes */)) {
-        _waitUntilDurableSession->reset(_waitUntilDurableSession);
+        _waitUntilDurableSession->getSession()->reset(_waitUntilDurableSession->getSession());
         _timeSinceLastDurabilitySessionReset.reset();
     }
 

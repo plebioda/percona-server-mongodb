@@ -1,4 +1,4 @@
-load("//bazel:mongo_src_rules.bzl", "mongo_cc_library")
+load("//bazel:mongo_src_rules.bzl", "mongo_cc_library", "mongo_cc_unit_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -44,4 +44,15 @@ mongo_cc_library(
         "-lldap",
         "-lsasl2",
     ],
+)
+
+mongo_cc_unit_test(
+    name = "sasl_oidc_test",
+    srcs = [
+        "sasl_oidc_server_mechanism_test.cpp",
+    ],
+    deps = [
+        ":externalsaslauth",
+        "//src/mongo/db/auth/oidc:oidc_test_fixture",
+    ]
 )

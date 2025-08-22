@@ -75,7 +75,7 @@ build --flag_alias=enable_oidc=//bazel/config:enable-oidc
 build --flag_alias=js_engine=//bazel/config:js_engine
 build --flag_alias=use_sasl_client=//bazel/config:use_sasl_client
 build --flag_alias=enterprise_feature_all=//bazel/config:enterprise_feature_all
-build --flag_alias=link_timeout_8min=//bazel/config:link_timeout_8min
+build --flag_alias=link_timeout=//bazel/config:link_timeout
 
 build --flag_alias=dwarf_version=//bazel/config:dwarf_version
 build --flag_alias=http_client=//bazel/config:http_client
@@ -171,7 +171,7 @@ build:opt --//bazel/config:dbg=False
 build:opt --//bazel/config:dbg_level=2
 build:opt --//bazel/config:debug_symbols=True
 build:opt --//bazel/config:separate_debug=False
-build:opt --//bazel/config:compiler_type=clang
+build:opt --//bazel/config:compiler_type=gcc
 build:opt --//bazel/config:linkstatic=True
 build:opt --//bazel/config:build_enterprise=True
 build:opt --//bazel/config:release=False

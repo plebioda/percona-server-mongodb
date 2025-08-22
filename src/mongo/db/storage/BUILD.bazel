@@ -27,9 +27,12 @@ mongo_cc_library(
     name = "recovery_unit_base",
     srcs = [
         "recovery_unit.cpp",
-        "recovery_unit.h",
         "recovery_unit_noop.cpp",
+    ],
+    hdrs = [
+        "recovery_unit.h",
         "recovery_unit_noop.h",
+        "//src/mongo/db/storage:storage_metrics.h",
     ],
     deps = [
         "//src/mongo:base",
@@ -175,6 +178,7 @@ mongo_cc_library(
         ":flow_control_parameters",
         "//src/mongo/db:server_base",
         "//src/mongo/db:service_context",  # TODO(SERVER-93876): Remove.
+        "//src/mongo/db:shard_role_api",
         "//src/mongo/db/commands:server_status_core",
         "//src/mongo/db/concurrency:flow_control_ticketholder",
         "//src/mongo/util:background_job",

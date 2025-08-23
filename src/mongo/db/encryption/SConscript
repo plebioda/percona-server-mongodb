@@ -5,32 +5,15 @@ env = env.Clone()
 
 env.CppUnitTest(
     target="db_encryption_key_id_test",
-    source=[
-        "key_id_test.cpp",
-    ],
-    LIBDEPS=[
-        "key",
-    ],
+    source=[],
 )
 
 env.CppUnitTest(
     target="vault_secret_metadata_locator_test",
-    source=[
-        "vault_secret_metadata_locator_test.cpp",
-    ],
-    LIBDEPS=[
-        "vault_secret_metadata_locator",
-    ],
+    source=[],
 )
 
 env.CppUnitTest(
     target="encryption_status_test",
-    source=[
-        "encryption_status_test.cpp",
-    ],
-    LIBDEPS=[
-        "$BUILD_DIR/mongo/db/commands/server_status_core",
-        "$BUILD_DIR/mongo/db/service_context",
-        "encryption_status",
-    ],
+    source=[],
 )

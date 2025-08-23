@@ -1,4 +1,4 @@
-load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library")
+load("//bazel:mongo_src_rules.bzl", "idl_generator", "mongo_cc_library", "mongo_cc_unit_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -21,5 +21,36 @@ mongo_cc_library(
     deps = [
         "//src/mongo/db/storage:storage_engine_common",
         "//src/mongo/db/storage/wiredtiger:storage_wiredtiger",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "storage_inmemory_init_test",
+    srcs = [
+        "inmemory_init_test.cpp",
+    ],
+    deps = [
+        "//src/mongo/db/auth:authmocks",
+        "//src/mongo/db:service_context",
+        "//src/mongo/db:service_context_d",
+        "//src/mongo/db:service_context_test_fixture",
+        "//src/mongo/db/storage/inmemory:storage_inmemory",
+        "//src/mongo/db/storage:storage_options",
+        "//src/mongo/db/storage/wiredtiger:storage_wiredtiger",
+        "//src/mongo/db/storage/wiredtiger:storage_wiredtiger_core",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "storage_inmemory_kv_engine_test",
+    srcs = [
+        "inmemory_kv_engine_test.cpp",
+    ],
+    deps = [
+        "//src/mongo/db/auth:authmocks",
+        "//src/mongo/db/repl:repl_coordinator_interface",
+        "//src/mongo/db/repl:replmocks",
+        "//src/mongo/db/storage/kv:kv_engine_test_harness",
+        "//src/mongo/db/storage/wiredtiger:storage_wiredtiger_core",
     ],
 )

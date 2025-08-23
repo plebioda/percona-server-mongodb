@@ -1,4 +1,4 @@
-load("//bazel:mongo_src_rules.bzl", "mongo_cc_library")
+load("//bazel:mongo_src_rules.bzl", "mongo_cc_library", "mongo_cc_unit_test")
  
 package(default_visibility = ["//visibility:public"])
  
@@ -130,5 +130,37 @@ mongo_cc_library(
         ":key_management",
         "//src/mongo:base",
         "//src/mongo/db/commands:server_status_core",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "db_encryption_key_id_test",
+    srcs = [
+        "key_id_test.cpp",
+    ],
+    deps = [
+        ":key",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "vault_secret_metadata_locator_test",
+    srcs = [
+        "vault_secret_metadata_locator_test.cpp",
+    ],
+    deps = [
+        ":vault_secret_metadata_locator",
+    ],
+)
+
+mongo_cc_unit_test(
+    name = "encryption_status_test",
+    srcs = [
+        "encryption_status_test.cpp",
+    ],
+    deps = [
+        ":encryption_status",
+        "//src/mongo/db/commands:server_status_core",
+        "//src/mongo/db:service_context",
     ],
 )

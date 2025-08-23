@@ -106,21 +106,6 @@ env.CppUnitTest(
     LIBDEPS=[],
 )
 
-if has_option("audit"):
-    auditEnv = env
-
-    auditEnv.CppUnitTest(
-        target="audit_options_test",
-        source=[
-            "audit/audit_options_test.cpp",
-        ],
-        LIBDEPS=[
-            "$BUILD_DIR/mongo/db/audit/audit_options",
-            "server_options_base",
-        ],
-    )
-
-
 env.CppUnitTest(
     target="client_out_of_line_executor_test",
     source=[],

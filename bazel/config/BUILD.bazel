@@ -34,9 +34,11 @@ load(
     "opt",
     "pgo_profile",
     "release",
+    "sdkroot",
     "separate_debug",
     "server_js",
     "shared_archive",
+    "skip_archive",
     "spider_monkey_dbg",
     "ssl",
     "streams_release_build",
@@ -1240,6 +1242,7 @@ config_setting(
     ],
     flag_values = {
         "//bazel/config:build_otel": "True",
+        "//bazel/config:release": "False",
     },
 )
 
@@ -1654,6 +1657,38 @@ config_setting(
 )
 
 # --------------------------------------
+# skip_archive options
+# --------------------------------------
+
+skip_archive(
+    name = "skip_archive",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "skip_archive_enabled",
+    flag_values = {
+        "//bazel/config:skip_archive": "True",
+    },
+)
+
+config_setting(
+    name = "skip_archive_disabled",
+    flag_values = {
+        "//bazel/config:skip_archive": "False",
+    },
+)
+
+selects.config_setting_group(
+    name = "skip_archive_linkstatic_not_windows",
+    match_all = [
+        ":skip_archive_enabled",
+        ":not_windows",
+        ":linkstatic_enabled",
+    ],
+)
+
+# --------------------------------------
 # detect-odr-violations options
 # --------------------------------------
 
@@ -1706,6 +1741,14 @@ config_setting(
     flag_values = {
         "//bazel/config:build_enterprise": "False",
     },
+)
+
+selects.config_setting_group(
+    name = "build_enterprise_linux_enabled",
+    match_all = [
+        ":build_enterprise_enabled",
+        "@platforms//os:linux",
+    ],
 )
 
 # --------------------------------------
@@ -2262,6 +2305,15 @@ selects.config_setting_group(
 developer_dir(
     name = "developer_dir",
     build_setting_default = "/Applications/Xcode.app",
+)
+
+# --------------------------------------
+# sdkroot
+# --------------------------------------
+
+sdkroot(
+    name = "sdkroot",
+    build_setting_default = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
 )
 
 # --------------------------------------

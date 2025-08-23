@@ -1408,7 +1408,7 @@ def generate(env: SCons.Environment.Environment) -> None:
         f'--enable_oidc={env.GetOption("enable-oidc") is not None}',
         f'--js_engine={env.GetOption("js-engine")}',
         f'--use_sasl_client={env.GetOption("use-sasl-client") is not None}',
-        f'--skip_archive={env.GetOption("skip-archive") != "off"}',
+        "--skip_archive=False",
         "--define",
         f"MONGO_VERSION={mongo_version}",
         "--define",
@@ -1618,7 +1618,7 @@ def generate(env: SCons.Environment.Environment) -> None:
         ["aquery"]
         + env["BAZEL_FLAGS_STR"]
         + [
-            'mnemonic("StripDebuginfo|ExtractDebuginfo|Symlink|IdlcGenerator|TemplateRenderer", (outputs("bazel-out/.*/bin/src/.*", deps(@//src/...))))'
+            "mnemonic('StripDebuginfo|ExtractDebuginfo|Symlink|IdlcGenerator|TemplateRenderer', (outputs('bazel-out/.*/bin/src/.*', deps(@//src/...))))"
         ]
     )
 

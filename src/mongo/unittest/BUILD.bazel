@@ -23,11 +23,11 @@ mongo_cc_library(
         "unittest.cpp",
 
         # Note: Only used here and for the corresponding test. consider moving.
-        "//src/mongo/logv2:log_capture_backend.h",
-        "//src/mongo/bson/mutable:mutable_bson_test_utils.h",
-        "//src/mongo/bson/mutable:document.h",
-        "//src/mongo/bson/mutable:const_element.h",
         "//src/mongo/bson:unordered_fields_bsonobj_comparator.h",
+        "//src/mongo/db/exec/mutable_bson:mutable_bson_test_utils.h",
+        "//src/mongo/db/exec/mutable_bson:document.h",
+        "//src/mongo/db/exec/mutable_bson:const_element.h",
+        "//src/mongo/logv2:log_capture_backend.h",
     ],
     hdrs = [
         "assert.h",
@@ -174,6 +174,10 @@ mongo_cc_unit_test(
         "thread_assertion_monitor_test.cpp",
         "unittest_test.cpp",
     ],
+    data = [
+        "//src/mongo/unittest/expected_output/golden_self_test:sanity_test",
+        "//src/mongo/unittest/expected_output/golden_self_test2:sanity_test2",
+    ],
     tags = [
         "mongo_unittest_second_group",
         "server-programmability",
@@ -184,9 +188,6 @@ mongo_cc_benchmark(
     name = "system_resource_canary_bm",
     srcs = [
         "system_resource_canary_bm.cpp",
-    ],
-    tags = [
-        "first_half_bm",
     ],
     deps = [
         "//src/mongo/util:processinfo",

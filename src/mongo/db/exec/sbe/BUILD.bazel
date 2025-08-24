@@ -121,8 +121,6 @@ mongo_cc_library(
         "//src/mongo/base:secure_allocator.h",
         "//src/mongo/bson:bson_duration.h",
         "//src/mongo/bson:bson_time_support.h",
-        "//src/mongo/bson/mutable:api.h",
-        "//src/mongo/bson/mutable:element.h",
         "//src/mongo/client:connection_string.h",
         "//src/mongo/crypto:hash_block.h",
         "//src/mongo/crypto:sha256_block.h",
@@ -182,6 +180,8 @@ mongo_cc_library(
         "//src/mongo/db/exec/document_value:document_metadata_fields.h",
         "//src/mongo/db/exec/document_value:value.h",
         "//src/mongo/db/exec/document_value:value_internal.h",
+        "//src/mongo/db/exec/mutable_bson:api.h",
+        "//src/mongo/db/exec/mutable_bson:element.h",
         "//src/mongo/db/exec/sbe/stages:plan_stats.h",
         "//src/mongo/db/index:multikey_paths.h",
         "//src/mongo/db/index_builds:resumable_index_builds_gen",
@@ -498,6 +498,7 @@ mongo_cc_unit_test(
     srcs = [
         "//src/mongo/db/exec/sbe/abt:abt_lower_test.cpp",
     ],
+    data = ["//src/mongo/db/test_output/exec/sbe:test_data"],
     tags = ["mongo_unittest_fourth_group"],
     deps = [
         ":abt_unit_test_utils",
@@ -615,6 +616,9 @@ mongo_cc_unit_test(
         "//src/mongo/db/exec/sbe/values:value_test.cpp",
         "//src/mongo/db/query/stage_builder/sbe/tests:sbe_builder_test_fixture.h",
     ],
+    data = [
+        "//src/mongo/db/test_output/exec/sbe:test_data",
+    ],
     tags = ["mongo_unittest_fourth_group"],
     deps = [
         ":sbe_plan_stage_test",
@@ -634,9 +638,6 @@ mongo_cc_benchmark(
     name = "abt_lower_bm",
     srcs = [
         "//src/mongo/db/exec/sbe/abt:abt_lower_bm.cpp",
-    ],
-    tags = [
-        "first_half_bm",
     ],
     deps = [
         ":abt_unit_test_utils",

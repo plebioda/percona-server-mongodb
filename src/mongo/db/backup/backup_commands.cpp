@@ -31,9 +31,9 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 
 #include <boost/filesystem.hpp>
 
-#include "mongo/bson/mutable/algorithm.h"
-#include "mongo/bson/mutable/const_element.h"
-#include "mongo/bson/mutable/document.h"
+#include "mongo/db/exec/mutable_bson/algorithm.h"
+#include "mongo/db/exec/mutable_bson/const_element.h"
+#include "mongo/db/exec/mutable_bson/document.h"
 #include "mongo/db/auth/action_type.h"
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/backup/backupable.h"

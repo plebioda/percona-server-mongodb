@@ -1391,6 +1391,7 @@ def generate(env: SCons.Environment.Environment) -> None:
         f'--use_glibcxx_debug={env.GetOption("use-glibcxx-debug") is not None}',
         f'--use_tracing_profiler={env.GetOption("use-tracing-profiler") == "on"}',
         f'--build_grpc={True if env["ENABLE_GRPC_BUILD"] else False}',
+        f'--build_otel={True if env["ENABLE_OTEL_BUILD"] else False}',
         f'--use_libcxx={env.GetOption("libc++") is not None}',
         f'--detect_odr_violations={env.GetOption("detect-odr-violations") is not None}',
         f"--linkstatic={linkstatic}",
@@ -1420,6 +1421,7 @@ def generate(env: SCons.Environment.Environment) -> None:
         f"MONGO_DISTMOD={env['MONGO_DISTMOD']}",
         "--compilation_mode=dbg",  # always build this compilation mode as we always build with -g
         "--dynamic_mode=off",
+        "--fission=no",
     ]
 
     # Timeout linking at 8 minutes to retry with a lower concurrency.

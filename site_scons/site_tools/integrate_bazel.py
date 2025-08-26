@@ -1308,10 +1308,6 @@ def setup_max_retry_attempts() -> None:
 
 
 def is_local_execution(env: SCons.Environment.Environment) -> bool:
-    # They pass empty environment which does not have BAZEL_FLAGS set, so the logic is broken.
-    # Just return True since we are building locally.
-    # TODO: review this after merging 6c86981d336
-    return True
     normalized_arch = (
         platform.machine().lower().replace("aarch64", "arm64").replace("x86_64", "amd64")
     )

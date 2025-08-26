@@ -950,6 +950,11 @@ WiredTigerKVEngine::WiredTigerKVEngine(
         ss << "prefetch=(available=true,default=false),";
     }
 
+    if (!wiredTigerGlobalOptions.liveRestoreSource.empty() && !_ephemeral) {
+        ss << "live_restore=(enabled=true,path=\"" << wiredTigerGlobalOptions.liveRestoreSource
+           << "\"),";
+    }
+
     ss << WiredTigerCustomizationHooks::get(getGlobalServiceContext())
               ->getTableCreateConfig("system");
     ss << WiredTigerExtensions::get(getGlobalServiceContext())->getOpenExtensionsConfig();

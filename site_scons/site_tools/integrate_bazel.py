@@ -645,6 +645,12 @@ def bazel_build_thread_func(env, log_dir: str, verbose: bool, ninja_generate: bo
     print("Starting bazel build thread...")
     run_bazel_command(env, bazel_cmd)
 
+    # This is used to detect if a user is running under bazelisk, delete this since
+    # the SCons integration sets up bazelisk internally, but we want to trigger failures
+    # afterwards if the user calls a non-bazelisk bazel directly.
+    if os.path.exists(".bazelrc.bazelisk"):
+        os.remove(".bazelrc.bazelisk")
+
 
 def create_bazel_builder(builder: SCons.Builder.Builder) -> SCons.Builder.Builder:
     return SCons.Builder.Builder(
@@ -726,9 +732,9 @@ def validate_remote_execution_certs(env: SCons.Environment.Environment) -> bool:
     if os.name == "nt" and not os.path.exists(f"{os.path.expanduser('~')}/.bazelrc"):
         with open(f"{os.path.expanduser('~')}/.bazelrc", "a") as bazelrc:
             bazelrc.write(
-                f"build --tls_client_certificate={get_default_cert_dir()}/creds/engflow.crt\n"
+                f"common --tls_client_certificate={get_default_cert_dir()}/creds/engflow.crt\n"
             )
-            bazelrc.write(f"build --tls_client_key={get_default_cert_dir()}/creds/engflow.key\n")
+            bazelrc.write(f"common --tls_client_key={get_default_cert_dir()}/creds/engflow.key\n")
 
     if not running_in_evergreen and not os.path.exists(
         f"{get_default_cert_dir()}/creds/engflow.crt"
@@ -752,10 +758,10 @@ def validate_remote_execution_certs(env: SCons.Environment.Environment) -> bool:
                 )
                 with open(f"{get_default_cert_dir()}/.bazelrc", "a") as bazelrc:
                     bazelrc.write(
-                        f"build --tls_client_certificate={get_default_cert_dir()}/creds/engflow.crt\n"
+                        f"common --tls_client_certificate={get_default_cert_dir()}/creds/engflow.crt\n"
                     )
                     bazelrc.write(
-                        f"build --tls_client_key={get_default_cert_dir()}/creds/engflow.key\n"
+                        f"common --tls_client_key={get_default_cert_dir()}/creds/engflow.key\n"
                     )
             except OSError as exc:
                 print(exc)

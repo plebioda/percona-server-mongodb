@@ -1283,6 +1283,20 @@ PGO_PROFILE_FLAGS = select({
     "//conditions:default": [],
 })
 
+# Hack to throw an error if the user isn't running bazel through bazelisk,
+# since we want to make sure the hook inside of tools/bazel gets run.
+RUNNING_THROUGH_BAZELISK_CHECK = select({
+    "//bazel/config:running_through_bazelisk_x86_64_or_arm64": [],
+    "@platforms//cpu:s390x": [],
+    "@platforms//cpu:ppc": [],
+}, no_match_error = """
+Error:
+  This repository must be built through bazelisk, please uninstall your current bazel
+  installation and then run:
+
+  python buildscripts/install_bazel.py
+""")
+
 MONGO_GLOBAL_INCLUDE_DIRECTORIES = [
     "-Isrc",
     "-I$(GENDIR)/src",
@@ -1354,7 +1368,8 @@ MONGO_GLOBAL_COPTS = (
     SASL_WINDOWS_COPTS +
     COVERAGE_FLAGS +
     PGO_PROFILE_FLAGS +
-    SHARED_ARCHIVE_COPTS
+    SHARED_ARCHIVE_COPTS +
+    RUNNING_THROUGH_BAZELISK_CHECK
 )
 
 MONGO_GLOBAL_LINKFLAGS = (
@@ -2036,7 +2051,7 @@ def _mongo_cc_binary_and_program(
             name = name,
             binary_with_debug = ":" + name + WITH_DEBUG_SUFFIX,
             type = "program",
-            tags = original_tags,
+            tags = original_tags + ["final_target"],
             enabled = SEPARATE_DEBUG_ENABLED,
             enable_pdb = PDB_GENERATION_ENABLED,
             deps = all_deps,
@@ -2049,7 +2064,7 @@ def _mongo_cc_binary_and_program(
             name = name,
             binary_with_debug = ":" + name + WITH_DEBUG_SUFFIX,
             type = "program",
-            tags = original_tags,
+            tags = original_tags + ["final_target"],
             enabled = SEPARATE_DEBUG_ENABLED,
             enable_pdb = PDB_GENERATION_ENABLED,
             deps = all_deps,

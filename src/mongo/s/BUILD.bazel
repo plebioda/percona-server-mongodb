@@ -68,6 +68,14 @@ idl_generator(
     ],
 )
 
+idl_generator(
+    name = "remove_shard_gen",
+    src = "remove_shard.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+    ],
+)
+
 mongo_cc_library(
     name = "sharding_helpers",
     srcs = [
@@ -395,7 +403,7 @@ mongo_cc_library(
         "//src/mongo/s/migration_blocking_operation:migration_blocking_operation_feature_flags_gen",
         "//src/mongo/s/request_types:abort_reshard_collection_gen",
         "//src/mongo/s/request_types:add_shard_request_type.cpp",
-        "//src/mongo/s/request_types:add_shard_to_zone_request_type.cpp",
+        "//src/mongo/s/request_types:add_shard_to_zone_gen",
         "//src/mongo/s/request_types:auto_split_vector_gen",
         "//src/mongo/s/request_types:balancer_collection_status_gen",
         "//src/mongo/s/request_types:cleanup_reshard_collection_gen",
@@ -445,6 +453,7 @@ mongo_cc_library(
         "error_status_gen",
         "mongod_and_mongos_server_parameters_gen",
         "refresh_query_analyzer_configuration_cmd_gen",
+        "remove_shard_gen",
         "shard_cannot_refresh_due_to_locks_held_exception.cpp",
         "shard_key_pattern.cpp",
         "shard_version_factory.cpp",
@@ -510,7 +519,6 @@ mongo_cc_library(
         "//src/mongo/s/catalog:type_tags.h",
         "//src/mongo/s/request_types:merge_chunk_request_valid.h",
         "//src/mongo/s/request_types:add_shard_request_type.h",
-        "//src/mongo/s/request_types:add_shard_to_zone_request_type.h",
         "//src/mongo/s/request_types:migration_secondary_throttle_options.h",
         "//src/mongo/s/request_types:remove_shard_from_zone_request_type.h",
         "//src/mongo/s/request_types:update_zone_key_range_request_type.h",
@@ -1186,6 +1194,8 @@ mongo_cc_unit_test(
         "//src/mongo/s/write_ops:write_without_shard_key_util_test.cpp",
     ],
     tags = [
+        "code_coverage_quarantine",
+        "code_coverage_quarantine-SERVER_99060",
         "compile_requires_large_memory_gcc",
         "compile_requires_large_memory_sanitizer",
         "mongo_unittest_third_group",
@@ -1226,7 +1236,11 @@ mongo_cc_unit_test(
     srcs = [
         "service_entry_point_router_role_test.cpp",
     ],
-    tags = ["mongo_unittest_second_group"],
+    tags = [
+        "code_coverage_quarantine",
+        "code_coverage_quarantine-SERVER_99060",
+        "mongo_unittest_second_group",
+    ],
     deps = [
         ":startup_initialization",
         "//src/mongo/db:service_context_non_d",
@@ -1259,7 +1273,11 @@ mongo_cc_unit_test(
     srcs = [
         "multi_statement_transaction_requests_sender_test.cpp",
     ],
-    tags = ["mongo_unittest_second_group"],
+    tags = [
+        "code_coverage_quarantine",
+        "code_coverage_quarantine-SERVER_99060",
+        "mongo_unittest_second_group",
+    ],
     deps = [
         ":sharding_api",
         ":sharding_mongos_test_fixture",

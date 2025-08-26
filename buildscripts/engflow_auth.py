@@ -13,7 +13,7 @@ from datetime import datetime
 
 from retry import retry
 
-NORMALIZED_ARCH = {"x86_64": "x64", "aarch64": "arm64", "AMD64": "x64"}
+NORMALIZED_ARCH = {"x86_64": "x64", "aarch64": "arm64", "arm64": "arm64", "AMD64": "x64"}
 
 NORMALIZED_OS = {"Windows": "windows", "Darwin": "macos", "Linux": "linux"}
 
@@ -74,7 +74,7 @@ def update_bazelrc(binary_path: str):
                 if "--tls_client" in line or "--credential_helper" in line:
                     continue
                 lines.append(line)
-    lines.append(f"build --credential_helper={CLUSTER}={norm_path}")
+    lines.append(f"common --credential_helper={CLUSTER}={norm_path}")
 
     with open(bazelrc_path, "w+") as bazelrc:
         bazelrc.writelines(lines)

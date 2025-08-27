@@ -59,6 +59,20 @@ __live_restore_worker_stop(WT_SESSION_IMPL *session, WT_THREAD *ctx)
 }
 
 /*
+ * __live_restore_free_work_item --
+ *     Free a work item from the queue. Set the callers pointer to NULL. This enables unit testing
+ *     and is consistent with most WiredTiger free functions.
+ */
+static void
+__live_restore_free_work_item(WT_SESSION_IMPL *session, WT_LIVE_RESTORE_WORK_ITEM **work_itemp)
+{
+    __wt_free(session, (*work_itemp)->uri);
+    __wt_free(session, *work_itemp);
+
+    *work_itemp = NULL;
+}
+
+/*
  * __live_restore_work_queue_drain --
  *     Drain the work queue of any remaining items. This is called either on connection close, and
  *     the work will be continued after a restart, or for error handling cleanup in which case we're
@@ -79,8 +93,7 @@ __live_restore_work_queue_drain(WT_SESSION_IMPL *session)
         TAILQ_FOREACH_SAFE(work_item, &server->work_queue, q, work_item_tmp)
         {
             TAILQ_REMOVE(&server->work_queue, work_item, q);
-            __wt_free(session, work_item->uri);
-            __wt_free(session, work_item);
+            __live_restore_free_work_item(session, &work_item);
         }
     }
     WT_ASSERT_ALWAYS(
@@ -103,35 +116,30 @@ __live_restore_worker_run(WT_SESSION_IMPL *session, WT_THREAD *ctx)
     if (TAILQ_EMPTY(&server->work_queue)) {
         /* Stop our thread from running. This will call the stop_func and trigger state cleanup. */
         F_CLR(ctx, WT_THREAD_RUN);
-        __wt_verbose_debug2(session, WT_VERB_FILEOPS, "%s", "Live restore worker terminating");
+        __wt_verbose_debug1(session, WT_VERB_FILEOPS, "%s", "Live restore worker terminating");
         __wt_spin_unlock(session, &server->queue_lock);
         return (0);
     }
-
-    WT_LIVE_RESTORE_WORK_ITEM *work_item = NULL;
-
-    work_item = TAILQ_FIRST(&server->work_queue);
+    WT_LIVE_RESTORE_WORK_ITEM *work_item = TAILQ_FIRST(&server->work_queue);
     WT_ASSERT(session, work_item != NULL);
     TAILQ_REMOVE(&server->work_queue, work_item, q);
-    WT_STAT_CONN_SET(session, live_restore_queue_length, --server->queue_size);
     __wt_verbose_debug2(
       session, WT_VERB_FILEOPS, "Live restore worker taking queue item: %s", work_item->uri);
     __wt_spin_unlock(session, &server->queue_lock);
 
-    WT_CURSOR *cursor;
-    WT_SESSION *wt_session = (WT_SESSION *)session;
-
     /*
      * Open a cursor so no one can get exclusive access on the object. This prevents concurrent
-     * schema operations like drop. Even if this object is a log file it can have a cursor opened
-     * it. Opening a cursor on a log will prevent it from getting archived.
-     *
-     * If the file no longer exists, which for logs means they could have been archived and for
-     * regular files dropped, don't error out.
+     * schema operations like drop. If the file no longer exists we don't need to copy anything and
+     * can return a success.
      */
+    WT_CURSOR *cursor;
+    WT_SESSION *wt_session = (WT_SESSION *)session;
     ret = wt_session->open_cursor(wt_session, work_item->uri, NULL, NULL, &cursor);
-    if (ret == ENOENT)
+    if (ret == ENOENT) {
+        /* Free the work item. */
+        __live_restore_free_work_item(session, &work_item);
         return (0);
+    }
     WT_RET(ret);
 
     /*
@@ -144,70 +152,91 @@ __live_restore_worker_run(WT_SESSION_IMPL *session, WT_THREAD *ctx)
     /* FIXME-WT-13897 Replace this with an API call into the block manager. */
     WT_FILE_HANDLE *fh = bm->block->fh->handle;
 
-    /*
-     * Call the fill holes function. Right now no other reads or writes should be occurring
-     * concurrently or else things will eventually break.
-     *
-     * FIXME-WT-13825: Update this comment.
-     */
-    __wt_verbose_debug2(
-      session, WT_VERB_FILEOPS, "Live restore worker filling holes for: %s", work_item->uri);
+    __wt_verbose_debug3(
+      session, WT_VERB_FILEOPS, "Live restore worker: Filling holes in %s", work_item->uri);
     ret = __wti_live_restore_fs_fill_holes(fh, wt_session);
+    __wt_verbose_debug3(session, WT_VERB_FILEOPS,
+      "Live restore worker: Finished finished filling holes in %s", work_item->uri);
+
+    /* Free the work item. */
+    __live_restore_free_work_item(session, &work_item);
+    WT_STAT_CONN_SET(
+      session, live_restore_queue_length, __wt_atomic_sub64(&server->work_items_remaining, 1));
     WT_TRET(cursor->close(cursor));
+    return (ret);
+}
+
+/*
+ * __insert_queue_item --
+ *     Insert an item into the live restore queue.
+ */
+static int
+__insert_queue_item(WT_SESSION_IMPL *session, char *uri, uint64_t *work_count)
+{
+    WT_DECL_RET;
+
+    __wt_verbose_debug2(
+      session, WT_VERB_FILEOPS, "Live restore server: Adding %s to the work queue", uri);
+
+    WT_LIVE_RESTORE_SERVER *server = S2C(session)->live_restore_server;
+    WT_LIVE_RESTORE_WORK_ITEM *work_item = NULL;
+
+    WT_ERR(__wt_calloc_one(session, &work_item));
+    WT_ERR(__wt_strdup(session, uri, &work_item->uri));
+    TAILQ_INSERT_HEAD(&server->work_queue, work_item, q);
+    (*work_count)++;
+
+    if (0) {
+err:
+        __wt_free(session, work_item->uri);
+        __wt_free(session, work_item);
+    }
 
     return (ret);
 }
 
 /*
- * __live_restore_populate_queue --
+ * __live_restore_init_work_queue --
  *     Populate the live restore work queue. Free all objects on failure.
  */
 static int
-__live_restore_populate_queue(WT_SESSION_IMPL *session, uint64_t *work_count)
+__live_restore_init_work_queue(WT_SESSION_IMPL *session)
 {
+    WT_CONNECTION_IMPL *conn = S2C(session);
     WT_DECL_RET;
-    WT_LIVE_RESTORE_SERVER *server = S2C(session)->live_restore_server;
+    WT_LIVE_RESTORE_SERVER *server = conn->live_restore_server;
 
+    /* Initialize the work queue. */
     TAILQ_INIT(&server->work_queue);
-    /*
-     * Open a metadata cursor to gather the list of objects. The metadata file is built from the
-     * WiredTiger.backup file, during __wt_turtle_init. Thus this function must be run after that
-     * function.
-     */
-
-    /*
-     * FIXME-WT-13888: Add logic to queue log files first, then the history store. This will use a
-     * directory list call.
-     */
-    WT_CURSOR *cursor;
-    WT_RET(__wt_metadata_cursor(session, &cursor));
-    WT_LIVE_RESTORE_WORK_ITEM *work_item = NULL;
     __wt_verbose_debug1(
       session, WT_VERB_FILEOPS, "%s", "Live restore server: Initializing the work queue");
 
-    *work_count = 0;
+    WT_CURSOR *cursor;
+    WT_RET(__wt_metadata_cursor(session, &cursor));
+    uint64_t work_count = 0;
     while ((ret = cursor->next(cursor)) == 0) {
-        const char *uri = NULL;
+        char *uri = NULL;
         WT_ERR(cursor->get_key(cursor, &uri));
-        if (WT_PREFIX_MATCH(uri, "file:")) {
-            __wt_verbose_debug2(
-              session, WT_VERB_FILEOPS, "Live restore server: Adding an %s to the work queue", uri);
-            WT_ERR(__wt_calloc_one(session, &work_item));
-            WT_ERR(__wt_strdup(session, uri, &work_item->uri));
-            TAILQ_INSERT_HEAD(&server->work_queue, work_item, q);
-            (*work_count)++;
-        }
+        if (WT_PREFIX_MATCH(uri, "file:"))
+            WT_ERR(__insert_queue_item(session, uri, &work_count));
     }
     WT_ERR_NOTFOUND_OK(ret, false);
 
+    /*
+     * The first step on restoration from a backup is to rebuild the metadata file. Thus if we are
+     * restoring from a backup we don't need to queue it. Otherwise we need to ensure we transfer it
+     * over.
+     */
+    if (!F_ISSET(conn, WT_CONN_BACKUP_PARTIAL_RESTORE))
+        WT_ERR(__insert_queue_item(session, (char *)("file:" WT_METAFILE), &work_count));
+
+    WT_STAT_CONN_SET(session, live_restore_queue_length, work_count);
+    __wt_atomic_store64(&conn->live_restore_server->work_items_remaining, work_count);
+
     if (0) {
 err:
-        /* The queue insert cannot fail so whatever we've put into it is guaranteed to be there. */
+        /* Something broke, drain the queue. */
         __live_restore_work_queue_drain(session);
-
-        /* Free the various items. */
-        __wt_free(session, work_item->uri);
-        __wt_free(session, work_item);
     }
     return (ret);
 }
@@ -250,10 +279,7 @@ __wt_live_restore_server_create(WT_SESSION_IMPL *session, const char *cfg[])
      * Even if we start from an empty database the history store file will exist before we get here
      * which means there will always be at least one item in the queue.
      */
-    uint64_t work_count;
-    WT_ERR(__live_restore_populate_queue(session, &work_count));
-    WT_STAT_CONN_SET(session, live_restore_queue_length, work_count);
-    conn->live_restore_server->queue_size = work_count;
+    WT_ERR(__live_restore_init_work_queue(session));
 
     /* Set this value before the threads start up in case they immediately decrement it. */
     conn->live_restore_server->threads_working = (uint32_t)cval.val;
@@ -286,8 +312,13 @@ __wt_live_restore_server_destroy(WT_SESSION_IMPL *session)
 {
     WT_LIVE_RESTORE_SERVER *server = S2C(session)->live_restore_server;
 
-    /* If we didn't create a live restore file system there is nothing to do. */
-    if (!F_ISSET(S2C(session), WT_CONN_LIVE_RESTORE_FS))
+    /*
+     * If we didn't create a live restore file system or the server there is nothing to do, it is
+     * rare, but possible, to arrive here with the flag set and a NULL server. This situation
+     * happens when an error is encountered after the file system initialization but before the
+     * server is created.
+     */
+    if (!F_ISSET(S2C(session), WT_CONN_LIVE_RESTORE_FS) || server == NULL)
         return (0);
 
     /*
@@ -304,9 +335,7 @@ __wt_live_restore_server_destroy(WT_SESSION_IMPL *session)
          * further items. Given we are in a failure state this is okay.
          */
         WT_RET(__wt_thread_group_destroy(session, &server->threads));
-
         __live_restore_work_queue_drain(session);
-
         __wt_spin_destroy(session, &server->queue_lock);
     }
     __wt_free(session, server);

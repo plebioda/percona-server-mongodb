@@ -167,14 +167,13 @@ DocumentSource::GetNextResult DocumentSourceBucketAuto::populateSorter() {
         _sorter = Sorter<Value, Document>::make(opts, comparator);
     }
 
-    long long position = 0;
     auto next = pSource->getNext();
     for (; next.isAdvanced(); next = pSource->getNext()) {
         auto nextDoc = next.releaseDocument();
         auto key = extractKey(nextDoc);
 
         auto doc = Document{{AccumulatorN::kFieldNameOutput, Value(std::move(nextDoc))},
-                            {AccumulatorN::kFieldNameGeneratedSortKey, Value(position++)}};
+                            {AccumulatorN::kFieldNameGeneratedSortKey, Value(_nDocPositions++)}};
         _sorter->add(std::move(key), std::move(doc));
         ++_nDocuments;
     }
@@ -436,7 +435,7 @@ intrusive_ptr<DocumentSourceBucketAuto> DocumentSourceBucketAuto::create(
             AccumulationExpression(
                 ExpressionConstant::create(pExpCtx.get(), Value(BSONNULL)),
                 ExpressionConstant::create(pExpCtx.get(), Value(1)),
-                [pExpCtx] { return AccumulatorSum::create(pExpCtx.get()); },
+                [pExpCtx] { return make_intrusive<AccumulatorSum>(pExpCtx.get()); },
                 AccumulatorSum::kName));
     }
     return new DocumentSourceBucketAuto(pExpCtx,

@@ -169,7 +169,7 @@ feature_flags:
     featureFlagLookupEncryptionSchemasFLE:
       description: "Feature flag to support multiple FLE schemas with $lookup"
       cpp_varname: gFeatureFlagLookupEncryptionSchemasFLE
-      default: false
+      default: true
       shouldBeFCVGated: false
 
     featureFlagRankFusionBasic:
@@ -190,6 +190,19 @@ feature_flags:
       description: "Feature flag to introduce $scoreFusion, the $minMaxScaler helper and finish up
                    hybrid scoring features. (Final milestone of Vector Search Hybrid Scoring)"
       cpp_varname: gFeatureFlagSearchHybridScoringFull
+      default: false
+      shouldBeFCVGated: true
+    
+    featureFlagQueryMemoryTracking:
+      description: "Feature flag to enable current and high watermark memory usage tracking for 
+                    queries' blocking stages."
+      cpp_varname: gFeatureFlagQueryMemoryTracking
+      default: false
+      shouldBeFCVGated: false
+
+    featureFlagMongotIndexedViews:
+      description: "Feature flag to enable issuing mongot index commands on views and running mongot queries on said mongot indexed views."
+      cpp_varname: gFeatureFlagMongotIndexedViews
       default: false
       shouldBeFCVGated: true
 

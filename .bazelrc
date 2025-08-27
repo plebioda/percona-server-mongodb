@@ -28,7 +28,22 @@ common --experimental_cc_shared_library
 # Reuse sandboxes to save sandbox execution and deletion times.
 common --experimental_reuse_sandbox_directories
 
+# Disabled until we do the work to move over to bzlmod
+common --enable_bzlmod=false
+
+# Enable Build without the Bytes
+common --remote_download_outputs=toplevel
+
+# Files we always want to download for debugging and error checking
+common --remote_download_regex=.*\.(dwo|h|cpp)$
+
 common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+
+# Restrict local actions to 20% to prevent linking from hitting OOM issues, but give the
+# freedom to remote execution to schedule more compilation actions.
+common --local_resources=cpu=HOST_CPUS*.2
+common:windows --local_resources=cpu=HOST_CPUS
+common:macos --local_resources=cpu=HOST_CPUS
 
 # while in hybrid build state, using local unsandboxed linking should be faster. When most of our link
 # targets have been converted (i.e. unittest binaries) and we can BWOB, remote linking should be faster
@@ -125,7 +140,6 @@ common --flag_alias=dbg_level=//bazel/config:dbg_level
 # To avoid the bazel warning about passing multiple configs
 common -c fastbuild
 common --fission=yes
-common --remote_download_regex=.*\.dwo$
 common --//bazel/config:opt=off
 common --//bazel/config:dbg=True
 common --//bazel/config:dbg_level=1
@@ -141,16 +155,15 @@ common --//bazel/config:asan=False
 common --//bazel/config:tsan=False
 common --//bazel/config:ubsan=False
 common --//bazel/config:libunwind=auto
-common --enable_platform_specific_config=true
-common --jobs=200
+common --jobs=250
 common:macos --jobs=auto
 common:windows --jobs=auto
+common --enable_platform_specific_config=true
 
 # Profile for building fast with minimal debuggability - the build is fast ##################################################
 --config=fastbuild
 common:fastbuild -c fastbuild
 common:fastbuild --fission=yes
-common:fastbuild --remote_download_regex=.*\.dwo$
 common:fastbuild --//bazel/config:opt=off
 common:fastbuild --//bazel/config:dbg=True
 common:fastbuild --//bazel/config:dbg_level=1
@@ -172,7 +185,6 @@ common:fastbuild --enable_platform_specific_config=true
 --config=dbg
 common:dbg -c dbg
 common:dbg --fission=yes
-common:dbg --remote_download_regex=.*\.dwo$
 common:dbg --//bazel/config:opt=off
 common:dbg --//bazel/config:dbg=True
 common:dbg --//bazel/config:dbg_level=2
@@ -198,6 +210,7 @@ common:dbg_aubsan --//bazel/config:linkstatic=False
 common:dbg_aubsan --//bazel/config:allocator=system
 common:dbg_aubsan --//bazel/config:asan=True
 common:dbg_aubsan --//bazel/config:ubsan=True
+common:dbg_aubsan --local_resources=cpu=HOST_CPUS
 common:dbg_aubsan --enable_platform_specific_config=true
 
 # Build with thread sanitizers
@@ -216,7 +229,6 @@ common:dbg_tsan --enable_platform_specific_config=true
 --config=opt
 common:opt -c opt
 common:opt --fission=yes
-common:opt --remote_download_regex=.*\.dwo$
 common:opt --//bazel/config:opt=on
 common:opt --//bazel/config:dbg=False
 common:opt --//bazel/config:dbg_level=2
@@ -250,6 +262,17 @@ common:remote_link --strategy=SolibSymlink=remote
 common:remote_link --strategy=ExtractDebugInfo=remote
 common:remote_link --strategy=StripDebugInfo=remote
 common:remote_link --features=-thin_archive
+
+# Coverage
+coverage --config=dbg
+coverage --compiler_type=clang
+coverage --linkstatic=False
+coverage --combined_report=lcov
+coverage --experimental_use_llvm_covmap
+coverage --experimental_generate_llvm_lcov
+coverage --remote_download_outputs=all
+coverage --config=no-remote-exec
+coverage --fission=no
 
 # Don't detect the native toolchain on linux, only use the hermetic toolchains.
 # Opt out of this by passing --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 on the command line.
@@ -291,10 +314,6 @@ common:windows --cxxopt=-UCOMPILER_MSVC
 
 # Enable remote build execution:
 common:linux --remote_executor=grpcs://sodalite.cluster.engflow.com
-
-# Restrict local actions to 20% to prevent linking from hitting OOM issues, but give the
-# freedom to remote execution to schedule more compilation actions.
-common:linux --local_resources=cpu=HOST_CPUS*.2
 
 # Enable remote cache (also necessary for remote build execution):
 common --remote_cache=grpcs://sodalite.cluster.engflow.com
@@ -370,11 +389,6 @@ common:fission --remote_download_regex=.*\.dwo$
 
 # Avoid failing builds when BES metadata fails to upload.
 common --bes_upload_mode=fully_async
-
-# Enable Build without the Bytes
-common --remote_download_outputs=toplevel
-
-common --enable_bzlmod=false
 
 # Default Mongo Version if a version is not specified.
 common --define=MONGO_VERSION=8.1.0-alpha

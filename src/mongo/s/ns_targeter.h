@@ -72,17 +72,13 @@ public:
 
     virtual bool isTrackedTimeSeriesBucketsNamespace() const = 0;
 
-    virtual bool isUpdateOneWithIdWithoutShardKeyEnabled() const = 0;
-
     /**
      * Returns a ShardEndpoint for a single document write or throws ShardKeyNotFound if 'doc' is
      * malformed with respect to the shard key pattern of the collection.
      * If 'chunkRanges' is not null, populates it with ChunkRanges that would be targeted by the
      * insert.
      */
-    virtual ShardEndpoint targetInsert(OperationContext* opCtx,
-                                       const BSONObj& doc,
-                                       std::set<ChunkRange>* chunkRanges = nullptr) const = 0;
+    virtual ShardEndpoint targetInsert(OperationContext* opCtx, const BSONObj& doc) const = 0;
 
     /**
      * Returns a vector of ShardEndpoints for a potentially multi-shard update or throws

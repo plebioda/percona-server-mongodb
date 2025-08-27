@@ -406,6 +406,7 @@ mongo_cc_library(
         "//src/mongo/s/request_types:add_shard_to_zone_gen",
         "//src/mongo/s/request_types:auto_split_vector_gen",
         "//src/mongo/s/request_types:balancer_collection_status_gen",
+        "//src/mongo/s/request_types:cleanup_orphaned_gen",
         "//src/mongo/s/request_types:cleanup_reshard_collection_gen",
         "//src/mongo/s/request_types:clone_catalog_data_gen",
         "//src/mongo/s/request_types:cluster_commands_without_shard_key_gen",
@@ -437,7 +438,8 @@ mongo_cc_library(
         "//src/mongo/s/request_types:transition_from_dedicated_config_server_gen",
         "//src/mongo/s/request_types:transition_to_dedicated_config_server_gen",
         "//src/mongo/s/request_types:untrack_unsplittable_collection_gen",
-        "//src/mongo/s/request_types:update_zone_key_range_request_type.cpp",
+        "//src/mongo/s/request_types:update_zone_key_range_gen",
+        "//src/mongo/s/request_types:update_zone_key_range_serialization.cpp",
         "//src/mongo/s/request_types:wait_for_fail_point_gen",
         "//src/mongo/s/resharding:common_types_gen",
         "//src/mongo/s/resharding:resharding_coordinator_service_conflicting_op_in_progress_info.cpp",
@@ -521,7 +523,7 @@ mongo_cc_library(
         "//src/mongo/s/request_types:add_shard_request_type.h",
         "//src/mongo/s/request_types:migration_secondary_throttle_options.h",
         "//src/mongo/s/request_types:remove_shard_from_zone_request_type.h",
-        "//src/mongo/s/request_types:update_zone_key_range_request_type.h",
+        "//src/mongo/s/request_types:update_zone_key_range_serialization.h",
         "//src/mongo/s/resharding:resharding_coordinator_service_conflicting_op_in_progress_info.h",
         "cannot_implicitly_create_collection_info.h",
         "chunk.h",
@@ -1134,6 +1136,7 @@ mongo_cc_unit_test(
         "catalog_cache_refresh_test.cpp",
         "catalog_cache_test.cpp",
         "chunk_manager_query_test.cpp",
+        "chunk_manager_test.cpp",
         "chunk_map_test.cpp",
         "chunk_test.cpp",
         "chunk_version_test.cpp",
@@ -1194,8 +1197,6 @@ mongo_cc_unit_test(
         "//src/mongo/s/write_ops:write_without_shard_key_util_test.cpp",
     ],
     tags = [
-        "code_coverage_quarantine",
-        "code_coverage_quarantine-SERVER_99060",
         "compile_requires_large_memory_gcc",
         "compile_requires_large_memory_sanitizer",
         "mongo_unittest_third_group",
@@ -1237,8 +1238,6 @@ mongo_cc_unit_test(
         "service_entry_point_router_role_test.cpp",
     ],
     tags = [
-        "code_coverage_quarantine",
-        "code_coverage_quarantine-SERVER_99060",
         "mongo_unittest_second_group",
     ],
     deps = [
@@ -1274,8 +1273,6 @@ mongo_cc_unit_test(
         "multi_statement_transaction_requests_sender_test.cpp",
     ],
     tags = [
-        "code_coverage_quarantine",
-        "code_coverage_quarantine-SERVER_99060",
         "mongo_unittest_second_group",
     ],
     deps = [

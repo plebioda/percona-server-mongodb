@@ -836,6 +836,7 @@ mongo_cc_unit_test(
         "//src/mongo/db/test_output/query/stage_builder/sbe/golden_gen_expression_test:test_data",
         "//src/mongo/db/test_output/query/stage_builder/sbe/golden_gen_filtern_test:test_data",
         "//src/mongo/db/test_output/query/stage_builder/sbe/golden_sbe_stage_builder_test:test_data",
+        "//src/mongo/db/test_output/query/stage_builder/sbe/search_sbe_stage_builder_test:test_data",
     ],
     tags = [
         "compile_requires_large_memory_gcc",
@@ -897,12 +898,6 @@ mongo_cc_unit_test(
         "//src/mongo/db/catalog:catalog_test_fixture",
         "//src/mongo/db/collection_crud",
     ],
-)
-
-# TODO(SERVER-96860): Remove cycle created by moving //src/mongo/db/query:explain_options.h to //src/mongo/db/query:common_query_enums_and_helpers
-filegroup(
-    name = "explain_options_hdrs",
-    srcs = [":explain_options.h"],
 )
 
 mongo_cc_benchmark(

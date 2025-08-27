@@ -224,15 +224,12 @@ const size_t CollectionRoutingInfoTargeter::kMaxDatabaseCreationAttempts = 3;
 CollectionRoutingInfoTargeter::CollectionRoutingInfoTargeter(OperationContext* opCtx,
                                                              const NamespaceString& nss,
                                                              boost::optional<OID> targetEpoch)
-    : _nss(nss), _targetEpoch(std::move(targetEpoch)), _cri(_init(opCtx, false)) {
-    _isUpdateOneWithIdWithoutShardKeyEnabled = true;
-}
+    : _nss(nss), _targetEpoch(std::move(targetEpoch)), _cri(_init(opCtx, false)) {}
 
 CollectionRoutingInfoTargeter::CollectionRoutingInfoTargeter(const NamespaceString& nss,
                                                              const CollectionRoutingInfo& cri)
     : _nss(nss), _cri(cri) {
     invariant(!cri.cm.hasRoutingTable() || cri.cm.getNss() == nss);
-    _isUpdateOneWithIdWithoutShardKeyEnabled = true;
 }
 
 /**
@@ -402,8 +399,7 @@ bool CollectionRoutingInfoTargeter::isExactIdQuery(OperationContext* opCtx,
 }
 
 ShardEndpoint CollectionRoutingInfoTargeter::targetInsert(OperationContext* opCtx,
-                                                          const BSONObj& doc,
-                                                          std::set<ChunkRange>* chunkRanges) const {
+                                                          const BSONObj& doc) const {
     if (!_cri.cm.isSharded()) {
         return targetUnshardedCollection(_nss, _cri);
     }
@@ -438,11 +434,7 @@ ShardEndpoint CollectionRoutingInfoTargeter::targetInsert(OperationContext* opCt
 
 
     // Target the shard key
-    return uassertStatusOK(_targetShardKey(shardKey, CollationSpec::kSimpleSpec, chunkRanges));
-}
-
-bool CollectionRoutingInfoTargeter::isUpdateOneWithIdWithoutShardKeyEnabled() const {
-    return _isUpdateOneWithIdWithoutShardKeyEnabled;
+    return uassertStatusOK(_targetShardKey(shardKey, CollationSpec::kSimpleSpec));
 }
 
 bool isRetryableWrite(OperationContext* opCtx) {
@@ -596,8 +588,7 @@ std::vector<ShardEndpoint> CollectionRoutingInfoTargeter::targetUpdate(
             getQueryCounters(opCtx).updateOneOpStyleBroadcastWithExactIDCount.increment(1);
             if (isUpsert && useTwoPhaseWriteProtocol) {
                 *useTwoPhaseWriteProtocol = true;
-            } else if (!isUpsert && isNonTargetedWriteWithoutShardKeyWithExactId &&
-                       isUpdateOneWithIdWithoutShardKeyEnabled()) {
+            } else if (!isUpsert && isNonTargetedWriteWithoutShardKeyWithExactId) {
                 if (isRetryableWrite(opCtx)) {
                     getQueryCounters(opCtx).updateOneWithoutShardKeyWithIdCount.increment(1);
                     *isNonTargetedWriteWithoutShardKeyWithExactId = true;
@@ -692,8 +683,7 @@ std::vector<ShardEndpoint> CollectionRoutingInfoTargeter::targetDelete(
     if (!isMulti) {
         getQueryCounters(opCtx).deleteOneNonTargetedShardedCount.increment(1);
         if (isExactId) {
-            if (isNonTargetedWriteWithoutShardKeyWithExactId &&
-                isUpdateOneWithIdWithoutShardKeyEnabled()) {
+            if (isNonTargetedWriteWithoutShardKeyWithExactId) {
                 if (isRetryableWrite(opCtx)) {
                     *isNonTargetedWriteWithoutShardKeyWithExactId = true;
                     getQueryCounters(opCtx).deleteOneWithoutShardKeyWithIdCount.increment(1);
@@ -760,12 +750,9 @@ StatusWith<std::vector<ShardEndpoint>> CollectionRoutingInfoTargeter::_targetQue
 }
 
 StatusWith<ShardEndpoint> CollectionRoutingInfoTargeter::_targetShardKey(
-    const BSONObj& shardKey, const BSONObj& collation, std::set<ChunkRange>* chunkRanges) const {
+    const BSONObj& shardKey, const BSONObj& collation) const {
     try {
         auto chunk = _cri.cm.findIntersectingChunk(shardKey, collation);
-        if (chunkRanges) {
-            chunkRanges->insert(chunk.getRange());
-        }
         return ShardEndpoint(
             chunk.getShardId(), _cri.getShardVersion(chunk.getShardId()), boost::none);
     } catch (const DBException& ex) {

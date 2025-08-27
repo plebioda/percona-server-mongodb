@@ -61,10 +61,10 @@
 #include "mongo/db/storage/snapshot_manager.h"
 #include "mongo/db/storage/sorted_data_interface.h"
 #include "mongo/db/storage/storage_engine.h"
+#include "mongo/db/storage/wiredtiger/wiredtiger_connection.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_event_handler.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_oplog_manager.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_session.h"
-#include "mongo/db/storage/wiredtiger/wiredtiger_session_cache.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_size_storer.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_snapshot_manager.h"
 #include "mongo/db/tenant_id.h"
@@ -83,7 +83,7 @@ class EncryptionKeyDB;
 class JournalListener;
 
 class WiredTigerRecordStore;
-class WiredTigerSessionCache;
+class WiredTigerConnection;
 class WiredTigerSizeStorer;
 
 class WiredTigerEngineRuntimeConfigParameter;
@@ -347,7 +347,7 @@ public:
     void cleanShutdown() override;
 
     SnapshotManager* getSnapshotManager() const final {
-        return &_sessionCache->snapshotManager();
+        return &_connection->snapshotManager();
     }
 
     void setJournalListener(JournalListener* jl) final;
@@ -446,7 +446,7 @@ public:
     }
 
     /**
-     * Specifies what data will get flushed to disk in a WiredTigerSessionCache::waitUntilDurable()
+     * Specifies what data will get flushed to disk in a WiredTigerConnection::waitUntilDurable()
      * call.
      */
     enum class Fsync {
@@ -461,7 +461,7 @@ public:
     };
 
     /**
-     * Controls whether or not WiredTigerSessionCache::waitUntilDurable() updates the
+     * Controls whether or not WiredTigerConnection::waitUntilDurable() updates the
      * JournalListener.
      */
     enum class UseJournalListener { kUpdate, kSkip };
@@ -701,7 +701,7 @@ private:
     WT_CONNECTION* _conn;
     WiredTigerFileVersion _fileVersion;
     WiredTigerEventHandler _eventHandler;
-    std::unique_ptr<WiredTigerSessionCache> _sessionCache;
+    std::unique_ptr<WiredTigerConnection> _connection;
     ClockSource* const _clockSource;
 
     const std::unique_ptr<WiredTigerOplogManager> _oplogManager;

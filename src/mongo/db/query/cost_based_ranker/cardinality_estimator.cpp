@@ -34,16 +34,18 @@
 #include "mongo/db/query/index_bounds_builder.h"
 #include "mongo/db/query/stage_types.h"
 
+#define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kQueryCE
+
 namespace mongo::cost_based_ranker {
 
-CardinalityEstimator::CardinalityEstimator(const stats::CollectionStatistics& collStats,
+CardinalityEstimator::CardinalityEstimator(const CollectionInfo& collInfo,
                                            const ce::SamplingEstimator* samplingEstimator,
                                            EstimateMap& qsnEstimates,
                                            QueryPlanRankerModeEnum rankerMode)
-    : _collCard{CardinalityEstimate{CardinalityType{collStats.getCardinality()},
+    : _collCard{CardinalityEstimate{CardinalityType{collInfo.collStats->getCardinality()},
                                     EstimationSource::Metadata}},
       _inputCard{_collCard},
-      _collStats(collStats),
+      _collInfo(collInfo),
       _samplingEstimator(samplingEstimator),
       _qsnEstimates{qsnEstimates},
       _rankerMode(rankerMode) {
@@ -52,6 +54,17 @@ CardinalityEstimator::CardinalityEstimator(const stats::CollectionStatistics& co
         tassert(9746501,
                 "samplingEstimator cannot be null when ranker mode is samplingCE or automaticCE",
                 _samplingEstimator != nullptr);
+    }
+    for (auto&& indexEntry : _collInfo.indexes) {
+        if (!indexEntry.multikey) {
+            continue;
+        }
+        for (auto&& indexedPath : indexEntry.keyPattern) {
+            auto path = indexedPath.fieldNameStringData();
+            if (indexEntry.pathHasMultikeyComponent(path)) {
+                _multikeyPaths.insert(path);
+            }
+        }
     }
 }
 
@@ -94,8 +107,54 @@ CEResult CardinalityEstimator::estimate(const QuerySolutionNode* node) {
         case STAGE_PROJECTION_SIMPLE:
             ceRes = passThroughNodeCard(node);
             break;
-        default:
+        case STAGE_EOF:
+            _qsnEstimates[node] = QSNEstimate{.inCE = zeroCE, .outCE = zeroCE};
+            return zeroCE;
+        // TODO SERVER-99072: Implement limit and skip
+        case STAGE_LIMIT:
+        case STAGE_SKIP:
+        // TODO SERVER-99073: Implement shard filter
+        case STAGE_SHARDING_FILTER:
+        // TODO SERVER-99075: Implement distinct scan
+        case STAGE_DISTINCT_SCAN:
             MONGO_UNIMPLEMENTED_TASSERT(9586709);
+        case STAGE_BATCHED_DELETE:
+        case STAGE_CACHED_PLAN:
+        case STAGE_COUNT:
+        case STAGE_COUNT_SCAN:
+        case STAGE_DELETE:
+        case STAGE_GEO_NEAR_2D:
+        case STAGE_GEO_NEAR_2DSPHERE:
+        case STAGE_IDHACK:
+        case STAGE_MATCH:
+        case STAGE_MOCK:
+        case STAGE_MULTI_ITERATOR:
+        case STAGE_MULTI_PLAN:
+        case STAGE_QUEUED_DATA:
+        case STAGE_RECORD_STORE_FAST_COUNT:
+        case STAGE_REPLACE_ROOT:
+        case STAGE_RETURN_KEY:
+        case STAGE_SAMPLE_FROM_TIMESERIES_BUCKET:
+        case STAGE_SORT_KEY_GENERATOR:
+        case STAGE_SPOOL:
+        case STAGE_SUBPLAN:
+        case STAGE_TEXT_OR:
+        case STAGE_TEXT_MATCH:
+        case STAGE_TIMESERIES_MODIFY:
+        case STAGE_TRIAL:
+        case STAGE_UNKNOWN:
+        case STAGE_UNPACK_SAMPLED_TS_BUCKET:
+        case STAGE_UNWIND:
+        case STAGE_UPDATE:
+        case STAGE_GROUP:
+        case STAGE_EQ_LOOKUP:
+        case STAGE_EQ_LOOKUP_UNWIND:
+        case STAGE_SEARCH:
+        case STAGE_WINDOW:
+        case STAGE_SENTINEL:
+        case STAGE_UNPACK_TS_BUCKET:
+            // These stages should never reach the cardinality estimator.
+            MONGO_UNREACHABLE_TASSERT(9902301);
     }
 
     if (!ceRes.isOK()) {
@@ -107,7 +166,6 @@ CEResult CardinalityEstimator::estimate(const QuerySolutionNode* node) {
                 _conjSels.empty());
         _inputCard = ceRes.getValue();
     }
-
     return ceRes;
 }
 
@@ -146,7 +204,7 @@ CEResult CardinalityEstimator::estimate(const MatchExpression* node, const bool 
             break;
         default:
             if (node->numChildren() == 0) {
-                ceRes = estimate(static_cast<const LeafMatchExpression*>(node), isFilterRoot);
+                ceRes = estimateLeafExpression(node, isFilterRoot);
             } else {
                 MONGO_UNIMPLEMENTED_TASSERT(9586708);
             }
@@ -351,9 +409,16 @@ CEResult CardinalityEstimator::indexUnionCard(const T* node) {
 // histogram estimation for the resulting OIL.
 CEResult CardinalityEstimator::estimateConjWithHistogram(
     StringData path, const std::vector<const MatchExpression*>& nodes) {
-    // Note: We are assuming that the field is non-multikey when building this interval.
-    // TODO SERVER-98374: Once CBR has catalog information, bail out of histogram estimation here if
-    // 'path' is multikey.
+    // Bail out of using a histogram for estimation if 'path' is multikey.
+    if (_multikeyPaths.contains(path) && nodes.size() > 1) {
+        return Status(ErrorCodes::HistogramCEFailure,
+                      str::stream{}
+                          << "cannot use histogram to estimate conjunction on multikey path: "
+                          << path);
+    }
+
+    // At this point, we know that 'path' is non-multikey, so we can safely build an interval for
+    // each conjunct and intersect them.
     IndexEntry fakeIndex(BSON(path << "1") /* keyPattern */,
                          INDEX_BTREE,
                          IndexDescriptor::IndexVersion::kV2,
@@ -471,7 +536,8 @@ CEResult CardinalityEstimator::estimate(const ComparisonMatchExpression* node) {
     MONGO_UNREACHABLE_TASSERT(9751900);
 }
 
-CEResult CardinalityEstimator::estimate(const LeafMatchExpression* node, bool isFilterRoot) {
+CEResult CardinalityEstimator::estimateLeafExpression(const MatchExpression* node,
+                                                      bool isFilterRoot) {
     const SelectivityEstimate sel = estimateLeafMatchExpression(node, _inputCard);
     if (isFilterRoot) {
         // Add this node's selectivity to the _conjSels so that it can be combined with parent
@@ -513,9 +579,8 @@ CEResult CardinalityEstimator::estimate(const AndMatchExpression* node) {
     // TODO: Suppose we have an AND with some predicates on 'a' that can answered with a
     // histogram and some predicates on 'b' that can't. Should we still try to use histogram for
     // 'a'? The code as written will not.
-    if (_rankerMode == QueryPlanRankerModeEnum::kHistogramCE) {
-        return tryHistogramAnd(node);
-    } else if (_rankerMode == QueryPlanRankerModeEnum::kAutomaticCE) {
+    if (_rankerMode == QueryPlanRankerModeEnum::kHistogramCE ||
+        _rankerMode == QueryPlanRankerModeEnum::kAutomaticCE) {
         auto ceRes = tryHistogramAnd(node);
         if (ceRes.isOK()) {
             return ceRes.getValue();
@@ -654,7 +719,7 @@ CEResult CardinalityEstimator::estimate(const OrderedIntervalList* node, bool fo
 
     if (_rankerMode == QueryPlanRankerModeEnum::kHistogramCE ||
         _rankerMode == QueryPlanRankerModeEnum::kAutomaticCE || forceHistogram) {
-        histogram = _collStats.getHistogram(node->name);
+        histogram = _collInfo.collStats->getHistogram(node->name);
         if (!histogram) {
             if (strict) {
                 return CEResult(ErrorCodes::HistogramCEFailure,

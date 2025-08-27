@@ -2445,8 +2445,12 @@ mongo_cc_library(
 mongo_cc_library(
     name = "query_expressions",
     srcs = [
+        "//src/mongo/db/exec:projection_executor_utils.cpp",
         "//src/mongo/db/exec/expression:evaluate_array.cpp",
+        "//src/mongo/db/exec/expression:evaluate_bson.cpp",
         "//src/mongo/db/exec/expression:evaluate_date.cpp",
+        "//src/mongo/db/exec/expression:evaluate_find_internal.cpp",
+        "//src/mongo/db/exec/expression:evaluate_fle.cpp",
         "//src/mongo/db/exec/expression:evaluate_index.cpp",
         "//src/mongo/db/exec/expression:evaluate_javascript.cpp",
         "//src/mongo/db/exec/expression:evaluate_logical.cpp",
@@ -2507,6 +2511,7 @@ mongo_cc_library(
         "//src/mongo/db/pipeline:expression.cpp",
         "//src/mongo/db/pipeline:expression_context.cpp",
         "//src/mongo/db/pipeline:expression_dependencies.cpp",
+        "//src/mongo/db/pipeline:expression_find_internal.cpp",
         "//src/mongo/db/pipeline:expression_function.cpp",
         "//src/mongo/db/pipeline:expression_js_emit.cpp",
         "//src/mongo/db/pipeline:expression_let.cpp",
@@ -3848,6 +3853,7 @@ mongo_cc_unit_test(
         "//src/mongo/db/op_observer",
         "//src/mongo/db/op_observer:op_observer_impl",
         "//src/mongo/db/op_observer:operation_logger_impl",
+        "//src/mongo/db/pipeline:change_stream_expired_pre_image_remover",
         "//src/mongo/db/storage:record_store_base",
         "//src/mongo/idl:server_parameter_test_util",
     ],
@@ -4385,12 +4391,6 @@ mongo_cc_benchmark(
 filegroup(
     name = "baton_hdrs",
     srcs = [":baton.h"],
-)
-
-# TODO(SERVER-96851): Remove cycle created by moving //src/mongo/db:client.h to //src/mongo/db:service_context
-filegroup(
-    name = "client_hdrs",
-    srcs = [":client.h"],
 )
 
 # TODO(SERVER-96855): Remove cycle created by moving //src/mongo/db:cluster_role.h to //src/mongo/db:server_base

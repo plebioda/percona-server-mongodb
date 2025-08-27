@@ -92,8 +92,7 @@ const std::set<std::string> kSetShellParameterAllowlist = {
     "skipShellCursorFinalize",
     "tlsOCSPSlowResponderWarningSecs",
     "enableDetailedConnectionHealthMetricLogLines",
-    "multitenancySupport",
-    "featureFlagLookupEncryptionSchemasFLE"};
+    "multitenancySupport"};
 
 std::string getMongoShellHelp(StringData name, const moe::OptionSection& options) {
     StringBuilder sb;

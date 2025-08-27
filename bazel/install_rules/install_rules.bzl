@@ -5,6 +5,7 @@ Sets up install and archive rules.
 load("@rules_pkg//:pkg.bzl", "pkg_tar")
 load("@rules_pkg//pkg:providers.bzl", "PackageFilesInfo")
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("//bazel:mongo_src_rules.bzl", "SANITIZER_DATA", "SANITIZER_ENV")
 
 MongoInstallInfo = provider(
     doc = "A install rule provider to pass around deps files",
@@ -345,44 +346,4 @@ def mongo_install(
             },
             testonly = testonly,
             **kwargs
-        )
-
-def mongo_unittest_install(
-        name,
-        srcs,
-        deps = [],
-        target_compatible_with = [],
-        **kwargs):
-    mongo_install(
-        name,
-        srcs,
-        deps = [],
-        target_compatible_with = [],
-        testonly = True,
-        **kwargs
-    )
-    if "_test-" in name:
-        test_bin = name.split("_test-")[0] + "_test"
-        test_file = name.split("_test-")[1]
-        if test_bin != test_file:
-            test_name = "+" + test_file
-        else:
-            test_name = "+" + name
-        native.sh_test(
-            name = test_name,
-            srcs = ["install-" + test_bin],
-            args = ["-fileNameFilter", test_file],
-            testonly = True,
-            exec_properties = {
-                "no-remote": "1",
-            },
-        )
-    else:
-        native.sh_test(
-            name = "+" + name,
-            srcs = ["install-" + name],
-            testonly = True,
-            exec_properties = {
-                "no-remote": "1",
-            },
         )

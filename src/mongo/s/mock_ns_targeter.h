@@ -75,9 +75,7 @@ public:
      * Returns a ShardEndpoint for the doc from the mock ranges. If `chunkRanges` is not nullptr,
      * also populates a set of ChunkRange for the chunks that are targeted.
      */
-    ShardEndpoint targetInsert(OperationContext* opCtx,
-                               const BSONObj& doc,
-                               std::set<ChunkRange>* chunkRanges = nullptr) const override {
+    ShardEndpoint targetInsert(OperationContext* opCtx, const BSONObj& doc) const override {
         auto endpoints = _targetQuery(doc);
         ASSERT_EQ(1U, endpoints.size());
         return endpoints.front();
@@ -170,10 +168,6 @@ public:
         _isTrackedTimeSeriesBucketsNamespace = isTrackedTimeSeriesBucketsNamespace;
     }
 
-    bool isUpdateOneWithIdWithoutShardKeyEnabled() const override {
-        return _isUpdateOneWithIdWithoutShardKeyEnabled;
-    }
-
 private:
     /**
      * Returns the first ShardEndpoint for the query from the mock ranges. Only handles queries of
@@ -187,8 +181,6 @@ private:
     std::vector<MockRange> _mockRanges;
 
     bool _isTrackedTimeSeriesBucketsNamespace = false;
-
-    bool _isUpdateOneWithIdWithoutShardKeyEnabled = false;
 };
 
 void assertEndpointsEqual(const ShardEndpoint& endpointA, const ShardEndpoint& endpointB);

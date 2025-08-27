@@ -67,6 +67,15 @@ idl_generator(
 )
 
 idl_generator(
+    name = "cleanup_orphaned_gen",
+    src = "cleanup_orphaned.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+        "//src/mongo/idl:generic_argument_gen",
+    ],
+)
+
+idl_generator(
     name = "clone_catalog_data_gen",
     src = "clone_catalog_data.idl",
     deps = [
@@ -338,6 +347,15 @@ idl_generator(
 idl_generator(
     name = "add_shard_to_zone_gen",
     src = "add_shard_to_zone.idl",
+    deps = [
+        "//src/mongo/db:basic_types_gen",
+        "//src/mongo/idl:generic_argument_gen",
+    ],
+)
+
+idl_generator(
+    name = "update_zone_key_range_gen",
+    src = "update_zone_key_range.idl",
     deps = [
         "//src/mongo/db:basic_types_gen",
         "//src/mongo/idl:generic_argument_gen",

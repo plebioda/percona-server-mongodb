@@ -97,8 +97,8 @@ public:
 
     const char* getSourceName() const override;
 
-    DocumentSourceType getType() const override {
-        return DocumentSourceType::kBackupCursor;
+    Id getId() const override {
+        return id;
     }
 
     StageConstraints constraints(Pipeline::SplitState pipeState) const override {
@@ -130,6 +130,8 @@ protected:
                                const boost::intrusive_ptr<ExpressionContext>& expCtx);
 
 private:
+    static const Id& id;
+
     const StorageEngine::BackupOptions _backupOptions;
     BackupCursorState _backupCursorState;
     // Current batch of backup blocks

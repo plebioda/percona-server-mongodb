@@ -67,6 +67,8 @@ REGISTER_INTERNAL_DOCUMENT_SOURCE(_backupFile,
                                   true);
 }  // namespace
 
+ALLOCATE_DOCUMENT_SOURCE_ID(_backupFile, DocumentSourceBackupFile::id)
+
 using boost::intrusive_ptr;
 
 std::unique_ptr<DocumentSourceBackupFile::LiteParsed> DocumentSourceBackupFile::LiteParsed::parse(

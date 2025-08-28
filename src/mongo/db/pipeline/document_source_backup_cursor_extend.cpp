@@ -52,6 +52,8 @@ REGISTER_DOCUMENT_SOURCE(backupCursorExtend,
                          AllowedWithApiStrict::kAlways);
 }  // namespace
 
+ALLOCATE_DOCUMENT_SOURCE_ID(backupCursorExtend, DocumentSourceBackupCursorExtend::id)
+
 using boost::intrusive_ptr;
 
 std::unique_ptr<DocumentSourceBackupCursorExtend::LiteParsed>

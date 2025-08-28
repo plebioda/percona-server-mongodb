@@ -100,8 +100,8 @@ public:
 
     const char* getSourceName() const override;
 
-    DocumentSourceType getType() const override {
-        return DocumentSourceType::kBackupFile;
+    Id getId() const override {
+        return id;
     }
 
     StageConstraints constraints([[maybe_unused]] Pipeline::SplitState pipeState) const override {
@@ -132,6 +132,8 @@ protected:
 
 private:
     static constexpr std::streamsize kBlockSize = 1 << 20;
+
+    static const Id& id;
 
     std::array<char, kBlockSize> _dataBuf;
     const UUID _backupId;

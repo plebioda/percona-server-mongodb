@@ -104,7 +104,6 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/rpc/get_status_from_command_result.h"
 #include "mongo/stdx/mutex.h"
 #include "mongo/util/assert_util.h"
-#include "mongo/util/destructor_guard.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/future.h"
 #include "mongo/util/interruptible.h"
@@ -260,10 +259,12 @@ InitialSyncerFCB::InitialSyncerFCB(
 }
 
 InitialSyncerFCB::~InitialSyncerFCB() {
-    DESTRUCTOR_GUARD({
+    try {
         shutdown().transitional_ignore();
         join();
-    });
+    } catch (...) {
+        reportFailedDestructor(MONGO_SOURCE_LOCATION());
+    }
 }
 
 bool InitialSyncerFCB::isActive() const {

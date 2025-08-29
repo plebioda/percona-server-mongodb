@@ -142,7 +142,7 @@ void checkOplogFormatVersion(WiredTigerRecoveryUnit& ru, const std::string& uri)
     fassertNoTrace(39998, appMetadata.getValue().getIntField("oplogKeyExtractionVersion") == 1);
 }
 
-void appendNumericStats(WT_SESSION* s, const std::string& uri, BSONObjBuilder& bob) {
+void appendNumericStats(WiredTigerSession& s, const std::string& uri, BSONObjBuilder& bob) {
     Status status =
         WiredTigerUtil::exportTableToBSON(s, "statistics:" + uri, "statistics=(fast)", bob);
     if (!status.isOK()) {
@@ -592,7 +592,7 @@ void WiredTigerRecordStore::_deleteRecord(OperationContext* opCtx, const RecordI
     auto& wtRu = WiredTigerRecoveryUnit::get(*shard_role_details::getRecoveryUnit(opCtx));
 
     WiredTigerCursor cursor(wtRu, _uri, _tableId, true);
-    cursor.assertInActiveTxn();
+    wtRu.assertInActiveTxn();
     WT_CURSOR* c = cursor.get();
     CursorKey key = makeCursorKey(id, _keyFormat);
     setKey(c, &key);
@@ -660,7 +660,7 @@ Status WiredTigerRecordStore::_insertRecords(OperationContext* opCtx,
     auto& wtRu = WiredTigerRecoveryUnit::get(*shard_role_details::getRecoveryUnit(opCtx));
 
     WiredTigerCursor curwrap(wtRu, _uri, _tableId, _overwrite);
-    curwrap.assertInActiveTxn();
+    wtRu.assertInActiveTxn();
     WT_CURSOR* c = curwrap.get();
     invariant(c);
 
@@ -765,7 +765,7 @@ Status WiredTigerRecordStore::_updateRecord(OperationContext* opCtx,
     invariant(wtRu.inUnitOfWork());
 
     WiredTigerCursor curwrap(wtRu, _uri, _tableId, true);
-    curwrap.assertInActiveTxn();
+    wtRu.assertInActiveTxn();
     WT_CURSOR* c = curwrap.get();
     invariant(c);
     auto key = makeCursorKey(id, _keyFormat);
@@ -873,7 +873,7 @@ StatusWith<RecordData> WiredTigerRecordStore::_updateWithDamages(OperationContex
 
     auto& wtRu = WiredTigerRecoveryUnit::get(*shard_role_details::getRecoveryUnit(opCtx));
     WiredTigerCursor curwrap(wtRu, _uri, _tableId, true);
-    curwrap.assertInActiveTxn();
+    wtRu.assertInActiveTxn();
     WT_CURSOR* c = curwrap.get();
     invariant(c);
     CursorKey key = makeCursorKey(id, _keyFormat);
@@ -1143,18 +1143,16 @@ void WiredTigerRecordStore::appendNumericCustomStats(RecoveryUnit& ru,
                                                      BSONObjBuilder* result,
                                                      double scale) const {
     WiredTigerSession* session = WiredTigerRecoveryUnit::get(ru).getSessionNoTxn();
-    WT_SESSION* s = session->getSession();
 
     BSONObjBuilder bob(result->subobjStart(_engineName));
 
-    appendNumericStats(s, getURI(), bob);
+    appendNumericStats(*session, getURI(), bob);
 }
 
 void WiredTigerRecordStore::appendAllCustomStats(RecoveryUnit& ru,
                                                  BSONObjBuilder* result,
                                                  double scale) const {
     WiredTigerSession* session = WiredTigerRecoveryUnit::get(ru).getSessionNoTxn();
-    WT_SESSION* s = session->getSession();
     BSONObjBuilder bob(result->subobjStart(_engineName));
     {
         BSONObjBuilder metadata(bob.subobjStart("metadata"));
@@ -1183,7 +1181,7 @@ void WiredTigerRecordStore::appendAllCustomStats(RecoveryUnit& ru,
         bob.append("type", type);
     }
 
-    appendNumericStats(s, getURI(), bob);
+    appendNumericStats(*session, getURI(), bob);
 }
 
 void WiredTigerRecordStore::updateStatsAfterRepair(long long numRecords, long long dataSize) {
@@ -1639,7 +1637,7 @@ Status WiredTigerRecordStore::Oplog::_insertRecords(OperationContext* opCtx,
     auto& wtRu = WiredTigerRecoveryUnit::get(*shard_role_details::getRecoveryUnit(opCtx));
 
     WiredTigerCursor curwrap(wtRu, _uri, _tableId, _overwrite);
-    curwrap.assertInActiveTxn();
+    wtRu.assertInActiveTxn();
     WT_CURSOR* c = curwrap.get();
     invariant(c);
 

@@ -614,9 +614,9 @@ private:
     // srcPath, destPath, filename, size to copy
     typedef std::tuple<boost::filesystem::path, boost::filesystem::path, boost::uintmax_t, std::time_t> FileTuple;
 
-    void _checkpoint(WT_SESSION* session);
+    void _checkpoint(WiredTigerSession& session);
 
-    void _checkpoint(WT_SESSION* session, bool useTimestamp);
+    void _checkpoint(WiredTigerSession& session, bool useTimestamp);
 
     Status _hotBackupPopulateLists(OperationContext* opCtx,
                                    const std::string& path,
@@ -652,7 +652,7 @@ private:
      */
     Status _rebuildIdent(WiredTigerSession& session, const char* uri);
 
-    bool _hasUri(WT_SESSION* session, const std::string& uri) const;
+    bool _hasUri(WiredTigerSession& session, const std::string& uri) const;
 
     std::string _uri(StringData ident) const;
 

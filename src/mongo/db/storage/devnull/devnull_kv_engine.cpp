@@ -298,7 +298,7 @@ class DevNullSortedDataBuilderInterface : public SortedDataBuilderInterface {
 public:
     DevNullSortedDataBuilderInterface() {}
 
-    void addKey(const key_string::Value& keyString) override {}
+    void addKey(const key_string::View& keyString) override {}
 };
 
 class DevNullSortedDataInterface : public SortedDataInterface {
@@ -324,7 +324,7 @@ public:
     }
 
     void unindex(OperationContext* opCtx,
-                 const key_string::Value& keyString,
+                 const key_string::View& keyString,
                  bool dupsAllowed) override {}
 
     boost::optional<DuplicateKey> dupKeyCheck(OperationContext* opCtx,
@@ -366,7 +366,7 @@ public:
     }
 
     void printIndexEntryMetadata(OperationContext* opCtx,
-                                 const key_string::Value& keyString) const override {}
+                                 const key_string::View& keyString) const override {}
 
     std::unique_ptr<SortedDataInterface::Cursor> newCursor(OperationContext* opCtx,
                                                            bool isForward) const override {

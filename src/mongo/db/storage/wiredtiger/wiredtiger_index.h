@@ -157,7 +157,7 @@ public:
                                                   IncludeDuplicateRecordId::kOff) override;
 
     void unindex(OperationContext* opCtx,
-                 const key_string::Value& keyString,
+                 const key_string::View& keyString,
                  bool dupsAllowed) override;
 
     boost::optional<RecordId> findLoc(OperationContext* opCtx,
@@ -184,7 +184,7 @@ public:
     Status initAsEmpty() override;
 
     void printIndexEntryMetadata(OperationContext* opCtx,
-                                 const key_string::Value& keyString) const override;
+                                 const key_string::View& keyString) const override;
 
     StatusWith<int64_t> compact(OperationContext* opCtx, const CompactOptions& options) override;
 
@@ -233,10 +233,8 @@ protected:
 
     virtual void _unindex(OperationContext* opCtx,
                           WT_CURSOR* c,
-                          const key_string::Value& keyString,
+                          const key_string::View& keyString,
                           bool dupsAllowed) = 0;
-
-    void setKey(WT_CURSOR* cursor, const WT_ITEM* item);
 
     /**
      * Load the key positioned by this cursor into 'key'. When metrics is provided, count the
@@ -344,7 +342,7 @@ protected:
 
     void _unindex(OperationContext* opCtx,
                   WT_CURSOR* c,
-                  const key_string::Value& keyString,
+                  const key_string::View& keyString,
                   bool dupsAllowed) override;
 
     /**
@@ -354,7 +352,7 @@ protected:
      */
     void _unindexTimestampUnsafe(OperationContext* opCtx,
                                  WT_CURSOR* c,
-                                 const key_string::Value& keyString,
+                                 const key_string::View& keyString,
                                  bool dupsAllowed);
 
 private:
@@ -409,7 +407,7 @@ protected:
 
     void _unindex(OperationContext* opCtx,
                   WT_CURSOR* c,
-                  const key_string::Value& keyString,
+                  const key_string::View& keyString,
                   bool dupsAllowed) override;
 
     /**
@@ -464,7 +462,7 @@ protected:
 
     void _unindex(OperationContext* opCtx,
                   WT_CURSOR* c,
-                  const key_string::Value& keyString,
+                  const key_string::View& keyString,
                   bool dupsAllowed) override;
 };
 

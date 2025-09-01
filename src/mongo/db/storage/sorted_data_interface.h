@@ -118,7 +118,7 @@ public:
      *        match, false otherwise
      */
     virtual void unindex(OperationContext* opCtx,
-                         const key_string::Value& keyString,
+                         const key_string::View& keyString,
                          bool dupsAllowed) = 0;
 
     /**
@@ -188,7 +188,7 @@ public:
      * Prints any storage engine provided metadata for the index entry with key 'keyString'.
      */
     virtual void printIndexEntryMetadata(OperationContext* opCtx,
-                                         const key_string::Value& keyString) const = 0;
+                                         const key_string::View& keyString) const = 0;
 
     /**
      * Return the number of entries in 'this' index.
@@ -453,7 +453,7 @@ public:
      * transactionally. Other storage engines do not perform inserts transactionally and will ignore
      * any parent WriteUnitOfWork.
      */
-    virtual void addKey(const key_string::Value& keyString) = 0;
+    virtual void addKey(const key_string::View& keyString) = 0;
 };
 
 /**
@@ -463,6 +463,9 @@ public:
  * - KeyString data without RecordId
  * - Encoded RecordId
  * - TypeBits (optional)
+ *
+ * This differs from key_string::View in that the three components may not be contiguous in memory,
+ * as keystrings are split into a key and value when stored in an index.
  */
 class SortedDataKeyValueView {
 public:

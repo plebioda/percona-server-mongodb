@@ -211,6 +211,10 @@ auto& attemptsToBecomeSecondary = *MetricBuilder<Counter64>{"repl.apply.attempts
 auto& lastStateTransition =
     *MetricBuilder<synchronized_value<std::string>>{"repl.stateTransition.lastStateTransition"};
 
+auto& oldestTimestampMetric =
+    *MetricBuilder<synchronized_value<Timestamp>>{"repl.timestamps.oldestTimestamp"};
+
+
 // Tracks the number of operations killed on state transition.
 auto& totalOpsKilled = *MetricBuilder<Counter64>("repl.stateTransition.totalOperationsKilled");
 // Tracks the number of operations left running on state transition.
@@ -429,8 +433,7 @@ InitialSyncerInterface::Options createInitialSyncerOptions(
         // The oplog application phase of initial sync starts timestamping writes, causing
         // WiredTiger to pin this data in memory. Advancing the oldest timestamp in step with the
         // last applied optime here will permit WiredTiger to evict this data as it sees fit.
-        replCoord->getServiceContext()->getStorageEngine()->setOldestTimestamp(
-            opTimeAndWallTime.opTime.getTimestamp(), false /*force*/);
+        replCoord->setOldestTimestamp(opTimeAndWallTime.opTime.getTimestamp());
     };
     options.resetOptimes = [replCoord]() {
         replCoord->resetMyLastOpTimes();
@@ -5301,6 +5304,11 @@ void ReplicationCoordinatorImpl::prepareReplMetadata(const GenericArguments& gen
         invariantStatusOK(oplogQueryMetadata->writeToMetadata(builder));
 }
 
+void ReplicationCoordinatorImpl::setOldestTimestamp(const Timestamp& timestamp) {
+    oldestTimestampMetric = timestamp;
+    return ReplicationCoordinator::setOldestTimestamp(timestamp);
+}
+
 bool ReplicationCoordinatorImpl::getWriteConcernMajorityShouldJournal() {
     stdx::unique_lock lock(_mutex);
     return getWriteConcernMajorityShouldJournal(lock);
@@ -5312,16 +5320,13 @@ bool ReplicationCoordinatorImpl::getWriteConcernMajorityShouldJournal(WithLock l
 
 Status ReplicationCoordinatorImpl::processHeartbeatV1(const ReplSetHeartbeatArgsV1& args,
                                                       ReplSetHeartbeatResponse* response) {
-    {
-        stdx::lock_guard<stdx::mutex> lock(_mutex);
-        if (_rsConfigState == kConfigPreStart || _rsConfigState == kConfigStartingUp) {
-            return Status(ErrorCodes::NotYetInitialized,
-                          "Received heartbeat while still initializing replication system");
-        }
+    stdx::lock_guard<stdx::mutex> lk(_mutex);
+    if (_rsConfigState == kConfigPreStart || _rsConfigState == kConfigStartingUp) {
+        return Status(ErrorCodes::NotYetInitialized,
+                      "Received heartbeat while still initializing replication system");
     }
 
     Status result(ErrorCodes::InternalError, "didn't set status in prepareHeartbeatResponse");
-    stdx::lock_guard<stdx::mutex> lk(_mutex);
 
     auto rsc = _rsConfig.unsafePeek();
 

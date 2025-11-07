@@ -26,6 +26,7 @@ jobs:
         with:
           files: |
             **/*.cpp
+            **/*.c
       - name: List changed files
         run: |
           echo "Changed files: ${{ steps.changed.outputs.all_changed_files }}"

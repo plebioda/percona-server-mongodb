@@ -84,12 +84,6 @@ jobs:
           path: ~/.cargo
           key: ${{ runner.os }}-clang-tidy-sarif-${{ env.CLANG_TIDY_SARIF_VERSION }}
 
-      - name: Install Rust
-        if: steps.clang_tidy_sarif_cache.outputs.cache-hit != 'true'
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-
       - name: Install clang-tidy-sarif
         if: steps.clang_tidy_sarif_cache.outputs.cache-hit != 'true'
         run: cargo install clang-tidy-sarif --version "${CLANG_TIDY_SARIF_VERSION}" --locked

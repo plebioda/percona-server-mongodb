@@ -92,8 +92,7 @@ jobs:
       - name: Generate compile_commands.json and build mongo_tidy_checks plugin
         run: |
           {
-            echo 'common --config=local'
-            echo 'common --build_enterprise=false'
+            echo 'build --//bazel/config:compiler_type=clang'
           } > .bazelrc.compiledb
           bazel \
             --bazelrc=.bazelrc.compiledb \
@@ -105,7 +104,7 @@ jobs:
         run: |
           CHANGED="${{ needs.changed_files.outputs.changed_files }}"
           echo "Changed C++ files: '$CHANGED'"
-          external/mongo_toolchain_v5/v5/bin/clang-tidy \
+          external/mongo_toolchain_v4/v4/bin/clang-tidy \
             --load="bazel-bin/src/mongo/tools/mongo_tidy_checks/libmongo_tidy_checks.so" \
             $CHANGED \
           | clang-tidy-sarif --output=clang-tidy-results.sarif

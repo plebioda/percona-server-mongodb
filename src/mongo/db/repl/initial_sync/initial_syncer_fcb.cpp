@@ -208,10 +208,14 @@ std::string getPathRelativeTo(const std::string& path, const std::string& basePa
  */
 OpTime parseOpTimeFromBSON(const BSONObj& obj) {
     auto status = OpTime::parseFromOplogEntry(obj);
+    auto dupa = status;
     uassertStatusOKWithContext(status, "Failed to parse OpTime from BSON");
     return status.getValue();
 }
 }  // namespace
+
+void foo(const StringData &f) {
+}
 
 const ServiceContext::ConstructorActionRegisterer initialSyncerRegistererFCB(
     "InitialSyncerRegistererFCB",

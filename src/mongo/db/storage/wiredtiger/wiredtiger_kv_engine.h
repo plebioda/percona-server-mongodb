@@ -45,6 +45,7 @@
 #include "mongo/db/storage/snapshot_manager.h"
 #include "mongo/db/storage/sorted_data_interface.h"
 #include "mongo/db/storage/storage_engine.h"
+#include "mongo/db/storage/wiredtiger/wiredtiger_cache_pressure_monitor.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_connection.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_event_handler.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_extensions.h"
@@ -728,6 +729,7 @@ private:
         StorageEngine::DropIdentCallback callback;
     };
 
+<<<<<<< HEAD
     // srcPath, destPath, session, cursor
     typedef std::tuple<boost::filesystem::path, boost::filesystem::path, std::shared_ptr<WiredTigerSession>, WT_CURSOR*> DBTuple;
     // srcPath, destPath, filename, size to copy
@@ -742,6 +744,8 @@ private:
         int64_t timestamp = 0;
     };
 
+=======
+>>>>>>> bb63dd66dec
     Status _createRecordStore(const NamespaceString& ns,
                               StringData ident,
                               KeyFormat keyFormat,
@@ -828,12 +832,6 @@ private:
     // Wrapped method call to WT_SESSION::drop that handles sub-level error codes if applicable.
     Status _drop(WiredTigerSession& session, const char* uri, const char* config);
 
-    bool _windowTrackingStorageAppWaitTimeAndWriteLoad(WiredTigerSession& session,
-                                                       int concurrentWriteOuts,
-                                                       int concurrentReadOuts);
-
-    bool _storageCacheRatioReachesEvictionTrigger(WiredTigerSession& session);
-
     mutable stdx::mutex _oldestActiveTransactionTimestampCallbackMutex;
     StorageEngine::OldestActiveTransactionTimestampCallback
         _oldestActiveTransactionTimestampCallback;
@@ -851,6 +849,8 @@ private:
     const bool _inRepairMode;
 
     std::unique_ptr<WiredTigerSessionSweeper> _sessionSweeper;
+
+    std::unique_ptr<WiredTigerCachePressureMonitor> _cachePressureMonitor;
 
     std::string _indexOptions;
 
@@ -914,17 +914,6 @@ private:
 
     // Tracks the time since the last _waitUntilDurableSession reset().
     Timer _timeSinceLastDurabilitySessionReset;
-
-    // Record the stats for use in calculating deltas between calls to underCachePressure().
-    CachePressureStats _lastStats;
-
-    // Tracks the last time we saw the cache pressure result for thread pressure was not exceeded.
-    Date_t _lastGoodputObservedTimestamp;
-
-    // Since we are tracking the total tickets over a duration, and the tickets we hold are an
-    // instantaneous value, we will use an exponentially decaying moving average to smooth out
-    // noise and avoid aggressive short-term over-corrections due to short-term changes.
-    double _totalTicketsEDMA = 1.0;  // Setting a default value.
 
     // Prevents a database's directory from being deleted concurrently with creation (necessary for
     // --directoryPerDb).

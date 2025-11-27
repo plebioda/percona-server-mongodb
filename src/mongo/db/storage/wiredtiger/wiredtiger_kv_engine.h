@@ -284,10 +284,10 @@ public:
      */
     virtual void sizeStorerPeriodicFlush() {}
 
-<<<<<<< HEAD
     virtual EncryptionKeyDB* getEncryptionKeyDB() noexcept {
         return nullptr;
-=======
+    }
+
     /**
      * WiredTiger statistics cursors can be used if the WT connection is ready and it is not
      * shutting down or starting up. In that case, a tryGetStatsCollectionPermit call returns a
@@ -303,7 +303,6 @@ public:
             return permit;
         }
         return boost::none;
->>>>>>> 97a2eb67e10
     }
 
 protected:

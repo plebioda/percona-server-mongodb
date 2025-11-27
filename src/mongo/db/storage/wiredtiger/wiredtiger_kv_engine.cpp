@@ -3469,7 +3469,6 @@ void WiredTigerKVEngine::dropIdentForImport(Interruptible& interruptible,
     invariant(dropStatus);
 }
 
-<<<<<<< HEAD
 void WiredTigerKVEngine::keydbDropDatabase(const DatabaseName& dbName) {
     if (_restEncr) {
         int res = _restEncr->keyDb()->delete_key_by_id(
@@ -3482,12 +3481,6 @@ void WiredTigerKVEngine::keydbDropDatabase(const DatabaseName& dbName) {
     }
 }
 
-bool WiredTigerKVEngine::supportsDirectoryPerDB() const {
-    return true;
-}
-
-=======
->>>>>>> 999cddaac77
 void WiredTigerKVEngine::_checkpoint(WiredTigerSession& session, bool useTimestamp) {
     _currentCheckpointIteration.fetchAndAdd(1);
     int wtRet;

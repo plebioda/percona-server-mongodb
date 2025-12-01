@@ -1,0 +1,96 @@
+# .github/workflows/mock-workflow.yml
+name: Merging Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Commit SHA to run the workflow against'
+        required: false
+        default: '9e6366f4b79'
+      gemini-model:
+        description: 'Gemini model to use for conflict resolution'
+        required: false
+        default: 'gemini-2.5-flash'
+
+jobs:
+  merge-job:
+    environment: restricted
+    runs-on: ubuntu-latest
+
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history, needed for merges
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'  # or whatever you use locally
+
+      - name: Install gemini-cli
+        run: |
+          npm install -g @google/gemini-cli
+
+      - name: Define base branch name
+        run: |
+          echo "BASE_BRANCH_NAME=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_ENV
+
+      - name: Show input parameters
+        run: |
+          echo "Executing merging workflow:"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ inputs.commit }}"
+
+      - name: "Create merging branch"
+        run: |
+          BRANCH="merging-workflow/${{ env.BASE_BRANCH_NAME }}-${{ inputs.commit }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b $BRANCH
+          git push -f origin $BRANCH
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/mongodb/mongo.git
+          git fetch upstream
+
+      - name: Merge commit
+        continue-on-error: true
+        run: |
+          git merge --no-ff ${{ inputs.commit }}
+
+      - name: Show status
+        run: |
+          git status
+
+      - name: Export conflicted files
+        run: |
+          CONFLICTED_FILES="$(git diff --name-only --diff-filter=U || true)"
+          {
+            echo 'CONFLICTED_FILES<<EOF'
+            echo "$CONFLICTED_FILES"
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Commit merge state
+        run: |
+          git add ${CONFLICTED_FILES}
+          git commit -m "Merge conflict state after merging ${{ inputs.commit }}"
+          git push -f origin $BRANCH:$BRANCH
+          git checkout -b merging-solution/${{ env.BASE_BRANCH_NAME }}-${{ inputs.commit }}
+
+      - name: Resolve conflicts
+        run: |
+          gemini -m "${{ inputs.gemini-model }}" -y "See @.github/merging_prompt.md and resolve merge conflicts in files: $CONFLICTED_FILES"
+
+      - name: Finalize merge
+        run: |
+          git add .
+          git commit -m "Resolved merge conflicts using Gemini for ${{ inputs.commit }}"
+          git push -f origin merging-solution/${{ env.BASE_BRANCH_NAME }}-${{ inputs.commit }}
+

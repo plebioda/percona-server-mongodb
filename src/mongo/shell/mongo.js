@@ -398,13 +398,8 @@ globalThis.connect = function(url, user, pass, apiParameters) {
     TestData = Object.merge(originalTestData, {disableImplicitSessions: true});
     try {
         // Check server version
-<<<<<<< HEAD
-        var serverVersion = db.version();
-        chatty("Percona Server for MongoDB server version: v" + serverVersion);
-=======
         let serverVersion = db.version();
-        chatty("MongoDB server version: " + serverVersion);
->>>>>>> 9e6366f4b79
+        chatty("Percona Server for MongoDB server version: " + serverVersion);
 
         let shellVersion = version();
         if (serverVersion.slice(0, 3) != shellVersion.slice(0, 3)) {

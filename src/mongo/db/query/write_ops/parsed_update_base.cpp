@@ -39,7 +39,6 @@
 #include "mongo/db/exec/disk_use_options_gen.h"
 #include "mongo/db/feature_flag.h"
 #include "mongo/db/matcher/expression.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/matcher/expression_with_placeholder.h"
 #include "mongo/db/matcher/extensions_callback.h"
 #include "mongo/db/matcher/extensions_callback_noop.h"
@@ -47,6 +46,8 @@
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/collation/collator_interface.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
+#include "mongo/db/query/compiler/rewrites/matcher/expression_optimizer.h"
 #include "mongo/db/query/plan_yield_policy.h"
 #include "mongo/db/query/query_utils.h"
 #include "mongo/db/query/write_ops/parsed_update.h"
@@ -167,7 +168,7 @@ void ParsedUpdateBase::maybeTranslateTimeseriesUpdate() {
     }
     _originalExpr = uassertStatusOK(MatchExpressionParser::parse(
         _request->getQuery(), _expCtx, ExtensionsCallbackNoop(), allowedFeatures));
-    _originalExpr = MatchExpression::normalize(std::move(_originalExpr));
+    _originalExpr = normalizeMatchExpression(std::move(_originalExpr));
 }
 
 Status ParsedUpdateBase::parseRequest() {

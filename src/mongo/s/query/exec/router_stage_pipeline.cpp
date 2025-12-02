@@ -34,10 +34,11 @@
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/bsontypes.h"
+#include "mongo/db/exec/agg/pipeline_builder.h"
 #include "mongo/db/exec/document_value/document_metadata_fields.h"
 #include "mongo/db/exec/document_value/value.h"
 #include "mongo/db/pipeline/expression_context.h"
-#include "mongo/s/query/exec/document_source_merge_cursors.h"
+#include "mongo/s/query/exec/merge_cursors_stage.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/str.h"
 
@@ -50,14 +51,13 @@
 
 namespace mongo {
 
-RouterStagePipeline::RouterStagePipeline(std::unique_ptr<Pipeline, PipelineDeleter> mergePipeline,
-                                         std::unique_ptr<exec::agg::Pipeline> mergeExecPipeline)
+RouterStagePipeline::RouterStagePipeline(std::unique_ptr<Pipeline> mergePipeline)
     : RouterExecStage(mergePipeline->getContext()->getOperationContext()),
       _mergePipeline(std::move(mergePipeline)),
-      _mergeExecPipeline(std::move(mergeExecPipeline)) {
+      _mergeExecPipeline(exec::agg::buildPipeline(_mergePipeline->freeze())) {
     invariant(!_mergePipeline->getSources().empty());
     _mergeCursorsStage =
-        dynamic_cast<DocumentSourceMergeCursors*>(_mergePipeline->getSources().front().get());
+        dynamic_cast<exec::agg::MergeCursorsStage*>(_mergeExecPipeline->getStages().front().get());
 }
 
 StatusWith<ClusterQueryResult> RouterStagePipeline::next() {
@@ -68,8 +68,8 @@ StatusWith<ClusterQueryResult> RouterStagePipeline::next() {
 
     // If we reach this point, we have hit EOF.
     if (!_mergePipeline->getContext()->isTailableAwaitData()) {
-        _mergePipeline.get_deleter().dismissDisposal();
-        _mergePipeline->dispose(getOpCtx());
+        _mergeExecPipeline->dismissDisposal();
+        _mergeExecPipeline->dispose(getOpCtx());
     }
 
     return {ClusterQueryResult()};
@@ -86,8 +86,8 @@ void RouterStagePipeline::doDetachFromOperationContext() {
 }
 
 void RouterStagePipeline::kill(OperationContext* opCtx) {
-    _mergePipeline.get_deleter().dismissDisposal();
-    _mergePipeline->dispose(opCtx);
+    _mergeExecPipeline->dismissDisposal();
+    _mergeExecPipeline->dispose(opCtx);
 }
 
 std::size_t RouterStagePipeline::getNumRemotes() const {

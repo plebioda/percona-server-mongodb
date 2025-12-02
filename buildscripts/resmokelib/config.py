@@ -206,6 +206,8 @@ DEFAULTS = {
     "pause_after_populate": None,
     # Regex to filter mocha-style tests to run.
     "mocha_grep": None,
+    # Extensions to load into the server upon startup.
+    "extensions": None
 }
 
 _SuiteOptions = collections.namedtuple(
@@ -596,7 +598,7 @@ SHELL_SEED = None
 
 # If true, then the order the tests run in is randomized. Otherwise the tests will run in
 # alphabetical (case-insensitive) order.
-SHUFFLE = None
+SHUFFLE_STRATEGY = None
 
 # If true, the launching of jobs is staggered in resmoke.py.
 STAGGER_JOBS = None
@@ -817,3 +819,6 @@ VALIDATE_SELECTOR_PATHS = True
 # If set, resmoke.py will set Testdata.pauseAfterPopulate to allow tests that check this
 # flag to pause after populating their initial datasets.
 PAUSE_AFTER_POPULATE = None
+
+# If set, then any specified extension will load into the server upon startup.
+EXTENSIONS = None

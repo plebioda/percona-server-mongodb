@@ -248,7 +248,8 @@ std::unique_ptr<exec::agg::Pipeline> ChangeStreamStageTest::makeExecPipeline(
         result.erase(newEnd, result.end());
     }
 
-    return exec::agg::buildPipeline(result, getExpCtx());
+    auto pipeline = Pipeline::create(result, getExpCtx());
+    return exec::agg::buildPipeline(pipeline->freeze());
 }
 
 std::unique_ptr<exec::agg::Pipeline> ChangeStreamStageTest::makeExecPipeline(
@@ -356,7 +357,7 @@ void ChangeStreamStageTest::runUpdateV2OplogTest(BSONObj diff, Document updateMo
 /**
  * Helper to create change stream pipeline for testing.
  */
-std::unique_ptr<Pipeline, PipelineDeleter> ChangeStreamStageTest::buildTestPipeline(
+std::unique_ptr<Pipeline> ChangeStreamStageTest::buildTestPipeline(
     const std::vector<BSONObj>& rawPipeline) {
     auto expCtx = getExpCtx();
     expCtx->setNamespaceString(
@@ -372,9 +373,8 @@ std::unique_ptr<Pipeline, PipelineDeleter> ChangeStreamStageTest::buildTestPipel
 /**
  * Helper to verify if the change stream pipeline contains expected stages.
  */
-void ChangeStreamStageTest::assertStagesNameOrder(
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline,
-    const std::vector<std::string>& expectedStages) {
+void ChangeStreamStageTest::assertStagesNameOrder(std::unique_ptr<Pipeline> pipeline,
+                                                  const std::vector<std::string>& expectedStages) {
     ASSERT_EQ(pipeline->size(), expectedStages.size());
 
     auto stagesItr = pipeline->getSources().cbegin();

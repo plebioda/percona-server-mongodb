@@ -48,10 +48,8 @@
 #include "mongo/crypto/fle_numeric.h"
 #include "mongo/db/field_ref.h"
 #include "mongo/db/namespace_string.h"
-#include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/stdx/unordered_set.h"
 #include "mongo/util/assert_util.h"
-#include "mongo/util/fail_point.h"
 #include "mongo/util/str.h"
 #include "mongo/util/uuid.h"
 
@@ -62,7 +60,6 @@
 
 namespace mongo {
 
-MONGO_FAIL_POINT_DEFINE(allowOutOfBoundsSubstringParameters);
 
 Value coerceValueToRangeIndexTypes(Value val, BSONType fieldType) {
     BSONType valType = val.getType();
@@ -329,6 +326,23 @@ void validateRangeIndex(BSONType fieldType, StringData fieldPath, QueryTypeConfi
             fmt::format("Type '{}' is not a supported range indexed type", typeName(fieldType)),
             isFLE2RangeIndexedSupportedType(fieldType));
 
+    // Text search fields are not allowed.
+    uassert(10774906,
+            "The field 'strMaxLength' is not allowed for range index but is present",
+            !query.getStrMaxLength().has_value());
+    uassert(10774907,
+            "The field 'strMinQueryLength' is not allowed for range index but is present",
+            !query.getStrMinQueryLength().has_value());
+    uassert(10774908,
+            "The field 'strMaxQueryLength' is not allowed for range index but is present",
+            !query.getStrMaxQueryLength().has_value());
+    uassert(10774909,
+            "The field 'caseSensitive' is not allowed for range index but is present",
+            !query.getCaseSensitive().has_value());
+    uassert(10774910,
+            "The field 'diacriticSensitive' is not allowed for range index but is present",
+            !query.getDiacriticSensitive().has_value());
+
     auto& indexMin = query.getMin();
     auto& indexMax = query.getMax();
 
@@ -447,6 +461,23 @@ void validateTextSearchIndex(BSONType fieldType,
                     typeName(fieldType),
                     fieldPath),
         fieldType == BSONType::string);
+
+    // Range search fields not allowed.
+    uassert(10774911,
+            "The field 'sparsity' is not allowed for text-based index but is present",
+            !query.getSparsity().has_value());
+    uassert(10774912,
+            "The field 'min' is not allowed for text-based index but is present",
+            !query.getMin().has_value());
+    uassert(10774913,
+            "The field 'max' is not allowed for text-based index but is present",
+            !query.getMax().has_value());
+    uassert(10774914,
+            "The field 'trimFactor' is not allowed for text-based index but is present",
+            !query.getTrimFactor().has_value());
+    uassert(10774915,
+            "The field 'precision' is not allowed for text-based index but is present",
+            !query.getPrecision().has_value());
     auto qTypeStr = QueryType_serializer(query.getQueryType());
 
     uassert(9783401,
@@ -486,35 +517,6 @@ void validateTextSearchIndex(BSONType fieldType,
         uassert(9783408,
                 "strMaxQueryLength cannot be greater than strMaxLength",
                 query.getStrMaxQueryLength().value() <= query.getStrMaxLength().value());
-
-        // Substring specifically strictly bounds strMinQueryLength to >= 2, strMaxQueryLength to <=
-        // 10, and strMaxLength to <= 400.
-        uassert(10453200,
-                fmt::format("strMinQueryLength ({}) must be >= 2 and <= strMaxQueryLength ({}) for "
-                            "{} query type of field {}",
-                            query.getStrMinQueryLength().value(),
-                            query.getStrMaxQueryLength().value(),
-                            qTypeStr,
-                            fieldPath),
-                MONGO_unlikely(allowOutOfBoundsSubstringParameters.shouldFail()) ||
-                    query.getStrMinQueryLength().value() >= 2);
-        uassert(10453201,
-                fmt::format("strMaxQueryLength ({}) must be <= 10 and >= strMinQueryLength ({}) "
-                            "for {} query type of field {}",
-                            query.getStrMaxQueryLength().value(),
-                            query.getStrMinQueryLength().value(),
-                            qTypeStr,
-                            fieldPath),
-                MONGO_unlikely(allowOutOfBoundsSubstringParameters.shouldFail()) ||
-                    query.getStrMaxQueryLength().value() <= 10);
-        uassert(10453202,
-                fmt::format("strMaxLength ({}) must be <= 400 "
-                            "{} query type of field {}",
-                            query.getStrMaxLength().value(),
-                            qTypeStr,
-                            fieldPath),
-                MONGO_unlikely(allowOutOfBoundsSubstringParameters.shouldFail()) ||
-                    query.getStrMaxLength().value() <= 400);
     }
 
     if (previousCaseSensitivity.has_value() &&
@@ -609,6 +611,28 @@ void validateEncryptedField(const EncryptedField* field) {
                 uassert(8574104,
                         "The field 'trimFactor' is not allowed for equality index but is present",
                         !encryptedIndex.getTrimFactor().has_value());
+                uassert(10774900,
+                        "The field 'precision' is not allowed for equality index but is present",
+                        !encryptedIndex.getPrecision().has_value());
+                uassert(10774901,
+                        "The field 'strMaxLength' is not allowed for equality index but is present",
+                        !encryptedIndex.getStrMaxLength().has_value());
+                uassert(10774902,
+                        "The field 'strMinQueryLength' is not allowed for equality index but is "
+                        "present",
+                        !encryptedIndex.getStrMinQueryLength().has_value());
+                uassert(10774903,
+                        "The field 'strMaxQueryLength' is not allowed for equality index but is "
+                        "present",
+                        !encryptedIndex.getStrMaxQueryLength().has_value());
+                uassert(
+                    10774904,
+                    "The field 'caseSensitive' is not allowed for equality index but is present",
+                    !encryptedIndex.getCaseSensitive().has_value());
+                uassert(10774905,
+                        "The field 'diacriticSensitive' is not allowed for equality index but is "
+                        "present",
+                        !encryptedIndex.getDiacriticSensitive().has_value());
                 break;
             case QueryTypeEnum::RangePreviewDeprecated:
                 // rangePreview is renamed to range in Range V2, but we still need to accept it as

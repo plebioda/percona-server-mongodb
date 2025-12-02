@@ -192,6 +192,52 @@ boost::intrusive_ptr<DocumentSource> addScoreField(
 }
 
 /**
+ * Builds and returns an $addFields stage that sets the rank to "NA" if its value is 0, like the
+ * following:
+ * {$addFields:
+ *     {<prefix_rank>:
+ *         {$cond: [
+ *              {
+ *                  $eq : [
+ *                      "$<prefix>_rank",
+ *                      {
+ *                          $const: 0
+ *                      }
+ *                  ]
+ *              },
+ *              {
+ *                  $const: "NA"
+ *              },
+ *              "$<prefix>_rank"
+ *          ]},
+ *     }
+ * }
+ * This is done, because, conceptually, if a rank has a value of 0, then that means the document was
+ * not output from that input pipeline. So leaving its value as 0 would confuse the user in the
+ * scoreDetails output since the lower the rank, the higher the relevance of the document. Thus,
+ * this stage changes the value of the rank field to "NA" when applicable.
+ */
+boost::intrusive_ptr<DocumentSource> addRankField(
+    const boost::intrusive_ptr<ExpressionContext>& expCtx,
+    const std::vector<std::string>& pipelineNames) {
+    BSONObjBuilder bob;
+    {
+        BSONObjBuilder addFieldsBob(bob.subobjStart("$addFields"_sd));
+        for (const auto& pipelineName : pipelineNames) {
+            const std::string rank = fmt::format("{}_rank", pipelineName);
+            const std::string rankPath = fmt::format("${}_rank", pipelineName);
+            addFieldsBob.append(rank,
+                                BSON("$cond" << BSON_ARRAY(BSON("$eq" << BSON_ARRAY(rankPath << 0))
+                                                           << BSON("$const" << "NA") << rankPath)));
+        }
+        addFieldsBob.done();
+    }
+
+    const auto spec = bob.obj();
+    return DocumentSourceAddFields::createFromBson(spec.firstElement(), expCtx);
+}
+
+/**
  * Builds and returns a $replaceRoot stage: {$replaceWith: {docs: "$$ROOT"}}.
  * This has the effect of storing the unmodified user's document in the path '$docs'.
  */
@@ -250,7 +296,7 @@ std::list<boost::intrusive_ptr<DocumentSource>> buildFirstPipelineStages(
     const StringData prefixOne,
     const int rankConstant,
     const double weight,
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline,
+    std::unique_ptr<Pipeline> pipeline,
     const bool includeScoreDetails,
     const bool inputGeneratesScore,
     const bool inputGeneratesScoreDetails,
@@ -347,7 +393,7 @@ boost::intrusive_ptr<DocumentSource> buildUnionWithPipeline(
     const std::string& prefix,
     const int rankConstant,
     const double weight,
-    std::unique_ptr<Pipeline, PipelineDeleter> oneInputPipeline,
+    std::unique_ptr<Pipeline> oneInputPipeline,
     const bool includeScoreDetails,
     const bool inputGeneratesScore,
     const bool inputGeneratesScoreDetails,
@@ -389,6 +435,54 @@ boost::intrusive_ptr<DocumentSource> constructScoreDetailsMetadata(
         DocumentMetadataFields::kScoreDetails);
     return setScoreDetails;
 }
+/*
+ * Builds an $addFields stage that constructs the value of the 'details' field array
+ * in final top-level 'scoreDetails' object, and stores it in the path "$calculatedScoreDetails".
+ *
+ * Later, this field is used to set the value of the 'details' key when setting the 'scoreDetails'
+ * metadata field.
+ */
+boost::intrusive_ptr<DocumentSource> constructCalculatedFinalScoreDetails(
+    const std::vector<std::string>& pipelineNames,
+    const StringMap<double>& weights,
+    const boost::intrusive_ptr<ExpressionContext>& expCtx) {
+    std::vector<boost::intrusive_ptr<Expression>> detailsChildren;
+    for (const auto& pipelineName : pipelineNames) {
+        const std::string scoreDetailsFieldName = fmt::format("${}_scoreDetails", pipelineName);
+        double weight = hybrid_scoring_util::getPipelineWeight(weights, pipelineName);
+
+        BSONObjBuilder mergeObjectsArrSubObj;
+        mergeObjectsArrSubObj.append("inputPipelineName"_sd, pipelineName);
+        mergeObjectsArrSubObj.append("rank"_sd, fmt::format("${}_rank", pipelineName));
+        // In the scoreDetails output, for any input pipeline that didn't output a document in the
+        // result, the default "rank" will be "NA" and the weight will be omitted to make it clear
+        // to the user that the final score for that document result did not take into account its
+        // input pipeline's rank/weight.
+        mergeObjectsArrSubObj.append(
+            "weight",
+            BSON("$cond" << BSON_ARRAY(
+                     BSON("$eq" << BSON_ARRAY(fmt::format("${}_rank", pipelineName) << "NA"))
+                     << "$$REMOVE" << weight)));
+        mergeObjectsArrSubObj.done();
+        BSONArrayBuilder mergeObjectsArr;
+        mergeObjectsArr.append(mergeObjectsArrSubObj.obj());
+        mergeObjectsArr.append(scoreDetailsFieldName);
+        mergeObjectsArr.done();
+        BSONObj mergeObjectsObj = BSON("$mergeObjects"_sd << mergeObjectsArr.arr());
+        boost::intrusive_ptr<Expression> mergeObjectsExpr =
+            ExpressionFromAccumulator<AccumulatorMergeObjects>::parse(
+                expCtx.get(), mergeObjectsObj.firstElement(), expCtx->variablesParseState);
+
+        detailsChildren.push_back(std::move(mergeObjectsExpr));
+    }
+
+    boost::intrusive_ptr<Expression> arrayExpr =
+        ExpressionArray::create(expCtx.get(), std::move(detailsChildren));
+
+    auto addFields = DocumentSourceAddFields::create(
+        "calculatedScoreDetails"_sd, std::move(arrayExpr), expCtx.get());
+    return addFields;
+}
 
 std::list<boost::intrusive_ptr<DocumentSource>> buildScoreAndMergeStages(
     const std::vector<std::string>& pipelineNames,
@@ -399,9 +493,10 @@ std::list<boost::intrusive_ptr<DocumentSource>> buildScoreAndMergeStages(
         groupEachScore(pipelineNames, includeScoreDetails).firstElement(), expCtx);
     auto addFields = DocumentSourceAddFields::createFromBson(
         calculateFinalScore(pipelineNames).firstElement(), expCtx);
+    auto overrideRanksOfZero = addRankField(expCtx, pipelineNames);
 
-    // Note that the scoreDetails fields go here in the pipeline. We create them below to be able
-    // to return them immediately once all stages are generated.
+    // Note that the scoreDetails fields go here in the pipeline. We create them below to be
+    // able to return them immediately once all stages are generated.
     const SortPattern sortingPattern{BSON("score" << -1 << "_id" << 1), expCtx};
     auto sort = DocumentSourceSort::create(expCtx, sortingPattern);
 
@@ -414,17 +509,22 @@ std::list<boost::intrusive_ptr<DocumentSource>> buildScoreAndMergeStages(
 
     if (includeScoreDetails) {
         boost::intrusive_ptr<DocumentSource> addFieldsDetails =
-            hybrid_scoring_util::score_details::constructCalculatedFinalScoreDetails(
-                pipelineNames, weights, true, expCtx);
+            constructCalculatedFinalScoreDetails(pipelineNames, weights, expCtx);
         auto setScoreDetails =
             constructScoreDetailsMetadata(rankFusionScoreDetailsDescription, expCtx);
-        return {group, addFields, addFieldsDetails, setScoreDetails, sort, restoreUserDocs};
+        return {group,
+                addFields,
+                overrideRanksOfZero,
+                addFieldsDetails,
+                setScoreDetails,
+                sort,
+                restoreUserDocs};
     }
     // TODO SERVER-85426: Remove this check once all feature flags have been removed.
     if (feature_flags::gFeatureFlagRankFusionFull.isEnabledUseLastLTSFCVWhenUninitialized(
             serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
         auto setScore = calculateFinalScoreMetadata(expCtx, pipelineNames);
-        return {group, addFields, setScore, sort, restoreUserDocs};
+        return {group, addFields, overrideRanksOfZero, setScore, sort, restoreUserDocs};
     }
     return {group, addFields, sort, restoreUserDocs};
 }
@@ -456,12 +556,11 @@ std::unique_ptr<DocumentSourceRankFusion::LiteParsed> DocumentSourceRankFusion::
  * Validate that each pipeline is a valid ranked selection pipeline. Returns a pair of the map of
  * the input pipeline names to pipeline objects and a map of pipeline names to score paths.
  */
-std::map<std::string, std::unique_ptr<Pipeline, PipelineDeleter>>
-parseAndValidateRankedSelectionPipelines(const RankFusionSpec& spec,
-                                         const boost::intrusive_ptr<ExpressionContext>& pExpCtx) {
+std::map<std::string, std::unique_ptr<Pipeline>> parseAndValidateRankedSelectionPipelines(
+    const RankFusionSpec& spec, const boost::intrusive_ptr<ExpressionContext>& pExpCtx) {
     // It's important to use an ordered map here, so that we get stability in the desugaring =>
     // stability in the query shape.
-    std::map<std::string, std::unique_ptr<Pipeline, PipelineDeleter>> inputPipelines;
+    std::map<std::string, std::unique_ptr<Pipeline>> inputPipelines;
     // Ensure that all pipelines are valid ranked selection pipelines.
     for (const auto& elem : spec.getInput().getPipelines()) {
         auto bsonPipeline = parsePipelineFromBSON(elem);
@@ -502,7 +601,7 @@ std::list<boost::intrusive_ptr<DocumentSource>> DocumentSourceRankFusion::create
 
     // This flag's value is also used to gate an internal client error. See
     // search_helper::validateViewNotSetByUser(...) for more details.
-    pExpCtx->setIsRankFusion();
+    pExpCtx->setIsHybridSearch();
 
     StringMap<double> weights;
     // If RankFusionCombinationSpec has no value (no weights specified), no work to do.

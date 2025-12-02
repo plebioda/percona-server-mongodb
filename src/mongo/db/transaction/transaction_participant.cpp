@@ -59,8 +59,8 @@
 #include "mongo/db/index/index_access_method.h"
 #include "mongo/db/internal_transactions_feature_flag_gen.h"
 #include "mongo/db/logical_time.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/op_observer/op_observer.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
 #include "mongo/db/query/find_command.h"
 #include "mongo/db/query/internal_plans.h"
 #include "mongo/db/query/write_ops/write_ops_retryability.h"
@@ -2394,7 +2394,9 @@ void TransactionParticipant::Participant::shutdown(OperationContext* opCtx) {
 APIParameters TransactionParticipant::Participant::getAPIParameters(OperationContext* opCtx) const {
     // If we have are in a retryable write, use the API parameters that the client passed in with
     // the write, instead of the first write's API parameters.
-    if (o().txnResourceStash && !o().txnState.isInRetryableWriteMode()) {
+    // TODO (SERVER-106429): Revisit the decision for prepared transactions.
+    if (o().txnResourceStash && !o().txnState.isInRetryableWriteMode() &&
+        !o().txnState.isPrepared()) {
         return o().txnResourceStash->getAPIParameters();
     }
     return APIParameters::get(opCtx);

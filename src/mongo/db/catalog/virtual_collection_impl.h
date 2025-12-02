@@ -48,17 +48,18 @@
 #include "mongo/db/catalog/virtual_collection_options.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/index/multikey_paths.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/change_stream_pre_and_post_images_options_gen.h"
 #include "mongo/db/query/collation/collator_interface.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
 #include "mongo/db/query/virtual_collection/external_record_store.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/storage/ident.h"
 #include "mongo/db/storage/record_store.h"
 #include "mongo/db/storage/snapshot.h"
 #include "mongo/db/timeseries/timeseries_gen.h"
+#include "mongo/db/transaction_resources.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/uuid.h"
 #include "mongo/util/version/releases.h"
@@ -189,7 +190,8 @@ public:
 
     std::unique_ptr<SeekableRecordCursor> getCursor(OperationContext* opCtx,
                                                     bool forward = true) const final {
-        return _shared->_recordStore->getCursor(opCtx, forward);
+        return _shared->_recordStore->getCursor(
+            opCtx, *shard_role_details::getRecoveryUnit(opCtx), forward);
     }
 
     bool updateWithDamagesSupported() const final {

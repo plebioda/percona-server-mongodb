@@ -8,12 +8,14 @@ buildvariants:
   - name: debian12
     display_name: Debian 12
     tags: ["bazel_check", "forbid_tasks_tagged_with_experimental"]
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
+    cron: "0 2 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - debian12-small
     expansions:
       push_path: linux
       push_bucket: downloads.mongodb.org
+      push_bucket_new: cdn-origin-mongodb-server-community
+      push_role_arn: arn:aws:iam::119629040606:role/s3-access.cdn-origin-mongodb-server-community
       push_name: linux
       push_arch: x86_64-debian12
       bazel_compile_flags: >-
@@ -55,7 +57,7 @@ buildvariants:
   - name: enterprise-debian12-64
     display_name: Enterprise Debian 12
     tags: ["forbid_tasks_tagged_with_experimental"]
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
+    cron: "0 2 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - debian12-small
     expansions:
@@ -64,6 +66,8 @@ buildvariants:
         archive-mongocryptd-debug
       push_path: linux
       push_bucket: downloads.10gen.com
+      push_bucket_new: cdn-origin-mongodb-server-enterprise
+      push_role_arn: arn:aws:iam::119629040606:role/s3-access.cdn-origin-mongodb-server-enterprise
       push_name: linux
       push_arch: x86_64-enterprise-debian12
       bazel_compile_flags: >-

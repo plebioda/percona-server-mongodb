@@ -60,6 +60,7 @@
 #include "mongo/db/pipeline/search/search_helper_bson_obj.h"
 #include "mongo/db/pipeline/stage_constraints.h"
 #include "mongo/db/pipeline/transformer_interface.h"
+#include "mongo/db/query/compiler/rewrites/matcher/expression_parameterization.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/query/plan_summary_stats_visitor.h"
 #include "mongo/db/query/query_knobs_gen.h"
@@ -175,11 +176,7 @@ Pipeline::Pipeline(const intrusive_ptr<ExpressionContext>& pTheCtx) : pCtx(pTheC
 Pipeline::Pipeline(DocumentSourceContainer stages, const intrusive_ptr<ExpressionContext>& expCtx)
     : _sources(std::move(stages)), pCtx(expCtx) {}
 
-Pipeline::~Pipeline() {
-    invariant(_disposed);
-}
-
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::clone(
+std::unique_ptr<Pipeline> Pipeline::clone(
     const boost::intrusive_ptr<ExpressionContext>& newExpCtx) const {
     auto expCtx = newExpCtx ? newExpCtx : getContext();
     DocumentSourceContainer clonedStages;
@@ -190,7 +187,7 @@ std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::clone(
 }
 
 template <class T>
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::parseCommon(
+std::unique_ptr<Pipeline> Pipeline::parseCommon(
     const std::vector<T>& rawPipeline,
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     PipelineValidatorCallback validator,
@@ -210,8 +207,7 @@ std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::parseCommon(
         stages.insert(stages.end(), parsedSources.begin(), parsedSources.end());
     }
 
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline(
-        new Pipeline(std::move(stages), expCtx), PipelineDeleter(expCtx->getOperationContext()));
+    std::unique_ptr<Pipeline> pipeline(new Pipeline(std::move(stages), expCtx));
 
     // First call the top level validator, unless this is a $facet
     // (nested) pipeline. Then call the context-specific validator if one
@@ -227,14 +223,12 @@ std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::parseCommon(
     constexpr bool alreadyOptimized = false;
     pipeline->validateCommon(alreadyOptimized);
 
-    pipeline->stitch();
     return pipeline;
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::parseFromArray(
-    BSONElement rawPipelineElement,
-    const intrusive_ptr<ExpressionContext>& expCtx,
-    PipelineValidatorCallback validator) {
+std::unique_ptr<Pipeline> Pipeline::parseFromArray(BSONElement rawPipelineElement,
+                                                   const intrusive_ptr<ExpressionContext>& expCtx,
+                                                   PipelineValidatorCallback validator) {
 
     tassert(6253719,
             "Expected array for Pipeline::parseFromArray",
@@ -247,28 +241,25 @@ std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::parseFromArray(
     });
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::parse(
-    const std::vector<BSONObj>& rawPipeline,
-    const intrusive_ptr<ExpressionContext>& expCtx,
-    PipelineValidatorCallback validator) {
+std::unique_ptr<Pipeline> Pipeline::parse(const std::vector<BSONObj>& rawPipeline,
+                                          const intrusive_ptr<ExpressionContext>& expCtx,
+                                          PipelineValidatorCallback validator) {
     return parseCommon<BSONObj>(rawPipeline, expCtx, validator, false, [](BSONObj o) { return o; });
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::parseFacetPipeline(
+std::unique_ptr<Pipeline> Pipeline::parseFacetPipeline(
     const std::vector<BSONObj>& rawPipeline,
     const intrusive_ptr<ExpressionContext>& expCtx,
     PipelineValidatorCallback validator) {
     return parseCommon<BSONObj>(rawPipeline, expCtx, validator, true, [](BSONObj o) { return o; });
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::create(
-    DocumentSourceContainer stages, const intrusive_ptr<ExpressionContext>& expCtx) {
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline(
-        new Pipeline(std::move(stages), expCtx), PipelineDeleter(expCtx->getOperationContext()));
+std::unique_ptr<Pipeline> Pipeline::create(DocumentSourceContainer stages,
+                                           const intrusive_ptr<ExpressionContext>& expCtx) {
+    std::unique_ptr<Pipeline> pipeline(new Pipeline(std::move(stages), expCtx));
 
     constexpr bool alreadyOptimized = false;
     pipeline->validateCommon(alreadyOptimized);
-    pipeline->stitch();
     return pipeline;
 }
 
@@ -379,8 +370,6 @@ void Pipeline::optimizeContainer(DocumentSourceContainer* container) {
         ex.addContext("Failed to optimize pipeline");
         throw;
     }
-
-    stitch(container);
 }
 
 void Pipeline::optimizeEachStage(DocumentSourceContainer* container) {
@@ -397,8 +386,6 @@ void Pipeline::optimizeEachStage(DocumentSourceContainer* container) {
         ex.addContext("Failed to optimize pipeline");
         throw;
     }
-
-    stitch(container);
 }
 
 bool Pipeline::aggHasWriteStage(const BSONObj& cmd) {
@@ -421,27 +408,6 @@ bool Pipeline::aggHasWriteStage(const BSONObj& cmd) {
     return false;
 }
 
-void Pipeline::dispose(OperationContext* opCtx) {
-    if (_disposed) {
-        return;
-    }
-    try {
-        pCtx->setOperationContext(opCtx);
-
-        // Make sure all stages are connected, in case we are being disposed via an error path and
-        // were not stitched at the time of the error.
-        stitch();
-
-        if (!_sources.empty()) {
-            auto& stage = dynamic_cast<exec::agg::Stage&>(*_sources.back());
-            stage.dispose();
-        }
-        _disposed = true;
-    } catch (...) {
-        std::terminate();
-    }
-}
-
 BSONObj Pipeline::getInitialQuery() const {
     if (_sources.empty()) {
         return BSONObj{};
@@ -458,7 +424,7 @@ BSONObj Pipeline::getInitialQuery() const {
 void Pipeline::parameterize() {
     if (!_sources.empty()) {
         if (auto matchStage = dynamic_cast<DocumentSourceMatch*>(_sources.front().get())) {
-            MatchExpression::parameterize(matchStage->getMatchExpression());
+            parameterizeMatchExpression(matchStage->getMatchExpression());
             _isParameterized = true;
         }
     }
@@ -467,9 +433,9 @@ void Pipeline::parameterize() {
 void Pipeline::unparameterize() {
     if (!_sources.empty()) {
         if (auto matchStage = dynamic_cast<DocumentSourceMatch*>(_sources.front().get())) {
-            // Sets max param count in MatchExpression::parameterize() to 0, clearing
+            // Sets max param count in parameterizeMatchExpression() to 0, clearing
             // MatchExpression auto-parameterization before pipeline to ABT translation.
-            MatchExpression::unparameterize(matchStage->getMatchExpression());
+            unparameterizeMatchExpression(matchStage->getMatchExpression());
             _isParameterized = false;
         }
     }
@@ -600,29 +566,6 @@ std::vector<BSONObj> Pipeline::serializeToBson(
     return asBson;
 }
 
-void Pipeline::stitch() {
-    stitch(&_sources);
-}
-
-void Pipeline::stitch(DocumentSourceContainer* container) {
-    if (container->empty()) {
-        return;
-    }
-
-    // Chain together all the stages.
-    // TODO SERVER-105683: Temporary cast to Stage until method is moved to agg::Pipeline.
-    auto prevSource = dynamic_cast<exec::agg::Stage*>(container->front().get());
-    prevSource->setSource(nullptr);
-    for (DocumentSourceContainer::iterator iter(++container->begin()), listEnd(container->end());
-         iter != listEnd;
-         ++iter) {
-        intrusive_ptr<DocumentSource> pTemp(*iter);
-        auto stage = dynamic_cast<exec::agg::Stage*>(pTemp.get());
-        stage->setSource(prevSource);
-        prevSource = stage;
-    }
-}
-
 std::vector<Value> Pipeline::writeExplainOps(const SerializationOptions& opts) const {
     std::vector<Value> array;
     for (auto&& stage : _sources) {
@@ -638,10 +581,6 @@ void Pipeline::addInitialSource(intrusive_ptr<DocumentSource> source) {
     tassert(10706502,
             "unexpected attempt to modify a frozen pipeline in 'Pipeline::addInitialSource()'",
             !_frozen);
-    if (!_sources.empty()) {
-        auto& initialStage = dynamic_cast<exec::agg::Stage&>(*_sources.front());
-        initialStage.setSource(dynamic_cast<exec::agg::Stage*>(source.get()));
-    }
     _sources.push_front(source);
 }
 
@@ -649,10 +588,6 @@ void Pipeline::addFinalSource(intrusive_ptr<DocumentSource> source) {
     tassert(10706503,
             "unexpected attempt to modify a frozen pipeline in 'Pipeline::addFinalSource()'",
             !_frozen);
-    if (!_sources.empty()) {
-        auto& finalStage = dynamic_cast<exec::agg::Stage&>(*source.get());
-        finalStage.setSource(dynamic_cast<exec::agg::Stage*>(_sources.back().get()));
-    }
     _sources.push_back(source);
 }
 
@@ -664,14 +599,9 @@ void Pipeline::addSourceAtPosition(boost::intrusive_ptr<DocumentSource> source, 
             "unexpected attempt to modify a frozen pipeline in 'Pipeline::addSourceAtPosition()'",
             !_frozen);
 
-    const bool originallyEmpty = _sources.empty();
     auto sourceIter = _sources.begin();
     std::advance(sourceIter, index);
     _sources.insert(sourceIter, source);
-
-    if (!originallyEmpty) {
-        stitch();
-    }
 }
 
 void Pipeline::addVariableRefs(std::set<Variables::Id>* refs) const {
@@ -852,10 +782,6 @@ void Pipeline::pushBack(boost::intrusive_ptr<DocumentSource> newStage) {
     tassert(10706504,
             "unexpected attempt to modify a frozen pipeline in 'Pipeline::pushBack()'",
             !_frozen);
-    if (!_sources.empty()) {
-        auto& stage = dynamic_cast<exec::agg::Stage&>(*newStage);
-        stage.setSource(dynamic_cast<exec::agg::Stage*>(_sources.back().get()));
-    }
     _sources.push_back(std::move(newStage));
 }
 
@@ -880,7 +806,6 @@ boost::intrusive_ptr<DocumentSource> Pipeline::popFront() {
     }
     auto targetStage = std::move(_sources.front());
     _sources.pop_front();
-    stitch();
     return targetStage;
 }
 
@@ -912,7 +837,7 @@ boost::intrusive_ptr<DocumentSource> Pipeline::popFrontWithNameAndCriteria(
     return popFront();
 }
 
-void Pipeline::appendPipeline(std::unique_ptr<Pipeline, PipelineDeleter> otherPipeline) {
+void Pipeline::appendPipeline(std::unique_ptr<Pipeline> otherPipeline) {
     tassert(10706509,
             "attempting to modify a frozen pipeline in 'Pipeline::appendPipeline()'",
             !_frozen);
@@ -923,11 +848,10 @@ void Pipeline::appendPipeline(std::unique_ptr<Pipeline, PipelineDeleter> otherPi
     }
     constexpr bool alreadyOptimized = false;
     validateCommon(alreadyOptimized);
-    stitch();
 }
 
 
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::makePipeline(
+std::unique_ptr<Pipeline> Pipeline::makePipeline(
     const std::vector<BSONObj>& rawPipeline,
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     MakePipelineOptions opts) {
@@ -962,7 +886,7 @@ std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::makePipeline(
     return pipeline;
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::makePipeline(
+std::unique_ptr<Pipeline> Pipeline::makePipeline(
     AggregateCommandRequest& aggRequest,
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     boost::optional<BSONObj> shardCursorsSortSpec,
@@ -1013,7 +937,7 @@ DocumentSourceContainer::iterator Pipeline::optimizeEndOfPipeline(
     return std::next(itr);
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::viewPipelineHelperForSearch(
+std::unique_ptr<Pipeline> Pipeline::viewPipelineHelperForSearch(
     const boost::intrusive_ptr<ExpressionContext>& subPipelineExpCtx,
     ResolvedNamespace resolvedNs,
     std::vector<BSONObj> currentPipeline,
@@ -1035,7 +959,7 @@ std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::viewPipelineHelperForSearch
     // return the user pipeline without appending the view stages.
     return Pipeline::makePipeline(currentPipeline, subPipelineExpCtx, opts);
 }
-std::unique_ptr<Pipeline, PipelineDeleter> Pipeline::makePipelineFromViewDefinition(
+std::unique_ptr<Pipeline> Pipeline::makePipelineFromViewDefinition(
     const boost::intrusive_ptr<ExpressionContext>& subPipelineExpCtx,
     ResolvedNamespace resolvedNs,
     std::vector<BSONObj> currentPipeline,

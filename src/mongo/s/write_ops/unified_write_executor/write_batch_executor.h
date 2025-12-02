@@ -30,6 +30,7 @@
 #pragma once
 
 #include "mongo/s/multi_statement_transaction_requests_sender.h"
+#include "mongo/s/request_types/cluster_commands_without_shard_key_gen.h"
 #include "mongo/s/write_ops/unified_write_executor/write_op_batcher.h"
 
 #include <boost/optional.hpp>
@@ -45,16 +46,34 @@ struct ShardResponse {
     // the corresponding WriteOp from the original command from the client.
     std::vector<WriteOp> ops;
 };
-using WriteBatchResponse = std::map<ShardId, ShardResponse>;
+
+using SimpleWriteBatchResponse = std::map<ShardId, ShardResponse>;
+
+struct NonTargetedWriteBatchResponse {
+    StatusWith<ClusterWriteWithoutShardKeyResponse> swResponse;
+    boost::optional<WriteConcernErrorDetail> wce;
+    WriteOp op;
+};
+
+using WriteBatchResponse = std::variant<SimpleWriteBatchResponse, NonTargetedWriteBatchResponse>;
 
 class WriteBatchExecutor {
 public:
     WriteBatchExecutor(const WriteOpContext& context) : _context(context) {}
 
-    WriteBatchResponse execute(OperationContext* opCtx, const WriteBatch& batch);
+    WriteBatchResponse execute(OperationContext* opCtx,
+                               RoutingContext& routingCtx,
+                               const WriteBatch& batch);
 
 private:
-    WriteBatchResponse _execute(OperationContext* opCtx, const SimpleWriteBatch& batch);
+    WriteBatchResponse _execute(OperationContext* opCtx,
+                                RoutingContext& routingCtx,
+                                const SimpleWriteBatch& batch);
+
+    WriteBatchResponse _execute(OperationContext* opCtx,
+                                RoutingContext& routingCtx,
+                                const NonTargetedWriteBatch& batch);
+
     std::vector<AsyncRequestsSender::Request> buildBulkWriteRequests(
         OperationContext* opCtx, const SimpleWriteBatch& batch) const;
 

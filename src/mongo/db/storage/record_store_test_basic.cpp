@@ -397,7 +397,8 @@ TEST(RecordStoreTest, Truncate1) {
         auto& ru = *shard_role_details::getRecoveryUnit(opCtx.get());
         {
             StorageWriteTransaction txn(ru);
-            rs->truncate(opCtx.get()).transitional_ignore();
+            rs->truncate(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()))
+                .transitional_ignore();
             txn.commit();
         }
     }
@@ -436,7 +437,7 @@ TEST(RecordStoreTest, Cursor1) {
     {
         int x = 0;
         ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        auto cursor = rs->getCursor(opCtx.get());
+        auto cursor = rs->getCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()));
         while (auto record = cursor->next()) {
             std::string s = str::stream() << "eliot" << x++;
             ASSERT_EQUALS(s, record->data.data());
@@ -448,7 +449,8 @@ TEST(RecordStoreTest, Cursor1) {
     {
         int x = N;
         ServiceContext::UniqueOperationContext opCtx(harnessHelper->newOperationContext());
-        auto cursor = rs->getCursor(opCtx.get(), false);
+        auto cursor =
+            rs->getCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()), false);
         while (auto record = cursor->next()) {
             std::string s = str::stream() << "eliot" << --x;
             ASSERT_EQUALS(s, record->data.data());
@@ -482,7 +484,7 @@ TEST(RecordStoreTest, CursorRestoreForward) {
         txn.commit();
     }
 
-    auto cursor = rs->getCursor(opCtx.get());
+    auto cursor = rs->getCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()));
     auto r1 = cursor->next();
     ASSERT(r1);
     ASSERT_EQ(RecordId(1), r1->id);
@@ -530,7 +532,8 @@ TEST(RecordStoreTest, CursorRestoreReverse) {
         txn.commit();
     }
 
-    auto cursor = rs->getCursor(opCtx.get(), false);
+    auto cursor =
+        rs->getCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()), false);
     auto r1 = cursor->next();
     ASSERT(r1);
     ASSERT_EQ(RecordId(3), r1->id);
@@ -578,7 +581,7 @@ TEST(RecordStoreTest, CursorRestoreDeletedDoc) {
         txn.commit();
     }
 
-    auto cursor = rs->getCursor(opCtx.get());
+    auto cursor = rs->getCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()));
     auto r1 = cursor->next();
     ASSERT(r1);
     ASSERT_EQ(RecordId(1), r1->id);
@@ -651,7 +654,7 @@ TEST(RecordStoreTest, CursorSaveRestoreSeek) {
         txn.commit();
     }
 
-    auto cursor = rs->getCursor(opCtx.get());
+    auto cursor = rs->getCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()));
     auto r1 = cursor->next();
     ASSERT(r1);
     ASSERT_EQ(RecordId(1), r1->id);
@@ -691,7 +694,7 @@ TEST(RecordStoreTest, CursorSaveUnpositionedRestoreSeek) {
         txn.commit();
     }
 
-    auto cursor = rs->getCursor(opCtx.get());
+    auto cursor = rs->getCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()));
     auto r1 = cursor->next();
     ASSERT(r1);
     ASSERT_EQ(RecordId(1), r1->id);
@@ -739,7 +742,8 @@ TEST(RecordStoreTest, ClusteredRecordStore) {
 
     {
         int currRecord = 0;
-        auto cursor = rs->getCursor(opCtx.get(), /*forward=*/true);
+        auto cursor = rs->getCursor(
+            opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()), /*forward=*/true);
         while (auto record = cursor->next()) {
             ASSERT_EQ(record->id, records.at(currRecord).id);
             ASSERT_EQ(0, strcmp(records.at(currRecord).data.data(), record->data.data()));
@@ -749,7 +753,8 @@ TEST(RecordStoreTest, ClusteredRecordStore) {
         ASSERT_EQ(numRecords, currRecord);
     }
 
-    if (auto cursor = rs->getRandomCursor(opCtx.get())) {
+    if (auto cursor =
+            rs->getRandomCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()))) {
         auto record = cursor->next();
         ASSERT(record);
 
@@ -881,7 +886,7 @@ TEST(RecordStoreTest, ClusteredCappedRecordStoreSeek) {
         oid.setTimestamp(i);
 
         auto rid = record_id_helpers::keyForOID(oid);
-        auto cur = rs->getCursor(opCtx.get());
+        auto cur = rs->getCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()));
         auto rec = cur->seek(rid, SeekableRecordCursor::BoundInclusion::kInclude);
         ASSERT(rec);
         ASSERT_GT(rec->id, rid);
@@ -895,7 +900,8 @@ TEST(RecordStoreTest, ClusteredCappedRecordStoreSeek) {
         oid.setTimestamp(i);
 
         auto rid = record_id_helpers::keyForOID(oid);
-        auto cur = rs->getCursor(opCtx.get(), false /* forward */);
+        auto cur = rs->getCursor(
+            opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()), /*forward=*/false);
         auto rec = cur->seek(rid, SeekableRecordCursor::BoundInclusion::kInclude);
         ASSERT(rec);
         ASSERT_LT(rec->id, rid);
@@ -919,7 +925,7 @@ DEATH_TEST_REGEX(RecordStoreTest, FailedRestoreDoesNotSetFlag, "Invariant failur
                                    Timestamp()));
         txn.commit();
 
-        auto cursor = rs->getCursor(opCtx.get());
+        auto cursor = rs->getCursor(opCtx.get(), *shard_role_details::getRecoveryUnit(opCtx.get()));
         // Positions cursor at first record for save()
         ASSERT(cursor->next());
         // Clears _hasRestored

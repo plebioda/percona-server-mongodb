@@ -37,11 +37,13 @@
 #include "mongo/db/exec/agg/pipeline_builder.h"
 #include "mongo/db/exec/document_value/document.h"
 #include "mongo/db/pipeline/document_source_documents.h"
+#include "mongo/db/pipeline/document_source_hybrid_scoring_util.h"
 #include "mongo/db/pipeline/document_source_match.h"
 #include "mongo/db/pipeline/document_source_queue.h"
 #include "mongo/db/pipeline/document_source_single_document_transformation.h"
 #include "mongo/db/pipeline/document_source_union_with_gen.h"
 #include "mongo/db/pipeline/process_interface/mongo_process_interface.h"
+#include "mongo/db/pipeline/search/search_helper.h"
 #include "mongo/db/query/allowed_contexts.h"
 #include "mongo/db/query/plan_summary_stats.h"
 #include "mongo/db/views/resolved_view.h"
@@ -73,7 +75,7 @@ REGISTER_DOCUMENT_SOURCE(unionWith,
 ALLOCATE_DOCUMENT_SOURCE_ID(unionWith, DocumentSourceUnionWith::id)
 
 namespace {
-std::unique_ptr<Pipeline, PipelineDeleter> buildPipelineFromViewDefinition(
+std::unique_ptr<Pipeline> buildPipelineFromViewDefinition(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     ResolvedNamespace resolvedNs,
     std::vector<BSONObj> currentPipeline,
@@ -117,11 +119,13 @@ DocumentSourceUnionWith::DocumentSourceUnionWith(
       _variables(original._variables),
       _variablesParseState(original._variablesParseState) {
     _pipeline->getContext()->setInUnionWith(true);
+    tassert(10577700,
+            "explain settings are different for $unionWith and its sub-pipeline",
+            pExpCtx->getExplain() == _pipeline->getContext()->getExplain());
 }
 
 DocumentSourceUnionWith::DocumentSourceUnionWith(
-    const boost::intrusive_ptr<ExpressionContext>& expCtx,
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline)
+    const boost::intrusive_ptr<ExpressionContext>& expCtx, std::unique_ptr<Pipeline> pipeline)
     : DocumentSource(kStageName, expCtx),
       exec::agg::Stage(kStageName, expCtx),
       _pipeline(std::move(pipeline)),
@@ -130,6 +134,9 @@ DocumentSourceUnionWith::DocumentSourceUnionWith(
         serviceOpCounters(expCtx->getOperationContext()).gotNestedAggregate();
     }
     _pipeline->getContext()->setInUnionWith(true);
+    tassert(10577701,
+            "explain settings are different for $unionWith and its sub-pipeline",
+            pExpCtx->getExplain() == _pipeline->getContext()->getExplain());
 }
 
 DocumentSourceUnionWith::DocumentSourceUnionWith(
@@ -156,8 +163,12 @@ DocumentSourceUnionWith::DocumentSourceUnionWith(
 }
 
 DocumentSourceUnionWith::~DocumentSourceUnionWith() {
-    if (_pipeline && _pipeline->getContext()->getExplain()) {
-        _pipeline->dispose(pExpCtx->getOperationContext());
+    // When in explain command, the sub-pipeline was not disposed in 'doDispose()', so we need to
+    // dispose it here.
+    if (pExpCtx->getExplain()) {
+        if (_execPipeline) {
+            _execPipeline->dispose(pExpCtx->getOperationContext());
+        }
     }
 }
 
@@ -260,6 +271,8 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceUnionWith::createFromBson(
         unionNss = NamespaceStringUtil::deserialize(expCtx->getNamespaceString().dbName(),
                                                     elem.valueStringData());
     } else {
+        // TODO SERVER-108117 Validate that the isHybridSearch flag is only set internally. See
+        // helper hybrid_scoring_util::validateIsHybridSearchNotSetByUser to handle this.
         auto unionWithSpec =
             UnionWithSpec::parse(IDLParserContext(kStageName), elem.embeddedObject());
         if (unionWithSpec.getColl()) {
@@ -272,6 +285,16 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceUnionWith::createFromBson(
                 expCtx->getNamespaceString().dbName());
         }
         pipeline = unionWithSpec.getPipeline().value_or(std::vector<BSONObj>{});
+        if (unionWithSpec.getIsHybridSearch() ||
+            hybrid_scoring_util::isHybridSearchPipeline(pipeline)) {
+            // If there is a hybrid search stage in our pipeline, then we should validate that we
+            // are not running on a timeseries collection.
+            //
+            // If the hybrid search flag is set to true, this request may have
+            // come from a mongos that does not know if the collection is a valid collection for
+            // hybrid search. Therefore, we must validate it here.
+            hybrid_scoring_util::assertForeignCollectionIsNotTimeseries(unionNss, expCtx);
+        }
     }
     return make_intrusive<DocumentSourceUnionWith>(
         expCtx, std::move(unionNss), std::move(pipeline));
@@ -318,7 +341,6 @@ DocumentSource::GetNextResult DocumentSourceUnionWith::doGetNext() {
                         "pipeline"_attr = _pipeline->serializeToBson());
             _pipeline = pExpCtx->getMongoProcessInterface()->preparePipelineForExecution(
                 _pipeline.release());
-            _execPipeline = exec::agg::buildPipeline(_pipeline->freeze());
             LOGV2_DEBUG(9497003,
                         5,
                         "$unionWith POST pipeline prep: ",
@@ -334,12 +356,13 @@ DocumentSource::GetNextResult DocumentSourceUnionWith::doGetNext() {
             logShardedViewFound(e);
             return doGetNext();
         }
-    }
+        _execPipeline = exec::agg::buildPipeline(_pipeline->freeze());
 
-    // The $unionWith stage takes responsibility for disposing of its Pipeline. When the outer
-    // Pipeline that contains the $unionWith is disposed of, it will propagate dispose() to its
-    // subpipeline.
-    _pipeline.get_deleter().dismissDisposal();
+        // The $unionWith stage takes responsibility for disposing of its Pipeline. When the outer
+        // Pipeline that contains the $unionWith is disposed of, it will propagate dispose() to its
+        // subpipeline.
+        _execPipeline->dismissDisposal();
+    }
 
     auto res = _execPipeline->getNext();
     if (res)
@@ -404,21 +427,23 @@ bool DocumentSourceUnionWith::usedDisk() const {
 }
 
 void DocumentSourceUnionWith::doDispose() {
-    if (_pipeline) {
-        _pipeline.get_deleter().dismissDisposal();
-        if (_execPipeline) {
-            _stats.planSummaryStats.usedDisk =
-                _stats.planSummaryStats.usedDisk || _execPipeline->usedDisk();
-            _execPipeline->accumulatePlanSummaryStats(_stats.planSummaryStats);
-        }
+    // Update execution statistics.
+    if (_execPipeline) {
+        _stats.planSummaryStats.usedDisk =
+            _stats.planSummaryStats.usedDisk || _execPipeline->usedDisk();
+        _execPipeline->accumulatePlanSummaryStats(_stats.planSummaryStats);
+    }
 
-        if (!_pipeline->getContext()->getExplain()) {
-            _pipeline->dispose(pExpCtx->getOperationContext());
-            _userPipeline.clear();
-            _pushedDownStages.clear();
-            _pipeline.reset();
-            _execPipeline.reset();
+    // When not in explain command, propagate disposal to the subpipeline, otherwise the subpipeline
+    // will be disposed in '~DocumentSourceUnionWith()'.
+    if (!pExpCtx->getExplain()) {
+        if (_execPipeline) {
+            _execPipeline->dispose(pExpCtx->getOperationContext());
         }
+        _userPipeline.clear();
+        _pushedDownStages.clear();
+        _pipeline.reset();
+        _execPipeline.reset();
     }
 }
 
@@ -541,10 +566,16 @@ Value DocumentSourceUnionWith::serialize(const SerializationOptions& opts) const
             return _pipeline->serializeToBson(opts);
         }();
 
-        auto spec = collectionless ? DOC("pipeline" << serializedPipeline)
-                                   : DOC("coll" << opts.serializeIdentifier(_userNss.coll())
-                                                << "pipeline" << serializedPipeline);
-        return Value(DOC(getSourceName() << spec));
+        bool isHybridSearch = hybrid_scoring_util::isHybridSearchPipeline(_userPipeline);
+        MutableDocument spec;
+        if (!collectionless) {
+            spec["coll"] = Value(opts.serializeIdentifier(_userNss.coll()));
+        }
+        spec["pipeline"] = Value(serializedPipeline);
+        if (isHybridSearch) {
+            spec[hybrid_scoring_util::kIsHybridSearchFlagFieldName] = Value(isHybridSearch);
+        }
+        return Value(DOC(getSourceName() << spec.freezeToValue()));
     }
 }
 

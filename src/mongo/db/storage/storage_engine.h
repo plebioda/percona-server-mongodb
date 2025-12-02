@@ -522,10 +522,12 @@ public:
     virtual void dropSpillTable(RecoveryUnit& ru, StringData ident) = 0;
 
     /**
-     * Creates a temporary RecordStore on the storage engine. On startup after an unclean shutdown,
-     * the storage engine will drop any un-dropped temporary record stores.
+     * Creates a temporary RecordStore on the storage engine. If an ident is provided, uses it for
+     * the new table. If an ident is not provided, generates a new unique ident. On startup after an
+     * unclean shutdown, the storage engine will drop any un-dropped temporary record stores.
      */
     virtual std::unique_ptr<TemporaryRecordStore> makeTemporaryRecordStore(OperationContext* opCtx,
+                                                                           StringData ident,
                                                                            KeyFormat keyFormat) = 0;
 
     /**
@@ -608,10 +610,13 @@ public:
     virtual void clearDropPendingState(OperationContext* opCtx) = 0;
 
     /**
-     * Ensures the ident is not in a drop-pending state. If the second phase of a two-phase
-     * table drop is in progress, this either aborts that process or waits until it completes.
+     * If the given ident has been registered with the reaper, attempts to immediately drop it,
+     * possibly blocking while the background thread is reaping idents. Returns ObjectIsBusy if the
+     * ident could not be dropped due to being in use. Returns Status::OK() if the ident was not
+     * tracked as the reaper cannot distinguish "ident has already been dropped" from "ident was
+     * never drop pending".
      */
-    virtual void clearDropPendingStateForIdent(OperationContext* opCtx, StringData ident) = 0;
+    virtual Status immediatelyCompletePendingDrop(OperationContext* opCtx, StringData ident) = 0;
 
     BOOST_STRONG_TYPEDEF(uint64_t, CheckpointIteration);
 
@@ -830,6 +835,14 @@ public:
 
     virtual std::string generateNewCollectionIdent(const DatabaseName& dbName) const = 0;
     virtual std::string generateNewIndexIdent(const DatabaseName& dbName) const = 0;
+
+    /**
+     * Generates a unique ident for an internal table that can be used to create a temporary
+     * RecordStore instance using makeTemporaryRecordStore().
+     */
+    std::string generateNewInternalIdent() const {
+        return ident::generateNewInternalIdent();
+    }
 
     virtual std::vector<std::string> generateNewIndexIdents(const DatabaseName& dbName,
                                                             size_t count) const {

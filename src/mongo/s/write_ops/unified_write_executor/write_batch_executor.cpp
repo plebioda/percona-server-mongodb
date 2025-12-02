@@ -31,6 +31,7 @@
 
 #include "mongo/s/grid.h"
 #include "mongo/s/write_ops/wc_error.h"
+#include "mongo/s/write_ops/write_without_shard_key_util.h"
 
 #include <boost/optional.hpp>
 
@@ -38,11 +39,12 @@
 
 namespace mongo {
 namespace unified_write_executor {
-WriteBatchResponse WriteBatchExecutor::execute(OperationContext* opCtx, const WriteBatch& batch) {
-    return std::visit(OverloadedVisitor{[&](const auto& batchData) {
-                          return _execute(opCtx, batchData);
-                      }},
-                      batch);
+
+WriteBatchResponse WriteBatchExecutor::execute(OperationContext* opCtx,
+                                               RoutingContext& routingCtx,
+                                               const WriteBatch& batch) {
+    return std::visit([&](const auto& batchData) { return _execute(opCtx, routingCtx, batchData); },
+                      batch.data);
 }
 
 std::vector<AsyncRequestsSender::Request> WriteBatchExecutor::buildBulkWriteRequests(
@@ -71,16 +73,20 @@ std::vector<AsyncRequestsSender::Request> WriteBatchExecutor::buildBulkWriteRequ
 
             // Reassigns the namespace index for the list of ops.
             auto bulkOp = op.getBulkWriteOp();
-            visit(
-                OverloadedVisitor{
-                    [&](auto& value) { return value.setNsInfoIdx(nsIndex); },
-                },
-                bulkOp);
+            visit([&](auto& value) { return value.setNsInfoIdx(nsIndex); }, bulkOp);
             bulkOps.emplace_back(bulkOp);
         }
 
         auto bulkRequest = BulkWriteCommandRequest(std::move(bulkOps), std::move(nsInfos));
         bulkRequest.setOrdered(_context.getOrdered());
+        bulkRequest.setBypassDocumentValidation(_context.getBypassDocumentValidation());
+        bulkRequest.setLet(_context.getLet());
+        if (_context.isBulkWrite()) {
+            bulkRequest.setErrorsOnly(_context.getErrorsOnly());
+            bulkRequest.setComment(_context.getComment());
+            bulkRequest.setMaxTimeMS(_context.getMaxTimeMS());
+        }
+
         BSONObjBuilder builder;
         bulkRequest.serialize(&builder);
         logical_session_id_helpers::serializeLsidAndTxnNumber(opCtx, &builder);
@@ -100,6 +106,7 @@ std::vector<AsyncRequestsSender::Request> WriteBatchExecutor::buildBulkWriteRequ
 }
 
 WriteBatchResponse WriteBatchExecutor::_execute(OperationContext* opCtx,
+                                                RoutingContext& routingCtx,
                                                 const SimpleWriteBatch& batch) {
     std::vector<AsyncRequestsSender::Request> requestsToSend = buildBulkWriteRequests(opCtx, batch);
 
@@ -111,7 +118,12 @@ WriteBatchResponse WriteBatchExecutor::_execute(OperationContext* opCtx,
         ReadPreferenceSetting(ReadPreference::PrimaryOnly),
         Shard::RetryPolicy::kNoRetry);
 
-    WriteBatchResponse shardResponses;
+    // Note that we sent a request for the involved namespaces after the requests get scheduled.
+    for (const auto& nss : batch.getInvolvedNamespaces()) {
+        routingCtx.onRequestSentForNss(nss);
+    }
+
+    SimpleWriteBatchResponse shardResponses;
     while (!sender.done()) {
         auto arsResponse = sender.next();
         ShardResponse shardResponse{std::move(arsResponse.swResponse),
@@ -122,6 +134,47 @@ WriteBatchResponse WriteBatchExecutor::_execute(OperationContext* opCtx,
             "There should same number of requests and responses from a simple write batch",
             shardResponses.size() == batch.requestByShardId.size());
     return shardResponses;
+}
+
+WriteBatchResponse WriteBatchExecutor::_execute(OperationContext* opCtx,
+                                                RoutingContext& routingCtx,
+                                                const NonTargetedWriteBatch& batch) {
+    const WriteOp& writeOp = batch.op;
+    // TODO SERVER-108144 maybe we shouldn't call release here or maybe we should acknowledge a
+    // write based on the swRes.
+    routingCtx.release(writeOp.getNss());
+    auto bulkOp = writeOp.getBulkWriteOp();
+    const auto& nss = writeOp.getNss();
+
+    NamespaceInfoEntry nsInfo(nss);
+    const int32_t nsIndex = 0;
+
+    visit([&](auto& value) { return value.setNsInfoIdx(nsIndex); }, bulkOp);
+
+    if (BulkWriteCRUDOp(bulkOp).getType() == BulkWriteCRUDOp::OpType::kUpdate) {
+        const bool allowShardKeyUpdatesWithoutFullShardKeyInQuery =
+            opCtx->isRetryableWrite() || opCtx->inMultiDocumentTransaction();
+
+        get_if<BulkWriteUpdateOp>(&bulkOp)->setAllowShardKeyUpdatesWithoutFullShardKeyInQuery(
+            allowShardKeyUpdatesWithoutFullShardKeyInQuery);
+    }
+
+    std::vector<BulkWriteOpVariant> bulkOps;
+    std::vector<NamespaceInfoEntry> nsInfos;
+    bulkOps.emplace_back(std::move(bulkOp));
+    nsInfos.push_back(std::move(nsInfo));
+
+    auto bulkRequest = BulkWriteCommandRequest(std::move(bulkOps), std::move(nsInfos));
+
+    BSONObjBuilder builder;
+    bulkRequest.serialize(&builder);
+    BSONObj cmdObj = builder.obj();
+
+    boost::optional<WriteConcernErrorDetail> wce;
+    auto swRes =
+        write_without_shard_key::runTwoPhaseWriteProtocol(opCtx, nss, std::move(cmdObj), wce);
+
+    return NonTargetedWriteBatchResponse{std::move(swRes), std::move(wce), writeOp};
 }
 
 }  // namespace unified_write_executor

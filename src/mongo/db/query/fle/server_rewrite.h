@@ -35,12 +35,12 @@
 #include "mongo/crypto/fle_field_schema_gen.h"
 #include "mongo/db/database_name.h"
 #include "mongo/db/fle_crud.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/expression_context.h"
 #include "mongo/db/pipeline/pipeline.h"
 #include "mongo/db/query/collation/collator_interface.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
 #include "mongo/db/query/count_command_gen.h"
 #include "mongo/db/query/find_command.h"
 #include "mongo/db/query/fle/query_rewriter_interface.h"
@@ -102,12 +102,11 @@ void processCountCommand(OperationContext* opCtx,
  * FLE work to be done. The encryption info does not need to be kept around (e.g. on a command
  * object).
  */
-std::unique_ptr<Pipeline, PipelineDeleter> processPipeline(
-    OperationContext* opCtx,
-    NamespaceString nss,
-    const EncryptionInformation& encryptInfo,
-    std::unique_ptr<Pipeline, PipelineDeleter> toRewrite,
-    GetTxnCallback txn);
+std::unique_ptr<Pipeline> processPipeline(OperationContext* opCtx,
+                                          NamespaceString nss,
+                                          const EncryptionInformation& encryptInfo,
+                                          std::unique_ptr<Pipeline> toRewrite,
+                                          GetTxnCallback txn);
 
 /**
  * Rewrite a filter MatchExpression with FLE Find Payloads into a disjunction over the tag array

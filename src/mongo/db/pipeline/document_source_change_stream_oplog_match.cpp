@@ -38,6 +38,7 @@
 #include "mongo/db/pipeline/change_stream_helpers.h"
 #include "mongo/db/pipeline/document_source_change_stream.h"
 #include "mongo/db/pipeline/resume_token.h"
+#include "mongo/db/query/compiler/rewrites/matcher/expression_optimizer.h"
 #include "mongo/idl/idl_parser.h"
 
 #include <algorithm>
@@ -110,7 +111,7 @@ std::unique_ptr<MatchExpression> buildOplogMatchFilter(
 
     // Perform a final optimization pass on the complete filter before returning.
     // TODO SERVER-81846: Enable the Boolean Expression Simplifier in change streams.
-    return MatchExpression::optimize(std::move(oplogFilter), /* enableSimplification */ false);
+    return optimizeMatchExpression(std::move(oplogFilter), /* enableSimplification */ false);
 }
 }  // namespace change_stream_filter
 
@@ -166,7 +167,7 @@ StageConstraints DocumentSourceChangeStreamOplogMatch::constraints(
                                  UnionRequirement::kNotAllowed,
                                  ChangeStreamRequirement::kChangeStreamStage);
     constraints.isIndependentOfAnyCollection =
-        pExpCtx->getNamespaceString().isCollectionlessAggregateNS() ? true : false;
+        getExpCtx()->getNamespaceString().isCollectionlessAggregateNS() ? true : false;
     constraints.consumesLogicalCollectionData = false;
     return constraints;
 }
@@ -180,7 +181,7 @@ DocumentSourceContainer::iterator DocumentSourceChangeStreamOplogMatch::doOptimi
     // It is not safe to combine any parts of a user $match with this stage when the $user match has
     // a non-simple collation, because this stage's MatchExpression always executes wtih the simple
     // collation.
-    if (pExpCtx->getCollator()) {
+    if (getExpCtx()->getCollator()) {
         return nextChangeStreamStageItr;
     }
 
@@ -222,7 +223,7 @@ DocumentSourceContainer::iterator DocumentSourceChangeStreamOplogMatch::doOptimi
     // Recreate the change stream filter with additional predicates from the user's $match.
     std::vector<BSONObj> backingBsonObjs;
     auto filterWithUserPredicates = change_stream_filter::buildOplogMatchFilter(
-        pExpCtx, *_clusterTime, backingBsonObjs, matchStage->getMatchExpression());
+        getExpCtx(), *_clusterTime, backingBsonObjs, matchStage->getMatchExpression());
 
     // Set the internal DocumentSourceMatch state to the new filter.
     rebuild(filterWithUserPredicates->serialize());

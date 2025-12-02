@@ -35,8 +35,8 @@
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/collation/collation_index_key.h"
 #include "mongo/db/query/collation/collator_interface.h"
+#include "mongo/db/query/compiler/metadata/index_entry.h"
 #include "mongo/db/query/compiler/stats/collection_statistics.h"
-#include "mongo/db/query/index_entry.h"
 #include "mongo/db/query/index_hint.h"
 #include "mongo/db/query/multiple_collection_accessor.h"
 #include "mongo/db/query/query_knobs_gen.h"
@@ -272,6 +272,14 @@ struct QueryPlannerParams {
         mainCollectionInfo.options = args.plannerOptions;
         if (!args.collections.hasMainCollection()) {
             return;
+        }
+        // Prevent histogramCE on queries on internal collections. This is because currently
+        // histogramCE will cause queries to fail if the query contains a predicate on a field
+        // without a histogram. We don't create histograms on internal collections. To prevent such
+        // queries from failing, we use multiplanning in this case.
+        if (planRankerMode == QueryPlanRankerModeEnum::kHistogramCE &&
+            args.canonicalQuery.nss().dbName().isInternalDb()) {
+            planRankerMode = QueryPlanRankerModeEnum::kMultiPlanning;
         }
         fillOutPlannerParamsForExpressQuery(
             args.opCtx, args.canonicalQuery, args.collections.getMainCollection());

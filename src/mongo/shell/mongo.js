@@ -401,9 +401,6 @@ globalThis.connect = function(url, user, pass, apiParameters) {
 <<<<<<< HEAD
         var serverVersion = db.version();
         chatty("Percona Server for MongoDB server version: v" + serverVersion);
-=======
-        let serverVersion = db.version();
-        chatty("MongoDB server version: " + serverVersion);
 >>>>>>> 9e6366f4b79
 
         let shellVersion = version();

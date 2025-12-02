@@ -38,7 +38,7 @@ namespace {
 void validateWriteAllowed(OperationContext* opCtx) {
     uassert(ErrorCodes::IllegalOperation,
             "Cannot execute a write operation in read-only mode",
-            !opCtx->readOnly());
+            !opCtx || !opCtx->readOnly());
 }
 
 }  // namespace
@@ -140,18 +140,6 @@ StatusWith<RecordData> RecordStoreBase::updateWithDamages(OperationContext* opCt
     return _updateWithDamages(opCtx, ru, id, data, damageSource, damages);
 }
 
-std::unique_ptr<SeekableRecordCursor> RecordStoreBase::getCursor(OperationContext* opCtx,
-                                                                 bool forward) const {
-    return getCursor(opCtx, *shard_role_details::getRecoveryUnit(opCtx), forward);
-}
-
-std::unique_ptr<RecordCursor> RecordStoreBase::getRandomCursor(OperationContext* opCtx) const {
-    return getRandomCursor(opCtx, *shard_role_details::getRecoveryUnit(opCtx));
-}
-
-Status RecordStoreBase::truncate(OperationContext* opCtx) {
-    return truncate(opCtx, *shard_role_details::getRecoveryUnit(opCtx));
-}
 Status RecordStoreBase::truncate(OperationContext* opCtx, RecoveryUnit& ru) {
     validateWriteAllowed(opCtx);
     return _truncate(opCtx, ru);
@@ -172,20 +160,10 @@ Status RecordStoreBase::rangeTruncate(OperationContext* opCtx,
 }
 
 StatusWith<int64_t> RecordStoreBase::compact(OperationContext* opCtx,
-                                             const CompactOptions& options) {
-    return compact(opCtx, *shard_role_details::getRecoveryUnit(opCtx), options);
-}
-StatusWith<int64_t> RecordStoreBase::compact(OperationContext* opCtx,
                                              RecoveryUnit& ru,
                                              const CompactOptions& options) {
     validateWriteAllowed(opCtx);
     return _compact(opCtx, ru, options);
-}
-
-void RecordStoreBase::reserveRecordIds(OperationContext* opCtx,
-                                       std::vector<RecordId>* rids,
-                                       size_t numRecords) {
-    reserveRecordIds(opCtx, *shard_role_details::getRecoveryUnit(opCtx), rids, numRecords);
 }
 
 RecordStoreBase::Capped::Capped()
@@ -205,10 +183,6 @@ void RecordStoreBase::Capped::notifyWaitersIfNeeded() {
     }
 }
 
-RecordStoreBase::Capped::TruncateAfterResult RecordStoreBase::Capped::truncateAfter(
-    OperationContext* opCtx, const RecordId& id, bool inclusive) {
-    return truncateAfter(opCtx, *shard_role_details::getRecoveryUnit(opCtx), id, inclusive);
-}
 RecordStoreBase::Capped::TruncateAfterResult RecordStoreBase::Capped::truncateAfter(
     OperationContext* opCtx, RecoveryUnit& ru, const RecordId& id, bool inclusive) {
     validateWriteAllowed(opCtx);

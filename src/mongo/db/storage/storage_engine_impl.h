@@ -139,6 +139,7 @@ public:
     void dropSpillTable(RecoveryUnit& ru, StringData ident) override;
 
     std::unique_ptr<TemporaryRecordStore> makeTemporaryRecordStore(OperationContext* opCtx,
+                                                                   StringData ident,
                                                                    KeyFormat keyFormat) override;
 
     std::unique_ptr<TemporaryRecordStore> makeTemporaryRecordStoreForResumableIndexBuild(
@@ -186,7 +187,7 @@ public:
 
     void clearDropPendingState(OperationContext* opCtx) final;
 
-    void clearDropPendingStateForIdent(OperationContext* opCtx, StringData ident) final;
+    Status immediatelyCompletePendingDrop(OperationContext* opCtx, StringData ident) final;
 
     SnapshotManager* getSnapshotManager() const final;
 
@@ -260,6 +261,7 @@ public:
 
     std::string generateNewCollectionIdent(const DatabaseName& dbName) const override;
     std::string generateNewIndexIdent(const DatabaseName& dbName) const override;
+
     bool storesFilesInDbPath() const override {
         return !_options.directoryForIndexes && !_options.directoryPerDB;
     }

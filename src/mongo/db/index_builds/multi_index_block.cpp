@@ -1178,7 +1178,7 @@ Status MultiIndexBlock::commit(OperationContext* opCtx,
 }
 
 bool MultiIndexBlock::isBackgroundBuilding() const {
-    return _method == IndexBuildMethod::kHybrid;
+    return _method == IndexBuildMethod::kHybrid || _method == IndexBuildMethod::kPrimaryDriven;
 }
 
 void MultiIndexBlock::setIndexBuildMethod(IndexBuildMethod indexBuildMethod) {
@@ -1297,11 +1297,8 @@ BSONObj MultiIndexBlock::_constructStateObject(OperationContext* opCtx,
             auto ident = StringData(*duplicateKeyTrackerTableIdent);
             indexStateInfo.setDuplicateKeyTrackerTable(ident);
         }
-        if (auto skippedRecordTrackerTableIdent =
-                indexBuildInterceptor->getSkippedRecordTracker()->getTableIdent()) {
-            auto ident = StringData(*skippedRecordTrackerTableIdent);
-            indexStateInfo.setSkippedRecordTrackerTable(ident);
-        }
+        indexStateInfo.setSkippedRecordTrackerTable(
+            indexBuildInterceptor->getSkippedRecordTracker()->getTableIdent());
         indexStateInfo.setSpec(index.block->getSpec());
         indexStateInfo.setIsMultikey(index.bulk->isMultikey());
 

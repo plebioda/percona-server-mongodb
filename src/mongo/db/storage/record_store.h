@@ -521,11 +521,7 @@ public:
      * collection so that Record will be returned on the first call to next(). Implementations
      * are allowed to lazily seek to the first Record when next() is called rather than doing
      * it on construction.
-     *
-     * TODO (SERVER-105771): Remove the overload without RecoveryUnit.
      */
-    virtual std::unique_ptr<SeekableRecordCursor> getCursor(OperationContext*,
-                                                            bool forward = true) const = 0;
     virtual std::unique_ptr<SeekableRecordCursor> getCursor(OperationContext*,
                                                             RecoveryUnit&,
                                                             bool forward = true) const = 0;
@@ -540,19 +536,16 @@ public:
      * the same document more than once and, as a result, may return more documents than exist in
      * the record store. Implementations should avoid obvious biases toward older, newer, larger
      * smaller or other specific classes of documents.
-     *
-     * TODO (SERVER-105771): Remove the overload without RecoveryUnit.
      */
-    virtual std::unique_ptr<RecordCursor> getRandomCursor(OperationContext*) const = 0;
     virtual std::unique_ptr<RecordCursor> getRandomCursor(OperationContext*,
                                                           RecoveryUnit&) const = 0;
 
     /**
      * Removes all Records.
      *
-     * TODO (SERVER-105771): Remove the overload without RecoveryUnit.
+     * The operation context parameter is optional and, if non-null, will only be used to check the
+     * "read-only" flag.
      */
-    virtual Status truncate(OperationContext*) = 0;
     virtual Status truncate(OperationContext*, RecoveryUnit&) = 0;
 
     /**
@@ -562,6 +555,9 @@ public:
      * order to update numRecords and dataSize correctly. Implementations are free to ignore the
      * hints if they have a way of obtaining the correct values without the help of external
      * callers.
+     *
+     * The operation context parameter is optional and, if non-null, will only be used to check the
+     * "read-only" flag.
      */
     virtual Status rangeTruncate(OperationContext*,
                                  RecoveryUnit&,
@@ -581,10 +577,7 @@ public:
      * Attempt to reduce the storage space used by this RecordStore.
      * Only called if compactSupported() returns true.
      * Returns an estimated number of bytes when doing a dry run.
-     *
-     * TODO (SERVER-105771): Remove the overload without RecoveryUnit.
      */
-    virtual StatusWith<int64_t> compact(OperationContext*, const CompactOptions&) = 0;
     virtual StatusWith<int64_t> compact(OperationContext*,
                                         RecoveryUnit&,
                                         const CompactOptions&) = 0;
@@ -624,10 +617,7 @@ public:
     /**
      * Reserve a range of contiguous RecordIds. Returns the first valid RecordId in the range. Must
      * only be called on a RecordStore with KeyFormat::Long.
-     *
-     * TODO (SERVER-105771): Remove the overload without RecoveryUnit.
      */
-    virtual void reserveRecordIds(OperationContext*, std::vector<RecordId>*, size_t numRecords) = 0;
     virtual void reserveRecordIds(OperationContext*,
                                   RecoveryUnit&,
                                   std::vector<RecordId>*,
@@ -684,12 +674,7 @@ public:
      * collection.  The collection cannot be completely emptied using this
      * function.  An assertion will be thrown if that is attempted.
      * @param inclusive - Truncate 'end' as well iff true
-     *
-     * TODO (SERVER-105771): Remove the overload without RecoveryUnit.
      */
-    virtual TruncateAfterResult truncateAfter(OperationContext*,
-                                              const RecordId&,
-                                              bool inclusive) = 0;
     virtual TruncateAfterResult truncateAfter(OperationContext*,
                                               RecoveryUnit&,
                                               const RecordId&,

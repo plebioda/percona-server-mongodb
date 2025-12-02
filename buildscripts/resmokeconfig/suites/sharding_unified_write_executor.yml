@@ -21,11 +21,15 @@ selector:
     - jstests/sharding/mongos_writes_wait_for_write_concern_unsharded.js
     # - jstests/sharding/multi_collection_transaction_placement_conflict_workaround.js
     # - jstests/sharding/query/bulk_write_size_limit.js
-    # - jstests/sharding/query/let_rand.js
+    - jstests/sharding/query/let_rand.js
     # - jstests/sharding/query/update/update_shard_key_bulk_write.js
     # - jstests/sharding/query/update_delete_many_metrics.js
     # - jstests/sharding/read_write_concern_defaults_application.js
     # - jstests/sharding/timeseries/timeseries_writes_without_shard_key_single_shard_data_placement_change.js
+    - jstests/sharding/updateOne_without_shard_key/deleteOne_without_shard_key_basic.js
+    - jstests/sharding/updateOne_without_shard_key/dropping_collection_during_clusterQueryWithoutShardKey_errors.js
+    - jstests/sharding/updateOne_without_shard_key/updateOne_without_shard_key_basic.js
+    - jstests/sharding/updateOne_without_shard_key/updateOne_without_shard_key_sort.js
     # - jstests/sharding/updateOne_without_shard_key/write_without_shard_key_single_shard_data_placement_change.js
 
     # No passthrough tests.

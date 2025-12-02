@@ -539,7 +539,8 @@ bool CollectionImpl::requiresIdIndex() const {
 std::unique_ptr<SeekableRecordCursor> CollectionImpl::getCursor(OperationContext* opCtx,
                                                                 bool forward) const {
     dassert(shard_role_details::getLocker(opCtx)->isReadLocked());
-    return _shared->_recordStore->getCursor(opCtx, forward);
+    return _shared->_recordStore->getCursor(
+        opCtx, *shard_role_details::getRecoveryUnit(opCtx), forward);
 }
 
 
@@ -1180,7 +1181,9 @@ Status CollectionImpl::truncate(OperationContext* opCtx) {
 
     if (auto status = _indexCatalog->truncateAllIndexes(opCtx, this); !status.isOK())
         return status;
-    if (auto status = _shared->_recordStore->truncate(opCtx); !status.isOK())
+    if (auto status =
+            _shared->_recordStore->truncate(opCtx, *shard_role_details::getRecoveryUnit(opCtx));
+        !status.isOK())
         return status;
     if (ns().isOplog()) {
         if (auto truncateMarkers = LocalOplogInfo::get(opCtx)->getTruncateMarkers()) {
@@ -1584,6 +1587,14 @@ Status CollectionImpl::prepareForIndexBuild(OperationContext* opCtx,
         auto ii = _indexCatalog->getIndexIterator(IndexCatalog::InclusionPolicy::kAll);
         while (ii->more()) {
             auto entry = ii->next();
+            if (entry->getIdent() == ident) {
+                return Status(
+                    ErrorCodes::ObjectAlreadyExists,
+                    fmt::format(
+                        "Attempting to create index '{}' with ident '{}' that is already in use",
+                        spec->indexName(),
+                        ident));
+            }
             indexIdents.append(entry->descriptor()->indexName(), entry->getIdent());
         }
 

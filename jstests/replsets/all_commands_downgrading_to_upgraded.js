@@ -124,6 +124,7 @@ const allCommands = {
     _shardsvrJoinDDLCoordinators: {skip: isAnInternalCommand},
     _shardsvrJoinMigrations: {skip: isAnInternalCommand},
     _shardsvrMergeAllChunksOnShard: {skip: isAnInternalCommand},
+    _shardsvrMergeChunks: {skip: isAnInternalCommand},
     _shardsvrMovePrimary: {skip: isAnInternalCommand},
     _shardsvrMovePrimaryEnterCriticalSection: {skip: isAnInternalCommand},
     _shardsvrMovePrimaryExitCriticalSection: {skip: isAnInternalCommand},
@@ -523,11 +524,6 @@ const allCommands = {
         },
     },
     compactStructuredEncryptionData: {skip: "requires additional encrypted collection setup"},
-    configureBackgroundTask: {
-        command: {configureBackgroundTask: 1, task: "ttlMonitor", mode: "enabled"},
-        isAdminCommand: true,
-        doesNotRunOnMongos: true,
-    },
     configureFailPoint: {skip: isAnInternalCommand},
     configureCollectionBalancing: {
         setUp: function(conn) {

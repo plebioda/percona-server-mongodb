@@ -20,19 +20,24 @@ jobs:
       - name: Setup environment
         uses: ./.github/actions/setup-env
 
-      - name: Get changed files
-        id: changed
-        uses: tj-actions/changed-files@v45
-
-      - name: List changed files
-        run: |
-          echo "Changed files: ${{ steps.changed.outputs.all_changed_files }}"
-
       - name: Run bazel format
         run: |
           bazel run format
 
-      - name: Check for formatting changes
-        id: check_format
+      - name: Verify formatting
         run: |
-          poetry run python .github/scripts/check_format.py "${{ github.event.pull_request.base.sha }}"
+          if ! git diff --quiet; then
+            echo "::error::Formatting issues detected."
+            echo ""
+            echo "Your PR is not properly formatted."
+            echo ""
+            echo "To fix the problem locally, run:"
+            echo ""
+            echo "    bazel run format"
+            echo ""
+            echo "and commit the resulting changes."
+            echo ""
+            echo "Diff:"
+            git diff --stat
+            exit 1
+          fi

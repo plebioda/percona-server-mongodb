@@ -97,7 +97,7 @@ jobs:
           } > .bazelrc.compiledb
           bazel \
             --bazelrc=.bazelrc.compiledb \
-            build \
+            build --intree_compdb \
             //:compiledb \
             //src/mongo/tools/mongo_tidy_checks:mongo_tidy_checks
 

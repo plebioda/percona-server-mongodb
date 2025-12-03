@@ -45,11 +45,19 @@ jobs:
         run: |
           npm install -g @google/gemini-cli
 
+      - name: Setup mergai
+        run: |
+          cd .github/scripts/mergai
+          python3 -m venv venv
+          source venv/bin/activate
+          venv/bin/pip install -r requirements.txt
+          cd -
+
       - name: Define env variables
         run: |
           BASE_BRANCH_NAME=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
-          echo "BASE_BRANCH=merging-workflow-baseline-${BASE_BRANCH_NAME}-${{ inputs.commit }}" >> $GITHUB_ENV
-          echo "HEAD_BRANCH=merging-workflow-solution-${BASE_BRANCH_NAME}-${{ inputs.commit }}" >> $GITHUB_ENV
+          echo "BASE_BRANCH=mergai-workflow-baseline-${BASE_BRANCH_NAME}-${{ inputs.commit }}" >> $GITHUB_ENV
+          echo "HEAD_BRANCH=mergai-workflow-solution-${BASE_BRANCH_NAME}-${{ inputs.commit }}" >> $GITHUB_ENV
           echo "USER_NAME=github-actions[bot]" >> $GITHUB_ENV
           echo "USER_EMAIL=github-actions[bot]@users.noreply.github.com" >> $GITHUB_ENV
           echo "UPSTREAM=https://github.com/mongodb/mongo.git" >> $GITHUB_ENV
@@ -76,6 +84,10 @@ jobs:
         run: |
           git status
 
+      - name: Generate prompt
+        run: |
+          .github/scripts/mergai/venv/bin/python .github/scripts/mergai/main.py conflict-context --output-prompt-file merge_prompt.md
+
       - name: Export conflicted files
         run: |
           CONFLICTED_FILES="$(git diff --name-only --diff-filter=U || true)"
@@ -94,12 +106,15 @@ jobs:
 
       - name: Resolve conflicts
         run: |
-          gemini -d -m "${{ inputs.gemini-model }}" -y "See @.github/merging_prompt.md and resolve merge conflicts in files: ${{ env.CONFLICTED_FILES }}"
+          echo "Generated merge prompt:"
+          cat merge_prompt.md
+          gemini -d -m "${{ inputs.gemini-model }}" -y "See @merge_prompt.md and resolve merge conflicts in files: ${{ env.CONFLICTED_FILES }}"
+          echo "Gemini provided solution:"
           cat solution.md
 
       - name: Finalize merge
         run: |
-          git add . ':(exclude)solution.md'
+          git add . ':(exclude)solution.md' ':(exclude)merge_prompt.md'
           git commit -m "Resolved merge conflicts using Gemini for ${{ inputs.commit }}"
           git push -f origin ${{ env.HEAD_BRANCH }}
 

@@ -1,0 +1,7 @@
+click
+pyaml
+jinja2
+GitPython
+langchain
+langchain_google_genai
+dotenv

@@ -1,4 +1,12 @@
-# Merging Prompt for Percona Server for MongoDB
+import click
+
+from git_utils import get_conflict_metadata
+from jinja2 import Template
+
+TEMPLATE ="""
+
+# Merge Conflict Resolution Prompt
+
 
 ## System Prompt
 
@@ -37,3 +45,44 @@ Provide the following in the markdown file 'solution.md':
     - the list of files that were modified with explanations of the changes made in each file,
     - the list of files that still have unresolved conflicts (if any),
     - any important notes or considerations for the developers reviewing the changes.
+
+## Conflict Details
+
+baseline commit: {{ context.base_commit.hexsha }}
+our commit: {{ context.ours_commit.hexsha }}
+their commit: {{ context.theirs_commit.hexsha }}
+
+{% for path, conflict_data in context.diffs.items() %}
+## Conflict in `{{ path }}`
+
+Hunk:
+
+```diff
+{{ conflict_data }}
+```
+
+{% endfor %}
+
+"""
+
+
+
+def write_to_file(filename: str, content: str):
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(content)
+
+@click.command()
+@click.pass_context
+@click.option("--output-prompt-file", default="merge_prompt.md", help="File to write the generated prompt to.")
+def conflict_context(ctx, output_prompt_file):
+
+    metadata = get_conflict_metadata()
+    import json
+    print(json.dumps(metadata, default=str, indent=2))
+    if len(metadata["diffs"]) == 0:
+        click.echo("No conflicts found")
+        exit(1)
+
+    template = Template(TEMPLATE)
+    prompt = template.render(context=metadata)
+    write_to_file(ctx.params["output_prompt_file"], prompt)

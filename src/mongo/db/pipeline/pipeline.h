@@ -36,7 +36,6 @@
 #include "mongo/db/exec/document_value/document.h"
 #include "mongo/db/exec/document_value/document_metadata_fields.h"
 #include "mongo/db/exec/document_value/value.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/dependencies.h"
@@ -48,6 +47,7 @@
 #include "mongo/db/pipeline/sharded_agg_helpers_targeting_policy.h"
 #include "mongo/db/pipeline/variables.h"
 #include "mongo/db/query/client_cursor/cursor_response_gen.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
 #include "mongo/db/query/plan_summary_stats.h"
 #include "mongo/db/query/query_knobs_gen.h"
 #include "mongo/db/query/query_shape/serialization_options.h"
@@ -74,7 +74,6 @@ namespace mongo {
 class BSONObj;
 class OperationContext;
 class Pipeline;
-class PipelineDeleter;
 
 /**
  * Enabling the disablePipelineOptimization fail point will stop the aggregate command from
@@ -138,16 +137,15 @@ public:
      * will not be used during execution of the pipeline. Doing so may cause comparisons made during
      * parse-time to return the wrong results.
      */
-    static std::unique_ptr<Pipeline, PipelineDeleter> parse(
-        const std::vector<BSONObj>& rawPipeline,
-        const boost::intrusive_ptr<ExpressionContext>& expCtx,
-        PipelineValidatorCallback validator = nullptr);
+    static std::unique_ptr<Pipeline> parse(const std::vector<BSONObj>& rawPipeline,
+                                           const boost::intrusive_ptr<ExpressionContext>& expCtx,
+                                           PipelineValidatorCallback validator = nullptr);
 
     /**
      * Parses sub-pipelines from a $facet aggregation. Like parse(), but skips top-level
      * validators.
      */
-    static std::unique_ptr<Pipeline, PipelineDeleter> parseFacetPipeline(
+    static std::unique_ptr<Pipeline> parseFacetPipeline(
         const std::vector<BSONObj>& rawPipeline,
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         PipelineValidatorCallback validator = nullptr);
@@ -156,7 +154,7 @@ public:
      * Like parse, but takes a BSONElement instead of a vector of objects. 'arrElem' must be an
      * array of objects.
      */
-    static std::unique_ptr<Pipeline, PipelineDeleter> parseFromArray(
+    static std::unique_ptr<Pipeline> parseFromArray(
         BSONElement arrayElem,
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         PipelineValidatorCallback validator = nullptr);
@@ -167,8 +165,8 @@ public:
      * Returns a non-OK status if any stage is in an invalid position. For example, if an $out stage
      * is present but is not the last stage.
      */
-    static std::unique_ptr<Pipeline, PipelineDeleter> create(
-        DocumentSourceContainer sources, const boost::intrusive_ptr<ExpressionContext>& expCtx);
+    static std::unique_ptr<Pipeline> create(DocumentSourceContainer sources,
+                                            const boost::intrusive_ptr<ExpressionContext>& expCtx);
 
     /**
      * Returns true if the provided aggregation command has an $out or $merge stage.
@@ -182,7 +180,7 @@ public:
      * - If opts.attachCursorSource is false, the pipeline will be returned without attempting to
      * add an initial cursor source.
      */
-    static std::unique_ptr<Pipeline, PipelineDeleter> makePipeline(
+    static std::unique_ptr<Pipeline> makePipeline(
         const std::vector<BSONObj>& rawPipeline,
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         MakePipelineOptions opts = MakePipelineOptions{});
@@ -196,7 +194,7 @@ public:
      * This function requires opts.attachCursorSource to be true.
      * This function throws if parsing the pipeline set on aggRequest failed.
      */
-    static std::unique_ptr<Pipeline, PipelineDeleter> makePipeline(
+    static std::unique_ptr<Pipeline> makePipeline(
         AggregateCommandRequest& aggRequest,
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         boost::optional<BSONObj> shardCursorsSortSpec = boost::none,
@@ -211,14 +209,14 @@ public:
     static DocumentSourceContainer::iterator optimizeEndOfPipeline(
         DocumentSourceContainer::iterator itr, DocumentSourceContainer* container);
 
-    static std::unique_ptr<Pipeline, PipelineDeleter> viewPipelineHelperForSearch(
+    static std::unique_ptr<Pipeline> viewPipelineHelperForSearch(
         const boost::intrusive_ptr<ExpressionContext>& subPipelineExpCtx,
         ResolvedNamespace resolvedNs,
         std::vector<BSONObj> currentPipeline,
         MakePipelineOptions opts,
         NamespaceString originalNs);
 
-    static std::unique_ptr<Pipeline, PipelineDeleter> makePipelineFromViewDefinition(
+    static std::unique_ptr<Pipeline> makePipelineFromViewDefinition(
         const boost::intrusive_ptr<ExpressionContext>& subPipelineExpCtx,
         ResolvedNamespace resolvedNs,
         std::vector<BSONObj> currentPipeline,
@@ -232,30 +230,12 @@ public:
      * The the resulting pipeline will have default values for '_splitStage', '_disposed',
      * '_isParameterized', and 'frozen' properties.
      */
-    std::unique_ptr<Pipeline, PipelineDeleter> clone(
-        const boost::intrusive_ptr<ExpressionContext>& = nullptr) const;
+    std::unique_ptr<Pipeline> clone(const boost::intrusive_ptr<ExpressionContext>& = nullptr) const;
 
     const boost::intrusive_ptr<ExpressionContext>& getContext() const {
         return pCtx;
     }
 
-    /**
-     * Releases any resources held by this pipeline such as PlanExecutors or in-memory structures.
-     * Must be called before deleting a Pipeline.
-     *
-     * There are multiple cleanup scenarios:
-     *  - This Pipeline will only ever use one OperationContext. In this case the PipelineDeleter
-     *    will automatically call dispose() before deleting the Pipeline, and the owner need not
-     *    call dispose().
-     *  - This Pipeline may use multiple OperationContexts over its lifetime. In this case it
-     *    is the owner's responsibility to call dispose() with a valid OperationContext before
-     *    deleting the Pipeline.
-     */
-    void dispose(OperationContext* opCtx);
-
-    bool isDisposed() const {
-        return _disposed;
-    }
 
     bool isFrozen() const {
         return _frozen;
@@ -470,13 +450,6 @@ public:
     }
 
     /**
-     * Stitch together the source pointers by calling setSource() for each source in 'container'.
-     * This function must be called any time the order of stages within the container changes, e.g.
-     * in optimizeContainer().
-     */
-    static void stitch(DocumentSourceContainer* container);
-
-    /**
      * Removes and returns the first stage of the pipeline. Returns nullptr if the pipeline is
      * empty.
      */
@@ -515,7 +488,7 @@ public:
      * Appends another pipeline to the existing pipeline.
      * NOTE: The other pipeline will be destroyed.
      */
-    void appendPipeline(std::unique_ptr<Pipeline, PipelineDeleter> otherPipeline);
+    void appendPipeline(std::unique_ptr<Pipeline> otherPipeline);
 
     /**
      * Performs common validation for top-level or facet pipelines. Throws if the pipeline is
@@ -575,81 +548,30 @@ public:
     void checkValidOperationContext() const;
 
 private:
-    friend class PipelineDeleter;
-
     Pipeline(const boost::intrusive_ptr<ExpressionContext>& pCtx);
     Pipeline(DocumentSourceContainer stages, const boost::intrusive_ptr<ExpressionContext>& pCtx);
-
-    ~Pipeline();
 
     /**
      * Helper for public methods that parse pipelines from vectors of different types.
      */
     template <class T>
-    static std::unique_ptr<Pipeline, PipelineDeleter> parseCommon(
+    static std::unique_ptr<Pipeline> parseCommon(
         const std::vector<T>& rawPipeline,
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         PipelineValidatorCallback validator,
         bool isFacetPipeline,
         std::function<BSONObj(T)> getElemFunc);
 
-    /**
-     * Stitch together the source pointers by calling setSource() for each source in '_sources'.
-     * This function must be called any time the order of stages within the pipeline changes, e.g.
-     * in optimizePipeline().
-     */
-    void stitch();
 
     DocumentSourceContainer _sources;
 
     PipelineSplitState _splitState = PipelineSplitState::kUnsplit;
     boost::intrusive_ptr<ExpressionContext> pCtx;
-    bool _disposed = false;
     bool _isParameterized = false;
 
     // Do not allow modifications of this pipeline.
     bool _frozen{false};
 };
 
-/**
- * This class will ensure a Pipeline is disposed before it is deleted.
- */
-class PipelineDeleter {
-public:
-    /**
-     * Constructs an empty deleter. Useful for creating a
-     * unique_ptr<Pipeline, PipelineDeleter> without populating it.
-     */
-    PipelineDeleter() {}
-
-    explicit PipelineDeleter(OperationContext* opCtx) : _opCtx(opCtx) {}
-
-    /**
-     * If an owner of a std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> wants to assume
-     * responsibility for calling PlanExecutor::dispose(), they can call dismissDisposal(). If
-     * dismissed, a PipelineDeleter will not call dispose() when deleting the PlanExecutor.
-     */
-    void dismissDisposal() {
-        _dismissed = true;
-    }
-
-    /**
-     * Calls dispose() on 'pipeline', unless this PipelineDeleter has been dismissed.
-     */
-    void operator()(Pipeline* pipeline) {
-        // It is illegal to call this method on a default-constructed PipelineDeleter.
-        invariant(_opCtx);
-        if (!_dismissed) {
-            pipeline->dispose(_opCtx);
-        }
-        delete pipeline;
-    }
-
-private:
-    OperationContext* _opCtx = nullptr;
-
-    bool _dismissed = false;
-};
-
-using PipelinePtr = std::unique_ptr<Pipeline, PipelineDeleter>;
+using PipelinePtr = std::unique_ptr<Pipeline>;
 }  // namespace mongo

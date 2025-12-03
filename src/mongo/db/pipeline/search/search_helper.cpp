@@ -70,14 +70,12 @@ void desugarSearchPipeline(Pipeline* pipeline) {
     if (searchStage) {
         auto desugaredPipeline = dynamic_cast<DocumentSourceSearch*>(searchStage.get())->desugar();
         sources.insert(sources.begin(), desugaredPipeline.begin(), desugaredPipeline.end());
-        Pipeline::stitch(&sources);
     }
     auto vectorSearchStage = pipeline->popFrontWithName(DocumentSourceVectorSearch::kStageName);
     if (vectorSearchStage) {
         auto desugaredPipeline =
             dynamic_cast<DocumentSourceVectorSearch*>(vectorSearchStage.get())->desugar();
         sources.insert(sources.begin(), desugaredPipeline.begin(), desugaredPipeline.end());
-        Pipeline::stitch(&sources);
     }
 }
 
@@ -343,7 +341,7 @@ void assertSearchMetaAccessValid(const DocumentSourceContainer& shardsPipeline,
     assertSearchMetaAccessValidHelper({&shardsPipeline, &mergePipeline});
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> prepareSearchForTopLevelPipelineLegacyExecutor(
+std::unique_ptr<Pipeline> prepareSearchForTopLevelPipelineLegacyExecutor(
     boost::intrusive_ptr<ExpressionContext> expCtx,
     Pipeline* origPipeline,
     DocsNeededBounds bounds,
@@ -407,7 +405,7 @@ std::unique_ptr<Pipeline, PipelineDeleter> prepareSearchForTopLevelPipelineLegac
         origSearchStage->markCollectionEmpty();
     }
 
-    std::unique_ptr<Pipeline, PipelineDeleter> newPipeline = nullptr;
+    std::unique_ptr<Pipeline> newPipeline = nullptr;
     for (auto& cursor : cursors) {
         auto maybeCursorLabel = cursor->getType();
         if (!maybeCursorLabel) {
@@ -653,10 +651,10 @@ void validateViewNotSetByUser(boost::intrusive_ptr<ExpressionContext> expCtx, co
     // Because the view key already exists in the pipeline and the internal client flag is not set,
     // this internal client error gets thrown.
 
-    // To avoid that, the isRankFusion flag is only set after the initial parsing of the
-    // user-provided $rankFusion pipeline and its value is checked here to avoid throwing an
-    // internal client error.
-    if (spec.hasField(kViewFieldName) && !expCtx->isRankFusion()) {
+    // To avoid that, the isHybridSearch flag is only set after the initial parsing of the
+    // user-provided $rankFusion/$scoreFusion pipeline and its value is checked here to avoid
+    // throwing an internal client error.
+    if (spec.hasField(kViewFieldName) && !expCtx->isHybridSearch()) {
         assertAllowedInternalIfRequired(
             expCtx->getOperationContext(), kViewFieldName, AllowedWithClientType::kInternal);
     }

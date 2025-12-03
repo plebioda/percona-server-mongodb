@@ -685,6 +685,8 @@ functions:
           value: ${project}/${build_variant}/${version_id}/libfuzzer-corpora/corpora-${revision_order_id}.${ext|tgz}
         - key: mongo_fuzzer_corpus
           value: corpora-${project}-${build_variant}.${ext|tgz}
+        - key: mongo_extensions
+          value: ${project}/${compile_variant}/${version_id}/extensions/extensions-${revision_order_id}.tgz
         - key: skip_tests
           value: skip_test-${build_id}
 
@@ -1975,9 +1977,14 @@ functions:
 
   "setup jstestfuzz":
     - *f_expansions_write
-    - command: ec2.assume_role
+    - command: github.generate_token
       params:
-        role_arn: "arn:aws:iam::901841024863:role/ecr-role-evergreen-ro"
+        owner: 10gen
+        repo: jstestfuzz
+        expansion_name: github_token
+        permissions:
+          metadata: read
+          contents: read
     - command: subprocess.exec
       display_name: "jstestfuzz setup sh"
       params:
@@ -1985,13 +1992,7 @@ functions:
         args:
           - "./src/evergreen/jstestfuzz_setup.sh"
         include_expansions_in_env:
-          - AWS_ACCESS_KEY_ID
-          - AWS_SECRET_ACCESS_KEY
-          - AWS_SESSION_TOKEN
-    - command: expansions.update
-      params:
-        file: src/expansions.yml
-    - *f_expansions_write
+          - github_token
 
   "setup query_tester test repos":
     - *f_expansions_write
@@ -2031,8 +2032,6 @@ functions:
         binary: bash
         args:
           - "src/evergreen/lint_fuzzer_sanity_patch.sh"
-        include_expansions_in_env:
-          - CONTAINER_RUNTIME
 
   "lint fuzzer sanity all":
     - *f_expansions_write
@@ -2042,8 +2041,6 @@ functions:
         binary: bash
         args:
           - "./src/evergreen/lint_fuzzer_sanity_all.sh"
-        include_expansions_in_env:
-          - CONTAINER_RUNTIME
 
   "monitor mongo fork 10gen":
     - *f_expansions_write
@@ -2093,8 +2090,6 @@ functions:
         binary: bash
         args:
           - "./src/evergreen/jstestfuzz_run.sh"
-        include_expansions_in_env:
-          - CONTAINER_RUNTIME
     - command: archive.targz_pack
       display_name: "archive jstests.tgz"
       params:
@@ -3100,24 +3095,6 @@ functions:
         binary: bash
         args:
           - "./src/evergreen/sasl_windows_cyrussasl_teardown.sh"
-
-  "fetch pgo profile":
-    command: subprocess.exec
-    params:
-      binary: bash
-      args:
-        - "./src/evergreen/functions/download_pgo_profile.sh"
-      env:
-        PGO_PROFILE_URL: ${pgo_profile_url}
-
-  "BOLT":
-    command: subprocess.exec
-    params:
-      binary: bash
-      args:
-        - "./src/evergreen/functions/bolt.sh"
-      env:
-        BOLT: ${bolt}
 
   "process code coverage data": &process_code_coverage_data
     command: subprocess.exec

@@ -112,8 +112,9 @@ SpillingStore::SpillingStore(OperationContext* opCtx, KeyFormat format) {
         return;
     }
 
-    _spillTable =
-        opCtx->getServiceContext()->getStorageEngine()->makeTemporaryRecordStore(opCtx, format);
+    auto storageEngine = opCtx->getServiceContext()->getStorageEngine();
+    _spillTable = storageEngine->makeTemporaryRecordStore(
+        opCtx, storageEngine->generateNewInternalIdent(), format);
 
     _spillingUnit = opCtx->getServiceContext()->getStorageEngine()->newRecoveryUnit();
     _spillingUnit->setCacheMaxWaitTimeout(Milliseconds(internalQuerySpillingMaxWaitTimeout.load()));
@@ -188,10 +189,7 @@ int SpillingStore::upsertToRecordStore(OperationContext* opCtx,
         }
     });
 
-    if (!result.isOK()) {
-        tasserted(5843600, str::stream() << "Failed to write to disk because " << result.reason());
-        return 0;
-    }
+    uassertStatusOK(result);
     return buf.len();
 }
 

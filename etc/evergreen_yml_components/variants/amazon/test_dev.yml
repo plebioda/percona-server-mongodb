@@ -49,6 +49,8 @@ variables:
         variant: &amazon_linux2023_arm64_static_compile_variant_name amazon-linux2023-arm64-static-compile
       - name: archive_jstestshell
         variant: *amazon_linux2023_arm64_static_compile_variant_name
+      - name: archive_extensions
+        variant: *amazon_linux2023_arm64_static_compile_variant_name
       - name: version_gen
         variant: generate-tasks-for-version
         # This is added because of EVG-18211.
@@ -85,7 +87,7 @@ buildvariants:
 
   - <<: *linux-arm64-dynamic-compile-params
     name: &amazon-linux2023-arm64-static-compile amazon-linux2023-arm64-static-compile
-    display_name: "! Amazon Linux 2023 arm64 Enterprise Shared Library Compile & Static Analysis"
+    display_name: "! Amazon Linux 2023 arm64 Enterprise Compile"
     tags: ["required", "bazel_check", "forbid_tasks_tagged_with_experimental"]
     expansions:
       <<: *linux-arm64-static-enterprise-compile-expansions
@@ -143,7 +145,7 @@ buildvariants:
     name: enterprise-amazon-linux2023-arm64
     display_name: "* Amazon Linux 2023 arm64 Enterprise"
     tags: ["suggested", "forbid_tasks_tagged_with_experimental"]
-    cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
+    cron: "0 1,5,9,13,17,21 * * *" # From the ${project_required_suggested_cron} parameter
     run_on:
       - amazon2023-arm64-latest-small
     stepback: true
@@ -177,7 +179,7 @@ buildvariants:
     name: enterprise-amazon-linux2023-arm64-roll-back-incremental-feature-flags
     display_name: "Amazon Linux 2023 arm64 Enterprise (roll back incremental feature flags)"
     tags: ["forbid_tasks_tagged_with_experimental"]
-    cron: "0 4 1-31/2 * *" # For cost reasons, we run this variant every other day
+    cron: "0 1 1-31/2 * *" # For cost reasons, we run this variant every other day
     expansions:
       <<: *enterprise-amazon-linux2023-arm64-expansions
       test_flags: >-
@@ -187,7 +189,7 @@ buildvariants:
   - name: &commit-queue commit-queue
     display_name: "~ Commit Queue"
     tags: ["bazel_check", "forbid_tasks_tagged_with_experimental"]
-    cron: "0 4 * * 0" # From the ${project_weekly_cron} parameter
+    cron: "0 1 * * 0" # From the ${project_weekly_cron} parameter
     run_on:
       - amazon2023-arm64-latest-small
     stepback: false
@@ -232,7 +234,7 @@ buildvariants:
     name: amazon-linux2023-arm64-try-sbe-engine
     display_name: "Amazon Linux 2023 arm64 Atlas Enterprise Query Patch Only (trySbeEngine)"
     tags: []
-    cron: "0 4 * * 0" # From the ${project_weekly_cron} parameter # This is a patch-only variant but we run on mainline to pick up task history.
+    cron: "0 1 * * 0" # From the ${project_weekly_cron} parameter # This is a patch-only variant but we run on mainline to pick up task history.
     run_on:
       - amazon2023-arm64-latest-small
     stepback: true
@@ -290,7 +292,7 @@ buildvariants:
   - name: amazon2023-x86-compile
     display_name: "* Compile Amazon Linux 2023 x86 for sys-perf"
     tags: ["suggested"]
-    cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
+    cron: "0 1,5,9,13,17,21 * * *" # From the ${project_required_suggested_cron} parameter
     expansions:
       <<: *sys_perf_compile_expansions
       compile_variant: amazon2023-x86-compile
@@ -307,7 +309,7 @@ buildvariants:
   - name: amazon2023-arm64-compile
     display_name: "* Compile Amazon Linux 2023 arm64 for sys-perf"
     tags: ["suggested"]
-    cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
+    cron: "0 1,5,9,13,17,21 * * *" # From the ${project_required_suggested_cron} parameter
     expansions:
       <<: *sys_perf_compile_expansions
       compile_variant: amazon2023-arm64-compile
@@ -321,52 +323,10 @@ buildvariants:
       - name: compile_and_package_serial_no_unittests_TG
       - name: package_supplementary_data
 
-  - name: amazon2023-arm64-compile-pgo
-    display_name: "* Compile Amazon Linux 2023 arm64 PGO for sys-perf"
-    tags: ["suggested"]
-    expansions:
-      platform: linux
-      project_dir: dsi
-      has_packages: false
-      pgo_profile_url: https://mciuploads.s3.amazonaws.com/dsi/perf-3-node-replSet.arm.aws.2024-05/b49fc707fb83a45727ad3f9f7cfa4c940a6805fe/sys_perf_perf_3_node_replSet.arm.aws.2024_05_ycsb.100read.2024_05_patch_b49fc707fb83a45727ad3f9f7cfa4c940a6805fe_66b035d75b27a40007f52c27_24_08_05_02_16_15/66b035d75b27a40007f52c27/logs/default.profdata.tgz
-      compile_variant: amazon2023-arm64-compile-pgo
-      # TODO(SERVER-102852): This is supposed to have --pgo or use --copt=-fprofile-use=./default.profdata, but bazel will have to support passing the default.profdata into the compiles which it does not currently
-      bazel_compile_flags: >-
-        --define=MONGO_DISTMOD=amazon2023
-        --release=True
-        --thin_lto=True
-        --compiler_type=clang
-        --keep_going
-    run_on:
-      - amazon2023.3-arm64-xlarge
-    tasks:
-      - name: compile_and_package_serial_no_unittests_TG
-      - name: package_supplementary_data
-
-  - name: amazon2023-arm64-compile-bolt
-    display_name: "* Compile Amazon Linux 2023 arm64 BOLT for sys-perf"
-    tags: ["suggested"]
-    expansions:
-      platform: linux
-      project_dir: dsi
-      has_packages: false
-      bolt: true
-      compile_variant: amazon2023-arm64-compile-BOLT
-      bazel_compile_flags: >-
-        --define=MONGO_DISTMOD=amazon2023
-        --release=True
-        --bolt=True
-        --linkopt=-Wl,--emit-relocs
-    run_on:
-      - amazon2023.3-arm64-xlarge
-    tasks:
-      - name: compile_and_package_serial_no_unittests_TG
-      - name: package_supplementary_data
-
   - name: amazon2023-arm64-mongocrypt-shlib-compile
     display_name: "* Compile mongo_crypt_v1.so Amazon Linux 2023 arm64 for sys-perf"
     tags: ["suggested"]
-    cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
+    cron: "0 1,5,9,13,17,21 * * *" # From the ${project_required_suggested_cron} parameter
     expansions:
       <<: *sys_perf_compile_expansions
       compile_variant: amazon2023-arm64-compile
@@ -382,7 +342,7 @@ buildvariants:
   - name: amazon2023-arm64-grav4
     display_name: "Amazon Linux 2023 arm64 Graviton 4"
     tags: ["bazel_check", "forbid_tasks_tagged_with_experimental"]
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
+    cron: "0 1 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2023-arm64-latest-small-m8g
     expansions:
@@ -418,7 +378,7 @@ buildvariants:
   - name: enterprise-amazon2023-arm64-grav4
     display_name: "Enterprise Amazon Linux 2023 arm64 Graviton 4"
     tags: ["forbid_tasks_tagged_with_experimental"]
-    cron: "0 4 * * *" # From the ${project_nightly_cron} parameter.
+    cron: "0 1 * * *" # From the ${project_nightly_cron} parameter.
     run_on:
       - amazon2023-arm64-latest-small-m8g
     expansions:
@@ -452,7 +412,7 @@ buildvariants:
   - name: amazon2023-x86-streams-compile
     display_name: "* Compile Streams Amazon Linux 2023 x86 for sys-perf"
     tags: ["suggested"]
-    cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
+    cron: "0 1,5,9,13,17,21 * * *" # From the ${project_required_suggested_cron} parameter
     expansions:
       <<: *sys_perf_compile_expansions
       compile_variant: amazon2023-x86-streams-compile
@@ -468,7 +428,7 @@ buildvariants:
   - name: amazon2023-arm64-streams-compile
     display_name: "* Compile Streams Amazon Linux 2023 arm64 for sys-perf"
     tags: ["suggested"]
-    cron: "0 */4 * * *" # From the ${project_required_suggested_cron} parameter
+    cron: "0 1,5,9,13,17,21 * * *" # From the ${project_required_suggested_cron} parameter
     expansions:
       <<: *sys_perf_compile_expansions
       compile_variant: amazon2023-arm64-streams-compile

@@ -34,13 +34,16 @@
 
 namespace mongo::exec::agg {
 
-std::unique_ptr<exec::agg::Pipeline> buildPipeline(
-    const std::list<boost::intrusive_ptr<DocumentSource>>& documentSources,
-    boost::intrusive_ptr<ExpressionContext> expCtx) {
+std::unique_ptr<exec::agg::Pipeline> buildPipeline(const mongo::Pipeline& pipeline) {
+    // TODO SERVER-102417: Remove the following assertion once all document sources have been
+    // splitted.
+    tassert(
+        10706500, "expecting pipeline frozen for modifications as an input", pipeline.isFrozen());
     Pipeline::StageContainer stages;
-    stages.reserve(documentSources.size());
+    const auto& documentSources = pipeline.getSources();
 
     if (MONGO_likely(!documentSources.empty())) {
+        stages.reserve(documentSources.size());
         auto it = documentSources.cbegin();
         stages.push_back(buildStage(*it));
         for (++it; it != documentSources.cend(); ++it) {
@@ -50,15 +53,7 @@ std::unique_ptr<exec::agg::Pipeline> buildPipeline(
         }
     }
 
-    return std::make_unique<Pipeline>(std::move(stages), std::move(expCtx));
-}
-
-std::unique_ptr<exec::agg::Pipeline> buildPipeline(const mongo::Pipeline& pipeline) {
-    // TODO SERVER-102417: Remove the following assertion once all document sources have been
-    // splitted.
-    tassert(
-        10706500, "expecting pipeline frozen for modifications as an input", pipeline.isFrozen());
-    return buildPipeline(pipeline.getSources(), pipeline.getContext());
+    return std::make_unique<exec::agg::Pipeline>(std::move(stages), pipeline.getContext());
 }
 
 }  // namespace mongo::exec::agg

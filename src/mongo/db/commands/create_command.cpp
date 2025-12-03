@@ -398,9 +398,12 @@ public:
                             "Cannot create a collection with a strEncodeVersion set unless "
                             "featureFlagQETextSearchPreview is enabled",
                             !cmd.getEncryptedFields()->getStrEncodeVersion());
+                } else {
+                    EncryptionInformationHelpers::checkTagLimitsAndStorageNotExceeded(
+                        cmd.getEncryptedFields().get());
+                    EncryptionInformationHelpers::checkSubstringPreviewParameterLimitsNotExceeded(
+                        cmd.getEncryptedFields().get());
                 }
-                EncryptionInformationHelpers::checkTagLimitsAndStorageNotExceeded(
-                    cmd.getEncryptedFields().get());
             }
 
             if (auto timeseries = cmd.getTimeseries()) {

@@ -62,7 +62,7 @@
 #include "mongo/db/pipeline/field_path.h"
 #include "mongo/db/pipeline/process_interface/mongo_process_interface.h"
 #include "mongo/db/pipeline/transformer_interface.h"
-#include "mongo/db/query/projection_policies.h"
+#include "mongo/db/query/compiler/logical_model/projection/projection_policies.h"
 #include "mongo/db/query/util/make_data_structure.h"
 #include "mongo/s/chunk_version.h"
 #include "mongo/util/assert_util.h"
@@ -437,8 +437,8 @@ bool mrSupportsWriteConcern(const BSONObj& cmd) {
     }
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> translateFromMR(
-    MapReduceCommandRequest parsedMr, boost::intrusive_ptr<ExpressionContext> expCtx) {
+std::unique_ptr<Pipeline> translateFromMR(MapReduceCommandRequest parsedMr,
+                                          boost::intrusive_ptr<ExpressionContext> expCtx) {
     const auto outNss = parsedMr.getOutOptions().getDatabaseName()
         ? (NamespaceStringUtil::deserialize(parsedMr.getDbName().tenantId(),
                                             *parsedMr.getOutOptions().getDatabaseName(),

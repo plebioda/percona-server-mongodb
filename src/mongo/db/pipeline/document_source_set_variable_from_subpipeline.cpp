@@ -98,7 +98,7 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceSetVariableFromSubPipeline::c
                       << spec.getSetVariable() << " is not allowed.",
         spec.getSetVariable() == searchMetaStr);
 
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline = Pipeline::parse(
+    std::unique_ptr<Pipeline> pipeline = Pipeline::parse(
         spec.getPipeline(), expCtx->copyForSubPipeline(expCtx->getNamespaceString()));
 
     return DocumentSourceSetVariableFromSubPipeline::create(
@@ -108,7 +108,7 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceSetVariableFromSubPipeline::c
 intrusive_ptr<DocumentSourceSetVariableFromSubPipeline>
 DocumentSourceSetVariableFromSubPipeline::create(
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
-    std::unique_ptr<Pipeline, PipelineDeleter> subpipeline,
+    std::unique_ptr<Pipeline> subpipeline,
     Variables::Id varID) {
     uassert(625290,
             str::stream()
@@ -120,12 +120,18 @@ DocumentSourceSetVariableFromSubPipeline::create(
 };
 
 void DocumentSourceSetVariableFromSubPipeline::doDispose() {
-    if (_subPipeline) {
-        _subPipeline.get_deleter().dismissDisposal();
-        _subPipeline->dispose(pExpCtx->getOperationContext());
-        _subPipeline.reset();
+    // TODO SERVER-104225: Remove the following if-block when DocumentSourceCursor is split into
+    // QO and QE parts and the QO stage auto-disposes resources in destructor.
+    if (_subPipeline && !_subExecPipeline) {
+        // Create an execution pipeline to make sure the resources are correctly disposed.
+        _subExecPipeline = exec::agg::buildPipeline(_subPipeline->freeze());
+    }
+    if (_subExecPipeline) {
+        _subExecPipeline->dismissDisposal();
+        _subExecPipeline->dispose(pExpCtx->getOperationContext());
         _subExecPipeline.reset();
     }
+    _subPipeline.reset();
 }
 
 DocumentSource::GetNextResult DocumentSourceSetVariableFromSubPipeline::doGetNext() {

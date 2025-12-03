@@ -35,7 +35,6 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/client/read_preference.h"
 #include "mongo/db/api_parameters.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/matcher/extensions_callback_noop.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
@@ -43,6 +42,7 @@
 #include "mongo/db/query/canonical_query.h"
 #include "mongo/db/query/client_cursor/cursor_id.h"
 #include "mongo/db/query/client_cursor/cursor_response.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
 #include "mongo/db/query/find_command.h"
 #include "mongo/db/query/query_request_helper.h"
 #include "mongo/db/shard_id.h"
@@ -214,26 +214,15 @@ LogicalSessionIdSet SessionsCollectionSharded::findRemovedSessions(
                                                       auth::ValidatedTenancyScope::get(opCtx),
                                                       boost::none,
                                                       SerializationContext::stateDefault());
-        auto cq = std::make_unique<CanonicalQuery>(CanonicalQueryParams{
-            .expCtx = ExpressionContextBuilder{}.fromRequest(opCtx, *findCommand).build(),
-            .parsedFind = ParsedFindCommandParams{
-                .findCommand = std::move(findCommand),
-                .allowedFeatures = MatchExpressionParser::kBanAllSpecialFeatures}});
 
-        // Do the work to generate the first batch of results. This blocks waiting to get responses
-        // from the shard(s).
-        std::vector<BSONObj> batch;
-
-        auto cursorId =
-            ClusterFind::runQuery(opCtx, *cq, cq->nss(), ReadPreferenceSetting::get(opCtx), &batch);
+        const auto nss = findCommand->getNamespaceOrUUID().nss();
         rpc::OpMsgReplyBuilder replyBuilder;
-        CursorResponseBuilder::Options options;
-        options.isInitialResponse = true;
-        CursorResponseBuilder firstBatch(&replyBuilder, options);
-        for (const auto& obj : batch) {
-            firstBatch.append(obj);
-        }
-        firstBatch.done(cursorId, NamespaceString::kLogicalSessionsNamespace);
+        ClusterFind::runQuery(opCtx,
+                              std::move(findCommand),
+                              nss,
+                              ReadPreferenceSetting::get(opCtx),
+                              MatchExpressionParser::kBanAllSpecialFeatures,
+                              &replyBuilder);
 
         return replyBuilder.releaseBody();
     };

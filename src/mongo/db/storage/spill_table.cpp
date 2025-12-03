@@ -111,12 +111,32 @@ SpillTable::SpillTable(std::unique_ptr<RecoveryUnit> ru,
     : _ru(std::move(ru)),
       _rs(std::move(rs)),
       _storageEngine(&storageEngine),
-      _diskState(boost::in_place_init, diskMonitor, thresholdBytes) {}
+      _diskState(boost::in_place_init, diskMonitor, thresholdBytes) {
+    // Abandon the snapshot right away in case the recovery unit was given to us with a snapshot
+    // already open from creating the table.
+    _ru->abandonSnapshot();
+}
 
 SpillTable::~SpillTable() {
-    if (_storageEngine) {
-        _storageEngine->dropSpillTable(*_ru, ident());
+    if (!_storageEngine) {
+        return;
     }
+
+    // As an optimization, truncate the table before dropping it so that the checkpoint taken at
+    // shutdown never has to do the work to write the data to disk.
+    try {
+        _ru->setIsolation(RecoveryUnit::Isolation::snapshot);
+        StorageWriteTransaction txn{*_ru};
+        uassertStatusOK(_rs->truncate(nullptr, *_ru));
+        txn.commit();
+    } catch (...) {
+        LOGV2(10659600,
+              "Failed to truncate spill table, ignoring and continuing to drop",
+              "ident"_attr = ident(),
+              "error"_attr = exceptionToStatus());
+    }
+
+    _storageEngine->dropSpillTable(*_ru, ident());
 }
 
 StringData SpillTable::ident() const {
@@ -132,7 +152,13 @@ long long SpillTable::numRecords() const {
 }
 
 int64_t SpillTable::storageSize(RecoveryUnit& ru) const {
-    return _rs->storageSize(_ru ? *_ru : ru);
+    // TODO (SERVER-106716): Remove this case.
+    if (!_ru) {
+        return _rs->storageSize(ru);
+    }
+
+    _ru->setIsolation(RecoveryUnit::Isolation::readUncommitted);
+    return _rs->storageSize(*_ru);
 }
 
 Status SpillTable::insertRecords(OperationContext* opCtx, std::vector<Record>* records) {
@@ -148,7 +174,11 @@ Status SpillTable::insertRecords(OperationContext* opCtx, std::vector<Record>* r
     }
 
     _ru->setOperationContext(opCtx);
-    ON_BLOCK_EXIT([this] { _ru->setOperationContext(nullptr); });
+    _ru->setIsolation(RecoveryUnit::Isolation::snapshot);
+    ON_BLOCK_EXIT([this] {
+        _ru->abandonSnapshot();
+        _ru->setOperationContext(nullptr);
+    });
 
     // This function inserts records starting at the provided index until the threshold of data is
     // reached, returning the last index that was inserted.
@@ -209,6 +239,7 @@ bool SpillTable::findRecord(OperationContext* opCtx, const RecordId& rid, Record
     }
 
     _ru->setOperationContext(opCtx);
+    _ru->setIsolation(RecoveryUnit::Isolation::readUncommitted);
     ON_BLOCK_EXIT([this] { _ru->setOperationContext(nullptr); });
 
     return _rs->findRecord(opCtx, *_ru, rid, out);
@@ -229,7 +260,11 @@ Status SpillTable::updateRecord(OperationContext* opCtx,
     }
 
     _ru->setOperationContext(opCtx);
-    ON_BLOCK_EXIT([this] { _ru->setOperationContext(nullptr); });
+    _ru->setIsolation(RecoveryUnit::Isolation::snapshot);
+    ON_BLOCK_EXIT([this] {
+        _ru->abandonSnapshot();
+        _ru->setOperationContext(nullptr);
+    });
 
     return writeConflictRetry(
         opCtx, *_ru, "SpillTable::updateRecord", NamespaceString::kEmpty, [&] {
@@ -253,7 +288,11 @@ void SpillTable::deleteRecord(OperationContext* opCtx, const RecordId& rid) {
     }
 
     _ru->setOperationContext(opCtx);
-    ON_BLOCK_EXIT([this] { _ru->setOperationContext(nullptr); });
+    _ru->setIsolation(RecoveryUnit::Isolation::snapshot);
+    ON_BLOCK_EXIT([this] {
+        _ru->abandonSnapshot();
+        _ru->setOperationContext(nullptr);
+    });
 
     writeConflictRetry(opCtx, *_ru, "SpillTable::deleteRecord", NamespaceString::kEmpty, [&] {
         StorageWriteTransaction txn{*_ru};
@@ -271,6 +310,8 @@ std::unique_ptr<SpillTable::Cursor> SpillTable::getCursor(OperationContext* opCt
     }
 
     _ru->setOperationContext(opCtx);
+    _ru->setIsolation(RecoveryUnit::Isolation::readUncommitted);
+
     return std::make_unique<SpillTable::Cursor>(_ru.get(), _rs->getCursor(opCtx, *_ru, forward));
 }
 
@@ -285,7 +326,11 @@ Status SpillTable::truncate(OperationContext* opCtx) {
     }
 
     _ru->setOperationContext(opCtx);
-    ON_BLOCK_EXIT([this] { _ru->setOperationContext(nullptr); });
+    _ru->setIsolation(RecoveryUnit::Isolation::snapshot);
+    ON_BLOCK_EXIT([this] {
+        _ru->abandonSnapshot();
+        _ru->setOperationContext(nullptr);
+    });
 
     return writeConflictRetry(opCtx, *_ru, "SpillTable::truncate", NamespaceString::kEmpty, [&] {
         StorageWriteTransaction txn{*_ru};
@@ -318,7 +363,11 @@ Status SpillTable::rangeTruncate(OperationContext* opCtx,
     }
 
     _ru->setOperationContext(opCtx);
-    ON_BLOCK_EXIT([this] { _ru->setOperationContext(nullptr); });
+    _ru->setIsolation(RecoveryUnit::Isolation::snapshot);
+    ON_BLOCK_EXIT([this] {
+        _ru->abandonSnapshot();
+        _ru->setOperationContext(nullptr);
+    });
 
     return writeConflictRetry(
         opCtx, *_ru, "SpillTable::rangeTruncate", NamespaceString::kEmpty, [&] {

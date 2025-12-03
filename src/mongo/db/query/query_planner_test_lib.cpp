@@ -47,7 +47,6 @@
 #include "mongo/db/matcher/expression.h"
 #include "mongo/db/matcher/expression_algo.h"
 #include "mongo/db/matcher/expression_hasher.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/pipeline/accumulation_statement.h"
 #include "mongo/db/pipeline/expression.h"
@@ -55,14 +54,16 @@
 #include "mongo/db/pipeline/field_path.h"
 #include "mongo/db/query/collation/collator_factory_mock.h"
 #include "mongo/db/query/collation/collator_interface.h"
+#include "mongo/db/query/compiler/logical_model/projection/projection.h"
+#include "mongo/db/query/compiler/logical_model/projection/projection_ast_util.h"
+#include "mongo/db/query/compiler/logical_model/projection/projection_parser.h"
+#include "mongo/db/query/compiler/logical_model/projection/projection_policies.h"
+#include "mongo/db/query/compiler/metadata/index_entry.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
 #include "mongo/db/query/compiler/physical_model/interval/interval.h"
 #include "mongo/db/query/compiler/physical_model/query_solution/query_solution.h"
 #include "mongo/db/query/compiler/physical_model/query_solution/stage_types.h"
-#include "mongo/db/query/index_entry.h"
-#include "mongo/db/query/projection.h"
-#include "mongo/db/query/projection_ast_util.h"
-#include "mongo/db/query/projection_parser.h"
-#include "mongo/db/query/projection_policies.h"
+#include "mongo/db/query/compiler/rewrites/matcher/expression_optimizer.h"
 #include "mongo/logv2/log.h"
 #include "mongo/stdx/unordered_set.h"
 #include "mongo/util/assert_util.h"
@@ -94,7 +95,7 @@ Status filterMatches(const BSONObj& testFilter,
         return {ErrorCodes::Error{6298503}, "actual (true) filter was null"};
     }
     std::unique_ptr<MatchExpression> trueFilterClone(trueFilter->clone());
-    MatchExpression::sortTree(trueFilterClone.get());
+    sortMatchExpressionTree(trueFilterClone.get());
 
     boost::intrusive_ptr<ExpressionContextForTest> expCtx(new ExpressionContextForTest());
     expCtx->setCollator(std::move(collator));
@@ -107,9 +108,9 @@ Status filterMatches(const BSONObj& testFilter,
     if (root->matchType() == mongo::MatchExpression::NOT) {
         // Ideally we would optimize() everything, but some of the tests depend on structural
         // equivalence of single-arg $or expressions.
-        root = MatchExpression::optimize(std::move(root));
+        root = optimizeMatchExpression(std::move(root));
     }
-    MatchExpression::sortTree(root.get());
+    sortMatchExpressionTree(root.get());
     if (!trueFilterClone->equivalent(root.get())) {
         return {ErrorCodes::Error{5619211},
                 str::stream()

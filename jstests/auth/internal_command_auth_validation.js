@@ -292,6 +292,10 @@ const internalCommandsMap = {
         testname: "_configsvrStartShardDraining",
         command: {_configsvrStartShardDraining: shard0name, startShardDraining: shard0name},
     },
+    _configsvrStopShardDraining: {
+        testname: "_configsvrStopShardDraining",
+        command: {_configsvrStopShardDraining: shard0name, stopShardDraining: shard0name},
+    },
     _configsvrTransitionFromDedicatedConfigServer: {
         testname: "_configsvrTransitionFromDedicatedConfigServer",
         command: {_configsvrTransitionFromDedicatedConfigServer: 1},
@@ -607,6 +611,15 @@ const internalCommandsMap = {
             _shardsvrMergeAllChunksOnShard: "x.y",
             shard: shard0name,
             maxNumberOfChunksToMerge: NumberInt(2)
+        },
+    },
+    _shardsvrMergeChunks: {
+        testname: "_shardsvrMergeChunks",
+        command: {
+            _shardsvrMergeChunks: "x.y",
+            bounds: [{x: 0}, {x: 10}],
+            epoch: ObjectId(),
+            timestamp: Timestamp()
         },
     },
     _shardsvrMovePrimary: {

@@ -95,7 +95,7 @@ ReshardingDonorOplogIterator::ReshardingDonorOplogIterator(
       _resumeToken(std::move(resumeToken)),
       _insertNotifier(insertNotifier) {}
 
-std::unique_ptr<Pipeline, PipelineDeleter> ReshardingDonorOplogIterator::makePipeline(
+std::unique_ptr<Pipeline> ReshardingDonorOplogIterator::makePipeline(
     OperationContext* opCtx, std::shared_ptr<MongoProcessInterface> mongoProcessInterface) {
     using Doc = Document;
     using Arr = std::vector<Value>;
@@ -177,8 +177,8 @@ ExecutorFuture<std::vector<repl::OplogEntry>> ReshardingDonorOplogIterator::getN
             _pipeline = pipeline->getContext()
                             ->getMongoProcessInterface()
                             ->attachCursorSourceToPipelineForLocalRead(pipeline.release());
-            _pipeline.get_deleter().dismissDisposal();
             _execPipeline = exec::agg::buildPipeline(_pipeline->freeze());
+            _execPipeline->dismissDisposal();
         }
 
         auto batch = _fillBatch();
@@ -217,7 +217,7 @@ ExecutorFuture<std::vector<repl::OplogEntry>> ReshardingDonorOplogIterator::getN
 
 void ReshardingDonorOplogIterator::dispose(OperationContext* opCtx) {
     if (_pipeline) {
-        _pipeline->dispose(opCtx);
+        _execPipeline->dispose(opCtx);
         _pipeline.reset();
         _execPipeline.reset();
     }

@@ -163,7 +163,6 @@
 #include "mongo/db/s/ddl_lock_manager.h"
 #include "mongo/db/s/migration_blocking_operation/multi_update_coordinator.h"
 #include "mongo/db/s/migration_chunk_cloner_source_op_observer.h"
-#include "mongo/db/s/migration_util.h"
 #include "mongo/db/s/periodic_replica_set_configshard_maintenance_mode_checker.h"
 #include "mongo/db/s/periodic_sharded_index_consistency_checker.h"
 #include "mongo/db/s/query_analysis_op_observer_configsvr.h"
@@ -242,6 +241,7 @@
 #include "mongo/s/resource_yielders.h"
 #include "mongo/s/routing_information_cache.h"
 #include "mongo/s/service_entry_point_router_role.h"
+#include "mongo/s/sharding_feature_flags_gen.h"
 #include "mongo/scripting/dbdirectclient_factory.h"
 #include "mongo/scripting/engine.h"
 #include "mongo/stdx/mutex.h"
@@ -1911,11 +1911,11 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
         // below.
         LOGV2_OPTIONS(4784912, {LogComponent::kDefault}, "Killing all operations for shutdown");
         {
-            const std::set<std::string> excludedClients = {std::string(kFTDCThreadName)};
             SectionScopedTimer scopedTimer(serviceContext->getFastClockSource(),
                                            TimedSectionId::killAllOperations,
                                            &shutdownTimeElapsedBuilder);
-            serviceContext->setKillAllOperations(excludedClients);
+            serviceContext->setKillAllOperations(
+                [](const StringData t) { return t == kFTDCThreadName; });
 
             if (MONGO_unlikely(pauseWhileKillingOperationsAtShutdown.shouldFail())) {
                 LOGV2_OPTIONS(4701700,

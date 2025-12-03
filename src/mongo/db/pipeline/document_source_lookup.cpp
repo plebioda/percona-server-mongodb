@@ -50,12 +50,12 @@
 #include "mongo/db/field_ref.h"
 #include "mongo/db/matcher/expression.h"
 #include "mongo/db/matcher/expression_algo.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/pipeline/aggregation_request_helper.h"
 #include "mongo/db/pipeline/document_path_support.h"
 #include "mongo/db/pipeline/document_source.h"
 #include "mongo/db/pipeline/document_source_documents.h"
+#include "mongo/db/pipeline/document_source_hybrid_scoring_util.h"
 #include "mongo/db/pipeline/document_source_merge_gen.h"
 #include "mongo/db/pipeline/document_source_queue.h"
 #include "mongo/db/pipeline/document_source_sequential_document_cache.h"
@@ -70,6 +70,8 @@
 #include "mongo/db/pipeline/variable_validation.h"
 #include "mongo/db/query/allowed_contexts.h"
 #include "mongo/db/query/collation/collator_factory_interface.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
+#include "mongo/db/query/compiler/rewrites/matcher/expression_optimizer.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/query/plan_summary_stats.h"
 #include "mongo/db/query/query_knobs_gen.h"
@@ -318,15 +320,11 @@ void DocumentSourceLookUp::resolvedPipelineHelper(
     // When fromNs represents a view, we have to decipher if the view is mongot-indexed or not.
     // Currently, if the pipeline to be run on the joined collection is a
     // mongot pipeline (it starts with $search, $searchMeta), $lookup assumes the view is
-    // mongot-indexed. However, if the view pipeline (_resolvedPipeline) is a mongot pipeline, then
-    // we know the view is not mongot indexed because mongot doesn't support indexing a $search view
-    // pipeline. and doesn't need the special support inside $_internalSearchIdLookup.
-    if (_fromNsIsAView && search_helper_bson_obj::isMongotPipeline(pipeline) &&
-        !search_helper_bson_obj::isMongotPipeline(_resolvedPipeline)) {
-        // The user pipeline is a mongot pipeline but the view pipeline is not - so we assume it's a
-        // mongot-indexed view. As such, we overwrite the view pipeline. This is because in the case
-        // of mongot queries on mongot-indexed views, idLookup applies the view transforms as part
-        // of its subpipeline.
+    // mongot-indexed.
+    if (_fromNsIsAView && search_helper_bson_obj::isMongotPipeline(pipeline)) {
+        // The user pipeline is a mongot pipeline so we assume the view is a mongot-indexed view. As
+        // such, we overwrite the view pipeline. This is because in the case of mongot queries on
+        // mongot-indexed views, idLookup applies the view transforms as part of its subpipeline.
         _fromExpCtx->setView(boost::make_optional(std::make_pair(fromNs, _resolvedPipeline)));
         _resolvedPipeline = pipeline;
         _fieldMatchPipelineIdx = 1;
@@ -642,7 +640,7 @@ DocumentSource::GetNextResult DocumentSourceLookUp::doGetNext() {
     // '_unwindSrc' would be non-null, and we would not have made it here.
     invariant(!_matchSrc);
 
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline;
+    std::unique_ptr<Pipeline> pipeline;
     std::unique_ptr<exec::agg::Pipeline> execPipeline;
     try {
         pipeline = buildPipeline(_fromExpCtx, inputDoc);
@@ -688,7 +686,7 @@ DocumentSource::GetNextResult DocumentSourceLookUp::doGetNext() {
     return output.freeze();
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> DocumentSourceLookUp::buildPipelineFromViewDefinition(
+std::unique_ptr<Pipeline> DocumentSourceLookUp::buildPipelineFromViewDefinition(
     std::vector<BSONObj> serializedPipeline, ResolvedNamespace resolvedNamespace) {
     // We don't want to optimize or attach a cursor source here because we need to update
     // _resolvedPipeline so we can reuse it on subsequent calls to getNext(), and we may need to
@@ -869,8 +867,8 @@ void findAndOptimizeSequentialDocumentCache(Pipeline& pipeline) {
     auto& container = pipeline.getSources();
     auto itr = (&container)->begin();
     while (itr != (&container)->end()) {
-        if (dynamic_cast<DocumentSourceSequentialDocumentCache*>(itr->get())) {
-            auto sequentialCache = dynamic_cast<DocumentSourceSequentialDocumentCache*>(itr->get());
+        if (auto* sequentialCache =
+                dynamic_cast<DocumentSourceSequentialDocumentCache*>(itr->get())) {
             if (!sequentialCache->hasOptimizedPos()) {
                 sequentialCache->optimizeAt(itr, &container);
             }
@@ -1069,7 +1067,7 @@ DocumentSourceContainer::iterator DocumentSourceLookUp::doOptimizeAt(
     // longer be true for the combined $match's MatchExpression.
     _additionalFilter =
         DocumentSourceMatch::descendMatchOnPath(
-            needToOptimize ? MatchExpression::optimize(
+            needToOptimize ? optimizeMatchExpression(
                                  std::move(_matchSrc->getMatchProcessor()->getExpression()),
                                  /* enableSimplification */ false)
                                  .get()
@@ -1097,11 +1095,13 @@ bool DocumentSourceLookUp::usedDisk() const {
 }
 
 void DocumentSourceLookUp::doDispose() {
-    if (_pipeline) {
+    if (_execPipeline) {
         _execPipeline->accumulatePlanSummaryStats(_stats.planSummaryStats);
-        _pipeline->dispose(pExpCtx->getOperationContext());
-        _pipeline.reset();
+        _execPipeline->dispose(pExpCtx->getOperationContext());
         _execPipeline.reset();
+    }
+    if (_pipeline) {
+        _pipeline.reset();
     }
 }
 
@@ -1141,9 +1141,9 @@ DocumentSource::GetNextResult DocumentSourceLookUp::unwindResult() {
         // Accumulate stats from the pipeline for the previous input, if applicable. This is to
         // avoid missing the accumulation of stats on an early exit (below) if the input (i.e., left
         // side of the lookup) is done.
-        if (_pipeline) {
+        if (_execPipeline) {
             _execPipeline->accumulatePlanSummaryStats(_stats.planSummaryStats);
-            _pipeline->dispose(pExpCtx->getOperationContext());
+            _execPipeline->dispose(pExpCtx->getOperationContext());
         }
 
         auto nextInput = pSource->getNext();
@@ -1159,7 +1159,7 @@ DocumentSource::GetNextResult DocumentSourceLookUp::unwindResult() {
         // The $lookup stage takes responsibility for disposing of its Pipeline, since it will
         // potentially be used by multiple OperationContexts, and the $lookup stage is part of an
         // outer Pipeline that will propagate dispose() calls before being destroyed.
-        _pipeline.get_deleter().dismissDisposal();
+        _execPipeline->dismissDisposal();
 
         _cursorIndex = 0;
         _nextValue = _execPipeline->getNext();
@@ -1312,6 +1312,13 @@ void DocumentSourceLookUp::serializeToArray(std::vector<Value>& array,
         output[getSourceName()]["let"] = Value(exprList.freeze());
 
         output[getSourceName()]["pipeline"] = Value(serializedPipeline);
+
+        if (!opts.isSerializingForExplain() &&
+            hybrid_scoring_util::isHybridSearchPipeline(
+                _userPipeline.value_or(std::vector<BSONObj>()))) {
+            output[getSourceName()][hybrid_scoring_util::kIsHybridSearchFlagFieldName] =
+                Value(true);
+        }
     }
 
     if (opts.isSerializingForExplain()) {
@@ -1437,7 +1444,7 @@ boost::optional<DocumentSource::DistributedPlanLogic> DocumentSourceLookUp::dist
 }
 
 void DocumentSourceLookUp::detachFromOperationContext() {
-    if (_pipeline) {
+    if (_execPipeline) {
         // We have a pipeline we're going to be executing across multiple calls to getNext(), so we
         // use Pipeline::detachFromOperationContext() to take care of updating
         // '_fromExpCtx->getOperationContext()'.
@@ -1473,7 +1480,7 @@ void DocumentSourceLookUp::detachSourceFromOperationContext() {
 }
 
 void DocumentSourceLookUp::reattachToOperationContext(OperationContext* opCtx) {
-    if (_pipeline) {
+    if (_execPipeline) {
         // We have a pipeline we're going to be executing across multiple calls to getNext(), so we
         // use Pipeline::reattachToOperationContext() to take care of updating
         // '_fromExpCtx->getOperationContext()'.
@@ -1552,8 +1559,10 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceLookUp::createFromBson(
     bool hasPipeline = false;
     bool hasLet = false;
 
-    auto lookupSpec = DocumentSourceLookupSpec::parse(IDLParserContext(kStageName), elem.Obj());
+    // TODO SERVER-108117 Validate that the isHybridSearch flag is only set internally. See helper
+    // hybrid_scoring_util::validateIsHybridSearchNotSetByUser to handle this.
 
+    auto lookupSpec = DocumentSourceLookupSpec::parse(IDLParserContext(kStageName), elem.Obj());
 
     if (lookupSpec.getFrom().has_value()) {
         fromNs = parseLookupFromAndResolveNamespace(lookupSpec.getFrom().value().getElement(),
@@ -1582,6 +1591,17 @@ boost::intrusive_ptr<DocumentSource> DocumentSourceLookUp::createFromBson(
         fromNs =
             NamespaceString::makeCollectionlessAggregateNSS(pExpCtx->getNamespaceString().dbName());
     }
+
+    if (lookupSpec.getIsHybridSearch() || hybrid_scoring_util::isHybridSearchPipeline(pipeline)) {
+        // If there is a hybrid search stage in our pipeline, then we should validate that we
+        // are not running on a timeseries collection.
+        //
+        // If the hybrid search flag is set to true, this request may have
+        // come from a mongos that does not know if the collection is a valid collection for
+        // hybrid search. Therefore, we must validate it here.
+        hybrid_scoring_util::assertForeignCollectionIsNotTimeseries(fromNs, pExpCtx);
+    }
+
     boost::intrusive_ptr<DocumentSourceLookUp> lookupStage = nullptr;
     if (hasPipeline) {
         if (localField.empty() && foreignField.empty()) {

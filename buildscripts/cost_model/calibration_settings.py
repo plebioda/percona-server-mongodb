@@ -31,6 +31,7 @@ import random
 from typing import Any
 
 import config
+import pandas as pd
 from random_generator import ArrayRandomDistribution, DataType, RandomDistribution, RangeGenerator
 
 __all__ = ["main_config", "distributions"]
@@ -194,7 +195,7 @@ def create_index_scan_collection_template(name: str, cardinality: int) -> config
     )
 
 
-def create_physical_scan_collection_template(
+def create_coll_scan_collection_template(
     name: str, payload_size: int = 0
 ) -> config.CollectionTemplate:
     template = config.CollectionTemplate(
@@ -304,14 +305,14 @@ c_arr_01 = config.CollectionTemplate(
 
 index_scan = create_index_scan_collection_template("index_scan", 1000000)
 
-physical_scan = create_physical_scan_collection_template("physical_scan", 2000)
+coll_scan = create_coll_scan_collection_template("coll_scan", 2000)
 
 # Data Generator settings
 data_generator = config.DataGeneratorConfig(
     enabled=True,
     create_indexes=True,
     batch_size=10000,
-    collection_templates=[index_scan, physical_scan, c_int_05, c_arr_01],
+    collection_templates=[index_scan, coll_scan, c_int_05, c_arr_01],
     write_mode=config.WriteMode.REPLACE,
     collection_name_with_card=True,
 )
@@ -322,7 +323,7 @@ workload_execution = config.WorkloadExecutionConfig(
     output_collection_name="calibrationData",
     write_mode=config.WriteMode.REPLACE,
     warmup_runs=5,
-    runs=100,
+    runs=75,
 )
 
 
@@ -345,7 +346,16 @@ qsn_nodes = [
     config.QsNodeCalibrationConfig(type="SORT_MERGE"),
     config.QsNodeCalibrationConfig(type="SORT"),
     config.QsNodeCalibrationConfig(type="LIMIT"),
-    config.QsNodeCalibrationConfig(type="SKIP"),
+    config.QsNodeCalibrationConfig(
+        type="SKIP",
+        variables_override=lambda df: pd.concat(
+            [
+                df["n_returned"].rename("Documents Passed"),
+                (df["n_processed"] - df["n_returned"]).rename("Documents Skipped"),
+            ],
+            axis=1,
+        ),
+    ),
 ]
 # Calibrator settings
 qs_calibrator = config.QuerySolutionCalibrationConfig(

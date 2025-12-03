@@ -70,10 +70,9 @@
 #include "mongo/db/index/index_access_method.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/index_names.h"
-#include "mongo/db/matcher/doc_validation_error.h"
-#include "mongo/db/matcher/doc_validation_util.h"
+#include "mongo/db/matcher/doc_validation/doc_validation_error.h"
+#include "mongo/db/matcher/doc_validation/doc_validation_util.h"
 #include "mongo/db/matcher/expression.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/matcher/expression_tree.h"
 #include "mongo/db/matcher/extensions_callback_noop.h"
 #include "mongo/db/operation_context.h"
@@ -82,6 +81,7 @@
 #include "mongo/db/query/collation/collation_spec.h"
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/db/query/collation/collator_interface.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
 #include "mongo/db/query/fle/implicit_validator.h"
 #include "mongo/db/query/util/make_data_structure.h"
 #include "mongo/db/repl/oplog.h"
@@ -539,7 +539,8 @@ bool CollectionImpl::requiresIdIndex() const {
 std::unique_ptr<SeekableRecordCursor> CollectionImpl::getCursor(OperationContext* opCtx,
                                                                 bool forward) const {
     dassert(shard_role_details::getLocker(opCtx)->isReadLocked());
-    return _shared->_recordStore->getCursor(opCtx, forward);
+    return _shared->_recordStore->getCursor(
+        opCtx, *shard_role_details::getRecoveryUnit(opCtx), forward);
 }
 
 
@@ -1180,7 +1181,9 @@ Status CollectionImpl::truncate(OperationContext* opCtx) {
 
     if (auto status = _indexCatalog->truncateAllIndexes(opCtx, this); !status.isOK())
         return status;
-    if (auto status = _shared->_recordStore->truncate(opCtx); !status.isOK())
+    if (auto status =
+            _shared->_recordStore->truncate(opCtx, *shard_role_details::getRecoveryUnit(opCtx));
+        !status.isOK())
         return status;
     if (ns().isOplog()) {
         if (auto truncateMarkers = LocalOplogInfo::get(opCtx)->getTruncateMarkers()) {
@@ -1584,6 +1587,14 @@ Status CollectionImpl::prepareForIndexBuild(OperationContext* opCtx,
         auto ii = _indexCatalog->getIndexIterator(IndexCatalog::InclusionPolicy::kAll);
         while (ii->more()) {
             auto entry = ii->next();
+            if (entry->getIdent() == ident) {
+                return Status(
+                    ErrorCodes::ObjectAlreadyExists,
+                    fmt::format(
+                        "Attempting to create index '{}' with ident '{}' that is already in use",
+                        spec->indexName(),
+                        ident));
+            }
             indexIdents.append(entry->descriptor()->indexName(), entry->getIdent());
         }
 

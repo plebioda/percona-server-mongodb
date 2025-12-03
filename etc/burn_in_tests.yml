@@ -5,6 +5,9 @@ selector:
     exclude_suites:
       # Requires an HTTP server to be running in the background.
       - queryable_wt
+      # When splitting into multiple suites, each suite will need
+      # its own broker
+      - streams_kafka
     # Exclude list of etc/evergreen.yml task names.
     exclude_tasks:
     # Exclude list of jstests file names.

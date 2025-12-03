@@ -31,12 +31,13 @@
 #include "mongo/db/exec/matcher/matcher.h"
 #include "mongo/db/matcher/expression.h"
 #include "mongo/db/matcher/expression_expr.h"
-#include "mongo/db/matcher/expression_parser.h"
 #include "mongo/db/matcher/expression_tree.h"
 #include "mongo/db/matcher/extensions_callback_noop.h"
 #include "mongo/db/pipeline/expression_context_for_test.h"
 #include "mongo/db/query/collation/collator_interface_mock.h"
-#include "mongo/unittest/assert.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
+#include "mongo/db/query/compiler/rewrites/matcher/expression_optimizer.h"
+#include "mongo/unittest/unittest.h"
 
 namespace mongo::evaluate_expr_matcher_test {
 
@@ -52,7 +53,7 @@ public:
                                          _expCtx,
                                          ExtensionsCallbackNoop(),
                                          MatchExpressionParser::kAllowAllSpecialFeatures));
-        _matchExpression = MatchExpression::optimize(std::move(_matchExpression));
+        _matchExpression = optimizeMatchExpression(std::move(_matchExpression));
     }
 
     void setCollator(std::unique_ptr<CollatorInterface> collator) {

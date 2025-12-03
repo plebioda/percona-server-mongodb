@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import re
 import shlex
 import sys
 from datetime import timedelta
@@ -49,7 +50,7 @@ DEFAULT_NON_REQUIRED_BUILD_TIMEOUT = timedelta(hours=2)
 
 # An idle timeout will expire in the presence of an exceptionally long running test in a resmoke task.
 # This helps prevent the introduction of new long-running tests in required build variants.
-DEFAULT_REQUIRED_BUILD_IDLE_TIMEOUT = timedelta(minutes=21)
+DEFAULT_REQUIRED_BUILD_IDLE_TIMEOUT = timedelta(minutes=16)
 
 
 class TimeoutOverride(BaseModel):
@@ -115,7 +116,7 @@ class TimeoutOverrides(BaseModel):
         overrides = [
             override
             for override in self.overrides.get(build_variant, [])
-            if override.task == task_name
+            if re.search(override.task, task_name)
         ]
         if overrides:
             if len(overrides) > 1:

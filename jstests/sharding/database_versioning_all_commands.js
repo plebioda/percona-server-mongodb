@@ -1173,7 +1173,7 @@ const allTestCases = {
         renameCollection: {skip: "TODO"},
         replSetAbortPrimaryCatchUp: {skip: "TODO"},
         replSetFreeze: {skip: "TODO"},
-        replSetGetConfig:.
+        replSetGetConfig: {skip: "TODO"},
         replSetGetRBID: {skip: "TODO"},
         replSetGetStatus: {skip: "TODO"},
         replSetHeartbeat: {skip: "TODO"},
@@ -1254,7 +1254,10 @@ const allTestCases = {
         waitForFailPoint: {skip: "TODO", conditional: true},
         whatsmysni: {skip: "TODO"},
         whatsmyuri: {skip: "TODO"},
-    }
+
+        // Percona commands
+        auditGetOptions: {skip: "executes locally on mongos (not sent to any remote node)"},
+    },
 };
 
 // TODO (SERVER-101777): This test makes a lot of assumptions about database versions stored in

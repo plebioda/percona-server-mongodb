@@ -866,65 +866,10 @@ const allTestCases = {
         },
         waitForFailPoint: {skip: "executes locally on mongos (not sent to any remote node)"},
         whatsmyuri: {skip: "executes locally on mongos (not sent to any remote node)"},
-    },
-<<<<<<< HEAD
-    updateRole: {skip: "always targets the config server"},
-    updateSearchIndex: {skip: "executes locally on mongos", conditional: true},
-    updateUser: {skip: "always targets the config server"},
-    updateZoneKeyRange: {skip: "not on a user database"},
-    usersInfo: {skip: "always targets the config server"},
-    validate: {
-        run: {
-            sendsDbVersion: true,
-            explicitlyCreateCollection: true,
-            command: function(dbName, collName) {
-                return {validate: collName};
-            },
-        }
-    },
-    validateDBMetadata: {
-        run: {
-            // validateDBMetadata is always broadcast to all shards.
-            sendsDbVersion: false,
-            explicitlyCreateCollection: true,
-            command: function(dbName, collName) {
-                return {validateDBMetadata: 1, apiParameters: {version: "1"}};
-            },
-        }
-    },
-    waitForFailPoint: {skip: "executes locally on mongos (not sent to any remote node)"},
-    whatsmyuri: {skip: "executes locally on mongos (not sent to any remote node)"},
 
-    // Percona commands
-    auditGetOptions: {skip: "executes locally on mongos (not sent to any remote node)"},
-||||||| 97867d5d209
-    updateRole: {skip: "always targets the config server"},
-    updateSearchIndex: {skip: "executes locally on mongos", conditional: true},
-    updateUser: {skip: "always targets the config server"},
-    updateZoneKeyRange: {skip: "not on a user database"},
-    usersInfo: {skip: "always targets the config server"},
-    validate: {
-        run: {
-            sendsDbVersion: true,
-            explicitlyCreateCollection: true,
-            command: function(dbName, collName) {
-                return {validate: collName};
-            },
-        }
+        // Percona commands
+        auditGetOptions: {skip: "executes locally on mongos (not sent to any remote node)"},
     },
-    validateDBMetadata: {
-        run: {
-            // validateDBMetadata is always broadcast to all shards.
-            sendsDbVersion: false,
-            explicitlyCreateCollection: true,
-            command: function(dbName, collName) {
-                return {validateDBMetadata: 1, apiParameters: {version: "1"}};
-            },
-        }
-    },
-    waitForFailPoint: {skip: "executes locally on mongos (not sent to any remote node)"},
-    whatsmyuri: {skip: "executes locally on mongos (not sent to any remote node)"},
-=======
     mongod: {
         _addShard: {skip: "not on a user database"},
         _configsvrAbortReshardCollection: {skip: "TODO"},
@@ -1228,7 +1173,7 @@ const allTestCases = {
         renameCollection: {skip: "TODO"},
         replSetAbortPrimaryCatchUp: {skip: "TODO"},
         replSetFreeze: {skip: "TODO"},
-        replSetGetConfig: {skip: "TODO"},
+        replSetGetConfig:.
         replSetGetRBID: {skip: "TODO"},
         replSetGetStatus: {skip: "TODO"},
         replSetHeartbeat: {skip: "TODO"},
@@ -1310,7 +1255,6 @@ const allTestCases = {
         whatsmysni: {skip: "TODO"},
         whatsmyuri: {skip: "TODO"},
     }
->>>>>>> 5bc2052b2c1
 };
 
 // TODO (SERVER-101777): This test makes a lot of assumptions about database versions stored in

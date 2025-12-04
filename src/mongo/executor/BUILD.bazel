@@ -511,13 +511,9 @@ mongo_cc_library(
         ":task_executor_interface",
         "//src/mongo:base",
         "//src/mongo/db:query_expressions",
-<<<<<<< HEAD
         "//src/mongo/db/audit:audit_impl",
         "//src/mongo/db/audit:audit_options",
-||||||| 97867d5d209
-=======
         "//src/mongo/db:query_matcher",
->>>>>>> 5bc2052b2c1
         "//src/mongo/rpc:metadata",
         "//src/mongo/util:clock_source_mock",
         "//src/mongo/util/net:network",

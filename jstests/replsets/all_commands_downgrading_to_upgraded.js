@@ -71,6 +71,7 @@ const allCommands = {
     _configsvrSetUserWriteBlockMode: {skip: isAnInternalCommand},
     _configsvrShardDrainingStatus: {skip: isAnInternalCommand},
     _configsvrStartShardDraining: {skip: isAnInternalCommand},
+    _configsvrStopShardDraining: {skip: isAnInternalCommand},
     _configsvrTransitionFromDedicatedConfigServer: {skip: isAnInternalCommand},
     _configsvrTransitionToDedicatedConfigServer: {skip: isAnInternalCommand},
     _configsvrUpdateZoneKeyRange: {skip: isAnInternalCommand},
@@ -124,6 +125,7 @@ const allCommands = {
     _shardsvrJoinDDLCoordinators: {skip: isAnInternalCommand},
     _shardsvrJoinMigrations: {skip: isAnInternalCommand},
     _shardsvrMergeAllChunksOnShard: {skip: isAnInternalCommand},
+    _shardsvrMergeChunks: {skip: isAnInternalCommand},
     _shardsvrMovePrimary: {skip: isAnInternalCommand},
     _shardsvrMovePrimaryEnterCriticalSection: {skip: isAnInternalCommand},
     _shardsvrMovePrimaryExitCriticalSection: {skip: isAnInternalCommand},
@@ -523,11 +525,6 @@ const allCommands = {
         },
     },
     compactStructuredEncryptionData: {skip: "requires additional encrypted collection setup"},
-    configureBackgroundTask: {
-        command: {configureBackgroundTask: 1, task: "ttlMonitor", mode: "enabled"},
-        isAdminCommand: true,
-        doesNotRunOnMongos: true,
-    },
     configureFailPoint: {skip: isAnInternalCommand},
     configureCollectionBalancing: {
         setUp: function(conn) {
@@ -1585,6 +1582,13 @@ const allCommands = {
             assert.commandWorked(res);
             assert.commandWorked(conn.adminCommand({endSessions: [res.id]}));
         }
+    },
+    stopShardDraining: {
+        // We cannot test stopShardDraining because we need to be able to run addShard during set
+        // up.
+        // This will be tested in FCV upgrade/downgrade passthroughs in the sharding
+        // directory.
+        skip: "cannot add shard while in downgrading FCV state",
     },
     stopTrafficRecording: {
         // Skipping command because it requires an actual file path for recording traffic to.

@@ -90,6 +90,7 @@
 #include "mongo/util/decorable.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/fail_point.h"
+#include "mongo/util/future.h"
 #include "mongo/util/future_util.h"
 #include "mongo/util/namespace_string_util.h"
 #include "mongo/util/out_of_line_executor.h"
@@ -423,6 +424,7 @@ ExecutorFuture<void> ReshardingDonorService::DonorStateMachine::_notifyCoordinat
         .until<Status>([](const Status& status) { return status.isOK(); })
         .on(**executor, abortToken)
         .then([this, abortToken] {
+            stdx::lock_guard<stdx::mutex> lk(_mutex);
             return future_util::withCancellation(_coordinatorHasDecisionPersisted.getFuture(),
                                                  abortToken);
         });
@@ -838,7 +840,13 @@ ExecutorFuture<void> ReshardingDonorService::DonorStateMachine::
         return ExecutorFuture<void>(**executor, Status::OK());
     }
 
-    return future_util::withCancellation(_allRecipientsDoneApplying.getFuture(), abortToken)
+    SharedSemiFuture<void> allRecipientsDoneApplyingFuture;
+    {
+        stdx::lock_guard<std::mutex> lk(_mutex);
+        allRecipientsDoneApplyingFuture = _allRecipientsDoneApplying.getFuture();
+    }
+
+    return future_util::withCancellation(std::move(allRecipientsDoneApplyingFuture), abortToken)
         .thenRunOn(**executor)
         .then([this, &factory] {
             _transitionState(DonorStateEnum::kPreparingToBlockWrites, factory);
@@ -1067,7 +1075,14 @@ ExecutorFuture<void> ReshardingDonorService::DonorStateMachine::_createAndStartC
         return ExecutorFuture<void>(**executor, Status::OK());
     }
 
-    return future_util::withCancellation(_changeStreamMonitorStartTimeSelected.getFuture(),
+    SharedSemiFuture<Timestamp> changeStreamMonitorStartTimeSelectedFuture;
+    {
+        stdx::lock_guard<stdx::mutex> lk(_mutex);
+        changeStreamMonitorStartTimeSelectedFuture =
+            _changeStreamMonitorStartTimeSelected.getFuture();
+    }
+
+    return future_util::withCancellation(std::move(changeStreamMonitorStartTimeSelectedFuture),
                                          abortToken)
         .thenRunOn(**executor)
         .then([this, executor, abortToken, &factory](const Timestamp& startAtOperationTime) {
@@ -1304,8 +1319,8 @@ ExecutorFuture<void> ReshardingDonorService::DonorStateMachine::_updateCoordinat
         .waitUntilMajorityForWrite(clientOpTime, CancellationToken::uncancelable())
         .thenRunOn(**executor)
         .then([this, &factory] {
-            auto opCtx = factory.makeOperationContext(&cc());
-            auto shardId = _externalState->myShardId(opCtx->getServiceContext());
+            auto localOpCtx = factory.makeOperationContext(&cc());
+            auto shardId = _externalState->myShardId(localOpCtx->getServiceContext());
             _metrics->updateDonorCtx(_donorCtx);
 
             BSONObjBuilder updateBuilder;
@@ -1319,7 +1334,7 @@ ExecutorFuture<void> ReshardingDonorService::DonorStateMachine::_updateCoordinat
             }
 
             _externalState->updateCoordinatorDocument(
-                opCtx.get(),
+                localOpCtx.get(),
                 _makeQueryForCoordinatorUpdate(shardId, _donorCtx.getState()),
                 updateBuilder.done());
         });

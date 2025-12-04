@@ -417,6 +417,7 @@ public:
     void visit(const ExpressionInternalIndexKey* expr) final {}
     void visit(const ExpressionInternalKeyStringValue* expr) final {}
     void visit(const ExpressionCreateUUID* expr) final {}
+    void visit(const ExpressionCreateObjectId* expr) final {}
     void visit(const ExpressionTestFeatureFlagLatest* expr) final {}
     void visit(const ExpressionTestFeatureFlagLastLTS* expr) final {}
 
@@ -605,6 +606,7 @@ public:
     void visit(const ExpressionInternalIndexKey* expr) final {}
     void visit(const ExpressionInternalKeyStringValue* expr) final {}
     void visit(const ExpressionCreateUUID* expr) final {}
+    void visit(const ExpressionCreateObjectId* expr) final {}
     void visit(const ExpressionTestFeatureFlagLatest* expr) final {}
     void visit(const ExpressionTestFeatureFlagLastLTS* expr) final {}
 
@@ -2509,6 +2511,9 @@ public:
         unsupportedExpression("$reduce");
     }
     void visit(const ExpressionReplaceOne* expr) final {
+        unsupportedExpression(expr->getOpName());
+
+        // TODO(SERVER-108244): Update code below to have replaceOne support regex in SBE.
         _context->ensureArity(3);
 
         auto replacementArg = popExpr();
@@ -3348,6 +3353,11 @@ public:
     void visit(const ExpressionCreateUUID* expr) final {
         // TODO(SERVER-101161): Support $createUUID in SBE.
         unsupportedExpression("$createUUID");
+    }
+
+    void visit(const ExpressionCreateObjectId* expr) final {
+        // TODO(SERVER-107710): Support $createObjectId in SBE.
+        unsupportedExpression("$createObjectId");
     }
 
     void visit(const ExpressionTsSecond* expr) final {

@@ -55,8 +55,8 @@
 #include "mongo/db/query/client_cursor/cursor_response.h"
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/db/query/collation/collator_interface.h"
+#include "mongo/db/query/compiler/logical_model/sort_pattern/sort_pattern.h"
 #include "mongo/db/query/explain_options.h"
-#include "mongo/db/query/sort_pattern.h"
 #include "mongo/db/query/write_ops/update_request.h"
 #include "mongo/db/query/write_ops/write_ops_gen.h"
 #include "mongo/db/query/write_ops/write_ops_parsers.h"
@@ -422,8 +422,11 @@ public:
             // Get all shard ids for shards that have chunks in the desired namespace.
             hangBeforeMetadataRefreshClusterQuery.pauseWhileSet(opCtx);
 
-            return routing_context_utils::withValidatedRoutingContextForTxnCmd(
-                opCtx, {nss}, [&](RoutingContext& routingCtx) {
+            sharding::router::CollectionRouter router{opCtx->getServiceContext(), nss};
+            return router.routeWithRoutingContext(
+                opCtx,
+                Request::kCommandName,
+                [&](OperationContext* opCtx, RoutingContext& routingCtx) {
                     const auto& cri = routingCtx.getCollectionRoutingInfo(nss);
 
                     auto allShardsContainingChunksForNs =
@@ -590,8 +593,11 @@ public:
 
             // Get all shard ids for shards that have chunks in the desired namespace.
             const auto& nss = parsedInfoFromRequest.nss;
-            return routing_context_utils::withValidatedRoutingContextForTxnCmd(
-                opCtx, {nss}, [&](RoutingContext& routingCtx) {
+            sharding::router::CollectionRouter router{opCtx->getServiceContext(), nss};
+            return router.routeWithRoutingContext(
+                opCtx,
+                "explain queryWithoutShardKey"_sd,
+                [&](OperationContext* opCtx, RoutingContext& routingCtx) {
                     const auto& cri = routingCtx.getCollectionRoutingInfo(nss);
 
                     auto allShardsContainingChunksForNs =

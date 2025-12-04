@@ -2205,9 +2205,9 @@ void QETextSearchCrudTest::doInsertsAndVerifyExpectations(
 
 TEST_F(QETextSearchCrudTest, BasicSubstring) {
     addSchema({.type = QueryTypeEnum::SubstringPreview,
-               .lb = 2,
-               .ub = 10,
-               .mlen = 400,
+               .lb = 10,
+               .ub = 100,
+               .mlen = 1000,
                .casef = false,
                .diacf = false});
     doInsertsAndVerifyExpectations({{"demonstration", "demonstration"}});
@@ -2247,9 +2247,9 @@ TEST_F(QETextSearchCrudTest, BasicPrefixAndSuffix) {
 
 TEST_F(QETextSearchCrudTest, RepeatingSubstring) {
     addSchema({.type = QueryTypeEnum::SubstringPreview,
-               .lb = 2,
-               .ub = 10,
-               .mlen = 400,
+               .lb = 10,
+               .ub = 100,
+               .mlen = 1000,
                .casef = false,
                .diacf = false});
     doInsertsAndVerifyExpectations({{"aaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaa"}});
@@ -2268,9 +2268,9 @@ TEST_F(QETextSearchCrudTest, FoldAsciiSuffix) {
 
 TEST_F(QETextSearchCrudTest, UnicodeSubstring) {
     addSchema({.type = QueryTypeEnum::SubstringPreview,
-               .lb = 2,
+               .lb = 1,
                .ub = 5,
-               .mlen = 400,
+               .mlen = 1000,
                .casef = false,
                .diacf = false});
     doInsertsAndVerifyExpectations({{"私はぺんです.", "私はぺんです."}});
@@ -2280,7 +2280,7 @@ TEST_F(QETextSearchCrudTest, FoldUnicodeSubstring) {
     addSchema({.type = QueryTypeEnum::SubstringPreview,
                .lb = 3,
                .ub = 5,
-               .mlen = 400,
+               .mlen = 1000,
                .casef = true,
                .diacf = true});
     doInsertsAndVerifyExpectations(
@@ -2290,9 +2290,9 @@ TEST_F(QETextSearchCrudTest, FoldUnicodeSubstring) {
 
 TEST_F(QETextSearchCrudTest, BasicSubstringMultipleInserts) {
     addSchema({.type = QueryTypeEnum::SubstringPreview,
-               .lb = 2,
-               .ub = 10,
-               .mlen = 400,
+               .lb = 10,
+               .ub = 100,
+               .mlen = 1000,
                .casef = false,
                .diacf = false});
     doInsertsAndVerifyExpectations({{"demonstration", "demonstration"},
@@ -2348,6 +2348,80 @@ TEST_F(QETextSearchCrudTest, BasicPrefixAndSuffixMultipleInserts) {
                                     {"demonstration", "demonstration"},
                                     {"aaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaa"},
                                     {"aaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaa"}});
+}
+
+// Test insert update payloads containing text search token sets ('b') with embedded encryptedTokens
+// of invalid length in the exact/substring/prefix/suffix token sets are rejected.
+TEST_F(QETextSearchCrudTest, InsertPayloadHasInvalidExactEncryptedTokensForTextSearch) {
+    addSchema({.type = QueryTypeEnum::SubstringPreview,
+               .lb = 2,
+               .ub = 10,
+               .mlen = 400,
+               .casef = false,
+               .diacf = false});
+    auto doc = BSON(kTestFieldName << "abcdef");
+    auto element = doc.firstElement();
+    auto buf = generatePlaceholder(element);
+    auto efc = getEFC();
+
+    BSONObjBuilder builder;
+    builder.append("_id", 1);
+    builder.append("counter", 1);
+    builder.append("plainText", "sample");
+    builder.append(transformElementForInsertUpdate(element, buf, efc).firstElement());
+    auto result = builder.obj();
+
+    auto serverPayload = EDCServerCollection::getEncryptedFieldInfo(result);
+    ASSERT_EQ(serverPayload.size(), 1);
+    auto& exactSet = serverPayload[0].payload.getTextSearchTokenSets().value().getExactTokenSet();
+    exactSet.setEncryptedTokens(
+        StateCollectionTokensV2(ESCDerivedFromDataTokenAndContentionFactorToken(
+                                    exactSet.getEscDerivedToken().asPrfBlock()),
+                                boost::none,
+                                boost::none /* msize */)
+            .encrypt({{}}));
+    ASSERT_THROWS_CODE_AND_WHAT(
+        processInsert(_queryImpl.get(), _edcNs, serverPayload, efc, 0, result, false),
+        DBException,
+        ErrorCodes::BadValue,
+        "Invalid length for EncryptedStateCollectionTokensV2 for text "
+        "search: Expected 51, got 48");
+}
+
+TEST_F(QETextSearchCrudTest, InsertPayloadHasInvalidSubstringEncryptedTokensForTextSearch) {
+    addSchema({.type = QueryTypeEnum::SubstringPreview,
+               .lb = 2,
+               .ub = 10,
+               .mlen = 400,
+               .casef = false,
+               .diacf = false});
+    auto doc = BSON(kTestFieldName << "abcdef");
+    auto element = doc.firstElement();
+    auto buf = generatePlaceholder(element);
+    auto efc = getEFC();
+
+    BSONObjBuilder builder;
+    builder.append("_id", 1);
+    builder.append("counter", 1);
+    builder.append("plainText", "sample");
+    builder.append(transformElementForInsertUpdate(element, buf, efc).firstElement());
+    auto result = builder.obj();
+
+    auto serverPayload = EDCServerCollection::getEncryptedFieldInfo(result);
+    ASSERT_EQ(serverPayload.size(), 1);
+    auto& ts =
+        serverPayload[0].payload.getTextSearchTokenSets().value().getSubstringTokenSets().back();
+    ts.setEncryptedTokens(StateCollectionTokensV2(ESCDerivedFromDataTokenAndContentionFactorToken(
+                                                      ts.getEscDerivedToken().asPrfBlock()),
+                                                  boost::none,
+                                                  boost::none /* msize */)
+                              .encrypt({{}}));
+    ASSERT_THROWS_CODE_AND_WHAT(
+        processInsert(_queryImpl.get(), _edcNs, serverPayload, efc, 0, result, false),
+        DBException,
+        ErrorCodes::BadValue,
+        "Invalid length for EncryptedStateCollectionTokensV2 for text "
+        "search: Expected 51, got 48");
 }
 
 }  // namespace

@@ -127,7 +127,7 @@ DocumentSource::GetNextResult DocumentSourceExchange::doGetNext() {
     return _exchange->getNext(pExpCtx->getOperationContext(), _consumerId, _resourceYielder.get());
 }
 
-Exchange::Exchange(ExchangeSpec spec, std::unique_ptr<Pipeline, PipelineDeleter> pipeline)
+Exchange::Exchange(ExchangeSpec spec, std::unique_ptr<Pipeline> pipeline)
     : _spec(std::move(spec)),
       _pipeline(std::move(pipeline)),
       _execPipeline{exec::agg::buildPipeline(_pipeline->freeze())},
@@ -459,10 +459,10 @@ void Exchange::dispose(OperationContext* opCtx, size_t consumerId) {
     // throwing thread will do the dispose.
     if (!_errorInLoadNextBatch.isOK()) {
         if (_loadingThreadId == consumerId) {
-            _pipeline->dispose(opCtx);
+            _execPipeline->dispose(opCtx);
         }
     } else if (_disposeRunDown == getConsumers()) {
-        _pipeline->dispose(opCtx);
+        _execPipeline->dispose(opCtx);
     }
 
     _consumers[consumerId]->dispose();

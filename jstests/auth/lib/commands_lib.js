@@ -2786,49 +2786,6 @@ export const authCommandsLib = {
           ]
         },
         {
-          testname: "configureBackgroundTask",
-          command: {configureBackgroundTask: 1, task: "ttlMonitor", mode: "enabled"},
-          skipUnlessReplicaSet: true,
-          testcases: [
-              {
-                runOnDb: adminDbName,
-                roles: {clusterManager: 1, clusterAdmin: 1, root: 1, __system: 1}
-              },
-              {
-                runOnDb: adminDbName,
-                privileges: [{resource: {cluster: true}, actions: ["configureBackgroundTask"]}]
-              },
-              {
-                runOnDb: adminDbName,
-                privileges: [
-                    {resource: {db: "", collection: ""}, actions: ["configureBackgroundTask"]}
-                ],
-                expectAuthzFailure: true
-              },
-              {
-                runOnDb: adminDbName,
-                privileges: [{
-                    resource: {db: adminDbName, collection: ""},
-                    actions: ["configureBackgroundTask"]
-                }],
-                expectAuthzFailure: true
-              },
-              {
-                runOnDb: adminDbName,
-                privileges: [{
-                    resource: {db: adminDbName, collection: "coll"},
-                    actions: ["configureBackgroundTask"]
-                }],
-                expectAuthzFailure: true
-              },
-              {
-                runOnDb: adminDbName,
-                privileges: [{resource: {cluster: true}, actions: ["convertToCapped"]}],
-                expectAuthzFailure: true
-              }
-          ]
-        },
-        {
           testname: "collMod",
           command: {collMod: "foo"},
           setup: function(db) {
@@ -6729,6 +6686,21 @@ export const authCommandsLib = {
                 privileges: [{resource: {db: "test", collection: "x"}, actions: ["splitVector"]}],
                 expectFail: true
               }
+          ]
+        },
+        {
+          testname: "stopShardDraining",
+          command: {stopShardDraining: "x"},
+          skipUnlessSharded: true,
+          testcases: [
+              {
+                runOnDb: adminDbName,
+                roles: roles_clusterManager,
+                privileges: [{resource: {cluster: true}, actions: ["removeShard"]}],
+                expectFail: true
+              },
+              {runOnDb: firstDbName, roles: {}},
+              {runOnDb: secondDbName, roles: {}}
           ]
         },
         {

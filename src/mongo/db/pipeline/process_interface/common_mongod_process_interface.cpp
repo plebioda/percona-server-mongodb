@@ -587,8 +587,7 @@ query_shape::CollectionType CommonMongodProcessInterface::getCollectionType(
     return getCollectionTypeLocally(opCtx, nss);
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter>
-CommonMongodProcessInterface::attachCursorSourceToPipelineForLocalRead(
+std::unique_ptr<Pipeline> CommonMongodProcessInterface::attachCursorSourceToPipelineForLocalRead(
     Pipeline* ownedPipeline,
     boost::optional<const AggregateCommandRequest&> aggRequest,
     bool shouldUseCollectionDefaultCollator,
@@ -602,8 +601,7 @@ CommonMongodProcessInterface::attachCursorSourceToPipelineForLocalRead(
             std::holds_alternative<ProofOfUpstreamFiltering>(shardFilterPolicy),
             expCtx->getOperationContext());
 
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline(
-        ownedPipeline, PipelineDeleter(expCtx->getOperationContext()));
+    std::unique_ptr<Pipeline> pipeline(ownedPipeline);
 
     const auto& sources = pipeline->getSources();
     boost::optional<DocumentSource*> firstStage =
@@ -775,7 +773,7 @@ boost::optional<Document> CommonMongodProcessInterface::doLookupSingleDocument(
     boost::optional<UUID> collectionUUID,
     const Document& documentKey,
     MakePipelineOptions opts) {
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline;
+    std::unique_ptr<Pipeline> pipeline;
     try {
         // Pass empty collator in order avoid inheriting the collator from 'expCtx', which may be
         // different from the collator of the corresponding collection.
@@ -1134,10 +1132,9 @@ std::unique_ptr<SpillTable> CommonMongodProcessInterface::createSpillTable(
                              keyFormat,
                              internalQuerySpillingMinAvailableDiskSpaceBytes.load());
     }
-    return expCtx->getOperationContext()
-        ->getServiceContext()
-        ->getStorageEngine()
-        ->makeTemporaryRecordStore(expCtx->getOperationContext(), keyFormat);
+    auto storageEngine = expCtx->getOperationContext()->getServiceContext()->getStorageEngine();
+    return storageEngine->makeTemporaryRecordStore(
+        expCtx->getOperationContext(), storageEngine->generateNewInternalIdent(), keyFormat);
 }
 
 Document CommonMongodProcessInterface::readRecordFromSpillTable(

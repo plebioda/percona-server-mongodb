@@ -60,17 +60,18 @@
 #include "mongo/db/matcher/expression_text_base.h"
 #include "mongo/db/matcher/expression_tree.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/query/compiler/logical_model/projection/projection.h"
+#include "mongo/db/query/compiler/optimizer/index_bounds_builder/index_bounds_builder.h"
 #include "mongo/db/query/compiler/physical_model/index_bounds/index_bounds.h"
 #include "mongo/db/query/compiler/physical_model/query_solution/eof_node_type.h"
 #include "mongo/db/query/compiler/physical_model/query_solution/query_solution.h"
 #include "mongo/db/query/compiler/physical_model/query_solution/stage_types.h"
+#include "mongo/db/query/compiler/rewrites/matcher/expression_optimizer.h"
 #include "mongo/db/query/find_command.h"
-#include "mongo/db/query/index_bounds_builder.h"
 #include "mongo/db/query/index_tag.h"
 #include "mongo/db/query/indexability.h"
 #include "mongo/db/query/planner_access.h"
 #include "mongo/db/query/planner_wildcard_helpers.h"
-#include "mongo/db/query/projection.h"
 #include "mongo/db/query/query_knobs_gen.h"
 #include "mongo/db/query/query_planner_common.h"
 #include "mongo/db/query/query_request_helper.h"
@@ -1336,8 +1337,8 @@ std::vector<std::unique_ptr<QuerySolutionNode>> QueryPlannerAccess::collapseEqui
             collapsedFilter->add(std::move(collapseIntoFetch->filter));
 
             // Normalize the filter and add it to 'into'.
-            collapseIntoFetch->filter = MatchExpression::optimize(std::move(collapsedFilter),
-                                                                  /* enableSimplification */ true);
+            collapseIntoFetch->filter = optimizeMatchExpression(std::move(collapsedFilter),
+                                                                /* enableSimplification */ true);
         } else {
             // Scans are not equivalent and can't be collapsed.
             collapsedScans.push_back(std::move(scans[i]));

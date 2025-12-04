@@ -576,9 +576,9 @@ void executeUntilFirstBatch(const AggExState& aggExState,
  * consumer and put it into the resulting vector. Otherwise, return the original 'pipeline' as a
  * single vector element.
  */
-std::vector<std::unique_ptr<Pipeline, PipelineDeleter>> createExchangePipelinesIfNeeded(
-    const AggExState& aggExState, std::unique_ptr<Pipeline, PipelineDeleter> pipeline) {
-    std::vector<std::unique_ptr<Pipeline, PipelineDeleter>> pipelines;
+std::vector<std::unique_ptr<Pipeline>> createExchangePipelinesIfNeeded(
+    const AggExState& aggExState, std::unique_ptr<Pipeline> pipeline) {
+    std::vector<std::unique_ptr<Pipeline>> pipelines;
 
     if (aggExState.getRequest().getExchange() && !pipeline->getContext()->getExplain()) {
         auto expCtx = pipeline->getContext();
@@ -631,7 +631,7 @@ std::vector<std::unique_ptr<Pipeline, PipelineDeleter>> createExchangePipelinesI
 std::vector<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> prepareExecutors(
     const AggExState& aggExState,
     AggCatalogState& aggCatalogState,
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline) {
+    std::unique_ptr<Pipeline> pipeline) {
     const auto expCtx = pipeline->getContext();
     const auto mainCollectionUUID = aggCatalogState.getUUID();
     // Check if the pipeline has a $geoNear stage, as it will be ripped away during the build query
@@ -667,7 +667,7 @@ std::vector<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> prepareExecuto
                                                       pipeline.get(),
                                                       catalogResourceHandle);
 
-        std::vector<std::unique_ptr<Pipeline, PipelineDeleter>> pipelines;
+        std::vector<std::unique_ptr<Pipeline>> pipelines;
         // Any pipeline that relies on calls to mongot requires additional setup.
         if (search_helpers::isMongotPipeline(pipeline.get())) {
             // Release locks early, before we generate the search pipeline, so that we don't hold
@@ -883,7 +883,7 @@ Status runAggregateOnView(ResolvedViewAggExState& resolvedViewAggExState,
     return status;
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> parsePipelineAndRegisterQueryStats(
+std::unique_ptr<Pipeline> parsePipelineAndRegisterQueryStats(
     const AggExState& aggExState,
     const AggCatalogState& aggCatalogState,
     boost::intrusive_ptr<ExpressionContext> expCtx) {
@@ -892,10 +892,10 @@ std::unique_ptr<Pipeline, PipelineDeleter> parsePipelineAndRegisterQueryStats(
     // Pipeline::parse() will first check if a view exists directly on the stage specification and
     // if none is found, will then check for the view using the expCtx. As such, it's necessary to
     // add the resolved namespace to the expCtx prior to any call to Pipeline::parse().
-    const bool isRankFusionPipeline = aggExState.isRankFusionPipeline();
-    if (isRankFusionPipeline) {
+    const bool isHybridSearchPipeline = aggExState.isHybridSearchPipeline();
+    if (isHybridSearchPipeline) {
         uassert(10557301,
-                "$rankFusion is unsupported on timeseries collections",
+                "$rankFusion and $scoreFusion are unsupported on timeseries collections",
                 !aggCatalogState.isTimeseries());
     }
     if (aggExState.isView()) {
@@ -904,9 +904,9 @@ std::unique_ptr<Pipeline, PipelineDeleter> parsePipelineAndRegisterQueryStats(
                                                 aggExState.getResolvedView(),
                                                 aggExState.getOriginalNss());
 
-        if (isRankFusionPipeline) {
+        if (isHybridSearchPipeline) {
             uassert(ErrorCodes::OptionNotSupportedOnView,
-                    "$rankFusion is currently unsupported on views",
+                    "$rankFusion and $scoreFusion are currently unsupported on views",
                     feature_flags::gFeatureFlagSearchHybridScoringFull
                         .isEnabledUseLatestFCVWhenUninitialized(
                             VersionContext::getDecoration(expCtx->getOperationContext()),
@@ -1004,11 +1004,11 @@ std::unique_ptr<Pipeline, PipelineDeleter> parsePipelineAndRegisterQueryStats(
     return pipeline;
 }
 
-StatusWith<std::unique_ptr<Pipeline, PipelineDeleter>> preparePipeline(
+StatusWith<std::unique_ptr<Pipeline>> preparePipeline(
     const AggExState& aggExState,
     const AggCatalogState& aggCatalogState,
     const boost::intrusive_ptr<ExpressionContext>& expCtx) {
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline =
+    std::unique_ptr<Pipeline> pipeline =
         parsePipelineAndRegisterQueryStats(aggExState, aggCatalogState, expCtx);
 
     // Start the query planning timer right after parsing.
@@ -1171,7 +1171,7 @@ Status _runAggregate(AggExState& aggExState, rpc::ReplyBuilderInterface* result)
     // Prepare the parsed pipeline for execution. This involves parsing the pipeline,
     // registering query stats, rewriting the pipeline to support queryable encryption, and
     // optimizing and rewriting the pipeline if necessary.
-    StatusWith<std::unique_ptr<Pipeline, PipelineDeleter>> swPipeline =
+    StatusWith<std::unique_ptr<Pipeline>> swPipeline =
         preparePipeline(aggExState, *aggCatalogState, expCtx);
     if (!swPipeline.isOK()) {
         return swPipeline.getStatus();

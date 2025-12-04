@@ -927,17 +927,22 @@ void processFieldsForInsert(FLEQueryInterface* queryImpl,
             }
         } else if (payload.isTextSearchPayload()) {
             const auto& tsts = payload.payload.getTextSearchTokenSets().get();
-            ecocDocuments.push_back(tsts.getExactTokenSet().getEncryptedTokens().generateDocument(
-                payload.fieldPathName));
+            auto exactSet = tsts.getExactTokenSet();
+            exactSet.getEncryptedTokens().assertIsValidForTextSearch();
+            ecocDocuments.push_back(
+                exactSet.getEncryptedTokens().generateDocument(payload.fieldPathName));
             for (const auto& ts : tsts.getSubstringTokenSets()) {
+                ts.getEncryptedTokens().assertIsValidForTextSearch();
                 ecocDocuments.push_back(
                     ts.getEncryptedTokens().generateDocument(payload.fieldPathName));
             }
             for (const auto& ts : tsts.getSuffixTokenSets()) {
+                ts.getEncryptedTokens().assertIsValidForTextSearch();
                 ecocDocuments.push_back(
                     ts.getEncryptedTokens().generateDocument(payload.fieldPathName));
             }
             for (const auto& ts : tsts.getPrefixTokenSets()) {
+                ts.getEncryptedTokens().assertIsValidForTextSearch();
                 ecocDocuments.push_back(
                     ts.getEncryptedTokens().generateDocument(payload.fieldPathName));
             }
@@ -1997,11 +2002,10 @@ void processFLECountS(OperationContext* opCtx,
     fle::processCountCommand(opCtx, nss, &countCommand, &getTransactionWithRetriesForMongoS);
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> processFLEPipelineS(
-    OperationContext* opCtx,
-    NamespaceString nss,
-    const EncryptionInformation& encryptInfo,
-    std::unique_ptr<Pipeline, PipelineDeleter> toRewrite) {
+std::unique_ptr<Pipeline> processFLEPipelineS(OperationContext* opCtx,
+                                              NamespaceString nss,
+                                              const EncryptionInformation& encryptInfo,
+                                              std::unique_ptr<Pipeline> toRewrite) {
     return fle::processPipeline(
         opCtx, nss, encryptInfo, std::move(toRewrite), &getTransactionWithRetriesForMongoS);
 }

@@ -673,9 +673,9 @@ StatusWith<std::unique_ptr<ResolvedViewAggExState>> ResolvedViewAggExState::crea
         std::move(aggExState), aggCatalogState, viewDefinition);
 }
 
-std::unique_ptr<Pipeline, PipelineDeleter> ResolvedViewAggExState::handleViewHelper(
+std::unique_ptr<Pipeline> ResolvedViewAggExState::handleViewHelper(
     boost::intrusive_ptr<ExpressionContext> expCtx,
-    std::unique_ptr<Pipeline, PipelineDeleter> pipeline,
+    std::unique_ptr<Pipeline> pipeline,
     boost::optional<UUID> uuid) const {
     if (getResolvedView().timeseries()) {
         // For timeseries, there may have been rewrites done on the raw BSON pipeline
@@ -731,10 +731,8 @@ ScopedSetShardRole ResolvedViewAggExState::setShardRole(const CollectionRoutingI
         if (optPlacementConflictTimestamp) {
             sv.setPlacementConflictTime(*optPlacementConflictTimestamp);
         }
-        return ScopedSetShardRole(_opCtx,
-                                  underlyingNss,
-                                  ShardVersion::UNSHARDED() /*shardVersion*/,
-                                  cri.getDbVersion() /*databaseVersion*/);
+        return ScopedSetShardRole(
+            _opCtx, underlyingNss, sv /*shardVersion*/, cri.getDbVersion() /*databaseVersion*/);
     }
 }
 

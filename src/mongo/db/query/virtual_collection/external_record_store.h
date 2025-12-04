@@ -170,25 +170,15 @@ public:
     }
 
     std::unique_ptr<SeekableRecordCursor> getCursor(OperationContext* opCtx,
-                                                    bool forward = true) const final;
-    std::unique_ptr<SeekableRecordCursor> getCursor(OperationContext* opCtx,
                                                     RecoveryUnit& ru,
                                                     bool forward = true) const final;
 
-    std::unique_ptr<RecordCursor> getRandomCursor(OperationContext* opCtx) const final {
-        unimplementedTasserted();
-        return nullptr;
-    }
     std::unique_ptr<RecordCursor> getRandomCursor(OperationContext* opCtx,
                                                   RecoveryUnit& ru) const final {
         unimplementedTasserted();
         return nullptr;
     }
 
-    Status truncate(OperationContext*) final {
-        unimplementedTasserted();
-        return {ErrorCodes::Error::UnknownError, "Unknown error"};
-    }
     Status truncate(OperationContext*, RecoveryUnit&) final {
         unimplementedTasserted();
         return {ErrorCodes::Error::UnknownError, "Unknown error"};
@@ -208,10 +198,6 @@ public:
         return false;
     }
 
-    StatusWith<int64_t> compact(OperationContext*, const CompactOptions&) final {
-        unimplementedTasserted();
-        return {ErrorCodes::Error::UnknownError, "Unknown error"};
-    }
     StatusWith<int64_t> compact(OperationContext*, RecoveryUnit&, const CompactOptions&) final {
         unimplementedTasserted();
         return {ErrorCodes::Error::UnknownError, "Unknown error"};
@@ -232,9 +218,6 @@ public:
         return {};
     }
 
-    void reserveRecordIds(OperationContext*, std::vector<RecordId>*, size_t numRecords) final {
-        unimplementedTasserted();
-    }
     void reserveRecordIds(OperationContext*,
                           RecoveryUnit&,
                           std::vector<RecordId>*,

@@ -2821,7 +2821,14 @@ private:
 
 class ExpressionReplaceOne final : public ExpressionReplaceBase {
 public:
-    using ExpressionReplaceBase::ExpressionReplaceBase;
+    ExpressionReplaceOne(ExpressionContext* const expCtx,
+                         boost::intrusive_ptr<Expression> input,
+                         boost::intrusive_ptr<Expression> find,
+                         boost::intrusive_ptr<Expression> replacement)
+        : ExpressionReplaceBase(expCtx, input, find, replacement) {
+        // TODO(SERVER-108244): Support $replaceOne with regex in SBE.
+        expCtx->setSbeCompatibility(SbeCompatibility::notCompatible);
+    }
 
     static boost::intrusive_ptr<Expression> parse(ExpressionContext* expCtx,
                                                   BSONElement expr,
@@ -5009,6 +5016,34 @@ public:
 private:
     explicit ExpressionCreateUUID(ExpressionContext* expCtx);
 };
+
+
+class ExpressionCreateObjectId : public Expression {
+public:
+    static boost::intrusive_ptr<Expression> parse(ExpressionContext* expCtx,
+                                                  BSONElement exprElement,
+                                                  const VariablesParseState& vps);
+
+    Value serialize(const SerializationOptions& options = {}) const final;
+
+    Value evaluate(const Document& root, Variables* variables) const final;
+
+    [[nodiscard]] boost::intrusive_ptr<Expression> optimize() final;
+
+    const char* getOpName() const;
+
+    void acceptVisitor(ExpressionMutableVisitor* visitor) final {
+        return visitor->visit(this);
+    }
+
+    void acceptVisitor(ExpressionConstVisitor* visitor) const final {
+        return visitor->visit(this);
+    }
+
+private:
+    explicit ExpressionCreateObjectId(ExpressionContext* expCtx);
+};
+
 
 /**
  * ExpressionEncTextSearch is the base class for all encrypted text search expressions. The first

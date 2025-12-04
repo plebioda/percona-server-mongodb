@@ -47,7 +47,7 @@
 #include "mongo/db/exec/text_match.h"
 #include "mongo/db/field_ref.h"
 #include "mongo/db/keypattern.h"
-#include "mongo/db/query/cost_based_ranker/estimates_storage.h"
+#include "mongo/db/query/compiler/optimizer/cost_based_ranker/estimates_storage.h"
 #include "mongo/db/query/plan_ranking_decision.h"
 #include "mongo/db/query/plan_summary_stats_visitor.h"
 #include "mongo/db/query/query_knobs_gen.h"
@@ -555,6 +555,9 @@ void statsToBSON(const stage_builder::PlanStageToQsnMap& planStageQsnMap,
             bob->appendNumber(
                 "spilledDataStorageSize",
                 static_cast<long long>(spec->spillingStats.getSpilledDataStorageSize()));
+            if (feature_flags::gFeatureFlagQueryMemoryTracking.isEnabled()) {
+                bob->appendNumber("maxUsedMemBytes", static_cast<long long>(spec->maxUsedMemBytes));
+            }
         }
     } else if (STAGE_SORT_MERGE == stats.stageType) {
         MergeSortStats* spec = static_cast<MergeSortStats*>(stats.specific.get());
@@ -589,6 +592,10 @@ void statsToBSON(const stage_builder::PlanStageToQsnMap& planStageQsnMap,
             bob->appendNumber(
                 "spilledDataStorageSize",
                 static_cast<long long>(spec->spillingStats.getSpilledDataStorageSize()));
+            if (feature_flags::gFeatureFlagQueryMemoryTracking.isEnabled()) {
+                bob->appendNumber("maxUsedMemBytes",
+                                  static_cast<long long>(spec->maxUsedMemoryBytes));
+            }
         }
     } else if (STAGE_TIMESERIES_MODIFY == stats.stageType) {
         TimeseriesModifyStats* spec = static_cast<TimeseriesModifyStats*>(stats.specific.get());

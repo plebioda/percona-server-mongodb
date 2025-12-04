@@ -24,6 +24,9 @@
 
 import {extendWorkload} from "jstests/concurrency/fsm_libs/extend_workload.js";
 import {
+    assertSetFCVSoon
+} from "jstests/concurrency/fsm_workload_helpers/query/assert_fcv_reset_soon.js";
+import {
     uniformDistTransitions
 } from "jstests/concurrency/fsm_workload_helpers/state_transition_utils.js";
 import {
@@ -90,8 +93,6 @@ export const $config = extendWorkload($baseConfig, function($config, $super) {
     $config.data.kMovePrimaryAllowedErrorCodes.push(ErrorCodes.LockBusy);
     // Additionally, you might end up hitting a shard where the db have already moved.
     $config.data.kMovePrimaryAllowedErrorCodes.push(ErrorCodes.NamespaceNotFound);
-    // TODO SERVER-105556: shardNotFound errors will be permitted in the base fsm eventually.
-    $config.data.kMovePrimaryAllowedErrorCodes.push(ErrorCodes.ShardNotFound);
 
     // Auxiliary function to catch and handle the move collection errors.
     $config.data.moveCollectionHelper = function(db, nss, destinationShard) {
@@ -207,8 +208,8 @@ export const $config = extendWorkload($baseConfig, function($config, $super) {
     };
 
     $config.teardown = function(db, collName, cluster) {
-        assert.commandWorked(
-            db.adminCommand({setFeatureCompatibilityVersion: latestFCV, confirm: true}));
+        assertSetFCVSoon(db, latestFCV);
+
         const fcvExecutions =
             db.getSiblingDB(
                   $config.data.succesfullSetFCVDbName)[$config.data.succesfullSetFCVCollName]

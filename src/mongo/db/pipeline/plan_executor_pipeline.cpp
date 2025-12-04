@@ -71,7 +71,7 @@ bool isRouterOrReplicaSet(ExpressionContext* expCtx) {
 }  // namespace
 
 PlanExecutorPipeline::PlanExecutorPipeline(boost::intrusive_ptr<ExpressionContext> expCtx,
-                                           std::unique_ptr<Pipeline, PipelineDeleter> pipeline,
+                                           std::unique_ptr<Pipeline> pipeline,
                                            ResumableScanType resumableScanType)
     : _expCtx(std::move(expCtx)),
       _pipeline(std::move(pipeline)),
@@ -84,7 +84,7 @@ PlanExecutorPipeline::PlanExecutorPipeline(boost::intrusive_ptr<ExpressionContex
     // The caller is responsible for disposing this plan executor before deleting it, which will in
     // turn dispose the underlying pipeline. Therefore, there is no need to dispose the pipeline
     // again when it is destroyed.
-    _pipeline.get_deleter().dismissDisposal();
+    _execPipeline->dismissDisposal();
 
     if (ResumableScanType::kNone != resumableScanType) {
         // For a resumable scan, set the initial _latestOplogTimestamp and _postBatchResumeToken.

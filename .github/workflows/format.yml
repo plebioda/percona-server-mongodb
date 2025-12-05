@@ -22,9 +22,13 @@ jobs:
 
       - name: Run linters
         run: |
+          echo "Running clang-format"
           buildscripts/clang_format.py format
+          echo "Running python formatters"
           buildscripts/pylinters.py fix
+          echo "Running python scons formatter"
           buildscripts/pylinters.py fix-scons
+          echo "Running javascript formatters"
           buildscripts/eslint.py fix
 
       - name: Verify formatting

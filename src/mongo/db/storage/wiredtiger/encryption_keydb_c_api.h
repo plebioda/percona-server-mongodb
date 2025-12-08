@@ -31,11 +31,15 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 
 #pragma once
 
-#include <cstdint>
-#include <cstddef>
+
 
 #ifdef __cplusplus
 extern "C" {
+#include <cstdint>
+#include <cstddef>
+#else
+#include <stdint.h>
+#include <stddef.h>
 #endif
 
 void store_pseudo_bytes(uint8_t *buf, int len);

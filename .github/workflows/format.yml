@@ -20,13 +20,9 @@ jobs:
       - name: Setup environment
         uses: ./.github/actions/setup-env
 
-      - name: Get changed files
-        id: changed
-        uses: tj-actions/changed-files@v45
-
-      - name: List changed files
+      - name: Fetch base branch
         run: |
-          echo "Changed files: ${{ steps.changed.outputs.all_changed_files }}"
+          git fetch origin ${{ github.base_ref }}
 
       - name: Run bazel format
         run: |

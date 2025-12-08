@@ -29,6 +29,8 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
     it in the license file.
 ======= */
 
+// dummy change
+
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>

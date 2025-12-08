@@ -44,3 +44,14 @@ runs:
       shell: bash
       run: |
         poetry run python buildscripts/install_bazel.py
+
+    - name: Build AWS SDK
+      shell: bash
+      run: |
+        mkdir -p build && cd build/
+        git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git
+        cd aws-sdk-cpp && git checkout 1.9.379
+        curl -L https://github.com/aws/aws-sdk-cpp/commit/0fba9f908d7ddc30aceab69b939f997330a44bb3.patch | git apply
+        mkdir build && cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX="/usr"
+        sudo cmake --build . --target install

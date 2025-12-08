@@ -93,7 +93,8 @@ jobs:
         run: |
           {
             echo 'common --config=local'
-            echo 'common --build_enterprise=false'
+            echo 'build --build_enterprise=false'
+            echo 'build --//bazel/config:compiler_type=clang'
           } > .bazelrc.compiledb
           bazel \
             --bazelrc=.bazelrc.compiledb \

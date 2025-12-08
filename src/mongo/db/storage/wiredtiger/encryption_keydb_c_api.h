@@ -31,6 +31,8 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 
 #pragma once
 
+#include <cstdint>
+#include <cstddef>
 
 #ifdef __cplusplus
 extern "C" {

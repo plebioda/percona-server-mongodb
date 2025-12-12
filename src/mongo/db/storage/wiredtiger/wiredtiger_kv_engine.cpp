@@ -1040,31 +1040,13 @@ WiredTigerKVEngine::WiredTigerKVEngine(
     const std::string& path,
     ClockSource* clockSource,
     WiredTigerConfig wtConfig,
+    const WiredTigerExtensions& wtExtensions,
     bool repair,
     bool isReplSet,
     bool shouldRecoverFromOplogAsStandalone,
     bool inStandaloneMode,
     PeriodicRunner* periodicRunner,
     const encryption::MasterKeyProviderFactory& keyProviderFactory)
-||||||| 78d0eda2b55
-WiredTigerKVEngine::WiredTigerKVEngine(const std::string& canonicalName,
-                                       const std::string& path,
-                                       ClockSource* clockSource,
-                                       WiredTigerConfig wtConfig,
-                                       bool repair,
-                                       bool isReplSet,
-                                       bool shouldRecoverFromOplogAsStandalone,
-                                       bool inStandaloneMode)
-=======
-WiredTigerKVEngine::WiredTigerKVEngine(const std::string& canonicalName,
-                                       const std::string& path,
-                                       ClockSource* clockSource,
-                                       WiredTigerConfig wtConfig,
-                                       const WiredTigerExtensions& wtExtensions,
-                                       bool repair,
-                                       bool isReplSet,
-                                       bool shouldRecoverFromOplogAsStandalone,
-                                       bool inStandaloneMode)
 >>>>>>> 799abfd7a353be84b3e5f41420afa23dc984f453
     : WiredTigerKVEngineBase(canonicalName, path, clockSource, std::move(wtConfig)),
       _restEncr(DataAtRestEncryption::create(encryptionGlobalParams,

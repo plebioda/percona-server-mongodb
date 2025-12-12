@@ -282,12 +282,36 @@ StorageEngine::LastShutdownState initializeStorageEngine(
     }
 
     // Write a new metadata file if it is not present.
+<<<<<<< HEAD
     writeMetadata(std::move(metadata),
                   factory,
                   storageGlobalParams,
                   encryption::WtKeyIds::instance().futureConfigured.get(),
                   initFlags,
                   createScopedTimer);
+||||||| af0dac46ec6
+    if (!metadata.get() &&
+        (initFlags & StorageEngineInitFlags::kSkipMetadataFile) == StorageEngineInitFlags{}) {
+        SectionScopedTimer scopedTimer(service->getFastClockSource(),
+                                       TimedSectionId::writeNewMetadata,
+                                       startupTimeElapsedBuilder);
+        metadata.reset(new StorageEngineMetadata(storageGlobalParams.dbpath));
+        metadata->setStorageEngine(factory->getCanonicalName().toString());
+        metadata->setStorageEngineOptions(factory->createMetadataOptions(storageGlobalParams));
+        uassertStatusOK(metadata->write());
+    }
+=======
+    if (!metadata.get() &&
+        (initFlags & StorageEngineInitFlags::kSkipMetadataFile) == StorageEngineInitFlags{}) {
+        SectionScopedTimer scopedTimer(service->getFastClockSource(),
+                                       TimedSectionId::writeNewMetadata,
+                                       startupTimeElapsedBuilder);
+        metadata.reset(new StorageEngineMetadata(storageGlobalParams.dbpath));
+        metadata->setStorageEngine(std::string{factory->getCanonicalName()});
+        metadata->setStorageEngineOptions(factory->createMetadataOptions(storageGlobalParams));
+        uassertStatusOK(metadata->write());
+    }
+>>>>>>> ea26ea28ac33e5e5e9687f25833d14d5f8f4c97b
 
     guard.dismiss();
 
@@ -378,7 +402,7 @@ void registerStorageEngine(ServiceContext* service,
     // and all factories should be added before we pick a storage engine.
     invariant(!service->getStorageEngine());
 
-    auto name = factory->getCanonicalName().toString();
+    auto name = std::string{factory->getCanonicalName()};
     storageFactories(service).emplace(name, std::move(factory));
 }
 
@@ -387,7 +411,7 @@ bool isRegisteredStorageEngine(ServiceContext* service, StringData name) {
 }
 
 StorageEngine::Factory* getFactoryForStorageEngine(ServiceContext* service, StringData name) {
-    const auto result = storageFactories(service).find(name.toString());
+    const auto result = storageFactories(service).find(std::string{name});
     if (result == storageFactories(service).end()) {
         return nullptr;
     }

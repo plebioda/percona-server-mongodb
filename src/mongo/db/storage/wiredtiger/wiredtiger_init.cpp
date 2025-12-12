@@ -149,27 +149,6 @@ public:
             wtConfig.logEnabled = false;
         }
 <<<<<<< HEAD
-        auto kv =
-            std::make_unique<WiredTigerKVEngine>(std::string{getCanonicalName()},
-                                                 params.dbpath,
-                                                 getGlobalServiceContext()->getFastClockSource(),
-                                                 std::move(wtConfig),
-                                                 params.repair,
-                                                 isReplSet,
-                                                 shouldRecoverFromOplogAsStandalone,
-                                                 inStandaloneMode,
-                                                 opCtx->getServiceContext()->getPeriodicRunner());
-||||||| 78d0eda2b55
-        auto kv =
-            std::make_unique<WiredTigerKVEngine>(std::string{getCanonicalName()},
-                                                 params.dbpath,
-                                                 getGlobalServiceContext()->getFastClockSource(),
-                                                 std::move(wtConfig),
-                                                 params.repair,
-                                                 isReplSet,
-                                                 shouldRecoverFromOplogAsStandalone,
-                                                 inStandaloneMode);
-=======
         auto kv = std::make_unique<WiredTigerKVEngine>(
             std::string{getCanonicalName()},
             params.dbpath,
@@ -179,7 +158,8 @@ public:
             params.repair,
             isReplSet,
             shouldRecoverFromOplogAsStandalone,
-            inStandaloneMode);
+            inStandaloneMode,
+            opCtx->getServiceContext()->getPeriodicRunner());
 >>>>>>> 799abfd7a353be84b3e5f41420afa23dc984f453
         kv->setRecordStoreExtraOptions(wiredTigerGlobalOptions.collectionConfig);
         kv->setSortedDataInterfaceExtraOptions(wiredTigerGlobalOptions.indexConfig);

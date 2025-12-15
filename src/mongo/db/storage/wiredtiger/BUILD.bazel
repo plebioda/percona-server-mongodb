@@ -48,13 +48,7 @@ mongo_cc_library(
         "encryption_extension.c",
         "encryption_keydb.cpp",
         "spill_wiredtiger_kv_engine.cpp",
-<<<<<<< HEAD
-        "spill_wiredtiger_record_store.cpp",
         "wiredtiger_backup_cursor_hooks.cpp",
-||||||| d4a04783e72
-        "spill_wiredtiger_record_store.cpp",
-=======
->>>>>>> af0dac46ec6c21abb74cd3ba9b035e472272127c
         "wiredtiger_begin_transaction_block.cpp",
         "wiredtiger_compiled_configuration.cpp",
         "wiredtiger_connection.cpp",
@@ -85,13 +79,7 @@ mongo_cc_library(
         "encryption_keydb_c_api.h",
         "spill_recovery_unit.h",
         "spill_wiredtiger_kv_engine.h",
-<<<<<<< HEAD
-        "spill_wiredtiger_record_store.h",
         "wiredtiger_backup_cursor_hooks.h",
-||||||| d4a04783e72
-        "spill_wiredtiger_record_store.h",
-=======
->>>>>>> af0dac46ec6c21abb74cd3ba9b035e472272127c
         "wiredtiger_begin_transaction_block.h",
         "wiredtiger_compiled_configuration.h",
         "wiredtiger_connection.h",

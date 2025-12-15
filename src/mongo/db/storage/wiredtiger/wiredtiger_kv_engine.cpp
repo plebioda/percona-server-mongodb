@@ -1034,7 +1034,6 @@ std::vector<std::string> WiredTigerKVEngineBase::_wtGetAllIdents(
     return all;
 }
 
-<<<<<<< HEAD
 WiredTigerKVEngine::WiredTigerKVEngine(
     const std::string& canonicalName,
     const std::string& path,
@@ -1047,7 +1046,6 @@ WiredTigerKVEngine::WiredTigerKVEngine(
     bool inStandaloneMode,
     PeriodicRunner* periodicRunner,
     const encryption::MasterKeyProviderFactory& keyProviderFactory)
->>>>>>> 799abfd7a353be84b3e5f41420afa23dc984f453
     : WiredTigerKVEngineBase(canonicalName, path, clockSource, std::move(wtConfig)),
       _restEncr(DataAtRestEncryption::create(encryptionGlobalParams,
                                              boost::filesystem::path(path),

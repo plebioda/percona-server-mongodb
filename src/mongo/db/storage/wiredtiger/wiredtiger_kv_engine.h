@@ -726,14 +726,11 @@ private:
         StorageEngine::DropIdentCallback callback;
     };
 
-<<<<<<< HEAD
     // srcPath, destPath, session, cursor
     typedef std::tuple<boost::filesystem::path, boost::filesystem::path, std::shared_ptr<WiredTigerSession>, WT_CURSOR*> DBTuple;
     // srcPath, destPath, filename, size to copy
     typedef std::tuple<boost::filesystem::path, boost::filesystem::path, boost::uintmax_t, std::time_t> FileTuple;
 
-||||||| 6f5b154c943
-=======
     // Tracks the state of statistics relevant to cache pressure. These only make sense as deltas
     // against the previous value.
     struct CachePressureStats {
@@ -743,8 +740,6 @@ private:
         // Record when the current stats were generated.
         int64_t timestamp = 0;
     };
-
->>>>>>> d4a04783e727db7d533785689a7c92437cd05fdf
     Status _createRecordStore(const NamespaceString& ns,
                               StringData ident,
                               KeyFormat keyFormat,

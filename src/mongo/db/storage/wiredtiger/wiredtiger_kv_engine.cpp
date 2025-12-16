@@ -57,7 +57,7 @@
 #include "mongo/db/audit/audit.h"
 #include "mongo/bson/dotted_path/dotted_path_support.h"
 #include "mongo/db/client.h"
-<<<<<<< HEAD
+#include "mongo/db/commands/server_status_metric.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/encryption/encryption_options.h"
 #include "mongo/db/encryption/error.h"
@@ -66,10 +66,6 @@
 #include "mongo/db/encryption/key_entry.h"
 #include "mongo/db/encryption/key_id.h"
 #include "mongo/db/encryption/master_key_provider.h"
-||||||| 6f5b154c943
-=======
-#include "mongo/db/commands/server_status_metric.h"
->>>>>>> d4a04783e727db7d533785689a7c92437cd05fdf
 #include "mongo/db/index_names.h"
 #include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/server_options.h"

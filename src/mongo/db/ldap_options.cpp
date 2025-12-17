@@ -38,6 +38,7 @@ Copyright (C) 2019-present Percona and/or its affiliates. All rights reserved.
 #include <fmt/format.h>
 
 #include "mongo/bson/json.h"
+#include "mongo/util/str.h"
 
 namespace mongo {
 
@@ -110,7 +111,7 @@ Status validateLDAPBindMethod(const std::string& value) {
     constexpr auto kSimple = "simple"_sd;
     constexpr auto kSasl = "sasl"_sd;
 
-    if (!kSimple.equalCaseInsensitive(value) && !kSasl.equalCaseInsensitive(value)) {
+    if (!str::equalsCaseInsensitive(kSimple, value) && !str::equalsCaseInsensitive(kSasl, value)) {
         return {ErrorCodes::BadValue, "security.ldap.bind.method expects one of 'simple' or 'sasl'"};
     }
 
@@ -121,7 +122,7 @@ Status validateLDAPTransportSecurity(const std::string& value) {
     constexpr auto kNone = "none"_sd;
     constexpr auto kTls = "tls"_sd;
 
-    if (!kNone.equalCaseInsensitive(value) && !kTls.equalCaseInsensitive(value)) {
+    if (!str::equalsCaseInsensitive(kNone, value) && !str::equalsCaseInsensitive(kTls, value)) {
         return {ErrorCodes::BadValue, "security.ldap.transportSecurity expects one of 'none' or 'tls'"};
     }
 

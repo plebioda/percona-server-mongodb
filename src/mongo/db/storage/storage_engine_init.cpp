@@ -95,7 +95,7 @@ void writeMetadata(std::unique_ptr<StorageEngineMetadata> metadata,
     if (!metadata) {
         metadataNeedsWriting = true;
         metadata = std::make_unique<StorageEngineMetadata>(storageGlobalParams.dbpath);
-        metadata->setStorageEngine(factory->getCanonicalName().toString());
+        metadata->setStorageEngine(std::string{factory->getCanonicalName()});
     }
     if (futureConfigured) {
         metadataNeedsWriting = true;
@@ -157,9 +157,9 @@ StorageEngine::LastShutdownState initializeStorageEngine(
                         str::stream()
                             << "Cannot start server. Detected data files in " << dbpath
                             << " created by"
-                            << " the '" << *existingStorageEngine << "' storage engine, but the"
-                            << " specified storage engine was '" << factory->getCanonicalName()
-                            << "'.",
+                            << " the ''" << *existingStorageEngine << "'' storage engine, but the"
+                            << " specified storage engine was ''" << factory->getCanonicalName()
+                            << "''.",
                         factory->getCanonicalName() == *existingStorageEngine);
             }
         } else {
@@ -282,36 +282,12 @@ StorageEngine::LastShutdownState initializeStorageEngine(
     }
 
     // Write a new metadata file if it is not present.
-<<<<<<< HEAD
     writeMetadata(std::move(metadata),
                   factory,
                   storageGlobalParams,
                   encryption::WtKeyIds::instance().futureConfigured.get(),
                   initFlags,
                   createScopedTimer);
-||||||| af0dac46ec6
-    if (!metadata.get() &&
-        (initFlags & StorageEngineInitFlags::kSkipMetadataFile) == StorageEngineInitFlags{}) {
-        SectionScopedTimer scopedTimer(service->getFastClockSource(),
-                                       TimedSectionId::writeNewMetadata,
-                                       startupTimeElapsedBuilder);
-        metadata.reset(new StorageEngineMetadata(storageGlobalParams.dbpath));
-        metadata->setStorageEngine(factory->getCanonicalName().toString());
-        metadata->setStorageEngineOptions(factory->createMetadataOptions(storageGlobalParams));
-        uassertStatusOK(metadata->write());
-    }
-=======
-    if (!metadata.get() &&
-        (initFlags & StorageEngineInitFlags::kSkipMetadataFile) == StorageEngineInitFlags{}) {
-        SectionScopedTimer scopedTimer(service->getFastClockSource(),
-                                       TimedSectionId::writeNewMetadata,
-                                       startupTimeElapsedBuilder);
-        metadata.reset(new StorageEngineMetadata(storageGlobalParams.dbpath));
-        metadata->setStorageEngine(std::string{factory->getCanonicalName()});
-        metadata->setStorageEngineOptions(factory->createMetadataOptions(storageGlobalParams));
-        uassertStatusOK(metadata->write());
-    }
->>>>>>> ea26ea28ac33e5e5e9687f25833d14d5f8f4c97b
 
     guard.dismiss();
 

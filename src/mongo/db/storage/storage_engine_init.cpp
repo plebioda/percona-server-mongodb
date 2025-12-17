@@ -157,9 +157,9 @@ StorageEngine::LastShutdownState initializeStorageEngine(
                         str::stream()
                             << "Cannot start server. Detected data files in " << dbpath
                             << " created by"
-                            << " the ''" << *existingStorageEngine << "'' storage engine, but the"
-                            << " specified storage engine was ''" << factory->getCanonicalName()
-                            << "''.",
+                            << " the '" << *existingStorageEngine << "' storage engine, but the"
+                            << " specified storage engine was '" << factory->getCanonicalName()
+                            << "'.",
                         factory->getCanonicalName() == *existingStorageEngine);
             }
         } else {

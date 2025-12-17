@@ -128,18 +128,8 @@ std::pair<std::string, std::string> doDeviceAuthorizationGrantFlow(
     // `OAuthAuthorizationServerMetadata` class.
     // (@see `src/mongo/db/auth/oauth_authorization_server_metadata.idl`).
     uassert(ErrorCodes::BadValue,
-<<<<<<< HEAD
             "Missing or invalid device authorization endpoint in server reply",
             deviceAuthorizationEndpoint && !deviceAuthorizationEndpoint->empty());
-||||||| bc7b118ec7b
-            "Device authorization endpoint in server reply must be an https endpoint or localhost",
-            deviceAuthorizationEndpoint.startsWith("https://"_sd) ||
-                deviceAuthorizationEndpoint.startsWith("http://localhost"_sd));
-=======
-            "Device authorization endpoint in server reply must be an https endpoint or localhost",
-            deviceAuthorizationEndpoint.starts_with("https://"_sd) ||
-                deviceAuthorizationEndpoint.starts_with("http://localhost"_sd));
->>>>>>> 222bf6a92c2a4819d3da6f932b6f6b44afb407f4
 
     auto clientId = serverReply.getClientId();
     uassert(ErrorCodes::BadValue,
@@ -334,17 +324,7 @@ StatusWith<bool> SaslOIDCClientConversation::_secondStep(StringData input,
         boost::optional<StringData> tokenEndpoint = discoveryReply.getTokenEndpoint();
         uassert(ErrorCodes::BadValue,
                 "Missing or invalid token endpoint in server reply",
-<<<<<<< HEAD
                 tokenEndpoint && !tokenEndpoint->empty());
-||||||| bc7b118ec7b
-                tokenEndpoint && !tokenEndpoint->empty() &&
-                    (tokenEndpoint->startsWith("https://"_sd) ||
-                     tokenEndpoint->startsWith("http://localhost"_sd)));
-=======
-                tokenEndpoint && !tokenEndpoint->empty() &&
-                    (tokenEndpoint->starts_with("https://"_sd) ||
-                     tokenEndpoint->starts_with("http://localhost"_sd)));
->>>>>>> 222bf6a92c2a4819d3da6f932b6f6b44afb407f4
 
         // Cache the token endpoint for potential reuse during the refresh flow.
         oidcClientGlobalParams.oidcTokenEndpoint = tokenEndpoint->toString();

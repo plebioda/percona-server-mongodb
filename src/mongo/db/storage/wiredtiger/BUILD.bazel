@@ -142,10 +142,8 @@ mongo_cc_library(
         "//src/mongo/db:server_base",
         "//src/mongo/db:server_feature_flags",
         "//src/mongo/db:service_context",
-        "//src/mongo/db:shard_role_api",
         "//src/mongo/db/encryption:key_management",
         "//src/mongo/db/storage:backup_block",
-
         "//src/mongo/db/storage:backup_cursor_hooks",
         "//src/mongo/db/storage:capped_snapshots",
         "//src/mongo/db/storage:exceptions",

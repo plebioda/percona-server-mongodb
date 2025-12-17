@@ -111,7 +111,7 @@ Status validateLDAPBindMethod(const std::string& value) {
     constexpr auto kSimple = "simple"_sd;
     constexpr auto kSasl = "sasl"_sd;
 
-    if (!str::equalsCaseInsensitive(kSimple, value) && !str::equalsCaseInsensitive(kSasl, value)) {
+    if (!str::equalCaseInsensitive(kSimple, value) && !str::equalCaseInsensitive(kSasl, value)) {
         return {ErrorCodes::BadValue, "security.ldap.bind.method expects one of 'simple' or 'sasl'"};
     }
 
@@ -122,7 +122,7 @@ Status validateLDAPTransportSecurity(const std::string& value) {
     constexpr auto kNone = "none"_sd;
     constexpr auto kTls = "tls"_sd;
 
-    if (!str::equalsCaseInsensitive(kNone, value) && !str::equalsCaseInsensitive(kTls, value)) {
+    if (!str::equalCaseInsensitive(kNone, value) && !str::equalCaseInsensitive(kTls, value)) {
         return {ErrorCodes::BadValue, "security.ldap.transportSecurity expects one of 'none' or 'tls'"};
     }
 

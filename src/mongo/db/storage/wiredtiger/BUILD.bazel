@@ -142,14 +142,10 @@ mongo_cc_library(
         "//src/mongo/db:server_base",
         "//src/mongo/db:server_feature_flags",
         "//src/mongo/db:service_context",
-<<<<<<< HEAD
         "//src/mongo/db:shard_role_api",
         "//src/mongo/db/encryption:key_management",
-||||||| bf1187c5fe6
-        "//src/mongo/db:shard_role_api",
-=======
->>>>>>> e24da46295de7fcfe4fa8100df453b36279d9250
         "//src/mongo/db/storage:backup_block",
+
         "//src/mongo/db/storage:backup_cursor_hooks",
         "//src/mongo/db/storage:capped_snapshots",
         "//src/mongo/db/storage:exceptions",

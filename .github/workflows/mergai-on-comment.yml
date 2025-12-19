@@ -1,0 +1,76 @@
+name: mergai-on-comment
+
+on:
+  issue_comment:
+    types: [created]
+
+
+jobs:
+  run-mergai:
+    environment: restricted
+    if: >
+      github.event.issue.pull_request && startsWith(github.event.comment.body, '/mergai')
+    runs-on: ubuntu-latest
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.PAT }}
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT}}
+      GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION}}
+      GOOGLE_GENAI_USE_VERTEXAI: "true"
+
+    steps:
+      - name: Write GCP credentials
+        run: |
+          echo '${{ secrets.GCP_CREDENTIALS }}' | base64 -d > $RUNNER_TEMP/gcp-key.json
+          chmod 600 $RUNNER_TEMP/gcp-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> $GITHUB_ENV
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'  # or whatever you use locally
+
+      - name: Install gemini-cli
+        run: |
+          npm install -g @google/gemini-cli
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Git config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config merge.conflictstyle diff3
+          git config notes.displayRef refs/notes/mergai-marker
+
+      - name: Setup MergAI
+        uses: ./.github/actions/setup-mergai
+        with:
+          token: ${{ secrets.PAT }}
+          ref: ${{ inputs.mergai-ref }}
+
+      - name: mergai pr add-comments-to-context
+        shell: bash
+        run: |
+          mergai pr --repo $GITHUB_REPOSITORY show
+          mergai pr --repo $GITHUB_REPOSITORY show-comments
+
+      - name: mergai pr add-comments-to-context
+        shell: bash
+        run: |
+          mergai pr --repo $GITHUB_REPOSITORY add-comments-to-context
+          mergai status
+
+      - name: mergai resolve
+        shell: bash
+        run: |
+          mergai resolve -y
+          git status
+          mergai status
+
+      - name: mergai commit-resolution
+        shell: bash
+        run: |
+          mergai commit
+          git show

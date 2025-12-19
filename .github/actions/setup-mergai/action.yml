@@ -1,0 +1,33 @@
+name: "MergAI setup"
+description: "Setting up the MergAI tool"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Show input parameters
+      shell: bash
+      run: |
+        echo "MergAI setup action"
+
+    - name: Checkout MergAI repo
+      uses: actions/checkout@v4
+      with:
+        repository: Percona-Lab/mergai
+        ref: main # TODO: add as a parameter
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Show MergAI
+      shell: bash
+      run: |
+        ls -la mergai
+
+    - name: Install deps
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt install -y gcc g++ cmake curl libssl-dev libldap2-dev libkrb5-dev \
+                            libcurl4-openssl-dev libsasl2-dev liblz4-dev libbz2-dev \
+                            libsnappy-dev zlib1g-dev libzlcore-dev liblzma-dev e2fslibs-dev
+
+
+

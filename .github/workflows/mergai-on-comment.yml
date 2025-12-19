@@ -1,0 +1,102 @@
+name: mergai-on-comment
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  mergai-on-comment:
+    environment: restricted
+    if: >
+      github.event.issue.pull_request && startsWith(github.event.comment.body, '/mergai')
+    runs-on: ubuntu-latest
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.PAT }}
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT}}
+      GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION}}
+      GOOGLE_GENAI_USE_VERTEXAI: "true"
+      PR_NUMBER: ${{ github.event.issue.number }}
+
+    steps:
+      - name: Write GCP credentials
+        run: |
+          echo '${{ secrets.GCP_CREDENTIALS }}' | base64 -d > $RUNNER_TEMP/gcp-key.json
+          chmod 600 $RUNNER_TEMP/gcp-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> $GITHUB_ENV
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'  # or whatever you use locally
+
+      - name: Install gemini-cli
+        run: |
+          npm install -g @google/gemini-cli
+
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.issue.number;
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            core.setOutput("head_ref", pr.head.ref);
+            core.setOutput("head_sha", pr.head.sha);
+            core.setOutput("head_repo", pr.head.repo.full_name);
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.head_ref }}
+          fetch-depth: 0
+
+      - name: Git config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config merge.conflictstyle diff3
+          git config notes.displayRef refs/notes/mergai-marker
+
+      - name: Fetch notes
+        run: |
+          git fetch origin refs/notes/mergai-marker:refs/notes/mergai-marker
+          git fetch origin refs/notes/mergai:refs/notes/mergai
+
+      - name: Setup MergAI
+        uses: ./.github/actions/setup-mergai
+        with:
+          token: ${{ secrets.PAT }}
+          ref: plebioda/dev
+
+      - name: mergai pr add-comments-to-context
+        shell: bash
+        run: |
+          mergai pr --repo $GITHUB_REPOSITORY add-comments-to-context --pr-number $PR_NUMBER
+          mergai status
+
+      - name: mergai resolve
+        shell: bash
+        run: |
+          mergai resolve -y
+          git status
+          git diff
+          mergai status
+
+      - name: mergai commit-resolution
+        shell: bash
+        run: |
+          mergai commit
+          git show
+
+      - name: Push changes
+        run: |
+          git push origin refs/notes/mergai-marker
+          git push origin refs/notes/mergai
+          git push origin "${{ steps.pr.outputs.head_ref }}"
+

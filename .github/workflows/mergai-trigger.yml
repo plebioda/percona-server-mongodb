@@ -12,6 +12,10 @@ on:
         description: 'Gemini model to use for conflict resolution'
         required: false
         default: 'gemini-2.5-flash'
+      mergai-ref:
+        description: 'MergAI git reference to checkout'
+        required: false
+        default: 'main'
 
 jobs:
   merge-job:
@@ -19,9 +23,53 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.PAT }}
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT}}
+      GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION}}
+      GOOGLE_GENAI_USE_VERTEXAI: "true"
 
     steps:
+
+      - name: Write GCP credentials
+        run: |
+          echo '${{ secrets.GCP_CREDENTIALS }}' | base64 -d > $RUNNER_TEMP/gcp-key.json
+          chmod 600 $RUNNER_TEMP/gcp-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> $GITHUB_ENV
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'  # or whatever you use locally
+
+      - name: Install gemini-cli
+        run: |
+          npm install -g @google/gemini-cli
+
+      - name: Verify gemini-cli authorized
+        run: |
+          gemini -d "Hi"
+
+      - name: Dump gemini error report (sanitized)
+        if: failure()
+        shell: bash
+        run: |
+          ls -la /tmp/gemini-client-error-*.json || true
+          f="$(ls -t /tmp/gemini-client-error-generateJson-api-*.json 2>/dev/null | head -n 1)"
+          echo "Report: $f"
+          python3 - <<'PY'
+          import json, glob
+          files = sorted(glob.glob("/tmp/gemini-client-error-generateJson-api-*.json"))
+          if not files:
+              print("No report found")
+              raise SystemExit(0)
+          d = json.load(open(files[-1]))
+          # print likely-useful fields (avoid dumping headers if they exist)
+          for k in ["url","method","status","code","message","error","details","responseStatus","statusText"]:
+              if k in d:
+                  print(f"{k}: {d[k]}")
+          PY
+
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -43,19 +91,13 @@ jobs:
         uses: ./.github/actions/setup-mergai
         with:
           token: ${{ secrets.PAT }}
-
-      - name: Install Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'  # or whatever you use locally
-
-      - name: Install gemini-cli
-        run: |
-          npm install -g @google/gemini-cli
+          ref: ${{ inputs.mergai-ref }}
 
       - name: Define base branch name
         run: |
           echo "BASE_BRANCH_NAME=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_ENV
+          echo "BASELINE_BRANCH=mergai/merging-${{ inputs.commit }}-into-${{ env.BASE_BRANCH_NAME }}/baseline" >> $GITHUB_ENV
+          echo "SOLUTION_BRANCH=mergai/merging-${{ inputs.commit }}-into-${{ env.BASE_BRANCH_NAME }}/solution" >> $GITHUB_ENV
 
       - name: Show input parameters
         run: |
@@ -72,9 +114,8 @@ jobs:
 
       - name: "Creating baseline branch"
         run: |
-          BRANCH="mergai/merging-${{ inputs.commit }}-into-${{ env.BASE_BRANCH_NAME }}/baseline"
-          git checkout -b $BRANCH
-          git push -f origin $BRANCH
+          git checkout -b $BASELINE_BRANCH
+          git push -f origin $BASELINE_BRANCH
 
 
       - name: Merge commit
@@ -86,35 +127,45 @@ jobs:
         run: |
           git status
 
-      - name: MergAI: create conflict context
+      - name: mergai create-conflict-context
         shell: bash
         run: |
           mergai create-conflict-context
           mergai status
 
-      # - name: Export conflicted files
-      #   run: |
-      #     CONFLICTED_FILES="$(git diff --name-only --diff-filter=U || true)"
-      #     {
-      #       echo 'CONFLICTED_FILES<<EOF'
-      #       echo "$CONFLICTED_FILES"
-      #       echo 'EOF'
-      #     } >> "$GITHUB_ENV"
+      - name: mergai commit-conflict
+        shell: bash
+        run: |
+          mergai commit-conflict
+          git show
 
-      # - name: Commit merge state
-      #   run: |
-      #     git add ${CONFLICTED_FILES}
-      #     git commit -m "Merge conflict state after merging ${{ inputs.commit }}"
-      #     git push -f origin $BRANCH:$BRANCH
-      #     git checkout -b merging-solution/${{ env.BASE_BRANCH_NAME }}-${{ inputs.commit }}
+      - name: mergai prompt
+        shell: bash
+        run: |
+          mergai prompt
 
-      # - name: Resolve conflicts
-      #   run: |
-      #     gemini -m "${{ inputs.gemini-model }}" -y "See @.github/merging_prompt.md and resolve merge conflicts in files: $CONFLICTED_FILES"
+      - name: create solution branch
+        run: |
+          git checkout -b $SOLUTION_BRANCH
 
-      # - name: Finalize merge
-      #   run: |
-      #     git add .
-      #     git commit -m "Resolved merge conflicts using Gemini for ${{ inputs.commit }}"
-      #     git push -f origin merging-solution/${{ env.BASE_BRANCH_NAME }}-${{ inputs.commit }}
+      - name: mergai resolve
+        shell: bash
+        run: |
+          mergai resolve -y
+          git status
+          mergai status
+
+      - name: mergai commit-resolution
+        shell: bash
+        run: |
+          mergai commit
+          git show
+
+      - name: Create pull request
+        shell: bash
+        run: |
+          git push -f origin $BASELINE_BRANCH
+          git push -f origin $SOLUTION_BRANCH
+          mergai pr --repo $GITHUB_REPOSITORY create --base $BASELINE_BRANCH
+
 

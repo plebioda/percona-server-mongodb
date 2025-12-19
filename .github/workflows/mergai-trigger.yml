@@ -27,8 +27,8 @@ jobs:
 
       - name: Setup MergAI
         uses: ./.github/actions/setup-mergai
-
-
+        with:
+          token: ${{ secrets.PAT }}
 
       # - name: Install Node
       #   uses: actions/setup-node@v4

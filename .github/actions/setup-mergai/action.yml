@@ -1,0 +1,34 @@
+name: "MergAI setup"
+description: "Setting up the MergAI tool"
+
+inputs:
+  token:
+    description: "GitHub token to checkout MergAI repository"
+    required: true
+  ref:
+    description: "Git reference (branch, tag, commit SHA) to checkout MergAI from"
+    required: false
+    default: "main"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Show input parameters
+      shell: bash
+      run: |
+        echo "MergAI setup action"
+
+    - name: Checkout MergAI repo
+      uses: actions/checkout@v4
+      with:
+        repository: Percona-Lab/mergai
+        ref: ${{ inputs.ref }}
+        token: ${{ inputs.token }}
+        path: mergai
+
+    - name: Install MergAI
+      shell: bash
+      run: |
+        python3 -m pip install --user pipx
+        python3 -m pipx ensurepath
+        pipx install ./mergai

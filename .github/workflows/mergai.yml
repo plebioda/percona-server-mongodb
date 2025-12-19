@@ -1,0 +1,137 @@
+name: mergai bot
+
+# =============================================================================
+# Configuration
+# =============================================================================
+# Branch patterns used by this workflow:
+#   - Solution branches: mergai/*/solution
+#   - Conflict branches: mergai/*/conflict
+# Note: The pull_request trigger pattern below must match conflict branches.
+# =============================================================================
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [closed]
+    branches:
+      - "mergai/*/conflict"
+  push:
+    branches:
+      - foo
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job: Manual Merge (workflow_dispatch)
+  # ---------------------------------------------------------------------------
+  manual-merge:
+    environment: restricted
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.PAT }}
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+      GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+      GOOGLE_GENAI_USE_VERTEXAI: "true"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Setup workflow environment
+        uses: ./.github/actions/setup-mergai-workflow
+        with:
+          setup-gcp: "true"
+          setup-node: "true"
+          setup-gemini: "true"
+          setup-mergai: "true"
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          github-app-token: ${{ steps.app-token.outputs.token }}
+          pat-token: ${{ secrets.PAT }}
+          mergai-ref: plebioda/dev
+
+      - name: mergai merge-pick
+        run: |
+          MERGE_PICK=$(mergai fork merge-pick --next)
+          echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
+          echo "Next merge pick is: $MERGE_PICK"
+          git show --stat $MERGE_PICK
+
+      - name: mergai context init
+        run: |
+          mergai context init $MERGE_PICK
+
+      - name: merge
+        run: |
+          mergai notes update -f
+          if mergai merge; then
+            echo "Merge successful. Committing merge."
+            mergai commit merge
+            mergai branch create main
+            mergai branch push main
+            mergai notes push
+            mergai pr --repo $GITHUB_REPOSITORY create main
+          else
+            echo "Merge conflict detected. Processing with resolution."
+            mergai commit conflict
+            mergai branch create conflict
+            mergai branch create solution
+            mergai resolve -y # yolo mode
+            mergai commit solution
+            mergai branch push solution
+            mergai branch push conflict
+            mergai notes push
+            mergai pr --repo $GITHUB_REPOSITORY create solution
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job: Solution PR Merged
+  # ---------------------------------------------------------------------------
+  solution-merged:
+    environment: restricted
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.PAT }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Setup workflow environment
+        uses: ./.github/actions/setup-mergai-workflow
+        with:
+          setup-gcp: "false"
+          setup-node: "false"
+          setup-gemini: "false"
+          setup-mergai: "true"
+          github-app-token: ${{ steps.app-token.outputs.token }}
+          pat-token: ${{ secrets.PAT }}
+          mergai-ref: plebioda/dev
+
+      - name: Finalize
+        run: |
+          mergai notes update -f
+          mergai context init
+          mergai branch create main
+          mergai commit squash
+          mergai branch push main
+          mergai notes push
+          mergai pr --repo $GITHUB_REPOSITORY create main

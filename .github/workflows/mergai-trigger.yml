@@ -86,7 +86,7 @@ jobs:
         run: |
           git status
 
-      - name: MergAI: create conflict context
+      - name: mergai create-conflict-context
         shell: bash
         run: |
           mergai create-conflict-context

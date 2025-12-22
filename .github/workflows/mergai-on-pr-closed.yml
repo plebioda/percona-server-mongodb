@@ -1,13 +1,13 @@
-name: mergai-on-push
+name: mergai-on-pr-closed
 
 on:
-  push:
-    branches:
-      - 'mergai/*/baseline'
+  pull_request:
+    types: [closed]
 
 
 jobs:
-  mergai-on-push:
+  mergai-on-pr-merged:
+    if: github.event.pull_request.merged == true
     environment: restricted
     runs-on: ubuntu-latest
 
@@ -15,10 +15,11 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.PAT }}
 
     steps:
-      - name: Checkout
+      - name: Checkout base branch (post-merge)
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # needed to access all branches and commits
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
 
       - name: Git config
         run: |
@@ -48,3 +49,13 @@ jobs:
         run: |
           mergai finalize
           git show
+          git log 
+
+  mergai-on-pr-closed:
+    if: github.event.pull_request.closed == true
+    environment: restricted
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print message
+        run: |
+          echo "PR #${{ github.event.pull_request.number }} was closed but not merged."

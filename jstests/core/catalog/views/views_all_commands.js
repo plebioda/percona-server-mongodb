@@ -186,6 +186,7 @@ let viewsCommandTests = {
     _shardsvrCheckCanConnectToConfigServer: {skip: isAnInternalCommand},
     _shardsvrJoinMigrations: {skip: isAnInternalCommand},
     _shardsvrMergeAllChunksOnShard: {skip: isAnInternalCommand},
+    _shardsvrMergeChunks: {skip: isAnInternalCommand},
     _shardsvrMovePrimary: {skip: isAnInternalCommand},
     _shardsvrMovePrimaryEnterCriticalSection: {skip: isAnInternalCommand},
     _shardsvrMovePrimaryExitCriticalSection: {skip: isAnInternalCommand},
@@ -315,7 +316,6 @@ let viewsCommandTests = {
     commitTransaction: {skip: isUnrelated},
     compact: {command: {compact: "view", force: true}, expectFailure: true, skipSharded: true},
     compactStructuredEncryptionData: {skip: isUnrelated},
-    configureBackgroundTask: {skip: isUnrelated},
     configureFailPoint: {skip: isUnrelated},
     configureCollectionBalancing: {skip: isUnrelated},
     configureQueryAnalyzer: {

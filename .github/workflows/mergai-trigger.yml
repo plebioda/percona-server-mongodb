@@ -65,7 +65,7 @@ jobs:
       - name: Fetch upstream
         run: |
           git remote add upstream https://github.com/mongodb/mongo.git
-          git fetch upstream
+          git fetch upstream >/dev/null 2>&1
 
       - name: Verify input commit is valid
         run: |

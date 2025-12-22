@@ -1,11 +1,11 @@
-name: mergai-on-comment
+name: mergai-on-pr-comment
 
 on:
   issue_comment:
     types: [created]
 
 jobs:
-  mergai-on-comment:
+  mergai-on-pr-comment:
     environment: restricted
     if: >
       github.event.issue.pull_request && startsWith(github.event.comment.body, '/mergai')

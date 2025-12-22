@@ -1,0 +1,68 @@
+name: mergai-on-pr-closed
+
+on:
+  pull_request:
+    types: [closed]
+
+
+jobs:
+  mergai-on-pr-merged:
+    if: github.event.pull_request.merged == true
+    environment: restricted
+    runs-on: ubuntu-latest
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.PAT }}
+
+    steps:
+      - name: Checkout base branch (post-merge)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+
+      - name: Git config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config merge.conflictstyle diff3
+          git config notes.displayRef refs/notes/mergai-marker
+
+      - name: Fetch notes
+        run: |
+          git fetch origin refs/notes/mergai-marker:refs/notes/mergai-marker
+          git fetch origin refs/notes/mergai:refs/notes/mergai
+
+      - name: Setup MergAI
+        uses: ./.github/actions/setup-mergai
+        with:
+          token: ${{ secrets.PAT }}
+          ref: plebioda/dev
+
+      - name: mergai log
+        shell: bash
+        run: |
+          mergai log
+
+      - name: mergai finalize
+        shell: bash
+        run: |
+          mergai finalize
+          git show
+          git log -n 5
+
+      - name: Push changes
+        run: |
+          git push origin refs/notes/mergai-marker
+          git push origin refs/notes/mergai
+          git push -f origin ${{ github.event.pull_request.base.ref }}
+          gh pr create --repo ${{ github.repository }} --base master --head ${{ github.event.pull_request.base.ref }} --title "MergAI: Finalize merge of PR #${{ github.event.pull_request.number }}" --body "This PR finalizes the merge process initiated by MergAI for PR #${{ github.event.pull_request.number }}."
+
+  mergai-on-pr-closed:
+    if: ${{ !github.event.pull_request.merged }}
+    environment: restricted
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print message
+        run: |
+          echo "PR #${{ github.event.pull_request.number }} was closed but not merged."

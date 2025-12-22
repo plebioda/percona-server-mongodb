@@ -1,4 +1,4 @@
-# Project Invariants
+## Project Invariants
 
 The PSMDB is a fork of MongoDB, and it is essential to maintain compatibility with MongoDB's features and APIs while integrating Percona's enhancements.
 

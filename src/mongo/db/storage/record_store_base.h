@@ -102,11 +102,9 @@ public:
                                                     RecoveryUnit&,
                                                     bool forward = true) const override = 0;
 
-    std::unique_ptr<RecordCursor> getRandomCursor(OperationContext*) const final;
     std::unique_ptr<RecordCursor> getRandomCursor(OperationContext*,
                                                   RecoveryUnit&) const override = 0;
 
-    Status truncate(OperationContext*) final;
     Status truncate(OperationContext*, RecoveryUnit&) final;
 
     Status rangeTruncate(OperationContext*,
@@ -116,7 +114,6 @@ public:
                          int64_t hintDataSizeIncrement = 0,
                          int64_t hintNumRecordsIncrement = 0) final;
 
-    StatusWith<int64_t> compact(OperationContext*, const CompactOptions&) final;
     StatusWith<int64_t> compact(OperationContext*, RecoveryUnit&, const CompactOptions&) final;
 
     RecordId getLargestKey(OperationContext*, RecoveryUnit&) const override = 0;
@@ -172,7 +169,6 @@ public:
 
     void notifyWaitersIfNeeded() final;
 
-    TruncateAfterResult truncateAfter(OperationContext*, const RecordId&, bool inclusive) final;
     TruncateAfterResult truncateAfter(OperationContext*,
                                       RecoveryUnit&,
                                       const RecordId&,

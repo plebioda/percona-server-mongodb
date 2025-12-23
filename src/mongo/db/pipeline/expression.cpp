@@ -1791,7 +1791,7 @@ std::unique_ptr<Expression> ExpressionFieldPath::copyWithSubstitution(
     for (const auto& rename : renameList) {
         if (FieldRef oldName(rename.first); oldName.isPrefixOfOrEqualTo(path)) {
             // Remove the path components of 'oldName' from 'path'.
-            auto suffix = (path == oldName)
+            const auto& suffix = (path == oldName)
                 ? ""
                 : "." + path.dottedSubstring(oldName.numParts(), path.numParts());
             return std::unique_ptr<Expression>(new ExpressionFieldPath(
@@ -4853,6 +4853,46 @@ intrusive_ptr<Expression> ExpressionCreateUUID::optimize() {
 }
 
 Value ExpressionCreateUUID::serialize(const SerializationOptions& options) const {
+    return Value(DOC(getOpName() << Document()));
+}
+
+/* -------------------------- ExpressionCreateObjectId ------------------------------ */
+REGISTER_EXPRESSION_WITH_FEATURE_FLAG(createObjectId,
+                                      ExpressionCreateObjectId::parse,
+                                      AllowedWithApiStrict::kNeverInVersion1,
+                                      AllowedWithClientType::kAny,
+                                      &feature_flags::gFeatureFlagMqlJsEngineGap);
+
+ExpressionCreateObjectId::ExpressionCreateObjectId(ExpressionContext* const expCtx)
+    : Expression(expCtx) {
+    expCtx->setSbeCompatibility(SbeCompatibility::notCompatible);
+}
+
+intrusive_ptr<Expression> ExpressionCreateObjectId::parse(ExpressionContext* const expCtx,
+                                                          BSONElement exprElement,
+                                                          const VariablesParseState& vps) {
+
+    uassert(ErrorCodes::FailedToParse,
+            "$createObjectId only accepts the empty object as argument. To convert a value to an "
+            "ObjectId, use $toObjectId.",
+            exprElement.type() == BSONType::object && exprElement.Obj().isEmpty());
+
+    return new ExpressionCreateObjectId(expCtx);
+}
+
+const char* ExpressionCreateObjectId::getOpName() const {
+    return "$createObjectId";
+}
+
+Value ExpressionCreateObjectId::evaluate(const Document& root, Variables* variables) const {
+    return Value(OID::gen());
+}
+
+intrusive_ptr<Expression> ExpressionCreateObjectId::optimize() {
+    return intrusive_ptr<Expression>(this);
+}
+
+Value ExpressionCreateObjectId::serialize(const SerializationOptions& options) const {
     return Value(DOC(getOpName() << Document()));
 }
 

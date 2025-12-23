@@ -3,18 +3,18 @@
 import argparse
 import hashlib
 import os
+import shutil
 import sys
 import tempfile
 import time
 import traceback
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from buildscripts.resmokelib.setup_multiversion.download import (
+from buildscripts.s3_binary.hashes import S3_SHA256_HASHES
+from buildscripts.util.download_utils import (
     download_from_s3_with_boto,
     download_from_s3_with_requests,
 )
-from buildscripts.s3_binary.hashes import S3_SHA256_HASHES
 
 
 def read_sha_file(filename):
@@ -61,7 +61,6 @@ def _verify_s3_hash(s3_path: str, local_path: str, expected_hash: str) -> None:
         raise ValueError(
             f"Hash mismatch for {s3_path}, expected {expected_hash} but got {hash_string}"
         )
-    print(f"File is valid: {local_path} (sha256: {expected_hash})")
 
 def validate_file(s3_path, output_path, remote_sha_allowed):
     hexdigest = S3_SHA256_HASHES.get(s3_path)
@@ -100,6 +99,7 @@ def _download_and_verify(s3_path, output_path, remote_sha_allowed):
                 download_from_s3_with_requests(s3_path, output_path)
                 
             validate_file(s3_path, output_path, remote_sha_allowed)
+            break
 
         except Exception:
             print("Download failed:")
@@ -121,9 +121,8 @@ def download_s3_binary(
 
     if os.path.exists(local_path):
         try:
-            print(f"{local_path} exists, validating...")
+            print(f"Downloaded file {local_path} already exists, validating...")
             validate_file(s3_path, local_path, remote_sha_allowed)
-            print(f"File is already valid: {local_path}")
             return True
         except Exception:
             print("File is invalid, redownloading...")
@@ -133,7 +132,15 @@ def download_s3_binary(
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             tempfile_name = temp_file.name
             _download_and_verify(s3_path, tempfile_name, remote_sha_allowed)
+
+        try:
             os.replace(tempfile_name, local_path)
+        except OSError as e:
+            if e.errno == 18:  # EXDEV cross filesystem error, need to use a mv
+                shutil.move(tempfile_name, local_path)
+            else:
+                raise
+
         print(f"Downloaded and verified {s3_path} -> {local_path}")
         return True
     except Exception as e:
@@ -146,7 +153,6 @@ def download_s3_binary(
 
 
 if __name__ == "__main__":
-
 
     parser = argparse.ArgumentParser(description="Download and verify S3 binary.")
     parser.add_argument("s3_path", help="S3 URL to download from")

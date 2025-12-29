@@ -1,0 +1,19 @@
+actions:
+  - name: "Build"
+    triggers:
+      push:
+        branches:
+          - "*"
+
+      pull_request:
+        branches:
+          - "*"
+
+    steps:
+      - run: |
+          bazel build \
+            --jobs=120 \
+            --config=psmdb_dev \
+            --config=bb \
+            --remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY \
+            //:install-devcore

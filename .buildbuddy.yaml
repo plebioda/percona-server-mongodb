@@ -1,0 +1,52 @@
+# BuildBuddy Workflows config
+# Runs your Bazel build/test on BuildBuddy remote runners.
+
+actions:
+  - name: "Build"
+    triggers:
+      # Run on pushes to main/master
+      push:
+        branches:
+          - "main"
+          - "master"
+
+      # Run on PRs targeting main/master
+      pull_request:
+        branches:
+          - "main"
+          - "master"
+
+    # Pick a Linux runner size. Names vary by plan; keep it simple.
+    # If your org supports "large"/"xlarge", bump this later.
+    runner:
+      os: "linux"
+
+    steps:
+      - name: "Checkout"
+        uses: "git-checkout"
+
+      - name: "Show bazel version"
+        run: |
+          bazel --version || true
+
+      - name: "Build"
+        run: |
+          bazel build //... \
+            --config=ci \
+            --bes_backend=grpcs://remote.buildbuddy.io \
+            --bes_results_url=https://app.buildbuddy.io/invocation/ \
+            --remote_cache=grpcs://remote.buildbuddy.io
+
+      - name: Build
+        run: |
+          {
+            echo 'common --//bazel/config:build_enterprise=False'
+            echo 'build --bes_results_url=https://app.buildbuddy.io/invocation/'
+            echo 'build --bes_backend=grpcs://plebioda.buildbuddy.io'
+            echo 'build --remote_cache=grpcs://plebioda.buildbuddy.io'
+            echo 'build --noremote_upload_local_results'
+            echo 'build --remote_timeout=10m'
+            echo 'build --remote_executor=grpcs://plebioda.buildbuddy.io'
+            echo 'build --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_API_KEY }}'
+          } > .bazelrc.local
+          bazel build --jobs=12 --config=psmdb_dev  //:install-devcore

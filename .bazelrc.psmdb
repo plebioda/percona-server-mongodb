@@ -9,11 +9,8 @@ common --experimental_remote_downloader=
 common --remote_cache=
 common --bes_backend=
 common --bes_results_url=
-common --tls_client_certificate=
-common --tls_client_key=
 common --remote_cache_compression=false
 common --remote_upload_local_results=false
-common --grpc_keepalive_time=0s
 common --legacy_important_outputs
 
 # enable additional modules

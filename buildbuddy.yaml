@@ -1,0 +1,25 @@
+actions:
+  - name: "Build"
+    triggers:
+      push:
+        branches:
+          - "*"
+
+      pull_request:
+        branches:
+          - "*"
+
+    steps:
+      - run: |
+          bazel build \
+            --jobs=12 \
+            --//bazel/config:build_enterprise=False \
+            --bes_results_url=https://app.buildbuddy.io/invocation/ \
+            --config=psmdb_dev \
+            --bes_backend=grpcs://plebioda.buildbuddy.io \
+            --remote_cache=grpcs://plebioda.buildbuddy.io \
+            --noremote_upload_local_results \
+            --remote_timeout=10m \
+            --remote_executor=grpcs://plebioda.buildbuddy.io \
+            --remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY \
+            //:install-devcore

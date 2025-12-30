@@ -47,4 +47,4 @@ jobs:
 
       - name: Build
         run: |
-          bazel build --jobs=12 --config=psmdb_dev  //:install-devcore
+          bazel build --config=psmdb_dev  //:install-devcore

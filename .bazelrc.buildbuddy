@@ -1,0 +1,14 @@
+# Add --remote_header=x-buildbuddy-api-key=<your API key> somewhere else
+
+# BuildBuddy BES (Build Event Service) only
+build:bb --bes_results_url=https://plebioda.buildbuddy.io/invocation/
+build:bb --bes_backend=grpcs://plebioda.buildbuddy.io
+
+# Remote execution only
+build:bb_exec --remote_executor=grpcs://plebioda.buildbuddy.io
+
+# Remote cache only
+build:bb_cache --remote_upload_local_results
+build:bb_cache --experimental_remote_cache_compression_threshold=100
+build:bb_cache --remote_cache=grpcs://plebioda.buildbuddy.io
+

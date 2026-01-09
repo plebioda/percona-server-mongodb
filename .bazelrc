@@ -597,3 +597,5 @@ try-import %workspace%/.bazelrc.bazelisk
 
 # Flags synced from Flag Sync
 try-import %workspace%/.bazelrc.sync
+
+try-import %workspace%/.bazelrc.buildbuddy

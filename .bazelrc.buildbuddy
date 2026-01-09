@@ -1,0 +1,9 @@
+# Add --remote_header=x-buildbuddy-api-key=<your API key> somewhere else
+--config=bb
+build:bb --experimental_remote_cache_compression_threshold=100
+build:bb --bes_results_url=https://plebioda.buildbuddy.io/invocation/
+build:bb --bes_backend=grpcs://plebioda.buildbuddy.io
+build:bb --remote_executor=grpcs://plebioda.buildbuddy.io
+build:bb --remote_upload_local_results
+build:bb --remote_cache=grpcs://plebioda.buildbuddy.io
+

@@ -60,10 +60,9 @@ def _setup_local_config_platform(ctx):
     exec_properties = {
         "container-image": "%s",
         "dockerNetwork": "standard",
-        "Pool": "%s",
         %s
     },
-""" % (container_url, remote_execution_pool, cache_silo)
+""" % (container_url, cache_silo)
         result = {"DISTRO": distro}
     elif distro != None and toolchain_exists:
         constraints_str += ',\n        "@//bazel/platforms:use_mongo_toolchain"'

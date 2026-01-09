@@ -1,0 +1,30 @@
+FROM quay.io/mongodb/bazel-remote-execution@sha256:8028f63bd4514e47871c7506aee6280e9f83db1d74e90a525ec61d30375f85bb AS builder
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    git ca-certificates cmake curl \
+    libssl-dev libldap2-dev libkrb5-dev libcurl4-openssl-dev libsasl2-dev \
+    liblz4-dev libbz2-dev libsnappy-dev zlib1g-dev liblzma-dev e2fslibs-dev \
+  && update-ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --branch 1.9.379 --depth 1 --recurse-submodules --shallow-submodules \
+  https://github.com/aws/aws-sdk-cpp.git /opt/aws-sdk-cpp
+
+WORKDIR /opt/aws-sdk-cpp
+RUN curl -L https://github.com/aws/aws-sdk-cpp/commit/0fba9f908d7ddc30aceab69b939f997330a44bb3.patch | git apply
+
+WORKDIR /opt/aws-sdk-cpp/build
+RUN cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;transfer" \
+    -DBUILD_SHARED_LIBS=OFF -DMINIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX=/opt/aws-install \
+ && cmake --build . --target install
+
+# Final image
+FROM quay.io/mongodb/bazel-remote-execution@sha256:8028f63bd4514e47871c7506aee6280e9f83db1d74e90a525ec61d30375f85bb
+
+# only runtime deps (and whatever you actually need for PSMDB build)
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    libssl-dev libldap2-dev libkrb5-dev libcurl4-openssl-dev libsasl2-dev \
+    liblz4-dev libbz2-dev libsnappy-dev zlib1g-dev liblzma-dev e2fslibs-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/aws-install/ /usr/

@@ -4,9 +4,6 @@ def setup_platform(arch, distro_or_os, cache_silo):
     exec_properties = {
         "container-image": REMOTE_EXECUTION_CONTAINERS[distro_or_os]["container-url"],
         "dockerNetwork": "standard",
-
-        # EngFlow's "default" pool is ARM64
-        "Pool": "x86_64" if arch == "amd64" else "default",
     }
     if cache_silo:
         exec_properties.update({"cache-silo-key": distro_or_os + "_" + arch})

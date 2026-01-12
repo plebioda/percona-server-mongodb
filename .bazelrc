@@ -61,7 +61,7 @@ common --remote_download_regex=.*\.(dwo|h|cpp|test.xml)$
 common --cache_test_results=no
 
 # Stream the test output so users can see the test progression.
-common --test_output=streamed
+#common --test_output=streamed
 
 # when using remote asset api, fallback to the direct urls to download
 common --experimental_remote_downloader_local_fallback
@@ -104,7 +104,7 @@ common:windows --repo_env=MONGO_VC_REDIST_FULL_VERSION=v143
 common --strategy=SolibSymlink=local
 common --strategy=StripDebuginfo=local
 common --strategy=ExtractDebuginfo=local
-common --strategy=TestRunner=local
+#common --strategy=TestRunner=local
 common --strategy=CoverageReport=local
 common --strategy=CcGenerateIntermediateDwp=local
 common --strategy=CcGenerateDwp=local

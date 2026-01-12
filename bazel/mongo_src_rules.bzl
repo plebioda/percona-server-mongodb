@@ -1000,19 +1000,19 @@ def mongo_cc_test(
       minimum_test_resources: a dict of key/value pairs defining execution
         requirements for the test. The only currently supported key is "cpu_cores".
     """
-    if "cpu_cores" in minimum_test_resources:
-        if minimum_test_resources["cpu_cores"] == 2:
-            exec_properties = exec_properties | select({
-                "@platforms//cpu:x86_64": {
-                    "test.Pool": "large_mem_2core_x86_64",
-                },
-                "@platforms//cpu:aarch64": {
-                    "test.Pool": "large_memory_2core_arm64",
-                },
-                "//conditions:default": {},
-            })
-        elif minimum_test_resources["cpu_cores"] > 2:
-            fail("minimum_test_resources[\"cpu_cores\"] > 2 is not supported")
+    # if "cpu_cores" in minimum_test_resources:
+    #     if minimum_test_resources["cpu_cores"] == 2:
+    #         exec_properties = exec_properties | select({
+    #             "@platforms//cpu:x86_64": {
+    #                 "test.Pool": "large_mem_2core_x86_64",
+    #             },
+    #             "@platforms//cpu:aarch64": {
+    #                 "test.Pool": "large_memory_2core_arm64",
+    #             },
+    #             "//conditions:default": {},
+    #         })
+    #     elif minimum_test_resources["cpu_cores"] > 2:
+    #         fail("minimum_test_resources[\"cpu_cores\"] > 2 is not supported")
 
     _mongo_cc_binary_and_test(
         name,

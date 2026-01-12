@@ -56,4 +56,4 @@ jobs:
             --show_result=0 \
             --build_event_text_file=/dev/stdout \
             --verbose_failures \
-            //src/...
+            //:install-devcore

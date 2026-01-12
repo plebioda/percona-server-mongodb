@@ -99,8 +99,8 @@ common:windows --repo_env=MONGO_VC_REDIST_FULL_VERSION=v143
 # while in hybrid build state, using local unsandboxed linking should be faster. When most of our link
 # targets have been converted (i.e. unittest binaries) and we can BWOB, remote linking should be faster
 # in those cases:
-common --strategy=CppLink=local
-common --strategy=CppArchive=local
+#common --strategy=CppLink=local
+#common --strategy=CppArchive=local
 common --strategy=SolibSymlink=local
 common --strategy=StripDebuginfo=local
 common --strategy=ExtractDebuginfo=local

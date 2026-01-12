@@ -11,6 +11,7 @@ actions:
 
     steps:
       - run: |
+          bazel version
           bazel build \
             --jobs=120 \
             --config=psmdb_dev \

@@ -1003,9 +1003,12 @@ def mongo_cc_test(
     if "cpu_cores" in minimum_test_resources:
         if minimum_test_resources["cpu_cores"] == 2:
             exec_properties = exec_properties | select({
-                "@platforms//cpu:x86_64": {
+                "//bazel/config:x86_64_with_self_hosted_executors": {
                     "test.Pool": "large_mem_2core_x86_64",
                     "test.use-self-hosted-executors": "true",
+                },
+                "//bazel/config:x86_64_without_self_hosted_executors": {
+                    "test.Pool": "large_mem_2core_x86_64",
                 },
                 "@platforms//cpu:aarch64": {
                     "test.Pool": "large_memory_2core_arm64",

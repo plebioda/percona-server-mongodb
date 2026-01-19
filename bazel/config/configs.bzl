@@ -187,6 +187,20 @@ use_wait_for_debugger = rule(
 )
 
 # =========
+# use_self_hosted_executors_for_large_mem_2core_x86_64
+# =========
+
+use_self_hosted_executors_for_large_mem_2core_x86_64_provider = provider(
+    doc = "Use self-hosted executors for large_mem_2core_x86_64 test pool",
+    fields = ["enabled"],
+)
+
+use_self_hosted_executors_for_large_mem_2core_x86_64 = rule(
+    implementation = lambda ctx: use_self_hosted_executors_for_large_mem_2core_x86_64_provider(enabled = ctx.build_setting_value),
+    build_setting = config.bool(flag = True),
+)
+
+# =========
 # ocsp-stapling
 # =========
 

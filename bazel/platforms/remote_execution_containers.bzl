@@ -58,8 +58,8 @@ REMOTE_EXECUTION_CONTAINERS = {
         "web-url": "https://quay.io/repository/mongodb/bazel-remote-execution/manifest/sha256:c1e4291aa0a1054e5c119a6c6a2ac3b43b2903e2f2c68d30148da7b57691ee9d",
     },
     "ubuntu24": {
-        "container-url": "docker://ghcr.io/plebioda/buildbuddy-runner-ubuntu24@sha256:1f7a5dfbca41ecc7ed48aa5cd2dda3c0624ede076fff6f631fc7c5b7c4e11df9",
+        "container-url": "docker://ghcr.io/plebioda/buildbuddy-runner-ubuntu24@sha256:21acd5528db23309da253fd31b485590d43c9ef6243b03f84ca846939174dde9",
         "dockerfile": "bazel/remote_execution_container/ubuntu24/dockerfile.psmdb",
-        "web-url": "ghcr.io/plebioda/buildbuddy-runner-ubuntu24@sha256:1f7a5dfbca41ecc7ed48aa5cd2dda3c0624ede076fff6f631fc7c5b7c4e11df9",
+        "web-url": "ghcr.io/plebioda/buildbuddy-runner-ubuntu24@sha256:21acd5528db23309da253fd31b485590d43c9ef6243b03f84ca846939174dde9",
     },
 }

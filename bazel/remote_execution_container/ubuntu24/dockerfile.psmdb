@@ -28,3 +28,13 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/aws-install/ /usr/
+
+RUN groupadd -g 10001 build && useradd -m -u 10001 -g 10001 -s /bin/bash build
+
+# Give the user a writable temp + workspace locations commonly used by bazel actions
+RUN mkdir -p /tmp /work /home/build && \
+    chown -R build:build /tmp /work /home/build
+
+USER build
+ENV HOME=/home/build
+WORKDIR /work

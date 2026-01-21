@@ -1,0 +1,74 @@
+name: hcloud-runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-runner:
+    name: Create Hetzner Cloud runner
+    runs-on: ubuntu-latest
+    environment: restricted
+    outputs:
+      label: ${{ steps.create-hcloud-runner.outputs.label }}
+      server_id: ${{ steps.create-hcloud-runner.outputs.server_id }}
+    steps:
+      - name: Create runner
+        id: create-hcloud-runner
+        uses: Percona-Lab/hcloud-github-runner@v1
+        with:
+          mode: create
+          github_token: ${{ secrets.PAT }}
+          hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          server_type: cpx52
+          location: nbg1
+          image: ubuntu-24.04
+          pre_runner_script: |
+            apt-get update
+            apt-get install -y docker.io
+            systemctl start docker
+
+  do-the-job:
+    name: Do the job on the runner
+    needs: create-runner
+    runs-on: ${{ needs.create-runner.outputs.label }}
+    container:
+      image: ghcr.io/plebioda/buildbuddy-runner-ubuntu24@sha256:21acd5528db23309da253fd31b485590d43c9ef6243b03f84ca846939174dde9
+      config: --user 10001:10001
+    steps:
+      - name: Debug user permissions
+        run: |
+          id
+          groups
+          whoami
+          ls -la /__w/
+          ls -la /__w/_temp/ || echo "_temp not accessible"
+          ls -la /__w/_temp/_runner_file_commands/ || echo "_runner_file_commands not accessible"
+          
+          echo "=== Process info ==="
+          ps aux | head -20
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+
+      - name: Setup AWS SDK
+        uses: ./.github/actions/setup-aws-sdk
+
+  delete-runner:
+    name: Delete Hetzner Cloud runner
+    needs:
+      - create-runner
+      - do-the-job
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - name: Delete runner
+        uses: Percona-Lab/hcloud-github-runner@v1
+        with:
+          mode: delete
+          github_token: ${{ secrets.PAT }}
+          hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          name: ${{ needs.create-runner.outputs.label }}
+          server_id: ${{ needs.create-runner.outputs.server_id }}

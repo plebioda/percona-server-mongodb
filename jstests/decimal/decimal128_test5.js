@@ -1,6 +1,15 @@
 /**
  * Derived from test cases at https://github.com/mongodb/specifications
  */
+// DUMMY FORMAT TEST - DELETE ME
+var dummyBadlyFormattedVar = 1;
+function dummyBadlyFormattedFunction(x, y, z) {
+    if (x > 0) {
+        return x + y + z;
+    } else {
+        return x - y - z;
+    }
+}
 
 (function() {
 "use strict";

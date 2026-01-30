@@ -2,14 +2,6 @@
 import re
 
 
-# DUMMY FORMAT TEST - DELETE ME
-def dummy_badly_formatted_function(x, y, z):
-    if x > 0:
-        return x + y + z
-    else:
-        return x - y - z
-
-
 class PathOptions:
     """Get options/methods to resolve path-related stuff."""
 

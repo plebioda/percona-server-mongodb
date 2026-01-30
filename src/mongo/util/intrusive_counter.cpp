@@ -34,14 +34,6 @@
 #include "mongo/util/str.h"
 
 namespace mongo {
-// DUMMY FORMAT TEST - DELETE ME
-int dummyBadlyFormattedFunction(int x, int y, int z) {
-    if (x > 0) {
-        return x + y + z;
-    } else {
-        return x - y - z;
-    }
-}
 using boost::intrusive_ptr;
 
 intrusive_ptr<const RCString> RCString::create(StringData s) {

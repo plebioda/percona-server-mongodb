@@ -1,18 +1,5 @@
 """Extension to SCons providing advanced static library dependency tracking.
 
-DUMMY FORMAT TEST - DELETE ME
-"""
-
-
-def dummy_badly_formatted_scons_function(x, y, z):
-    if x > 0:
-        return x + y + z
-    else:
-        return x - y - z
-
-
-"""
-
 These modifications to a build environment, which can be attached to
 StaticLibrary and Program builders via a call to setup_environment(env),
 cause the build system to track library dependencies through static libraries,

@@ -1,0 +1,63 @@
+name: mergai bot
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+jobs:
+  mergai-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: setup credentials
+        run: |
+          echo "GH_TOKEN=${{ steps.app-token.outputs.token }}" >> $GITHUB_ENV
+          git config user.name "mergai-bot[bot]"
+          git config user.email "mergai-bot[bot]@users.noreply.github.com"
+
+      - name: Setup MergAI
+        uses: ./.github/actions/setup-mergai
+        with:
+          token: ${{ secrets.PAT }}
+          ref: plebioda/dev
+
+      - name: mergai fork init
+        run: |
+          mergai fork init
+
+      - name: mergai merge-pick
+        run: |
+          MERGE_PICK=$(mergai -vv fork merge-pick --next)
+          echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
+          echo "Next merge pick is: $MERGE_PICK"
+          git show $MERGE_PICK
+      
+      - name: mergai context init
+        run: |
+          mergai context init $MERGE_PICK
+      
+      - name: mergai branch create main
+        run: |
+          mergai branch create main $MERGE_PICK
+
+      - name: merge
+        run: |
+          if git merge $MERGE_PICK; then
+            echo "Merge successful"
+          else
+            echo "Merge failed, aborting"
+            git merge --abort
+            exit 1
+          fi

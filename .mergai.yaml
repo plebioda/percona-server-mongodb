@@ -1,0 +1,35 @@
+resolve:
+  agent: gemini-cli
+  max_attempts: 3
+branch:
+  name_format: "mergai/%(target_branch)-%(merge_commit_short)/%(type)"
+fork:
+  upstream_url: https://github.com/mongodb/mongo.git 
+  upstream_branch: master
+  upstream_remote: mongodb
+  merge_picks:
+    - huge_commit:
+        min_changed_files: 100
+        min_changed_lines: 1000
+    - branching_point: true
+    - conflict: true
+    - important_files:
+        - src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine_test.cpp
+        - src/mongo/db/storage/wiredtiger/wiredtiger_init_test.cpp
+        - src/mongo/db/storage/wiredtiger/wiredtiger_init.cpp
+        - src/mongo/db/storage/wiredtiger/SConscript
+        - src/mongo/db/auth/sasl_scram_server_conversation.cpp
+        - src/mongo/db/auth/sasl_plain_server_conversation.cpp
+        - jstests/noPassthroughWithMongod/validate_interrupt.js
+        - buildscripts/resmokeconfig/suites/aggregation_ese.yml
+        - buildscripts/resmokeconfig/suites/core_ese.yml
+        - buildscripts/resmokeconfig/suites/replica_sets_ese.yml
+        - buildscripts/resmokeconfig/suites/sharding_ese.yml
+        - src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp
+        - src/mongo/db/storage/storage_engine.h
+        - src/mongo/db/audit.h
+        - src/mongo/db/audit.cpp
+        - src/mongo/db/repl/initial_syncer.h
+        - src/mongo/db/repl/initial_syncer.cpp
+        - src/mongo/db/repl/initial_sync/initial_syncer.h #since SERVER-103460
+        - src/mongo/db/repl/initial_sync/initial_syncer.cpp # since SERVER-103460

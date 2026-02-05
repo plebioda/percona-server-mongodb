@@ -3,7 +3,8 @@ name: mergai bot
 on:
   workflow_dispatch:
   push:
-  pull_request:
+    branches:
+      - foo
 
 jobs:
   mergai-merge:

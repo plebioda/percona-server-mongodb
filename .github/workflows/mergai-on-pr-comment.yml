@@ -1,8 +1,9 @@
 name: mergai-on-pr-comment
 
 on:
-  issue_comment:
-    types: [created]
+  workflow_dispatch:
+  # issue_comment:
+  #   types: [created]
 
 jobs:
   mergai-on-pr-comment:

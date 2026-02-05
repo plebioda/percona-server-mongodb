@@ -54,12 +54,19 @@ jobs:
           mergai branch create main
           mergai context create merge
           if git merge --no-commit --no-ff $MERGE_PICK; then
+            echo "Merge successful. Committing merge."
             mergai commit merge
             mergai branch push main
             mergai pr --repo $GITHUB_REPOSITORY create main
           else
-            echo "Merge conflict detected. Aborting merge."
-            mergai context abort merge
-            mergai branch abort main
-            exit 1
+            echo "Merge conflict detected. Processing with resolution."
+            mergai context create conflict
+            mergai branch create conflict
+            mergai commit conflict
+            mergai branch create solution
+            mergai resolve
+            mergai commit solution
+            mergai branch push solution
+            mergai branch push conflict
+            mergai pr --repo $GITHUB_REPOSITORY create solution
           fi

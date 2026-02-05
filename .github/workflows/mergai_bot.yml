@@ -39,7 +39,7 @@ jobs:
 
       - name: mergai merge-pick
         run: |
-          MERGE_PICK=$(mergai -vv fork merge-pick --next)
+          MERGE_PICK=$(mergai fork merge-pick --next)
           echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
           echo "Next merge pick is: $MERGE_PICK"
           git show $MERGE_PICK

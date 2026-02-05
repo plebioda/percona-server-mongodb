@@ -47,17 +47,18 @@ jobs:
       - name: mergai context init
         run: |
           mergai context init $MERGE_PICK
-      
-      - name: mergai branch create main
-        run: |
-          mergai branch create main $MERGE_PICK
 
       - name: merge
         run: |
-          if git merge $MERGE_PICK; then
-            echo "Merge successful"
+          mergai branch create main
+          mergai context create merge
+          if git merge --no-commit --no-ff $MERGE_PICK; then
+            mergai commit merge
+            mergai branch push main
+            mergai pr create main
           else
-            echo "Merge failed, aborting"
-            git merge --abort
+            echo "Merge conflict detected. Aborting merge."
+            mergai context abort merge
+            mergai branch abort main
             exit 1
           fi

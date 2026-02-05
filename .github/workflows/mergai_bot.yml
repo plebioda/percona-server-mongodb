@@ -80,6 +80,7 @@ jobs:
             echo "Merge successful. Committing merge."
             mergai commit merge
             mergai branch push main
+            mergai push #notes
             mergai pr --repo $GITHUB_REPOSITORY create main
           else
             echo "Merge conflict detected. Processing with resolution."
@@ -91,5 +92,6 @@ jobs:
             mergai commit solution
             mergai branch push solution
             mergai branch push conflict
+            mergai push #notes
             mergai pr --repo $GITHUB_REPOSITORY create solution
           fi

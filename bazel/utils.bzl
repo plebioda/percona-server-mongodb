@@ -162,13 +162,9 @@ def get_host_distro_major_version(repository_ctx):
         "Red Hat Enterprise Linux 8*": "rhel8",
         "Red Hat Enterprise Linux 9*": "rhel9",
         "Red Hat Enterprise Linux 10*": "rhel10",
-<<<<<<< HEAD
         "Oracle Linux Server 8*": "rhel8",
         "Oracle Linux Server 9*": "rhel9",
-||||||| 6d1d857e312
-=======
         "Fedora*": "rhel10",
->>>>>>> 094bcb08ba6
         "SLES 15*": "suse15",
     }
 

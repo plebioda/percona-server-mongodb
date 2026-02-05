@@ -55,7 +55,7 @@ jobs:
           if git merge --no-commit --no-ff $MERGE_PICK; then
             mergai commit merge
             mergai branch push main
-            mergai pr create main
+            mergai pr --repo $GITHUB_REPOSITORY create main
           else
             echo "Merge conflict detected. Aborting merge."
             mergai context abort merge

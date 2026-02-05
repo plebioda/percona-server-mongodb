@@ -76,6 +76,7 @@ jobs:
         run: |
           mergai branch create main
           mergai context create merge
+          mergai update -f # notes
           if git merge --no-commit --no-ff $MERGE_PICK; then
             echo "Merge successful. Committing merge."
             mergai commit merge

@@ -1,0 +1,39 @@
+name: Fast Forward PR
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write          # needed to push the base branch forward
+  pull-requests: write     # to comment / update PR
+  issues: write            # PR comments are "issues" API
+
+jobs:
+  fast_forward:
+    # only run on PR comments that include the command
+    if: >
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '/fast-forward')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: setup credentials
+        run: |
+          echo "GH_TOKEN=${{ steps.app-token.outputs.token }}" >> $GITHUB_ENV
+          git config user.name "mergai-bot[bot]"
+          git config user.email "mergai-bot[bot]@users.noreply.github.com"
+
+      - name: Fast Forward PR
+        uses: endre-spotlab/fast-forward-js-action@v2.1
+        with:
+          success_message: "✅ Fast-forwarded ***target_base*** to ***source_head***"
+          failure_message: "❌ Fast-forward failed (base is not ancestor of head). Rebase/update the PR branch."
+          # update_status: "true"   # optional (see action docs)

@@ -74,10 +74,10 @@ jobs:
 
       - name: merge
         run: |
-          mergai context create merge
           mergai update -f # notes
           if mergai merge; then
             echo "Merge successful. Committing merge."
+            mergai context create merge
             mergai commit merge
             mergai branch create main
             mergai branch push main

@@ -74,20 +74,20 @@ jobs:
 
       - name: merge
         run: |
-          mergai branch create main
           mergai context create merge
           mergai update -f # notes
-          if git merge --no-commit --no-ff $MERGE_PICK; then
+          if mergai merge; then
             echo "Merge successful. Committing merge."
             mergai commit merge
+            mergai branch create main
             mergai branch push main
             mergai push #notes
             mergai pr --repo $GITHUB_REPOSITORY create main
           else
             echo "Merge conflict detected. Processing with resolution."
             mergai context create conflict
-            mergai branch create conflict
             mergai commit conflict
+            mergai branch create conflict
             mergai branch create solution
             mergai resolve
             mergai commit solution

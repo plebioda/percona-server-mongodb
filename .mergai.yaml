@@ -2,7 +2,7 @@ resolve:
   agent: gemini-cli
   max_attempts: 3
 branch:
-  name_format: "mergai/%(target_branch)-%(merge_commit_short)/%(type)"
+  name_format: "mergai/%(target_branch)-%(target_branch_short_sha)-%(merge_commit_short_sha)/%(type)"
 fork:
   upstream_url: https://github.com/mongodb/mongo.git 
   upstream_branch: master

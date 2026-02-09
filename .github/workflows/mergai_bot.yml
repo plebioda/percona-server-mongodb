@@ -1,36 +1,38 @@
 name: mergai bot
 
+# =============================================================================
+# Configuration
+# =============================================================================
+# Branch patterns used by this workflow:
+#   - Solution branches: mergai/*/solution
+#   - Conflict branches: mergai/*/conflict
+# Note: The pull_request trigger pattern below must match conflict branches.
+# =============================================================================
+
 on:
   workflow_dispatch:
+  pull_request:
+    types: [closed]
+    branches:
+      - "mergai/*/conflict"
   push:
     branches:
       - foo
 
 jobs:
-  mergai-merge:
+  # ---------------------------------------------------------------------------
+  # Job: Manual Merge (workflow_dispatch)
+  # ---------------------------------------------------------------------------
+  manual-merge:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.PAT }}
-      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT}}
-      GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION}}
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+      GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
       GOOGLE_GENAI_USE_VERTEXAI: "true"
 
     steps:
-      - name: Write GCP credentials
-        run: |
-          echo '${{ secrets.GCP_CREDENTIALS }}' | base64 -d > $RUNNER_TEMP/gcp-key.json
-          chmod 600 $RUNNER_TEMP/gcp-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> $GITHUB_ENV
-
-      - name: Install Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'  # or whatever you use locally
-
-      - name: Install gemini-cli
-        run: |
-          npm install -g @google/gemini-cli
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -43,23 +45,17 @@ jobs:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
 
-      - name: setup credentials
-        run: |
-          echo "GH_TOKEN=${{ steps.app-token.outputs.token }}" >> $GITHUB_ENV
-          git config user.name "mergai-bot[bot]"
-          git config user.email "mergai-bot[bot]@users.noreply.github.com"
-          git config merge.conflictstyle diff3
-          git config notes.displayRef refs/notes/mergai-marker
-
-      - name: Setup MergAI
-        uses: ./.github/actions/setup-mergai
+      - name: Setup workflow environment
+        uses: ./.github/actions/setup-mergai-workflow
         with:
-          token: ${{ secrets.PAT }}
-          ref: plebioda/dev
-
-      - name: mergai fork init
-        run: |
-          mergai fork init
+          setup-gcp: "true"
+          setup-node: "true"
+          setup-gemini: "true"
+          setup-mergai: "true"
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          github-app-token: ${{ steps.app-token.outputs.token }}
+          pat-token: ${{ secrets.PAT }}
+          mergai-ref: plebioda/dev
 
       - name: mergai merge-pick
         run: |
@@ -67,7 +63,7 @@ jobs:
           echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
           echo "Next merge pick is: $MERGE_PICK"
           git show --stat $MERGE_PICK
-      
+
       - name: mergai context init
         run: |
           mergai context init $MERGE_PICK
@@ -96,3 +92,43 @@ jobs:
             mergai push #notes
             mergai pr --repo $GITHUB_REPOSITORY create solution
           fi
+
+  # ---------------------------------------------------------------------------
+  # Job: Solution PR Merged
+  # ---------------------------------------------------------------------------
+  solution-merged:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.PAT }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Setup workflow environment
+        uses: ./.github/actions/setup-mergai-workflow
+        with:
+          setup-gcp: "false"
+          setup-node: "false"
+          setup-gemini: "false"
+          setup-mergai: "true"
+          github-app-token: ${{ steps.app-token.outputs.token }}
+          pat-token: ${{ secrets.PAT }}
+          mergai-ref: plebioda/dev
+
+      # TODO: Add solution merge commands here
+      - name: Placeholder
+        run: |
+          echo "Solution PR merged - add your commands here"
+          echo "Head branch: ${{ github.head_ref }}"
+          echo "Base branch: ${{ github.base_ref }}"

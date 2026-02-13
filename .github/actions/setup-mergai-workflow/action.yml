@@ -25,10 +25,9 @@ inputs:
   github-app-token:
     description: "GitHub App token for git config"
     required: true
-  pat-token:
-    description: "PAT for MergAI checkout (required if setup-mergai: true)"
-    required: false
-    default: ""
+  github-app-id:
+    description: "GitHub App ID for constructing bot email"
+    required: true
   mergai-ref:
     description: "MergAI git ref to checkout"
     required: false
@@ -60,9 +59,10 @@ runs:
     - name: Setup git credentials
       shell: bash
       run: |
+        echo "GITHUB_TOKEN=${{ inputs.github-app-token }}" >> $GITHUB_ENV
         echo "GH_TOKEN=${{ inputs.github-app-token }}" >> $GITHUB_ENV
         git config user.name "mergai-bot[bot]"
-        git config user.email "mergai-bot[bot]@users.noreply.github.com"
+        git config user.email "${{ inputs.github-app-id }}+mergai-bot[bot]@users.noreply.github.com"
         git config merge.conflictstyle diff3
         git config notes.displayRef refs/notes/mergai-marker
 
@@ -70,7 +70,7 @@ runs:
       if: inputs.setup-mergai == 'true'
       uses: ./.github/actions/setup-mergai
       with:
-        token: ${{ inputs.pat-token }}
+        token: ${{ inputs.github-app-token }}
         ref: ${{ inputs.mergai-ref }}
 
     - name: mergai fork init

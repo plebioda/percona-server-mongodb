@@ -27,29 +27,50 @@
  *    it in the license file.
  */
 
-#pragma once
+#include "mongo/db/extension/host/extension_host_utils.h"
 
-#include "mongo/db/operation_context.h"
-#include "mongo/db/replicated_size_and_count_metadata_manager/size_and_count.h"
-#include "mongo/util/uuid.h"
+#include "mongo/base/init.h"
+#include "mongo/db/commands/server_status/server_status_metric.h"
 
-#include <boost/container/flat_map.hpp>
+namespace mongo::extension::host {
 
+namespace {
 
-namespace mongo {
-
-class MONGO_MOD_PUBLIC UncommittedMetaChange {
+class HostObservabilityContext : public mongo::extension::ObservabilityContext {
 public:
-    static const UncommittedMetaChange& read(OperationContext* opCtx);
-    static UncommittedMetaChange& write(OperationContext* opCtx);
+    ~HostObservabilityContext() override {}
 
-    CollectionSizeCount find(UUID uuid) const;
-    void record(UUID uuid, int64_t numDelta, int64_t sizeDelta);
+    void extensionSuccess() const noexcept override {
+        _sExtensionSuccessCounter.increment();
+    }
+
+    void extensionError() const noexcept override {
+        _sExtensionFailureCounter.increment();
+    }
+
+    void hostSuccess() const noexcept override {
+        _sHostSuccessCounter.increment();
+    }
+
+    void hostError() const noexcept override {
+        _sHostFailureCounter.increment();
+    }
 
 private:
-    boost::container::flat_map<UUID, CollectionSizeCount> _trackedChanges;
+    static inline Counter64& _sExtensionSuccessCounter =
+        *MetricBuilder<Counter64>("extension.extensionSuccesses");
+    static inline Counter64& _sExtensionFailureCounter =
+        *MetricBuilder<Counter64>("extension.extensionFailures");
+
+    static inline Counter64& _sHostSuccessCounter =
+        *MetricBuilder<Counter64>("extension.hostSuccesses");
+    static inline Counter64& _sHostFailureCounter =
+        *MetricBuilder<Counter64>("extension.hostFailures");
 };
 
-}  // namespace mongo
+MONGO_INITIALIZER(InitializeGlobalObservabilityContext)(InitializerContext*) {
+    mongo::extension::setGlobalObservabilityContext(std::make_unique<HostObservabilityContext>());
+};
+}  // namespace
 
-
+}  // namespace mongo::extension::host

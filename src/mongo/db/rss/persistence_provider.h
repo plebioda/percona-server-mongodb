@@ -104,6 +104,11 @@ public:
     virtual bool shouldUseReplicatedTruncates() const = 0;
 
     /**
+     * If true, fastcounts (collection size and count) will be managed with replicated writes.
+     */
+    virtual bool shouldUseReplicatedFastCount() const = 0;
+
+    /**
      * If true, writes to the oplog should be used as the unit of progress for flow control
      * sampling.
      */
@@ -201,6 +206,11 @@ public:
      * The default memory_page_max value to set on WT for the oplog in string format.
      */
     virtual const char* getWTMemoryPageMaxForOplogStrValue() const = 0;
+
+    /**
+     * If true, the provider supports compaction.
+     */
+    virtual bool supportsCompaction() const = 0;
 };
 
 }  // namespace rss

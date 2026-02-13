@@ -79,6 +79,10 @@ bool AttachedPersistenceProvider::shouldUseReplicatedTruncates() const {
     return false;
 }
 
+bool AttachedPersistenceProvider::shouldUseReplicatedFastCount() const {
+    return false;
+}
+
 bool AttachedPersistenceProvider::shouldUseOplogWritesForFlowControlSampling() const {
     return true;
 }
@@ -154,6 +158,10 @@ multiversion::FeatureCompatibilityVersion AttachedPersistenceProvider::getMinimu
 
 const char* AttachedPersistenceProvider::getWTMemoryPageMaxForOplogStrValue() const {
     return "10m";  // 10MB
+}
+
+bool AttachedPersistenceProvider::supportsCompaction() const {
+    return true;
 }
 
 }  // namespace mongo::rss

@@ -78,6 +78,11 @@ public:
     bool shouldUseReplicatedTruncates() const override;
 
     /**
+     * Attached storage uses unreplicated fastcounts.
+     */
+    bool shouldUseReplicatedFastCount() const override;
+
+    /**
      * Flow control is based on the rate of generation of oplog data and the ability of the
      * secondaries to keep the majority commit point relatively up-to-date.
      */
@@ -160,6 +165,11 @@ public:
      * The default memory_page_max value to set on WT for the oplog in string format.
      */
     const char* getWTMemoryPageMaxForOplogStrValue() const override;
+
+    /**
+     * We can support compaction.
+     */
+    bool supportsCompaction() const override;
 };
 
 }  // namespace mongo::rss

@@ -60,9 +60,7 @@ Execution Engine: sbe
 			"foreignField" : "a",
 			"inputStage" : {
 				"direction" : "forward",
-				"filter" : {
-					
-				},
+				"filter" : { },
 				"nss" : "test.basic_joins_md",
 				"stage" : "COLLSCAN"
 			},
@@ -83,37 +81,16 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [b = b]
+HASH_JOIN_EMBEDDING [a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "y"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign2]
-  |  direction: "forward"
-  |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
-  direction: "forward"
-```
-### With bottom-up plan enumeration (right-deep)
-usedJoinOptimization: true
-
-```
-HASH_JOIN_EMBEDDING [b = b]
-leftEmbeddingField: "y"
-rightEmbeddingField: "none"
-  |  |
-  |  HASH_JOIN_EMBEDDING [a = a]
-  |  leftEmbeddingField: "none"
-  |  rightEmbeddingField: "x"
-  |  |  |
-  |  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  |  direction: "forward"
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
   |  |
   |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
@@ -121,25 +98,46 @@ rightEmbeddingField: "none"
   COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
-### With bottom-up plan enumeration (zig-zag)
+### With bottom-up plan enumeration (right-deep)
 usedJoinOptimization: true
 
 ```
-NESTED_LOOP_JOIN_EMBEDDING [b = b]
-leftEmbeddingField: "none"
-rightEmbeddingField: "y"
+HASH_JOIN_EMBEDDING [a = a]
+leftEmbeddingField: "x"
+rightEmbeddingField: "none"
+  |  |
+  |  HASH_JOIN_EMBEDDING [b = b]
+  |  leftEmbeddingField: "y"
+  |  rightEmbeddingField: "none"
+  |  |  |
+  |  |  COLLSCAN [test.basic_joins_md]
+  |  |  direction: "forward"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign2]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  COLLSCAN [test.basic_joins_md_foreign1]
+  direction: "forward"
+```
+### With bottom-up plan enumeration (zig-zag)
+usedJoinOptimization: true
+
+```
+HASH_JOIN_EMBEDDING [a = a]
+leftEmbeddingField: "none"
+rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
+  |
+  COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -259,37 +257,21 @@ rightEmbeddingField: "x"
 usedJoinOptimization: true
 
 ```
-INDEXED_NESTED_LOOP_JOIN_EMBEDDING [b = b]
+HASH_JOIN_EMBEDDING [a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "y"
+rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign2]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
-  |  keyPattern: { "b" : 1 }
-  |  indexName: "b_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
 ## 2. Basic example with two joins and suffix
@@ -347,9 +329,7 @@ Execution Engine: sbe
 					"inputStage" : {
 						"inputStage" : {
 							"direction" : "forward",
-							"filter" : {
-								
-							},
+							"filter" : { },
 							"nss" : "test.basic_joins_md",
 							"stage" : "COLLSCAN"
 						},
@@ -386,40 +366,16 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [b = b]
+HASH_JOIN_EMBEDDING [a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "y"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign2]
-  |  direction: "forward"
-  |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "a" : true, "b" : true, "_id" : false }
-  |
-  COLLSCAN [test.basic_joins_md]
-  direction: "forward"
-```
-### With bottom-up plan enumeration (right-deep)
-usedJoinOptimization: true
-
-```
-HASH_JOIN_EMBEDDING [b = b]
-leftEmbeddingField: "y"
-rightEmbeddingField: "none"
-  |  |
-  |  HASH_JOIN_EMBEDDING [a = a]
-  |  leftEmbeddingField: "none"
-  |  rightEmbeddingField: "x"
-  |  |  |
-  |  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  |  direction: "forward"
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
   |  |
   |  PROJECTION_SIMPLE
   |  transformBy: { "a" : true, "b" : true, "_id" : false }
@@ -430,28 +386,52 @@ rightEmbeddingField: "none"
   COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
-### With bottom-up plan enumeration (zig-zag)
+### With bottom-up plan enumeration (right-deep)
 usedJoinOptimization: true
 
 ```
-NESTED_LOOP_JOIN_EMBEDDING [b = b]
-leftEmbeddingField: "none"
-rightEmbeddingField: "y"
+HASH_JOIN_EMBEDDING [a = a]
+leftEmbeddingField: "x"
+rightEmbeddingField: "none"
+  |  |
+  |  HASH_JOIN_EMBEDDING [b = b]
+  |  leftEmbeddingField: "y"
+  |  rightEmbeddingField: "none"
+  |  |  |
+  |  |  PROJECTION_SIMPLE
+  |  |  transformBy: { "a" : true, "b" : true, "_id" : false }
+  |  |  |
+  |  |  COLLSCAN [test.basic_joins_md]
+  |  |  direction: "forward"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign2]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  COLLSCAN [test.basic_joins_md_foreign1]
+  direction: "forward"
+```
+### With bottom-up plan enumeration (zig-zag)
+usedJoinOptimization: true
+
+```
+HASH_JOIN_EMBEDDING [a = a]
+leftEmbeddingField: "none"
+rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "a" : true, "b" : true, "_id" : false }
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
+  |  |
+  |  PROJECTION_SIMPLE
+  |  transformBy: { "a" : true, "b" : true, "_id" : false }
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -586,40 +566,24 @@ rightEmbeddingField: "x"
 usedJoinOptimization: true
 
 ```
-INDEXED_NESTED_LOOP_JOIN_EMBEDDING [b = b]
+HASH_JOIN_EMBEDDING [a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "y"
+rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign2]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
-  |  keyPattern: { "b" : 1 }
-  |  indexName: "b_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
+  |  PROJECTION_SIMPLE
+  |  transformBy: { "a" : true, "b" : true, "_id" : false }
   |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "a" : true, "b" : true, "_id" : false }
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
 ## 3. Example with two joins, suffix, and sub-pipeline with un-correlated $match
@@ -689,9 +653,7 @@ Execution Engine: sbe
 				"winningPlan" : {
 					"inputStage" : {
 						"direction" : "forward",
-						"filter" : {
-							
-						},
+						"filter" : { },
 						"nss" : "test.basic_joins_md",
 						"stage" : "COLLSCAN"
 					},
@@ -709,9 +671,7 @@ Execution Engine: sbe
 				"as" : "x",
 				"foreignField" : "a",
 				"from" : "basic_joins_md_foreign1",
-				"let" : {
-					
-				},
+				"let" : { },
 				"localField" : "a",
 				"pipeline" : [
 					{
@@ -732,9 +692,7 @@ Execution Engine: sbe
 				"as" : "y",
 				"foreignField" : "b",
 				"from" : "basic_joins_md_foreign2",
-				"let" : {
-					
-				},
+				"let" : { },
 				"localField" : "b",
 				"pipeline" : [
 					{
@@ -784,18 +742,18 @@ rightEmbeddingField: "y"
   |  filter: { "b" : { "$gt" : "aaa" } }
   |  direction: "forward"
   |
-  NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  HASH_JOIN_EMBEDDING [a = a]
+  leftEmbeddingField: "x"
+  rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  filter: { "d" : { "$lt" : 3 } }
+  |  PROJECTION_SIMPLE
+  |  transformBy: { "a" : true, "b" : true, "_id" : false }
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "a" : true, "b" : true, "_id" : false }
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign1]
+  filter: { "d" : { "$lt" : 3 } }
   direction: "forward"
 ```
 ### With bottom-up plan enumeration (right-deep)
@@ -806,18 +764,18 @@ HASH_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "y"
 rightEmbeddingField: "none"
   |  |
-  |  NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  |  leftEmbeddingField: "none"
-  |  rightEmbeddingField: "x"
+  |  HASH_JOIN_EMBEDDING [a = a]
+  |  leftEmbeddingField: "x"
+  |  rightEmbeddingField: "none"
   |  |  |
-  |  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  |  filter: { "d" : { "$lt" : 3 } }
+  |  |  PROJECTION_SIMPLE
+  |  |  transformBy: { "a" : true, "b" : true, "_id" : false }
+  |  |  |
+  |  |  COLLSCAN [test.basic_joins_md]
   |  |  direction: "forward"
   |  |
-  |  PROJECTION_SIMPLE
-  |  transformBy: { "a" : true, "b" : true, "_id" : false }
-  |  |
-  |  COLLSCAN [test.basic_joins_md]
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  filter: { "d" : { "$lt" : 3 } }
   |  direction: "forward"
   |
   COLLSCAN [test.basic_joins_md_foreign2]
@@ -836,18 +794,18 @@ rightEmbeddingField: "y"
   |  filter: { "b" : { "$gt" : "aaa" } }
   |  direction: "forward"
   |
-  NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  HASH_JOIN_EMBEDDING [a = a]
+  leftEmbeddingField: "x"
+  rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  filter: { "d" : { "$lt" : 3 } }
+  |  PROJECTION_SIMPLE
+  |  transformBy: { "a" : true, "b" : true, "_id" : false }
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "a" : true, "b" : true, "_id" : false }
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign1]
+  filter: { "d" : { "$lt" : 3 } }
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -1001,40 +959,36 @@ rightEmbeddingField: "x"
 usedJoinOptimization: true
 
 ```
-INDEXED_NESTED_LOOP_JOIN_EMBEDDING [b = b]
+HASH_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "none"
 rightEmbeddingField: "y"
   |  |
   |  FETCH [test.basic_joins_md_foreign2]
-  |  filter: { "b" : { "$gt" : "aaa" } }
+  |  
   |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
+  |  IXSCAN [test.basic_joins_md_foreign2]
   |  keyPattern: { "b" : 1 }
   |  indexName: "b_1"
   |  isMultiKey: false
+  |  multiKeyPaths: { "b" : [ ] }
   |  isUnique: false
   |  isSparse: false
   |  isPartial: false
+  |  direction: "forward"
+  |  indexBounds: { "b" : [ "(\"aaa\", {})" ] }
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  HASH_JOIN_EMBEDDING [a = a]
+  leftEmbeddingField: "x"
+  rightEmbeddingField: "none"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  filter: { "d" : { "$lt" : 3 } }
+  |  PROJECTION_SIMPLE
+  |  transformBy: { "a" : true, "b" : true, "_id" : false }
   |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "a" : true, "b" : true, "_id" : false }
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign1]
+  filter: { "d" : { "$lt" : 3 } }
   direction: "forward"
 ```
 ## 4. Example with two joins and sub-pipeline with un-correlated $match
@@ -1102,9 +1056,7 @@ Execution Engine: sbe
 				"rejectedPlans" : [ ],
 				"winningPlan" : {
 					"direction" : "forward",
-					"filter" : {
-						
-					},
+					"filter" : { },
 					"nss" : "test.basic_joins_md",
 					"stage" : "COLLSCAN"
 				}
@@ -1115,9 +1067,7 @@ Execution Engine: sbe
 				"as" : "x",
 				"foreignField" : "a",
 				"from" : "basic_joins_md_foreign1",
-				"let" : {
-					
-				},
+				"let" : { },
 				"localField" : "a",
 				"pipeline" : [
 					{
@@ -1138,9 +1088,7 @@ Execution Engine: sbe
 				"as" : "y",
 				"foreignField" : "b",
 				"from" : "basic_joins_md_foreign2",
-				"let" : {
-					
-				},
+				"let" : { },
 				"localField" : "b",
 				"pipeline" : [
 					{
@@ -1172,15 +1120,15 @@ rightEmbeddingField: "y"
   |  filter: { "b" : { "$gt" : "aaa" } }
   |  direction: "forward"
   |
-  NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  HASH_JOIN_EMBEDDING [a = a]
+  leftEmbeddingField: "x"
+  rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  filter: { "d" : { "$lt" : 3 } }
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign1]
+  filter: { "d" : { "$lt" : 3 } }
   direction: "forward"
 ```
 ### With bottom-up plan enumeration (right-deep)
@@ -1191,15 +1139,15 @@ HASH_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "y"
 rightEmbeddingField: "none"
   |  |
-  |  NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  |  leftEmbeddingField: "none"
-  |  rightEmbeddingField: "x"
+  |  HASH_JOIN_EMBEDDING [a = a]
+  |  leftEmbeddingField: "x"
+  |  rightEmbeddingField: "none"
   |  |  |
-  |  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  |  filter: { "d" : { "$lt" : 3 } }
+  |  |  COLLSCAN [test.basic_joins_md]
   |  |  direction: "forward"
   |  |
-  |  COLLSCAN [test.basic_joins_md]
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  filter: { "d" : { "$lt" : 3 } }
   |  direction: "forward"
   |
   COLLSCAN [test.basic_joins_md_foreign2]
@@ -1218,15 +1166,15 @@ rightEmbeddingField: "y"
   |  filter: { "b" : { "$gt" : "aaa" } }
   |  direction: "forward"
   |
-  NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  HASH_JOIN_EMBEDDING [a = a]
+  leftEmbeddingField: "x"
+  rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  filter: { "d" : { "$lt" : 3 } }
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign1]
+  filter: { "d" : { "$lt" : 3 } }
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -1365,37 +1313,33 @@ rightEmbeddingField: "x"
 usedJoinOptimization: true
 
 ```
-INDEXED_NESTED_LOOP_JOIN_EMBEDDING [b = b]
+HASH_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "none"
 rightEmbeddingField: "y"
   |  |
   |  FETCH [test.basic_joins_md_foreign2]
-  |  filter: { "b" : { "$gt" : "aaa" } }
+  |  
   |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
+  |  IXSCAN [test.basic_joins_md_foreign2]
   |  keyPattern: { "b" : 1 }
   |  indexName: "b_1"
   |  isMultiKey: false
+  |  multiKeyPaths: { "b" : [ ] }
   |  isUnique: false
   |  isSparse: false
   |  isPartial: false
+  |  direction: "forward"
+  |  indexBounds: { "b" : [ "(\"aaa\", {})" ] }
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  HASH_JOIN_EMBEDDING [a = a]
+  leftEmbeddingField: "x"
+  rightEmbeddingField: "none"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  filter: { "d" : { "$lt" : 3 } }
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign1]
+  filter: { "d" : { "$lt" : 3 } }
   direction: "forward"
 ```
 ## 5. Example with two joins, suffix, and sub-pipeline with un-correlated $match and $match prefix
@@ -1493,9 +1437,7 @@ Execution Engine: sbe
 				"as" : "x",
 				"foreignField" : "a",
 				"from" : "basic_joins_md_foreign1",
-				"let" : {
-					
-				},
+				"let" : { },
 				"localField" : "a",
 				"pipeline" : [
 					{
@@ -1516,9 +1458,7 @@ Execution Engine: sbe
 				"as" : "y",
 				"foreignField" : "b",
 				"from" : "basic_joins_md_foreign2",
-				"let" : {
-					
-				},
+				"let" : { },
 				"localField" : "b",
 				"pipeline" : [
 					{
@@ -1560,7 +1500,7 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [b = b]
+NESTED_LOOP_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "none"
 rightEmbeddingField: "y"
   |  |
@@ -1568,7 +1508,7 @@ rightEmbeddingField: "y"
   |  filter: { "b" : { "$gt" : "aaa" } }
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
+  NESTED_LOOP_JOIN_EMBEDDING [a = a]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
@@ -1591,7 +1531,7 @@ HASH_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "y"
 rightEmbeddingField: "none"
   |  |
-  |  HASH_JOIN_EMBEDDING [a = a]
+  |  NESTED_LOOP_JOIN_EMBEDDING [a = a]
   |  leftEmbeddingField: "none"
   |  rightEmbeddingField: "x"
   |  |  |
@@ -1614,7 +1554,7 @@ rightEmbeddingField: "none"
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [b = b]
+NESTED_LOOP_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "none"
 rightEmbeddingField: "y"
   |  |
@@ -1622,7 +1562,7 @@ rightEmbeddingField: "y"
   |  filter: { "b" : { "$gt" : "aaa" } }
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
+  NESTED_LOOP_JOIN_EMBEDDING [a = a]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
@@ -1808,20 +1748,13 @@ rightEmbeddingField: "y"
   |  isSparse: false
   |  isPartial: false
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
+  NESTED_LOOP_JOIN_EMBEDDING [a = a]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
+  |  COLLSCAN [test.basic_joins_md_foreign1]
   |  filter: { "d" : { "$lt" : 3 } }
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  direction: "forward"
   |
   PROJECTION_SIMPLE
   transformBy: { "a" : true, "b" : true, "_id" : false }
@@ -1915,9 +1848,7 @@ Execution Engine: sbe
 				"as" : "x",
 				"foreignField" : "a",
 				"from" : "basic_joins_md_foreign1",
-				"let" : {
-					
-				},
+				"let" : { },
 				"localField" : "a",
 				"pipeline" : [
 					{
@@ -1938,9 +1869,7 @@ Execution Engine: sbe
 				"as" : "y",
 				"foreignField" : "b",
 				"from" : "basic_joins_md_foreign2",
-				"let" : {
-					
-				},
+				"let" : { },
 				"localField" : "b",
 				"pipeline" : [
 					{
@@ -1964,7 +1893,7 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [b = b]
+NESTED_LOOP_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "none"
 rightEmbeddingField: "y"
   |  |
@@ -1972,7 +1901,7 @@ rightEmbeddingField: "y"
   |  filter: { "b" : { "$gt" : "aaa" } }
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
+  NESTED_LOOP_JOIN_EMBEDDING [a = a]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
@@ -1992,7 +1921,7 @@ HASH_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "y"
 rightEmbeddingField: "none"
   |  |
-  |  HASH_JOIN_EMBEDDING [a = a]
+  |  NESTED_LOOP_JOIN_EMBEDDING [a = a]
   |  leftEmbeddingField: "none"
   |  rightEmbeddingField: "x"
   |  |  |
@@ -2012,7 +1941,7 @@ rightEmbeddingField: "none"
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [b = b]
+NESTED_LOOP_JOIN_EMBEDDING [b = b]
 leftEmbeddingField: "none"
 rightEmbeddingField: "y"
   |  |
@@ -2020,7 +1949,7 @@ rightEmbeddingField: "y"
   |  filter: { "b" : { "$gt" : "aaa" } }
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
+  NESTED_LOOP_JOIN_EMBEDDING [a = a]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
@@ -2188,20 +2117,13 @@ rightEmbeddingField: "y"
   |  isSparse: false
   |  isPartial: false
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
+  NESTED_LOOP_JOIN_EMBEDDING [a = a]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
+  |  COLLSCAN [test.basic_joins_md_foreign1]
   |  filter: { "d" : { "$lt" : 3 } }
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  direction: "forward"
   |
   COLLSCAN [test.basic_joins_md]
   filter: { "a" : { "$gt" : 1 } }
@@ -2263,9 +2185,7 @@ Execution Engine: sbe
 			"foreignField" : "a",
 			"inputStage" : {
 				"direction" : "forward",
-				"filter" : {
-					
-				},
+				"filter" : { },
 				"nss" : "test.basic_joins_md",
 				"stage" : "COLLSCAN"
 			},
@@ -2286,63 +2206,63 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [x.c = c]
+HASH_JOIN_EMBEDDING [x.a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
+rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
+  HASH_JOIN_EMBEDDING [c = c]
+  leftEmbeddingField: "z"
   rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ### With bottom-up plan enumeration (right-deep)
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [c = x.c]
-leftEmbeddingField: "z"
+HASH_JOIN_EMBEDDING [a = x.a]
+leftEmbeddingField: "none"
 rightEmbeddingField: "none"
   |  |
-  |  HASH_JOIN_EMBEDDING [a = a]
-  |  leftEmbeddingField: "none"
+  |  HASH_JOIN_EMBEDDING [c = c]
+  |  leftEmbeddingField: "z"
   |  rightEmbeddingField: "x"
   |  |  |
   |  |  COLLSCAN [test.basic_joins_md_foreign1]
   |  |  direction: "forward"
   |  |
-  |  COLLSCAN [test.basic_joins_md]
+  |  COLLSCAN [test.basic_joins_md_foreign3]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md_foreign3]
+  COLLSCAN [test.basic_joins_md]
   direction: "forward"
 ```
 ### With bottom-up plan enumeration (zig-zag)
 usedJoinOptimization: true
 
 ```
-NESTED_LOOP_JOIN_EMBEDDING [x.c = c]
+HASH_JOIN_EMBEDDING [x.a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
+rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
+  HASH_JOIN_EMBEDDING [c = c]
+  leftEmbeddingField: "z"
   rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -2454,29 +2374,21 @@ rightEmbeddingField: "none"
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [x.c = c]
+HASH_JOIN_EMBEDDING [x.a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
+rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
+  HASH_JOIN_EMBEDDING [c = c]
+  leftEmbeddingField: "z"
   rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ## 8. Basic example with 3 joins & subsequent join referencing fields from previous lookups
@@ -2556,9 +2468,7 @@ Execution Engine: sbe
 				"foreignField" : "a",
 				"inputStage" : {
 					"direction" : "forward",
-					"filter" : {
-						
-					},
+					"filter" : { },
 					"nss" : "test.basic_joins_md",
 					"stage" : "COLLSCAN"
 				},
@@ -2591,13 +2501,6 @@ rightEmbeddingField: "z"
   |  COLLSCAN [test.basic_joins_md_foreign3]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [b = b]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "y"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign2]
-  |  direction: "forward"
-  |
   HASH_JOIN_EMBEDDING [a = a]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
@@ -2605,7 +2508,14 @@ rightEmbeddingField: "z"
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
+  |
+  COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
 ### With bottom-up plan enumeration (right-deep)
@@ -2616,21 +2526,21 @@ HASH_JOIN_EMBEDDING [c = x.c]
 leftEmbeddingField: "z"
 rightEmbeddingField: "none"
   |  |
-  |  HASH_JOIN_EMBEDDING [b = b]
-  |  leftEmbeddingField: "y"
+  |  HASH_JOIN_EMBEDDING [a = a]
+  |  leftEmbeddingField: "x"
   |  rightEmbeddingField: "none"
   |  |  |
-  |  |  HASH_JOIN_EMBEDDING [a = a]
-  |  |  leftEmbeddingField: "none"
-  |  |  rightEmbeddingField: "x"
+  |  |  HASH_JOIN_EMBEDDING [b = b]
+  |  |  leftEmbeddingField: "y"
+  |  |  rightEmbeddingField: "none"
   |  |  |  |
-  |  |  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  |  |  COLLSCAN [test.basic_joins_md]
   |  |  |  direction: "forward"
   |  |  |
-  |  |  COLLSCAN [test.basic_joins_md]
+  |  |  COLLSCAN [test.basic_joins_md_foreign2]
   |  |  direction: "forward"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign2]
+  |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
   COLLSCAN [test.basic_joins_md_foreign3]
@@ -2640,28 +2550,28 @@ rightEmbeddingField: "none"
 usedJoinOptimization: true
 
 ```
-NESTED_LOOP_JOIN_EMBEDDING [x.c = c]
-leftEmbeddingField: "none"
-rightEmbeddingField: "z"
+HASH_JOIN_EMBEDDING [c = x.c]
+leftEmbeddingField: "z"
+rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
-  |  direction: "forward"
-  |
-  NESTED_LOOP_JOIN_EMBEDDING [b = b]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "y"
+  |  HASH_JOIN_EMBEDDING [a = a]
+  |  leftEmbeddingField: "none"
+  |  rightEmbeddingField: "x"
+  |  |  |
+  |  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  |  direction: "forward"
+  |  |
+  |  HASH_JOIN_EMBEDDING [b = b]
+  |  leftEmbeddingField: "y"
+  |  rightEmbeddingField: "none"
+  |  |  |
+  |  |  COLLSCAN [test.basic_joins_md]
+  |  |  direction: "forward"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign2]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  direction: "forward"
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -2823,37 +2733,21 @@ rightEmbeddingField: "z"
   |  COLLSCAN [test.basic_joins_md_foreign3]
   |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [b = b]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "y"
-  |  |
-  |  FETCH [test.basic_joins_md_foreign2]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
-  |  keyPattern: { "b" : 1 }
-  |  indexName: "b_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
-  |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
+  HASH_JOIN_EMBEDDING [a = a]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
+  |
+  COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
 ## 9. Basic example with 3 joins & subsequent join referencing nested paths
@@ -2920,9 +2814,7 @@ Execution Engine: sbe
 				"foreignField" : "a",
 				"inputStage" : {
 					"direction" : "forward",
-					"filter" : {
-						
-					},
+					"filter" : { },
 					"nss" : "test.basic_joins_md",
 					"stage" : "COLLSCAN"
 				},
@@ -2948,84 +2840,84 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [w.y.d = d]
+HASH_JOIN_EMBEDDING [x.a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "k.y.z"
+rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign2]
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [x.c = c]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "w.y"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
-  |  direction: "forward"
-  |
-  HASH_JOIN_EMBEDDING [a = a]
+  HASH_JOIN_EMBEDDING [w.y.c = c]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  HASH_JOIN_EMBEDDING [d = d]
+  leftEmbeddingField: "w.y"
+  rightEmbeddingField: "k.y.z"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign2]
+  |  direction: "forward"
+  |
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ### With bottom-up plan enumeration (right-deep)
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [d = w.y.d]
-leftEmbeddingField: "k.y.z"
+HASH_JOIN_EMBEDDING [a = x.a]
+leftEmbeddingField: "none"
 rightEmbeddingField: "none"
   |  |
-  |  HASH_JOIN_EMBEDDING [c = x.c]
-  |  leftEmbeddingField: "w.y"
+  |  HASH_JOIN_EMBEDDING [c = w.y.c]
+  |  leftEmbeddingField: "x"
   |  rightEmbeddingField: "none"
   |  |  |
-  |  |  HASH_JOIN_EMBEDDING [a = a]
-  |  |  leftEmbeddingField: "none"
-  |  |  rightEmbeddingField: "x"
+  |  |  HASH_JOIN_EMBEDDING [d = d]
+  |  |  leftEmbeddingField: "w.y"
+  |  |  rightEmbeddingField: "k.y.z"
   |  |  |  |
-  |  |  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  |  |  COLLSCAN [test.basic_joins_md_foreign2]
   |  |  |  direction: "forward"
   |  |  |
-  |  |  COLLSCAN [test.basic_joins_md]
+  |  |  COLLSCAN [test.basic_joins_md_foreign3]
   |  |  direction: "forward"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
+  |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md_foreign2]
+  COLLSCAN [test.basic_joins_md]
   direction: "forward"
 ```
 ### With bottom-up plan enumeration (zig-zag)
 usedJoinOptimization: true
 
 ```
-NESTED_LOOP_JOIN_EMBEDDING [w.y.d = d]
+HASH_JOIN_EMBEDDING [x.a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "k.y.z"
+rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign2]
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  NESTED_LOOP_JOIN_EMBEDDING [x.c = c]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "w.y"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
-  |  direction: "forward"
-  |
-  HASH_JOIN_EMBEDDING [a = a]
+  HASH_JOIN_EMBEDDING [w.y.c = c]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  HASH_JOIN_EMBEDDING [d = d]
+  leftEmbeddingField: "w.y"
+  rightEmbeddingField: "k.y.z"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign2]
+  |  direction: "forward"
+  |
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -3172,36 +3064,28 @@ rightEmbeddingField: "none"
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [w.y.d = d]
+HASH_JOIN_EMBEDDING [x.a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "k.y.z"
+rightEmbeddingField: "none"
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
+  |
+  HASH_JOIN_EMBEDDING [w.y.c = c]
+  leftEmbeddingField: "none"
+  rightEmbeddingField: "x"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
+  |
+  HASH_JOIN_EMBEDDING [d = d]
+  leftEmbeddingField: "w.y"
+  rightEmbeddingField: "k.y.z"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign2]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [x.c = c]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "w.y"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
-  |  direction: "forward"
-  |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
-  |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ## 10. Basic example with a $project excluding a field from the base collection
@@ -3272,9 +3156,7 @@ Execution Engine: sbe
 			"inputStage" : {
 				"inputStage" : {
 					"direction" : "forward",
-					"filter" : {
-						
-					},
+					"filter" : { },
 					"nss" : "test.basic_joins_md",
 					"stage" : "COLLSCAN"
 				},
@@ -3300,40 +3182,16 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [b = b]
+HASH_JOIN_EMBEDDING [a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "y"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign2]
-  |  direction: "forward"
-  |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "_id" : false }
-  |
-  COLLSCAN [test.basic_joins_md]
-  direction: "forward"
-```
-### With bottom-up plan enumeration (right-deep)
-usedJoinOptimization: true
-
-```
-HASH_JOIN_EMBEDDING [b = b]
-leftEmbeddingField: "y"
-rightEmbeddingField: "none"
-  |  |
-  |  HASH_JOIN_EMBEDDING [a = a]
-  |  leftEmbeddingField: "none"
-  |  rightEmbeddingField: "x"
-  |  |  |
-  |  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  |  direction: "forward"
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
   |  |
   |  PROJECTION_SIMPLE
   |  transformBy: { "_id" : false }
@@ -3344,28 +3202,52 @@ rightEmbeddingField: "none"
   COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
-### With bottom-up plan enumeration (zig-zag)
+### With bottom-up plan enumeration (right-deep)
 usedJoinOptimization: true
 
 ```
-NESTED_LOOP_JOIN_EMBEDDING [b = b]
-leftEmbeddingField: "none"
-rightEmbeddingField: "y"
+HASH_JOIN_EMBEDDING [a = a]
+leftEmbeddingField: "x"
+rightEmbeddingField: "none"
+  |  |
+  |  HASH_JOIN_EMBEDDING [b = b]
+  |  leftEmbeddingField: "y"
+  |  rightEmbeddingField: "none"
+  |  |  |
+  |  |  PROJECTION_SIMPLE
+  |  |  transformBy: { "_id" : false }
+  |  |  |
+  |  |  COLLSCAN [test.basic_joins_md]
+  |  |  direction: "forward"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign2]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  COLLSCAN [test.basic_joins_md_foreign1]
+  direction: "forward"
+```
+### With bottom-up plan enumeration (zig-zag)
+usedJoinOptimization: true
+
+```
+HASH_JOIN_EMBEDDING [a = a]
+leftEmbeddingField: "none"
+rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
   |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "_id" : false }
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
+  |  |
+  |  PROJECTION_SIMPLE
+  |  transformBy: { "_id" : false }
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -3500,40 +3382,24 @@ rightEmbeddingField: "x"
 usedJoinOptimization: true
 
 ```
-INDEXED_NESTED_LOOP_JOIN_EMBEDDING [b = b]
+HASH_JOIN_EMBEDDING [a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "y"
+rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign2]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
-  |  keyPattern: { "b" : 1 }
-  |  indexName: "b_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
+  HASH_JOIN_EMBEDDING [b = b]
+  leftEmbeddingField: "y"
+  rightEmbeddingField: "none"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
+  |  PROJECTION_SIMPLE
+  |  transformBy: { "_id" : false }
   |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "_id" : false }
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign2]
   direction: "forward"
 ```
 ## 11. Basic example with a $project reducing the documents of the base collection to a single field
@@ -3598,9 +3464,7 @@ Execution Engine: sbe
 			"inputStage" : {
 				"inputStage" : {
 					"direction" : "forward",
-					"filter" : {
-						
-					},
+					"filter" : { },
 					"nss" : "test.basic_joins_md",
 					"stage" : "COLLSCAN"
 				},
@@ -3627,40 +3491,9 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [x.c = c]
+HASH_JOIN_EMBEDDING [x.a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
-  |  direction: "forward"
-  |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  direction: "forward"
-  |
-  PROJECTION_SIMPLE
-  transformBy: { "_id" : true, "a" : true }
-  |
-  COLLSCAN [test.basic_joins_md]
-  direction: "forward"
-```
-### With bottom-up plan enumeration (right-deep)
-usedJoinOptimization: true
-
-```
-HASH_JOIN_EMBEDDING [c = x.c]
-leftEmbeddingField: "z"
 rightEmbeddingField: "none"
-  |  |
-  |  HASH_JOIN_EMBEDDING [a = a]
-  |  leftEmbeddingField: "none"
-  |  rightEmbeddingField: "x"
-  |  |  |
-  |  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  |  direction: "forward"
   |  |
   |  PROJECTION_SIMPLE
   |  transformBy: { "_id" : true, "a" : true }
@@ -3668,31 +3501,62 @@ rightEmbeddingField: "none"
   |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md_foreign3]
-  direction: "forward"
-```
-### With bottom-up plan enumeration (zig-zag)
-usedJoinOptimization: true
-
-```
-NESTED_LOOP_JOIN_EMBEDDING [x.c = c]
-leftEmbeddingField: "none"
-rightEmbeddingField: "z"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
-  |  direction: "forward"
-  |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
+  HASH_JOIN_EMBEDDING [c = c]
+  leftEmbeddingField: "z"
   rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
+  |
+  COLLSCAN [test.basic_joins_md_foreign3]
+  direction: "forward"
+```
+### With bottom-up plan enumeration (right-deep)
+usedJoinOptimization: true
+
+```
+HASH_JOIN_EMBEDDING [a = x.a]
+leftEmbeddingField: "none"
+rightEmbeddingField: "none"
+  |  |
+  |  HASH_JOIN_EMBEDDING [c = c]
+  |  leftEmbeddingField: "z"
+  |  rightEmbeddingField: "x"
+  |  |  |
+  |  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  |  direction: "forward"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign3]
   |  direction: "forward"
   |
   PROJECTION_SIMPLE
   transformBy: { "_id" : true, "a" : true }
   |
   COLLSCAN [test.basic_joins_md]
+  direction: "forward"
+```
+### With bottom-up plan enumeration (zig-zag)
+usedJoinOptimization: true
+
+```
+HASH_JOIN_EMBEDDING [x.a = a]
+leftEmbeddingField: "none"
+rightEmbeddingField: "none"
+  |  |
+  |  PROJECTION_SIMPLE
+  |  transformBy: { "_id" : true, "a" : true }
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
+  |
+  HASH_JOIN_EMBEDDING [c = c]
+  leftEmbeddingField: "z"
+  rightEmbeddingField: "x"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
+  |
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -3819,32 +3683,24 @@ rightEmbeddingField: "none"
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [x.c = c]
+HASH_JOIN_EMBEDDING [x.a = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
+rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
+  |  PROJECTION_SIMPLE
+  |  transformBy: { "_id" : true, "a" : true }
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
+  HASH_JOIN_EMBEDDING [c = c]
+  leftEmbeddingField: "z"
   rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  PROJECTION_SIMPLE
-  transformBy: { "_id" : true, "a" : true }
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ## 12. Basic example with a $project adding synthetic fields
@@ -3910,9 +3766,7 @@ Execution Engine: sbe
 			"inputStage" : {
 				"inputStage" : {
 					"direction" : "forward",
-					"filter" : {
-						
-					},
+					"filter" : { },
 					"nss" : "test.basic_joins_md",
 					"stage" : "COLLSCAN"
 				},
@@ -3940,40 +3794,9 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [x.c = c]
+HASH_JOIN_EMBEDDING [x.a = extra]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
-  |  direction: "forward"
-  |
-  HASH_JOIN_EMBEDDING [extra = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  direction: "forward"
-  |
-  PROJECTION_DEFAULT
-  transformBy: { "_id" : true, "a" : true, "extra" : "$a" }
-  |
-  COLLSCAN [test.basic_joins_md]
-  direction: "forward"
-```
-### With bottom-up plan enumeration (right-deep)
-usedJoinOptimization: true
-
-```
-HASH_JOIN_EMBEDDING [c = x.c]
-leftEmbeddingField: "z"
 rightEmbeddingField: "none"
-  |  |
-  |  HASH_JOIN_EMBEDDING [extra = a]
-  |  leftEmbeddingField: "none"
-  |  rightEmbeddingField: "x"
-  |  |  |
-  |  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  |  direction: "forward"
   |  |
   |  PROJECTION_DEFAULT
   |  transformBy: { "_id" : true, "a" : true, "extra" : "$a" }
@@ -3981,31 +3804,62 @@ rightEmbeddingField: "none"
   |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md_foreign3]
-  direction: "forward"
-```
-### With bottom-up plan enumeration (zig-zag)
-usedJoinOptimization: true
-
-```
-NESTED_LOOP_JOIN_EMBEDDING [x.c = c]
-leftEmbeddingField: "none"
-rightEmbeddingField: "z"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
-  |  direction: "forward"
-  |
-  HASH_JOIN_EMBEDDING [extra = a]
-  leftEmbeddingField: "none"
+  HASH_JOIN_EMBEDDING [c = c]
+  leftEmbeddingField: "z"
   rightEmbeddingField: "x"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
+  |
+  COLLSCAN [test.basic_joins_md_foreign3]
+  direction: "forward"
+```
+### With bottom-up plan enumeration (right-deep)
+usedJoinOptimization: true
+
+```
+HASH_JOIN_EMBEDDING [extra = x.a]
+leftEmbeddingField: "none"
+rightEmbeddingField: "none"
+  |  |
+  |  HASH_JOIN_EMBEDDING [c = c]
+  |  leftEmbeddingField: "z"
+  |  rightEmbeddingField: "x"
+  |  |  |
+  |  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  |  direction: "forward"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign3]
   |  direction: "forward"
   |
   PROJECTION_DEFAULT
   transformBy: { "_id" : true, "a" : true, "extra" : "$a" }
   |
   COLLSCAN [test.basic_joins_md]
+  direction: "forward"
+```
+### With bottom-up plan enumeration (zig-zag)
+usedJoinOptimization: true
+
+```
+HASH_JOIN_EMBEDDING [x.a = extra]
+leftEmbeddingField: "none"
+rightEmbeddingField: "none"
+  |  |
+  |  PROJECTION_DEFAULT
+  |  transformBy: { "_id" : true, "a" : true, "extra" : "$a" }
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
+  |  direction: "forward"
+  |
+  HASH_JOIN_EMBEDDING [c = c]
+  leftEmbeddingField: "z"
+  rightEmbeddingField: "x"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
+  |
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -4132,32 +3986,24 @@ rightEmbeddingField: "none"
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [x.c = c]
+HASH_JOIN_EMBEDDING [x.a = extra]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
+rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
+  |  PROJECTION_DEFAULT
+  |  transformBy: { "_id" : true, "a" : true, "extra" : "$a" }
+  |  |
+  |  COLLSCAN [test.basic_joins_md]
   |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [extra = a]
-  leftEmbeddingField: "none"
+  HASH_JOIN_EMBEDDING [c = c]
+  leftEmbeddingField: "z"
   rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  PROJECTION_DEFAULT
-  transformBy: { "_id" : true, "a" : true, "extra" : "$a" }
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ## 13. Example with a cycle in the join graph
@@ -4267,41 +4113,25 @@ Execution Engine: sbe
 usedJoinOptimization: true
 
 ```
-INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = _id,x.a = _id,y._id = _id]
+NESTED_LOOP_JOIN_EMBEDDING [a = a,y._id = a,z._id = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
+rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign3]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign3]
-  |  keyPattern: { "_id" : 1 }
-  |  indexName: "_id_"
-  |  isMultiKey: false
-  |  isUnique: true
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = _id,x.a = _id]
+  NESTED_LOOP_JOIN_EMBEDDING [a = _id,y._id = _id]
+  leftEmbeddingField: "none"
+  rightEmbeddingField: "z"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign3]
+  |  direction: "forward"
+  |
+  NESTED_LOOP_JOIN_EMBEDDING [a = _id]
   leftEmbeddingField: "none"
   rightEmbeddingField: "y"
   |  |
-  |  FETCH [test.basic_joins_md_foreign2]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
-  |  keyPattern: { "_id" : 1 }
-  |  indexName: "_id_"
-  |  isMultiKey: false
-  |  isUnique: true
-  |  isSparse: false
-  |  isPartial: false
-  |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  COLLSCAN [test.basic_joins_md_foreign2]
   |  direction: "forward"
   |
   COLLSCAN [test.basic_joins_md]
@@ -4312,70 +4142,54 @@ rightEmbeddingField: "z"
 usedJoinOptimization: true
 
 ```
-HASH_JOIN_EMBEDDING [_id = a,_id = x.a,_id = y._id]
-leftEmbeddingField: "z"
+HASH_JOIN_EMBEDDING [a = a,a = y._id,a = z._id]
+leftEmbeddingField: "x"
 rightEmbeddingField: "none"
   |  |
-  |  HASH_JOIN_EMBEDDING [_id = a,_id = x.a]
-  |  leftEmbeddingField: "y"
+  |  HASH_JOIN_EMBEDDING [_id = a,_id = y._id]
+  |  leftEmbeddingField: "z"
   |  rightEmbeddingField: "none"
   |  |  |
-  |  |  HASH_JOIN_EMBEDDING [a = a]
+  |  |  NESTED_LOOP_JOIN_EMBEDDING [a = _id]
   |  |  leftEmbeddingField: "none"
-  |  |  rightEmbeddingField: "x"
+  |  |  rightEmbeddingField: "y"
   |  |  |  |
-  |  |  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  |  |  COLLSCAN [test.basic_joins_md_foreign2]
   |  |  |  direction: "forward"
   |  |  |
   |  |  COLLSCAN [test.basic_joins_md]
   |  |  filter: { "b" : { "$eq" : "foo" } }
   |  |  direction: "forward"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign2]
+  |  COLLSCAN [test.basic_joins_md_foreign3]
   |  direction: "forward"
   |
-  COLLSCAN [test.basic_joins_md_foreign3]
+  COLLSCAN [test.basic_joins_md_foreign1]
   direction: "forward"
 ```
 ### With bottom-up plan enumeration (zig-zag)
 usedJoinOptimization: true
 
 ```
-INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = _id,x.a = _id,y._id = _id]
+NESTED_LOOP_JOIN_EMBEDDING [a = a,y._id = a,z._id = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
+rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign3]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign3]
-  |  keyPattern: { "_id" : 1 }
-  |  indexName: "_id_"
-  |  isMultiKey: false
-  |  isUnique: true
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = _id,x.a = _id]
+  NESTED_LOOP_JOIN_EMBEDDING [a = _id,y._id = _id]
+  leftEmbeddingField: "none"
+  rightEmbeddingField: "z"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign3]
+  |  direction: "forward"
+  |
+  NESTED_LOOP_JOIN_EMBEDDING [a = _id]
   leftEmbeddingField: "none"
   rightEmbeddingField: "y"
   |  |
-  |  FETCH [test.basic_joins_md_foreign2]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
-  |  keyPattern: { "_id" : 1 }
-  |  indexName: "_id_"
-  |  isMultiKey: false
-  |  isUnique: true
-  |  isSparse: false
-  |  isPartial: false
-  |
-  HASH_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  COLLSCAN [test.basic_joins_md_foreign2]
   |  direction: "forward"
   |
   COLLSCAN [test.basic_joins_md]
@@ -4595,50 +4409,26 @@ rightEmbeddingField: "x"
 usedJoinOptimization: true
 
 ```
-INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = _id,x.a = _id,y._id = _id]
+NESTED_LOOP_JOIN_EMBEDDING [a = a,y._id = a,z._id = a]
 leftEmbeddingField: "none"
-rightEmbeddingField: "z"
+rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign3]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign3]
-  |  keyPattern: { "_id" : 1 }
-  |  indexName: "_id_"
-  |  isMultiKey: false
-  |  isUnique: true
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = _id,x.a = _id]
+  NESTED_LOOP_JOIN_EMBEDDING [a = _id,y._id = _id]
+  leftEmbeddingField: "none"
+  rightEmbeddingField: "z"
+  |  |
+  |  COLLSCAN [test.basic_joins_md_foreign3]
+  |  direction: "forward"
+  |
+  NESTED_LOOP_JOIN_EMBEDDING [a = _id]
   leftEmbeddingField: "none"
   rightEmbeddingField: "y"
   |  |
-  |  FETCH [test.basic_joins_md_foreign2]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
-  |  keyPattern: { "_id" : 1 }
-  |  indexName: "_id_"
-  |  isMultiKey: false
-  |  isUnique: true
-  |  isSparse: false
-  |  isPartial: false
-  |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a = a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
-  |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign2]
+  |  direction: "forward"
   |
   COLLSCAN [test.basic_joins_md]
   filter: { "b" : { "$eq" : "foo" } }
@@ -4734,9 +4524,7 @@ Execution Engine: sbe
 				"rejectedPlans" : [ ],
 				"winningPlan" : {
 					"direction" : "forward",
-					"filter" : {
-						
-					},
+					"filter" : { },
 					"nss" : "test.basic_joins_md",
 					"stage" : "COLLSCAN"
 				}
@@ -4865,28 +4653,28 @@ rightEmbeddingField: "none"
 usedJoinOptimization: true
 
 ```
-NESTED_LOOP_JOIN_EMBEDDING [x.c = c]
-leftEmbeddingField: "none"
-rightEmbeddingField: "y"
+HASH_JOIN_EMBEDDING [c = x.c]
+leftEmbeddingField: "y"
+rightEmbeddingField: "none"
   |  |
-  |  COLLSCAN [test.basic_joins_md_foreign3]
-  |  direction: "forward"
-  |
-  NESTED_LOOP_JOIN_EMBEDDING [b $= b]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "z"
+  |  HASH_JOIN_EMBEDDING [b $= b]
+  |  leftEmbeddingField: "z"
+  |  rightEmbeddingField: "none"
+  |  |  |
+  |  |  HASH_JOIN_EMBEDDING [a $= a]
+  |  |  leftEmbeddingField: "none"
+  |  |  rightEmbeddingField: "x"
+  |  |  |  |
+  |  |  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  |  |  direction: "forward"
+  |  |  |
+  |  |  COLLSCAN [test.basic_joins_md]
+  |  |  direction: "forward"
   |  |
   |  COLLSCAN [test.basic_joins_md_foreign2]
   |  direction: "forward"
   |
-  HASH_JOIN_EMBEDDING [a $= a]
-  leftEmbeddingField: "none"
-  rightEmbeddingField: "x"
-  |  |
-  |  COLLSCAN [test.basic_joins_md_foreign1]
-  |  direction: "forward"
-  |
-  COLLSCAN [test.basic_joins_md]
+  COLLSCAN [test.basic_joins_md_foreign3]
   direction: "forward"
 ```
 ### With random order, seed 44, nested loop joins
@@ -5048,35 +4836,19 @@ rightEmbeddingField: "y"
   |  COLLSCAN [test.basic_joins_md_foreign3]
   |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [b $= b]
+  HASH_JOIN_EMBEDDING [b $= b]
   leftEmbeddingField: "none"
   rightEmbeddingField: "z"
   |  |
-  |  FETCH [test.basic_joins_md_foreign2]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign2]
-  |  keyPattern: { "b" : 1 }
-  |  indexName: "b_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign2]
+  |  direction: "forward"
   |
-  INDEXED_NESTED_LOOP_JOIN_EMBEDDING [a $= a]
+  HASH_JOIN_EMBEDDING [a $= a]
   leftEmbeddingField: "none"
   rightEmbeddingField: "x"
   |  |
-  |  FETCH [test.basic_joins_md_foreign1]
-  |  
-  |  |
-  |  INDEX_PROBE_NODE [test.basic_joins_md_foreign1]
-  |  keyPattern: { "a" : 1 }
-  |  indexName: "a_1"
-  |  isMultiKey: false
-  |  isUnique: false
-  |  isSparse: false
-  |  isPartial: false
+  |  COLLSCAN [test.basic_joins_md_foreign1]
+  |  direction: "forward"
   |
   COLLSCAN [test.basic_joins_md]
   direction: "forward"

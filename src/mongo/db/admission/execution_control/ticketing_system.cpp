@@ -30,6 +30,8 @@
 #include "mongo/db/admission/execution_control/ticketing_system.h"
 
 #include "mongo/base/error_codes.h"
+#include "mongo/bson/json.h"
+#include "mongo/db/admission/app_name_exemption_matcher.h"
 #include "mongo/db/admission/execution_control/execution_admission_context.h"
 #include "mongo/db/admission/execution_control/execution_control_heuristic_parameters_gen.h"
 #include "mongo/db/admission/execution_control/execution_control_parameters_gen.h"
@@ -113,6 +115,18 @@ Status checkPrioritizationTransition(bool oldStateUsesPrioritization,
                       "tickets are set to 0"};
     }
     return Status::OK();
+}
+
+VersionedValue<std::vector<std::string>> executionControlDeprioritizationExemptions;
+
+struct ClientDeprioritizationState {
+    admission::AppNameExemptionMatcher matcher{executionControlDeprioritizationExemptions};
+};
+
+const auto getDeprioritizationState = Client::declareDecoration<ClientDeprioritizationState>();
+
+bool isClientDeprioritizationExempted(Client* client) {
+    return getDeprioritizationState(client).matcher.isExempted(client);
 }
 
 }  // namespace
@@ -396,11 +410,15 @@ void TicketingSystem::setConcurrencyAdjustmentAlgorithm(OperationContext* opCtx,
 
 bool TicketingSystem::_wasOperationDowngradedToLowPriority(
     OperationContext* opCtx, ExecutionAdmissionContext* admCtx) const {
+    if (isClientDeprioritizationExempted(opCtx->getClient())) {
+        return false;
+    }
+
     const auto priority = admCtx->getPriority();
 
     // Background tasks are always downgraded to low priority, if its deprioritization is enabled.
     // Otherwise, they are treated as normal priority bypassing the heuristic deprioritization.
-    if (admCtx->isBackgroundTask()) {
+    if (admCtx->isBackgroundTask() && priority != AdmissionContext::Priority::kExempt) {
         return _state.loadRelaxed().deprioritization.backgroundTasks;
     }
 
@@ -720,6 +738,28 @@ void TicketingSystem::TicketingState::appendStats(BSONObjBuilder& b) const {
     b.append("deprioritizationGate", deprioritization.gate);
     b.append("heuristicDeprioritization", deprioritization.heuristic);
     b.append("backgroundTasksDeprioritization", deprioritization.backgroundTasks);
+}
+
+void ExecutionControlDeprioritizationExemptions::append(OperationContext*,
+                                                        BSONObjBuilder* bob,
+                                                        StringData name,
+                                                        const boost::optional<TenantId>&) {
+    admission::appendAppNameExemptionList(
+        executionControlDeprioritizationExemptions.makeSnapshot(), bob, name);
+}
+
+Status ExecutionControlDeprioritizationExemptions::set(const BSONElement& value,
+                                                       const boost::optional<TenantId>&) {
+    executionControlDeprioritizationExemptions.update(
+        admission::parseAppNameExemptionList(value.Obj()));
+    return Status::OK();
+}
+
+Status ExecutionControlDeprioritizationExemptions::setFromString(StringData str,
+                                                                 const boost::optional<TenantId>&) {
+    executionControlDeprioritizationExemptions.update(
+        admission::parseAppNameExemptionList(fromjson(str)));
+    return Status::OK();
 }
 
 }  // namespace mongo::admission::execution_control

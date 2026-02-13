@@ -196,6 +196,12 @@ std::string pruneGoogleFilter(const std::string& googleFilter) {
 void applyTestFilters(const std::vector<std::string>& suites,
                       const std::string& filter,
                       const std::string& fileNameFilter) {
+    LOGV2_DEBUG(11861900,
+                3,
+                "Applying test filters",
+                "suites"_attr = suites,
+                "filter"_attr = filter,
+                "fileNameFilter"_attr = fileNameFilter);
     boost::optional<pcre::Regex> filterRe;
     boost::optional<pcre::Regex> fileNameFilterRe;
     if (!filter.empty())
@@ -358,25 +364,17 @@ boost::optional<ExitCode> MainProgress::_parseAndAcceptOptions() {
         GTEST_FLAG_SET(repeat, *uto.repeat);
 
     // We allow options from the unit test's caller (i.e. main) to override the filter flags.
-    LOGV2_DEBUG(10947000,
-                1,
-                "Filter option overrides",
-                "suites"_attr = _options.testSuites,
-                "filter"_attr = _options.testFilter,
-                "fileNameFilter"_attr = _options.fileNameFilter);
-
-    if (auto&& o = _options.testSuites)
-        uto.suites = *o;
-    if (auto&& o = _options.testFilter)
-        uto.filter = *o;
-    if (auto&& o = _options.fileNameFilter)
-        uto.fileNameFilter = *o;
-
-    if (uto.suites || uto.filter || uto.fileNameFilter) {
-        applyTestFilters(uto.suites.value_or(std::vector<std::string>{}),
-                         uto.filter.value_or(""),
-                         uto.fileNameFilter.value_or(""));
-    }
+    auto ensureFilter = [&]() -> auto& {
+        if (!_options.filter)
+            _options.filter.emplace();
+        return _options.filter;
+    };
+    if (auto&& o = uto.suites)
+        ensureFilter()->suites = *o;
+    if (auto&& o = uto.filter)
+        ensureFilter()->filter = *o;
+    if (auto&& o = uto.fileNameFilter)
+        ensureFilter()->fileNameFilter = *o;
 
     if (uto.tempPath)
         TempDir::setTempPath(*uto.tempPath);
@@ -407,6 +405,8 @@ boost::optional<ExitCode> MainProgress::_parseAndAcceptOptions() {
 }
 
 int MainProgress::test() {
+    if (auto&& o = _options.filter)
+        applyTestFilters(o->suites, o->filter, o->fileNameFilter);
     auto result = RUN_ALL_TESTS();
 
     if (!_options.suppressGlobalInitializers) {

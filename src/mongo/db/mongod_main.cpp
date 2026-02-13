@@ -1168,7 +1168,6 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
         audit::logStartupOptions(Client::getCurrent(), serverGlobalParams.parsedOpts);
     }
 
-<<<<<<< HEAD
     // Cannot use ServiceContext::ConstructorActionRegisterer to construct the
     // OidcIdentityProvidersRegistry because the PeriodicRunner is not yet initialized
     // when the initializer runs.
@@ -1182,8 +1181,6 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
     // function to construct the registry and register it with the ServiceContext.
     initializeOidcIdentityProvidersRegistry(serviceContext);
 
-||||||| 9e55e7357b5
-=======
     // TODO SERVER-118440: Revisit initializing this in ASC
     if (!rss.getPersistenceProvider().shouldDelayDataAccessDuringStartup() &&
         gFeatureFlagReplicatedFastCount.isEnabledUseLatestFCVWhenUninitialized(
@@ -1193,7 +1190,6 @@ ExitCode _initAndListen(ServiceContext* serviceContext) {
         ReplicatedFastCountManager::get(serviceContext).startup(startupOpCtx.get());
     }
 
->>>>>>> 08e998fdf9ef59920f5cf755cd2af0a79271cd35
     if (MONGO_unlikely(hangBeforeFinishingInitAndListen.shouldFail())) {
         // If something unexpectedly takes the GlobalLock and doesn't release
         // it, then we can livelock here because reconstructing prepared

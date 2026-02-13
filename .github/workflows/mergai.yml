@@ -8,9 +8,13 @@ name: mergai bot
 #   - Conflict branches: mergai/*/conflict
 # Note: The pull_request trigger pattern below must match conflict branches.
 # =============================================================================
-# TODO: add input parameter with the commit hash to be merged
 on:
   workflow_dispatch:
+    inputs:
+      merge-pick:
+        description: "Commit hash to merge (leave empty to use merge-pick --next)"
+        required: false
+        type: string
   pull_request:
     types: [closed]
     branches:
@@ -55,6 +59,7 @@ jobs:
           mergai-ref: plebioda/dev
 
       - name: mergai merge-pick
+        if: ${{ !inputs.merge-pick }}
         run: |
           MERGE_PICK=$(mergai fork merge-pick --next)
           echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
@@ -62,7 +67,10 @@ jobs:
           git show --stat $MERGE_PICK
 
       - name: mergai context init
+        env:
+          MERGE_PICK: ${{ inputs.merge-pick || env.MERGE_PICK }}
         run: |
+          echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
           mergai context init $MERGE_PICK
 
       - name: merge

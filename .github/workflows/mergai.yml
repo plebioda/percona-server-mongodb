@@ -8,7 +8,7 @@ name: mergai bot
 #   - Conflict branches: mergai/*/conflict
 # Note: The pull_request trigger pattern below must match conflict branches.
 # =============================================================================
-
+# TODO: add input parameter with the commit hash to be merged
 on:
   workflow_dispatch:
   pull_request:
@@ -28,7 +28,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
-      GITHUB_TOKEN: ${{ secrets.PAT }}
       GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
       GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
       GOOGLE_GENAI_USE_VERTEXAI: "true"
@@ -55,7 +54,6 @@ jobs:
           setup-mergai: "true"
           gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
           github-app-token: ${{ steps.app-token.outputs.token }}
-          pat-token: ${{ secrets.PAT }}
           mergai-ref: plebioda/dev
 
       - name: mergai merge-pick
@@ -99,8 +97,6 @@ jobs:
     environment: restricted
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.PAT }}
 
     steps:
       - name: Checkout repository
@@ -123,7 +119,6 @@ jobs:
           setup-gemini: "false"
           setup-mergai: "true"
           github-app-token: ${{ steps.app-token.outputs.token }}
-          pat-token: ${{ secrets.PAT }}
           mergai-ref: plebioda/dev
 
       - name: Finalize

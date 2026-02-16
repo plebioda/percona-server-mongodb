@@ -1,6 +1,13 @@
 - name: stepdown_and_fcv_hooks
   value:
     executor:
+      archive:
+        hooks:
+          - FCVUpgradeDowngradeInBackground
+          - ContinuousStepdown
+          - CheckReplOplogs
+          - CheckReplDBHash
+          - ValidateCollections
       hooks:
         - class: FCVUpgradeDowngradeInBackground
           shell_options:
@@ -108,6 +115,7 @@
       - featureFlagFLE2CleanupCommand
       # TODO: SERVER-66393 Remove Feature Flag for PM-2919.
       - featureFlagTimeseriesUpdatesSupport
+      - featureFlagTimeseriesUpdatesSupport_incompatible
       # TODO: SERVER-78068 Remove Feature Flag for PM-2983
       - featureFlagRecordIdsReplicated
       # TODO: SERVER-85426 Remove Feature Flag for SPM-3541

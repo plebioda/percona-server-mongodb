@@ -27,7 +27,7 @@ class CPPUnitTestCase(interface.ProcessTestCase):
         self.program_options = utils.default_if_none(program_options, {}).copy()
 
         interface.append_process_tracking_options(self.program_options, self._id)
-        
+
         # Automatically set RUNFILES_DIR for Bazel tests if not already set
         self._set_runfiles_dir_if_needed()
 

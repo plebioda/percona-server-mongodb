@@ -15,6 +15,8 @@ fork:
   # Default: "master"
   upstream_branch: master
 
+  dupa: true
+
   # Name of the git remote for upstream.
   # If not set, derived from the URL.
   # Default: None (derived from upstream_url)
@@ -245,3 +247,62 @@ prompt:
   # Default: ["hexsha"]
   commit_fields:
     - hexsha
+
+# -----------------------------------------------------------------------------
+# FINALIZE CONFIGURATION
+# -----------------------------------------------------------------------------
+# Configuration for the 'finalize' command which processes solution PRs after
+# they are merged into the conflict branch.
+#
+# This command is typically run as part of the workflow after a solution PR
+# is merged. It handles post-merge processing according to the configured mode.
+#
+finalize:
+  # How to finalize the solution PR after merging.
+  #
+  # Available modes:
+  #   - squash: Squash all commits from HEAD to the merge commit into a single
+  #             merge commit with combined notes. This creates a clean history
+  #             with a single merge commit containing:
+  #               - Two parents (target_branch_sha and merge_commit_sha)
+  #               - Combined commit message with all solution summaries
+  #               - Combined mergai note merging all individual notes
+  #             This is equivalent to the old 'mergai commit squash' behavior.
+  #
+  #   - keep:   Validate the repository state and print a summary without
+  #             modifying any commits. Useful when you want to preserve the
+  #             individual commit history from the solution PR. The command
+  #             will:
+  #               - Verify merge_info is complete
+  #               - List all commits between HEAD and target_branch_sha
+  #               - Show which commits have mergai notes attached
+  #               - Exit without making any changes
+  #
+  #   - fast-forward: Remove the GitHub PR merge commit to simulate a
+  #             fast-forward merge. This mode keeps the original solution
+  #             commits with their mergai notes intact, while removing the
+  #             extra merge commit that GitHub creates when merging a PR.
+  #
+  #             GitHub PR merge commits have two parents:
+  #               - First parent: conflict branch HEAD before merge
+  #               - Second parent: solution branch tip (with solution commits)
+  #
+  #             The command will:
+  #               - Check if HEAD is a merge commit (has 2 parents)
+  #               - Check if HEAD has no mergai note (indicating it's a PR merge)
+  #               - Check if the second parent (solution branch) has a mergai note
+  #               - Reset HEAD to the second parent, preserving the full linear
+  #                 history: conflict commit -> solution commit(s)
+  #
+  #             If HEAD already has a note or is not a merge commit, the command
+  #             assumes the PR was already merged with fast-forward and does
+  #             nothing (no error).
+  #
+  #             This mode is useful when you want to preserve the individual
+  #             commit history but don't want the extra merge commit from GitHub.
+  #
+  # The mode can be overridden on the command line with:
+  #   mergai finalize --mode <squash|keep|fast-forward>
+  #
+  # Default: "squash"
+  mode: squash

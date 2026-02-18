@@ -1,35 +1,247 @@
-resolve:
-  agent: gemini-cli
-  max_attempts: 3
-branch:
-  name_format: "mergai/%(target_branch)-%(target_branch_short_sha)-%(merge_commit_short_sha)/%(type)"
+# =============================================================================
+# mergai Configuration File
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# FORK CONFIGURATION
+# -----------------------------------------------------------------------------
+# Configuration for the 'fork' subcommand which handles syncing with upstream.
 fork:
-  upstream_url: https://github.com/mongodb/mongo.git 
+  # URL of the upstream repository to sync from.
+  # Default: None (must be specified)
+  upstream_url: https://github.com/mongodb/mongo.git
+
+  # Branch name to use when auto-detecting upstream ref.
+  # Default: "master"
   upstream_branch: master
+
+  # Name of the git remote for upstream.
+  # If not set, derived from the URL.
+  # Default: None (derived from upstream_url)
   upstream_remote: mongodb
+
+  # ---------------------------------------------------------------------------
+  # MERGE PICKS CONFIGURATION
+  # ---------------------------------------------------------------------------
+  # Configuration for commit prioritization strategies in fork merge-pick.
+  #
+  # STRATEGY PRIORITY AND EVALUATION ORDER:
+  # =======================================
+  # Strategies are evaluated in the EXACT ORDER they appear in the config.
+  # The position in the list determines the priority - strategies listed first
+  # have HIGHER priority than those listed later.
+  #
+  # For each unmerged commit, strategies are checked from top to bottom.
+  # The FIRST strategy that matches a commit determines that commit's priority.
+  # Once a commit matches a strategy, no further strategies are evaluated for it.
+  #
+  # Example: With the order [conflict, huge_commit, branching_point]:
+  #   - A commit causing conflicts gets priority 1 (highest)
+  #   - A huge commit (not conflicting) gets priority 2
+  #   - A branching point (not conflicting, not huge) gets priority 3
+  #   - A commit matching no strategy gets no special priority
+  #
+  # To change priorities, simply reorder the strategies in the list.
+  #
   merge_picks:
-    - huge_commit:
-        min_changed_files: 100
-        min_changed_lines: 1000
-    - branching_point: true
-    - conflict: true
-    - important_files:
-        - src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine_test.cpp
-        - src/mongo/db/storage/wiredtiger/wiredtiger_init_test.cpp
-        - src/mongo/db/storage/wiredtiger/wiredtiger_init.cpp
-        - src/mongo/db/storage/wiredtiger/SConscript
-        - src/mongo/db/auth/sasl_scram_server_conversation.cpp
-        - src/mongo/db/auth/sasl_plain_server_conversation.cpp
-        - jstests/noPassthroughWithMongod/validate_interrupt.js
-        - buildscripts/resmokeconfig/suites/aggregation_ese.yml
-        - buildscripts/resmokeconfig/suites/core_ese.yml
-        - buildscripts/resmokeconfig/suites/replica_sets_ese.yml
-        - buildscripts/resmokeconfig/suites/sharding_ese.yml
-        - src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp
-        - src/mongo/db/storage/storage_engine.h
-        - src/mongo/db/audit.h
-        - src/mongo/db/audit.cpp
-        - src/mongo/db/repl/initial_syncer.h
-        - src/mongo/db/repl/initial_syncer.cpp
-        - src/mongo/db/repl/initial_sync/initial_syncer.h #since SERVER-103460
-        - src/mongo/db/repl/initial_sync/initial_syncer.cpp # since SERVER-103460
+    # If true, select the most recent unmerged commit when no strategy matches.
+    # This acts as a fallback when none of the configured strategies find a match.
+    # Default: false
+    most_recent_fallback: true
+
+    # Ordered list of merge-pick strategies to evaluate.
+    # Each strategy is defined as a single-key dict.
+    # THE ORDER MATTERS - strategies listed first have higher priority.
+    #
+    # ===========================================================================
+    # AVAILABLE STRATEGIES
+    # ===========================================================================
+    #
+    # ---------------------------------------------------------------------------
+    # CONFLICT STRATEGY
+    # ---------------------------------------------------------------------------
+    # Prioritizes commits that would cause merge conflicts when merged.
+    # This is useful for identifying and handling problematic commits early.
+    #
+    # Behavior:
+    #   - Analyzes each unmerged commit to detect potential merge conflicts
+    #   - Only marks the FIRST commit in the sequence that would introduce a
+    #     conflict (subsequent conflicting commits are not marked)
+    #   - Helps focus attention on commits requiring manual intervention
+    #
+    # Usage:
+    #   - conflict: true
+    #
+    # ---------------------------------------------------------------------------
+    # HUGE_COMMIT STRATEGY
+    # ---------------------------------------------------------------------------
+    # Prioritizes commits based on their size using a customizable expression.
+    # Large commits often require more careful review and may have higher impact.
+    #
+    # Behavior:
+    #   - Evaluates an expression against commit statistics
+    #   - Commit matches if the expression evaluates to True
+    #   - Supports standard comparison and logical operators
+    #
+    # Available variables in expression:
+    #   - num_of_files   : Number of files changed in the commit
+    #   - num_of_lines   : Total lines changed (lines_added + lines_deleted)
+    #   - lines_added    : Number of lines added
+    #   - lines_deleted  : Number of lines deleted
+    #   - num_of_dirs    : Number of unique directories modified
+    #
+    # Usage:
+    #   - huge_commit: "<boolean expression>"
+    #
+    # Examples:
+    #   # Flag commits with 100+ files OR 5000+ lines changed
+    #   - huge_commit: "(num_of_files >= 100 or num_of_lines >= 5000)"
+    #
+    #   # Flag commits touching many directories (potential refactoring)
+    #   - huge_commit: "num_of_dirs > 10"
+    #
+    #   # Flag commits with significant additions
+    #   - huge_commit: "lines_added > 1000 and num_of_files > 20"
+    #
+    # ---------------------------------------------------------------------------
+    # BRANCHING_POINT STRATEGY
+    # ---------------------------------------------------------------------------
+    # Prioritizes commits that are branching points in the upstream repository.
+    # These are commits where the upstream history diverges (has multiple children).
+    #
+    # Behavior:
+    #   - Identifies commits that have more than one child commit in upstream
+    #   - These often represent significant decision points or feature branches
+    #   - Useful for identifying commits where upstream development diverged
+    #
+    # Usage:
+    #   - branching_point: true
+    #
+    # ---------------------------------------------------------------------------
+    # IMPORTANT_FILES STRATEGY
+    # ---------------------------------------------------------------------------
+    # Prioritizes commits that modify specific files deemed important.
+    # Use this to flag commits touching critical or sensitive parts of the codebase.
+    #
+    # Behavior:
+    #   - Checks if any file in the commit matches the configured file paths
+    #   - Paths are matched exactly (no glob/wildcard support)
+    #   - A commit matches if it touches ANY file in the list
+    #
+    # Usage:
+    #   - important_files:
+    #       - path/to/important/file1.cpp
+    #       - path/to/important/file2.h
+    #
+    # ===========================================================================
+    strategies:
+      - conflict: true
+      - huge_commit: "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)"
+      - branching_point: true
+      - important_files:
+          - src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine_test.cpp
+          - src/mongo/db/storage/wiredtiger/wiredtiger_init_test.cpp
+          - src/mongo/db/storage/wiredtiger/wiredtiger_init.cpp
+          - src/mongo/db/storage/wiredtiger/SConscript
+          - src/mongo/db/auth/sasl_scram_server_conversation.cpp
+          - src/mongo/db/auth/sasl_plain_server_conversation.cpp
+          - jstests/noPassthroughWithMongod/validate_interrupt.js
+          - buildscripts/resmokeconfig/suites/aggregation_ese.yml
+          - buildscripts/resmokeconfig/suites/core_ese.yml
+          - buildscripts/resmokeconfig/suites/replica_sets_ese.yml
+          - buildscripts/resmokeconfig/suites/sharding_ese.yml
+          - src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp
+          - src/mongo/db/storage/storage_engine.h
+          - src/mongo/db/audit.h
+          - src/mongo/db/audit.cpp
+          - src/mongo/db/repl/initial_syncer.h
+          - src/mongo/db/repl/initial_syncer.cpp
+          - src/mongo/db/repl/initial_sync/initial_syncer.h #since SERVER-103460
+          - src/mongo/db/repl/initial_sync/initial_syncer.cpp # since SERVER-103460
+
+# -----------------------------------------------------------------------------
+# RESOLVE CONFIGURATION
+# -----------------------------------------------------------------------------
+# Configuration for the 'resolve' command which handles merge conflict resolution.
+resolve:
+  # Agent type to use for conflict resolution.
+  # Supported values: "gemini-cli"
+  # Default: "gemini-cli"
+  agent: gemini-cli
+
+  # Maximum number of retry attempts when resolution validation fails.
+  # Default: 3
+  max_attempts: 3
+
+# -----------------------------------------------------------------------------
+# BRANCH CONFIGURATION
+# -----------------------------------------------------------------------------
+# Configuration for branch naming conventions.
+branch:
+  # Format string for generating branch names using %(token) syntax.
+  #
+  # Available tokens:
+  #   %(target_branch)           - The target branch name (required)
+  #   %(target_branch_sha)       - Full SHA of the target branch (40 chars)
+  #   %(target_branch_short_sha) - Short SHA of the target branch (11 chars)
+  #   %(merge_commit_sha)        - Full SHA of the merge commit (40 chars)
+  #   %(merge_commit_short_sha)  - Short SHA of the merge commit (11 chars)
+  #   %(type)                    - Branch type (main, conflict, solution, or custom)
+  #
+  # Default: "mergai/%(target_branch)-%(merge_commit_short_sha)-%(target_branch_short_sha)/%(type)"
+  name_format: "mergai/%(target_branch)-%(target_branch_short_sha)-%(merge_commit_short_sha)/%(type)"
+
+# -----------------------------------------------------------------------------
+# COMMIT CONFIGURATION
+# -----------------------------------------------------------------------------
+# Configuration for commit message generation.
+commit:
+  # Footer text appended to all mergai-generated commit messages.
+  # Set to empty string ("") to disable the footer.
+  # Default: "Note: commit created by mergai"
+  footer: "Note: commit created by mergai"
+
+# -----------------------------------------------------------------------------
+# PULL REQUEST CONFIGURATION
+# -----------------------------------------------------------------------------
+# Configuration for pull request title formatting.
+pr:
+  # Configuration for main PRs (from main branch to target_branch).
+  main:
+    # Format string for main PR titles using %(token) syntax.
+    #
+    # Available tokens:
+    #   %(target_branch)           - The target branch name
+    #   %(merge_commit_sha)        - Full SHA of the merge commit (40 chars)
+    #   %(merge_commit_short_sha)  - Short SHA of the merge commit (11 chars)
+    #
+    # Default: "Merge %(merge_commit_short_sha) into %(target_branch)"
+    title_format: "Merge '%(merge_commit_short_sha)' into '%(target_branch)'"
+
+  # Configuration for solution PRs (from solution branch to conflict branch).
+  solution:
+    # Format string for solution PR titles using %(token) syntax.
+    # Same tokens available as main.title_format.
+    #
+    # Default: "Resolve conflicts for merge %(merge_commit_short_sha) into %(target_branch)"
+    title_format: "Resolve conflicts for merge '%(merge_commit_short_sha)' into '%(target_branch)'"
+
+# -----------------------------------------------------------------------------
+# PROMPT CONFIGURATION
+# -----------------------------------------------------------------------------
+# Configuration for AI prompt generation when serializing commit information.
+prompt:
+  # List of commit fields to include in AI prompts.
+  #
+  # Valid values:
+  #   - hexsha        - Full 40-char SHA
+  #   - short_sha     - Shortened 11-char SHA
+  #   - author        - Author dict with name and email
+  #   - authored_date - Unix timestamp of authoring
+  #   - summary       - First line of commit message
+  #   - message       - Full commit message
+  #   - parents       - List of parent commit SHAs
+  #
+  # Default: ["hexsha"]
+  commit_fields:
+    - hexsha

@@ -130,6 +130,7 @@ jobs:
           mergai notes update
           mergai context init
           mergai branch create main
+          mergai commit sync
           mergai finalize
           mergai branch push main
           mergai notes push

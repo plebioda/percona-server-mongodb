@@ -15,6 +15,8 @@ fork:
   # Default: "master"
   upstream_branch: master
 
+  dupa: true
+
   # Name of the git remote for upstream.
   # If not set, derived from the URL.
   # Default: None (derived from upstream_url)
@@ -245,3 +247,39 @@ prompt:
   # Default: ["hexsha"]
   commit_fields:
     - hexsha
+
+# -----------------------------------------------------------------------------
+# FINALIZE CONFIGURATION
+# -----------------------------------------------------------------------------
+# Configuration for the 'finalize' command which processes solution PRs after
+# they are merged into the conflict branch.
+#
+# This command is typically run as part of the workflow after a solution PR
+# is merged. It handles post-merge processing according to the configured mode.
+#
+finalize:
+  # How to finalize the solution PR after merging.
+  #
+  # Available modes:
+  #   - squash: Squash all commits from HEAD to the merge commit into a single
+  #             merge commit with combined notes. This creates a clean history
+  #             with a single merge commit containing:
+  #               - Two parents (target_branch_sha and merge_commit_sha)
+  #               - Combined commit message with all solution summaries
+  #               - Combined mergai note merging all individual notes
+  #             This is equivalent to the old 'mergai commit squash' behavior.
+  #
+  #   - keep:   Validate the repository state and print a summary without
+  #             modifying any commits. Useful when you want to preserve the
+  #             individual commit history from the solution PR. The command
+  #             will:
+  #               - Verify merge_info is complete
+  #               - List all commits between HEAD and target_branch_sha
+  #               - Show which commits have mergai notes attached
+  #               - Exit without making any changes
+  #
+  # The mode can be overridden on the command line with:
+  #   mergai finalize --mode <squash|keep>
+  #
+  # Default: "squash"
+  mode: squash

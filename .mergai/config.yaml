@@ -206,7 +206,7 @@ commit:
 # -----------------------------------------------------------------------------
 # PULL REQUEST CONFIGURATION
 # -----------------------------------------------------------------------------
-# Configuration for pull request title formatting.
+# Configuration for pull request title formatting and labels.
 pr:
   # Configuration for main PRs (from main branch to target_branch).
   main:
@@ -220,6 +220,15 @@ pr:
     # Default: "Merge %(merge_commit_short_sha) into %(target_branch)"
     title_format: "Merge '%(merge_commit_short_sha)' into '%(target_branch)'"
 
+    # Labels to apply to main PRs when created.
+    # These labels are applied automatically via the GitHub API.
+    # Can be overridden at runtime with --labels or disabled with --no-labels.
+    #
+    # Default: [] (no labels)
+    labels:
+      - "ci-skip-format"
+      - "ci-skip-clang-tidy"
+
   # Configuration for solution PRs (from solution branch to conflict branch).
   solution:
     # Format string for solution PR titles using %(token) syntax.
@@ -227,6 +236,15 @@ pr:
     #
     # Default: "Resolve conflicts for merge %(merge_commit_short_sha) into %(target_branch)"
     title_format: "Resolve conflicts for merge '%(merge_commit_short_sha)' into '%(target_branch)'"
+
+    # Labels to apply to solution PRs when created.
+    # These labels are applied automatically via the GitHub API.
+    # Can be overridden at runtime with --labels or disabled with --no-labels.
+    #
+    # Default: [] (no labels)
+    labels:
+      - "ci-skip-format"
+      - "ci-skip-clang-tidy"
 
 # -----------------------------------------------------------------------------
 # PROMPT CONFIGURATION

@@ -130,7 +130,7 @@ jobs:
           mergai notes update
           mergai context init
           mergai branch create main
-          mergai commit squash
+          mergai finalize
           mergai branch push main
           mergai notes push
           mergai pr --repo $GITHUB_REPOSITORY create main

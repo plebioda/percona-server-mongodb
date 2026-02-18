@@ -305,4 +305,4 @@ finalize:
   #   mergai finalize --mode <squash|keep|fast-forward>
   #
   # Default: "squash"
-  mode: squash
+  mode: fast-forward

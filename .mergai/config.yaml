@@ -169,7 +169,7 @@ resolve:
   # Agent type to use for conflict resolution.
   # Supported values: "gemini-cli"
   # Default: "gemini-cli"
-  agent: gemini-cli
+  agent: gemini-cli:gemini-2.5-pro
 
   # Maximum number of retry attempts when resolution validation fails.
   # Default: 3

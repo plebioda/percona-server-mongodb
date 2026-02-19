@@ -15,8 +15,6 @@ fork:
   # Default: "master"
   upstream_branch: master
 
-  dupa: true
-
   # Name of the git remote for upstream.
   # If not set, derived from the URL.
   # Default: None (derived from upstream_url)
@@ -324,3 +322,38 @@ finalize:
   #
   # Default: "squash"
   mode: fast-forward
+
+# -----------------------------------------------------------------------------
+# CONFIG COMMAND CONFIGURATION
+# -----------------------------------------------------------------------------
+# Configuration for the 'mergai config' command which sets up git and shell.
+config:
+  # ---------------------------------------------------------------------------
+  # GIT CONFIGURATION
+  # ---------------------------------------------------------------------------
+  # Git settings to apply when running 'mergai config'.
+  git:
+    # Value for merge.conflictstyle git config.
+    # Using diff3 provides better conflict context by including the
+    # base version in conflict markers, which helps AI understand conflicts.
+    #
+    # Default: "diff3"
+    conflictstyle: diff3
+
+    # -------------------------------------------------------------------------
+    # NOTES CONFIGURATION
+    # -------------------------------------------------------------------------
+    # Configuration for git notes display and marker text.
+    notes:
+      # Whether to configure notes.displayRef so mergai markers appear in
+      # git log output. When true, sets notes.displayRef to refs/notes/mergai-marker.
+      #
+      # Default: true
+      display: true
+
+      # Text displayed in git log for commits with mergai notes.
+      # This is the content of the mergai-marker note that appears when
+      # display is enabled and a commit has a mergai note attached.
+      #
+      # Default: "mergai note available"
+      marker_text: "mergai note available, use `mergai show <commit>` to view it."

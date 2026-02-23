@@ -2505,7 +2505,6 @@
         ]
       },
       "scope": "required"
-<<<<<<< HEAD
     },
     {
       "supplier": {
@@ -2550,8 +2549,6 @@
         ]
       },
       "scope": "required"
-||||||| dffa5f381ab
-=======
     },
     {
       "type": "library",
@@ -2610,7 +2607,6 @@
         ]
       },
       "scope": "excluded"
->>>>>>> 4a3836398f77baf0ea23b8599cd381cca7995d1d
     }
   ],
   "dependencies": [

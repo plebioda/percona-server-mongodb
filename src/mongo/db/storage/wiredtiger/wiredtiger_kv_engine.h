@@ -734,11 +734,6 @@ public:
 
     StatusWith<BSONObj> getStorageMetadata(StringData ident) const override;
 
-    // TODO(SERVER-118851): Remove.
-    WiredTigerSizeStorer* getSizeStorer_forTest() const {
-        return _sizeStorer.get();
-    };
-
     KeyFormat getKeyFormat(RecoveryUnit&, StringData ident) const override;
 
     /**
@@ -898,8 +893,10 @@ private:
 
     const std::unique_ptr<WiredTigerOplogManager> _oplogManager;
 
+    // This buffer is only used when the replicated fastcount collection is not available, so
+    // nullptr is expected and valid when the replicated fastcount collection is enabled.
     std::unique_ptr<WiredTigerSizeStorer> _sizeStorer;
-    std::string _sizeStorerUri;
+
     mutable ElapsedTracker _sizeStorerSyncTracker;
     mutable stdx::mutex _sizeStorerSyncTrackerMutex;
 

@@ -1217,8 +1217,8 @@ WriteResult performInserts(
     const auto [disableDocumentValidation, fleCrudProcessed] = getDocumentValidationFlags(
         opCtx, wholeOp.getWriteCommandRequestBase(), wholeOp.getDbName().tenantId());
 
-    DisableDocumentSchemaValidationIfTrue docSchemaValidationDisabler(opCtx,
-                                                                      disableDocumentValidation);
+    DisableDocumentSchemaValidationRequestedByUserIfTrue docSchemaValidationDisabler(
+        opCtx, disableDocumentValidation);
 
     DisableSafeContentValidationIfTrue safeContentValidationDisabler(
         opCtx, disableDocumentValidation, fleCrudProcessed);
@@ -1449,8 +1449,10 @@ void registerRequestForQueryStats(OperationContext* opCtx,
             if (!parsedUpdate.hasParsedFindCommand()) {
                 return boost::none;
             }
+            // We want to compute queryShapeHash for updates even for internal queries so slow
+            // query logs will contain the hash value.
             return shape_helpers::computeQueryShapeHash(
-                expCtx, deferredShape, wholeOp.getNamespace());
+                expCtx, deferredShape, wholeOp.getNamespace(), true /*skipInternalClientCheck*/);
         });
 
 
@@ -1821,8 +1823,8 @@ WriteResult performUpdates(
     const auto [disableDocumentValidation, fleCrudProcessed] = getDocumentValidationFlags(
         opCtx, wholeOp.getWriteCommandRequestBase(), wholeOp.getDbName().tenantId());
 
-    DisableDocumentSchemaValidationIfTrue docSchemaValidationDisabler(opCtx,
-                                                                      disableDocumentValidation);
+    DisableDocumentSchemaValidationRequestedByUserIfTrue docSchemaValidationDisabler(
+        opCtx, disableDocumentValidation);
 
     DisableSafeContentValidationIfTrue safeContentValidationDisabler(
         opCtx, disableDocumentValidation, fleCrudProcessed);
@@ -2157,8 +2159,8 @@ WriteResult performDeletes(
     const auto [disableDocumentValidation, fleCrudProcessed] = getDocumentValidationFlags(
         opCtx, wholeOp.getWriteCommandRequestBase(), wholeOp.getDbName().tenantId());
 
-    DisableDocumentSchemaValidationIfTrue docSchemaValidationDisabler(opCtx,
-                                                                      disableDocumentValidation);
+    DisableDocumentSchemaValidationRequestedByUserIfTrue docSchemaValidationDisabler(
+        opCtx, disableDocumentValidation);
 
     DisableSafeContentValidationIfTrue safeContentValidationDisabler(
         opCtx, disableDocumentValidation, fleCrudProcessed);

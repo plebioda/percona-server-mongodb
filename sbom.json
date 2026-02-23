@@ -2505,53 +2505,6 @@
         ]
       },
       "scope": "required"
-<<<<<<< HEAD
-    },
-    {
-      "supplier": {
-        "name": "Organization: github"
-      },
-      "name": "libarchive",
-      "version": "3.8.4",
-      "licenses": [
-        {
-          "license": {
-            "name": "A mix of BSD-2-Clause and others",
-            "url": "https://github.com/libarchive/libarchive/blob/v3.4.0/COPYING"
-          }
-        }
-      ],
-      "purl": "pkg:github/libarchive/libarchive@v3.8.4",
-      "properties": [
-        {
-          "name": "internal:team_responsible",
-          "value": "Percona Server for MongoDB Team"
-        },
-        {
-          "name": "emits_persisted_data",
-          "value": "true"
-        },
-        {
-          "name": "info_link",
-          "value": "https://www.libarchive.org"
-        },
-        {
-          "name": "import_script_path",
-          "value": "src/third_party/libarchive/scripts/import.sh"
-        }
-      ],
-      "type": "library",
-      "bom-ref": "pkg:github/libarchive/libarchive@v3.8.4",
-      "evidence": {
-        "occurrences": [
-          {
-            "location": "src/third_party/libarchive"
-          }
-        ]
-      },
-      "scope": "required"
-||||||| dffa5f381ab
-=======
     },
     {
       "type": "library",
@@ -2610,7 +2563,50 @@
         ]
       },
       "scope": "excluded"
->>>>>>> 4a3836398f77baf0ea23b8599cd381cca7995d1d
+    },
+    {
+      "supplier": {
+        "name": "Organization: github"
+      },
+      "name": "libarchive",
+      "version": "3.8.4",
+      "licenses": [
+        {
+          "license": {
+            "name": "A mix of BSD-2-Clause and others",
+            "url": "https://github.com/libarchive/libarchive/blob/v3.4.0/COPYING"
+          }
+        }
+      ],
+      "purl": "pkg:github/libarchive/libarchive@v3.8.4",
+      "properties": [
+        {
+          "name": "internal:team_responsible",
+          "value": "Percona Server for MongoDB Team"
+        },
+        {
+          "name": "emits_persisted_data",
+          "value": "true"
+        },
+        {
+          "name": "info_link",
+          "value": "https://www.libarchive.org"
+        },
+        {
+          "name": "import_script_path",
+          "value": "src/third_party/libarchive/scripts/import.sh"
+        }
+      ],
+      "type": "library",
+      "bom-ref": "pkg:github/libarchive/libarchive@v3.8.4",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "src/third_party/libarchive"
+          }
+        ]
+      },
+      "scope": "required"
     }
   ],
   "dependencies": [

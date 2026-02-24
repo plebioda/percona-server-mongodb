@@ -42,5 +42,8 @@ runs:
       shell: bash
       run: |
         python3 -m pip install --user pipx
+        # Ensure pipx's bin directory is available in this step and subsequent steps
+        export PATH="$HOME/.local/bin:$PATH"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
         python3 -m pipx ensurepath
-        pipx install ./mergai
+        python3 -m pipx install ./mergai

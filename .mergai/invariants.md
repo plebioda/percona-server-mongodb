@@ -6,8 +6,8 @@ When resolving merge conflicts, adhere to the following guidelines:
 
 - Check "Conflict Hints" section below for specific files that may have conflicts and how to handle them.
 - Don't remove or alter any Percona-specific features, enhancements, or bug fixes.
-- Prioritize Percona's changes over MongoDB's when conflicts arise, however, make sure only relevant Percona's changes are kept. Any surrounging code that is not related to Percona's changes can be changed to match MongoDB's version.
-- Do not restrict the conflict resolution to only the lines marked by the conflict markers. Consider the surrounding code context to ensure a coherent and functional final version. Do not resolve conflict only by choosing apropriate block. Instead, try to merge the changes from both sides when possible.
+- Prioritize Percona's changes over MongoDB's when conflicts arise, however, make sure only relevant Percona's changes are kept. Any surrounding code that is not related to Percona's changes can be changed to match MongoDB's version.
+- Do not restrict the conflict resolution to only the lines marked by the conflict markers. Consider the surrounding code context to ensure a coherent and functional final version. Do not resolve conflict only by choosing appropriate block. Instead, try to merge the changes from both sides when possible.
 - Do not make any unrelated changes to the code.
 - ALWAYS make sure the conflict markers are COMPLETELY removed (<<<<<<<, =======, >>>>>>>, and |||||||) from the final code.
 

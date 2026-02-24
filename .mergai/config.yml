@@ -164,8 +164,8 @@ fork:
 # -----------------------------------------------------------------------------
 # Configuration for the 'resolve' command which handles merge conflict resolution.
 resolve:
-  # Agent type to use for conflict resolution.
-  # Supported values: "gemini-cli"
+  # Agent type/model to use for conflict resolution.
+  # Supported values: "gemini-cli" or "gemini-cli:<model>"
   # Default: "gemini-cli"
   agent: gemini-cli:gemini-2.5-pro
 

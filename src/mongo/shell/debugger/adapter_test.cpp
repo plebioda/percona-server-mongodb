@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2018-present MongoDB, Inc.
+ *    Copyright (C) 2025-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -27,36 +27,35 @@
  *    it in the license file.
  */
 
+#include "mongo/shell/debugger/adapter.h"
 
-#pragma once
-
-
-#include "mongo/bson/timestamp.h"
-#include "mongo/db/repl/initial_sync/all_database_cloner.h"
-#include "mongo/util/modules.h"
+#include "mongo/unittest/unittest.h"
 
 namespace mongo {
-namespace repl {
+namespace mozjs {
 
-/**
- * Holder of state for initial sync (InitialSyncer).
- */
-struct InitialSyncState {
-    InitialSyncState(std::unique_ptr<AllDatabaseCloner> cloner)
-        : allDatabaseCloner(std::move(cloner)) {};
+TEST(Request, fromJSON) {
 
-    std::unique_ptr<AllDatabaseCloner>
-        allDatabaseCloner;                 // Cloner for all databases included in initial sync.
-    Future<void> allDatabaseClonerFuture;  // Future for holding result of AllDatabaseCloner
-    Timestamp beginApplyingTimestamp;  // Timestamp from the latest entry in oplog when started. It
-                                       // is also the timestamp after which we will start applying
-                                       // operations during initial sync.
-    Timestamp beginFetchingTimestamp;  // Timestamp from the earliest active transaction that had an
-                                       // oplog entry.
-    Timestamp stopTimestamp;  // Referred to as minvalid, or the place we can transition states.
-    Timer timer;              // Timer for timing how long each initial sync attempt takes.
-    size_t appliedOps = 0;
-};
+    std::string json =
+        R"({"type":"request","seq":17,"command":"setBreakpoints","arguments":{"source":"","lines":[]}})";
+    Request req = Request::fromJSON(json);
+    SetBreakpointsRequest sbr = SetBreakpointsRequest::fromRequest(req);
+    ASSERT_EQ(req.seq, 17);
+    ASSERT_EQ(req.command, "setBreakpoints");
+}
 
-}  // namespace repl
+TEST(SetBreakpointsRequest, fromRequest) {
+
+    std::string json =
+        R"({"type":"request","seq":17,"command":"setBreakpoints","arguments":{"source":"/home/ubuntu/mongo/jstests/my_test.js","lines":[{"line":5},{"line":6}]}})";
+    Request req = Request::fromJSON(json);
+    SetBreakpointsRequest sbr = SetBreakpointsRequest::fromRequest(req);
+    ASSERT_EQ(sbr.seq, 17);
+    ASSERT_EQ(sbr.source, "/home/ubuntu/mongo/jstests/my_test.js");
+    ASSERT_EQ(sbr.lines, std::vector<int>({5, 6}));
+}
+
+// TODO: add more, but not prematurely until necessary datatypes get more concrete
+
+}  // namespace mozjs
 }  // namespace mongo

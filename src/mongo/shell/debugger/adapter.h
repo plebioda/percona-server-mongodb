@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2018-present MongoDB, Inc.
+ *    Copyright (C) 2026-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -27,36 +27,73 @@
  *    it in the license file.
  */
 
-
 #pragma once
 
+#include "mongo/base/status.h"
+#include "mongo/bson/bsonobj.h"
 
-#include "mongo/bson/timestamp.h"
-#include "mongo/db/repl/initial_sync/all_database_cloner.h"
-#include "mongo/util/modules.h"
+#include <string>
 
 namespace mongo {
-namespace repl {
+namespace mozjs {
 
 /**
- * Holder of state for initial sync (InitialSyncer).
+ * https://microsoft.github.io/debug-adapter-protocol//specification.htm
  */
-struct InitialSyncState {
-    InitialSyncState(std::unique_ptr<AllDatabaseCloner> cloner)
-        : allDatabaseCloner(std::move(cloner)) {};
 
-    std::unique_ptr<AllDatabaseCloner>
-        allDatabaseCloner;                 // Cloner for all databases included in initial sync.
-    Future<void> allDatabaseClonerFuture;  // Future for holding result of AllDatabaseCloner
-    Timestamp beginApplyingTimestamp;  // Timestamp from the latest entry in oplog when started. It
-                                       // is also the timestamp after which we will start applying
-                                       // operations during initial sync.
-    Timestamp beginFetchingTimestamp;  // Timestamp from the earliest active transaction that had an
-                                       // oplog entry.
-    Timestamp stopTimestamp;  // Referred to as minvalid, or the place we can transition states.
-    Timer timer;              // Timer for timing how long each initial sync attempt takes.
-    size_t appliedOps = 0;
+// Base Protocol
+class Message {
+public:
+    int seq;
 };
 
-}  // namespace repl
+class Request : public Message {
+public:
+    std::string command;
+    BSONObj arguments;
+
+    static Request fromJSON(std::string json);
+};
+
+class Response : public Message {
+public:
+    int request_seq;
+    bool success;
+    std::string message;
+    std::string body;
+};
+
+class SetBreakpointsRequest {
+public:
+    int seq;
+    std::string source;
+    std::vector<int> lines;
+
+    static SetBreakpointsRequest fromRequest(Request msg);
+};
+
+class SetBreakpointsResponse {
+private:
+    SetBreakpointsRequest request;
+
+public:
+    int seq;
+    static SetBreakpointsResponse fromRequest(SetBreakpointsRequest req);
+    void send();
+};
+
+class DebugAdapter {
+
+public:
+    static Status connect();
+    static void disconnect();
+
+    static void handleMessagesThread();
+    static void handleRequest(const Request& msg);
+    static void handleSetBreakpoints(SetBreakpointsRequest req);
+    static void sendMessage(std::string json);
+};
+
+
+}  // namespace mozjs
 }  // namespace mongo

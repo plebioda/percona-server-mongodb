@@ -62,7 +62,7 @@ jobs:
 
       # Get next prioritized commit to merge from upstream based on configured strategies
       - name: mergai merge-pick
-        if: ${{ !inputs.merge-pick }}
+        if: ${{ !inputs['merge-pick'] }}
         run: |
           MERGE_PICK=$(mergai fork merge-pick --next)
           echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
@@ -72,7 +72,7 @@ jobs:
       # Initialize merge context with commit SHA and target branch info
       - name: mergai context init
         env:
-          MERGE_PICK: ${{ inputs.merge-pick || env.MERGE_PICK }}
+          MERGE_PICK: ${{ inputs['merge-pick'] || env.MERGE_PICK }}
         run: |
           echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
           mergai context init $MERGE_PICK
@@ -106,7 +106,7 @@ jobs:
   solution-merged:
     # 'privileged-ops' environment controls access to merge operations
     environment: privileged-ops
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:

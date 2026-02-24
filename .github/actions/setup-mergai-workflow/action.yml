@@ -37,7 +37,7 @@ inputs:
   mergai-ref:
     description: "MergAI git ref to checkout"
     required: false
-    default: "main"
+    default: "master"
 
 runs:
   using: "composite"

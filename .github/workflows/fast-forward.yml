@@ -66,6 +66,8 @@ jobs:
             core.setOutput('head_ref', pr.data.head.ref);
             core.setOutput('base_ref', pr.data.base.ref);
             core.setOutput('state', pr.data.state);
+            core.setOutput('head_repo', pr.data.head.repo.full_name);
+            core.setOutput('base_repo', pr.data.base.repo.full_name);
 
       # --- Validation: PR State ---
       # Prevent merging closed or already-merged PRs
@@ -73,6 +75,17 @@ jobs:
         if: steps.pr.outputs.state != 'open'
         run: |
           echo "::error::Pull request is not open (state: ${{ steps.pr.outputs.state }})"
+          exit 1
+
+      # --- Validation: Fork PR ---
+      # Fast-forward merge is not supported for PRs from forks because the head
+      # branch ref doesn't exist in the origin repository
+      - name: Check fork PR
+        if: steps.pr.outputs.head_repo != steps.pr.outputs.base_repo
+        run: |
+          echo "::error::Fast-forward merge is not supported for PRs from forks. The head branch must be in the same repository."
+          echo "Head repo: ${{ steps.pr.outputs.head_repo }}"
+          echo "Base repo: ${{ steps.pr.outputs.base_repo }}"
           exit 1
 
       # --- Validation: User Permissions ---

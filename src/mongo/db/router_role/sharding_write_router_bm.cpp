@@ -27,7 +27,7 @@
  *    it in the license file.
  */
 
-#include "mongo/db/router_role/sharding_write_router.h"
+#include "mongo/db/s/resharding/sharding_write_router.h"
 
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonmisc.h"
@@ -170,7 +170,8 @@ protected:
             Lock::DBLock dbLock{opCtx, kNss.dbName(), MODE_IX};
             Lock::CollectionLock collLock{opCtx, kNss, MODE_IX};
             CollectionShardingRuntime::assertCollectionLockedAndAcquireExclusive(opCtx, kNss)
-                ->setFilteringMetadata(opCtx, CollectionMetadata(chunkManager, originatorShard));
+                ->setFilteringMetadata_nonAuthoritative(
+                    opCtx, CollectionMetadata(chunkManager, originatorShard));
 
             // Setup the CatalogCacheMock for the temp resharding ns.
             const auto reshardingTempNs =

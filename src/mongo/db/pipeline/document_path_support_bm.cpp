@@ -27,38 +27,47 @@
  *    it in the license file.
  */
 
-#pragma once
+#include "mongo/db/pipeline/document_path_support.h"
 
-#include "mongo/db/storage/recovery_unit.h"
-#include "mongo/util/duration.h"
+#include "mongo/bson/bsonobjbuilder.h"
+#include "mongo/db/exec/document_value/document.h"
+#include "mongo/db/pipeline/field_path.h"
+#include "mongo/db/query/compiler/dependency_analysis/dependencies.h"
 
-namespace MONGO_MOD_PUB mongo {
+#include <benchmark/benchmark.h>
 
-/*
- * RAII guard that temporarily opts the requested RecoveryUnit out of optional cache eviction, and
- * restores the previous timeout on destruction.
- */
-class CacheEvictionOptOutGuard {
-public:
-    /*
-     * Construct a CacheEvictionOptOutGuard for the given RecoveryUnit.
-     */
-    explicit CacheEvictionOptOutGuard(RecoveryUnit& ru);
+namespace mongo {
+namespace {
 
-    CacheEvictionOptOutGuard(const CacheEvictionOptOutGuard&) = delete;
-    CacheEvictionOptOutGuard(CacheEvictionOptOutGuard&& other) = delete;
-
-    CacheEvictionOptOutGuard& operator=(const CacheEvictionOptOutGuard&) = delete;
-    CacheEvictionOptOutGuard& operator=(CacheEvictionOptOutGuard&&) = delete;
-
-    /*
-     * Destroy the guard and restore the RecoveryUnit's previous cache max wait timeout.
-     */
-    ~CacheEvictionOptOutGuard();
-
-private:
-    RecoveryUnit& _ru;
-    Milliseconds _prevCacheMaxWait;
+struct TestData {
+    Document doc;
+    OrderedPathSet paths;
 };
 
-}  // namespace MONGO_MOD_PUB mongo
+TestData buildTestData(int numPrefixes) {
+    BSONObjBuilder bob;
+    OrderedPathSet paths;
+    for (int i = 0; i < numPrefixes; ++i) {
+        std::string prefix = "field_" + std::to_string(i);
+        bob.append(prefix, BSON("x" << i));
+        if (i == 0) {
+            paths.insert(prefix + ".x");
+        }
+        paths.insert(prefix);
+    }
+    return {Document{bob.obj()}, std::move(paths)};
+}
+
+void BM_DocumentToBsonWithPaths(benchmark::State& state) {
+    auto [doc, paths] = buildTestData(state.range(0));
+    for (auto _ : state) {
+        benchmark::DoNotOptimize(
+            document_path_support::documentToBsonWithPaths<BSONObj::LargeSizeTrait, false>(doc,
+                                                                                           paths));
+    }
+}
+
+BENCHMARK(BM_DocumentToBsonWithPaths)->Arg(3)->Arg(10)->Arg(50)->Arg(100)->Arg(200)->Arg(500);
+
+}  // namespace
+}  // namespace mongo

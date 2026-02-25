@@ -27,17 +27,22 @@
  *    it in the license file.
  */
 
-#include "mongo/db/storage/wiredtiger/wiredtiger_cache_eviction_opt_out_guard.h"
+#include "mongo/db/replicated_fast_count/replicated_fast_count_enabled.h"
+
+#include "mongo/db/feature_flag.h"
+#include "mongo/db/rss/replicated_storage_service.h"
+#include "mongo/db/server_feature_flags_gen.h"
+#include "mongo/db/server_options.h"
+#include "mongo/db/version_context.h"
 
 namespace mongo {
-
-CacheEvictionOptOutGuard::CacheEvictionOptOutGuard(RecoveryUnit& ru) : _ru(ru) {
-    _prevCacheMaxWait = _ru.getCacheMaxWaitTimeout();
-    _ru.optOutOfCacheEviction();
+bool isReplicatedFastCountEnabled(OperationContext* opCtx) {
+    // TODO(SERVER-117326): Remove feature flag check.
+    return gFeatureFlagReplicatedFastCount.isEnabledUseLatestFCVWhenUninitialized(
+               VersionContext::getDecoration(opCtx),
+               serverGlobalParams.featureCompatibility.acquireFCVSnapshot()) &&
+        rss::ReplicatedStorageService::get(opCtx)
+            .getPersistenceProvider()
+            .shouldUseReplicatedFastCount();
 }
-
-CacheEvictionOptOutGuard::~CacheEvictionOptOutGuard() {
-    _ru.setCacheMaxWaitTimeout(_prevCacheMaxWait);
-}
-
 }  // namespace mongo

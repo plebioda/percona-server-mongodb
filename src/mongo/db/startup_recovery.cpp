@@ -56,7 +56,10 @@
 #include "mongo/db/repl/repl_set_member_in_standalone_mode.h"
 #include "mongo/db/repl/replication_coordinator.h"
 #include "mongo/db/repl/storage_interface.h"
+#include "mongo/db/replicated_fast_count/replicated_fast_count_enabled.h"
+#include "mongo/db/replicated_fast_count/replicated_fast_count_manager.h"
 #include "mongo/db/rss/replicated_storage_service.h"
+#include "mongo/db/server_feature_flags_gen.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/shard_role/lock_manager/d_concurrency.h"
 #include "mongo/db/shard_role/lock_manager/exception_util.h"
@@ -452,7 +455,24 @@ Timestamp getPreImageTruncateTimestampForRecovery(OperationContext* opCtx) {
     return expirationTimestamp;
 }
 
+// Returns true iff we should run *replicated* truncates for pre-images on this node.
+bool shouldUseReplicatedTruncatesForPreImages(OperationContext* opCtx) {
+    // TODO: SERVER-114103 Implement lifecycle for replicated truncates.
+    if (const auto& rss = rss::ReplicatedStorageService::get(opCtx);
+        rss.getPersistenceProvider().shouldUseReplicatedTruncates()) {
+        return true;
+    }
+
+    return false;
+}
+
 void cleanupPreImagesCollectionAfterUncleanShutdown(OperationContext* opCtx) {
+    // If pre-images truncation is replicated, replication recovery will replay the truncate
+    // operations after an unclean shutdown, so no additional local truncation is required here.
+    if (shouldUseReplicatedTruncatesForPreImages(opCtx)) {
+        return;
+    }
+
     writeConflictRetry(
         opCtx,
         "cleanupPreImagesCollectionAfterUncleanShutdown",
@@ -886,6 +906,10 @@ void startupRecovery(OperationContext* opCtx,
             clearTempCollections(opCtx, dbName);
         }
     });
+
+    if (isReplicatedFastCountEnabled(opCtx)) {
+        ReplicatedFastCountManager::get(opCtx->getServiceContext()).initializeMetadata(opCtx);
+    }
 }
 
 // Returns true if the oplog collection exists. Will always return false if the cached pointer to

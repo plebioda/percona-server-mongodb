@@ -100,11 +100,15 @@ QueryKnobConfiguration::QueryKnobConfiguration(const query_settings::QuerySettin
         internalMaxNumberNodesConsideredForImplicitEdges.load();
     _internalMaxGroupAccumulatorsInSbe = gInternalMaxGroupAccumulatorsInSbe.loadRelaxed();
     _enableJoinEnumerationHJOrderPruning = internalEnableJoinEnumerationHJOrderPruning.load();
+    _enableJoinOptimizationUseIndexUniqueness =
+        internalEnableJoinOptimizationUseIndexUniqueness.load();
     _enablePathArrayness = internalEnablePathArrayness.loadRelaxed();
     _enablePipelineOptimizationAdditionalTestingRules =
         internalEnablePipelineOptimizationAdditionalTestingRules.loadRelaxed();
     _internalJoinPlanSamplingSize = internalJoinPlanSamplingSize.loadRelaxed();
     _internalJoinEnumerateCollScanPlans = internalJoinEnumerateCollScanPlans.loadRelaxed();
+    _minAllPlansEnumerationSubsetLevel = internalMinAllPlansEnumerationSubsetLevel.loadRelaxed();
+    _maxAllPlansEnumerationSubsetLevel = internalMaxAllPlansEnumerationSubsetLevel.loadRelaxed();
 }
 
 QueryFrameworkControlEnum QueryKnobConfiguration::getInternalQueryFrameworkControlForOp() const {
@@ -170,6 +174,18 @@ size_t QueryKnobConfiguration::getInternalJoinPlanSamplingSize() const {
 
 bool QueryKnobConfiguration::getInternalJoinEnumerateCollScanPlans() const {
     return _internalJoinEnumerateCollScanPlans;
+}
+
+size_t QueryKnobConfiguration::getInternalMinAllPlansEnumerationSubsetLevel() const {
+    return _minAllPlansEnumerationSubsetLevel;
+}
+
+size_t QueryKnobConfiguration::getInternalMaxAllPlansEnumerationSubsetLevel() const {
+    return _maxAllPlansEnumerationSubsetLevel;
+}
+
+bool QueryKnobConfiguration::getEnableJoinOptimizationUseIndexUniqueness() const {
+    return _enableJoinOptimizationUseIndexUniqueness;
 }
 
 double QueryKnobConfiguration::getSamplingMarginOfError() const {

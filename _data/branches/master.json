@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 414,
+    "commits_behind": 415,
     "days_behind": 10,
     "files_affected": 1749,
     "total_additions": 77234,
     "total_deletions": 47732,
     "date_range": {
       "first": "2026-02-23T18:08:37+00:00",
-      "last": "2026-03-06T10:05:52+00:00"
+      "last": "2026-03-06T11:54:50+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-119792 Handle non-existent collections for rrid update/delete oplog entries (#48344)"
   },
   "unmerged_commits": [
+    {
+      "sha": "baab1c32acfd2d654369039d0c01e42de49e8578",
+      "short_sha": "baab1c32acf",
+      "date": "2026-03-06T06:54:50-05:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#49147)"
+    },
     {
       "sha": "6eb1bbf86739c88e53d9999885e9396016810c54",
       "short_sha": "6eb1bbf8673",
@@ -4662,7 +4672,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-03-06 11:42:33",
+  "generated_at": "2026-03-06 12:30:53",
   "branch_name": "master",
   "display_name": "master"
 }

@@ -7,6 +7,11 @@ on:
         description: "Commit hash to merge (leave empty to use merge-pick --next)"
         required: false
         type: string
+      mergai-ref:
+        description: "Reference branch for mergai context (default: master)"
+        required: false
+        type: string
+        default: master
   pull_request:
     types: [closed]
     branches:
@@ -57,7 +62,7 @@ jobs:
           gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
           github-app-token: ${{ steps.app-token.outputs.token }}
           github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
-          mergai-ref: master
+          mergai-ref: ${{ inputs['mergai-ref'] }}
 
       # Get next prioritized commit to merge from upstream based on configured strategies
       - name: mergai merge-pick

@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 457,
+    "commits_behind": 458,
     "days_behind": 13,
-    "files_affected": 2026,
-    "total_additions": 92782,
-    "total_deletions": 49749,
+    "files_affected": 2027,
+    "total_additions": 92785,
+    "total_deletions": 49751,
     "date_range": {
       "first": "2026-02-23T18:08:37+00:00",
-      "last": "2026-03-09T09:05:23+00:00"
+      "last": "2026-03-09T10:07:47+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-119792 Handle non-existent collections for rrid update/delete oplog entries (#48344)"
   },
   "unmerged_commits": [
+    {
+      "sha": "0ff4e953fedd32a8686425b57350d4ffab779963",
+      "short_sha": "0ff4e953fed",
+      "date": "2026-03-09T10:07:47+00:00",
+      "author": {
+        "name": "Max Verbinnen",
+        "email": "64088654+Max-Verbinnen@users.noreply.github.com"
+      },
+      "summary": "SERVER-121098 Fix floating-point sensitivity in cbr_stage_costing.js (#49167)"
+    },
     {
       "sha": "86d30ba4a5175c2f840ee09e5431a6252f6c1120",
       "short_sha": "86d30ba4a51",
@@ -5180,7 +5190,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-03-09 10:09:04",
+  "generated_at": "2026-03-09 10:48:42",
   "branch_name": "master",
   "display_name": "master"
 }

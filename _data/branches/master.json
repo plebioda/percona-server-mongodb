@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 455,
+    "commits_behind": 457,
     "days_behind": 13,
-    "files_affected": 2022,
-    "total_additions": 92664,
-    "total_deletions": 49718,
+    "files_affected": 2026,
+    "total_additions": 92782,
+    "total_deletions": 49749,
     "date_range": {
       "first": "2026-02-23T18:08:37+00:00",
-      "last": "2026-03-09T08:16:15+00:00"
+      "last": "2026-03-09T09:05:23+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,26 @@
     "summary": "SERVER-119792 Handle non-existent collections for rrid update/delete oplog entries (#48344)"
   },
   "unmerged_commits": [
+    {
+      "sha": "86d30ba4a5175c2f840ee09e5431a6252f6c1120",
+      "short_sha": "86d30ba4a51",
+      "date": "2026-03-09T10:05:23+01:00",
+      "author": {
+        "name": "ppolato",
+        "email": "82828243+ppolato@users.noreply.github.com"
+      },
+      "summary": "SERVER-118661 Restore core analysis on disagg suites (#49169)"
+    },
+    {
+      "sha": "6f0c294142611ab312cb77ad4e00ba2f319fed49",
+      "short_sha": "6f0c2941426",
+      "date": "2026-03-09T10:02:10+01:00",
+      "author": {
+        "name": "Hagar Mohamed",
+        "email": "hagar.mohamed@mongodb.com"
+      },
+      "summary": "SERVER-115325 Create a disaggregated storage flavor for existing Golden Query Suites (#48060)"
+    },
     {
       "sha": "0ea57bcd10a3c06c1dba86589d58903b29c65ff4",
       "short_sha": "0ea57bcd10a",
@@ -5160,7 +5180,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-03-09 09:34:00",
+  "generated_at": "2026-03-09 09:42:21",
   "branch_name": "master",
   "display_name": "master"
 }

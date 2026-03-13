@@ -5,27 +5,17 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 263,
+    "commits_behind": 266,
     "days_behind": 7,
-    "files_affected": 1527,
-    "total_additions": 89423,
-    "total_deletions": 22054,
+    "files_affected": 1512,
+    "total_additions": 86202,
+    "total_deletions": 19833,
     "date_range": {
-      "first": "2026-03-05T15:50:28+00:00",
-      "last": "2026-03-13T05:51:38+00:00"
+      "first": "2026-03-05T15:53:41+00:00",
+      "last": "2026-03-13T10:22:10+00:00"
     }
   },
   "last_merged_commit": {
-    "sha": "b3b8da53ce7b7801bf52059ad7347b5859d82840",
-    "short_sha": "b3b8da53ce7",
-    "date": "2026-03-05T16:37:25+01:00",
-    "author": {
-      "name": "Marcos Grillo",
-      "email": "marcos.grillo@mongodb.com"
-    },
-    "summary": "SERVER-120972 Remove flaky test case of ticket_semaphore unittests (#49075)"
-  },
-  "first_unmerged_commit": {
     "sha": "c3e45333645ecb8e841065b8e47e803c5a7a59a6",
     "short_sha": "c3e45333645",
     "date": "2026-03-05T10:50:28-05:00",
@@ -35,7 +25,57 @@
     },
     "summary": "SERVER-116213, SERVER-117626, SERVER-117790: Enhance SBOM automation with private folder support, team automation and branch filtering (#48555)"
   },
+  "first_unmerged_commit": {
+    "sha": "04299cdb04665dd7f9323f554dbad5a9bd4db78c",
+    "short_sha": "04299cdb046",
+    "date": "2026-03-05T16:53:41+01:00",
+    "author": {
+      "name": "Allison Easton",
+      "email": "allison.easton@mongodb.com"
+    },
+    "summary": "SERVER-120889 Use the priority port in runCmdOnPrimaryAndAwaitResponse (#48971)"
+  },
   "unmerged_commits": [
+    {
+      "sha": "46eebc2da4e028bf286c2c45aeb432ca78e7cb5e",
+      "short_sha": "46eebc2da4e",
+      "date": "2026-03-13T10:22:10+00:00",
+      "author": {
+        "name": "Henri Nikku",
+        "email": "henri.nikku@mongodb.com"
+      },
+      "summary": "SERVER-119938 Add benchmark for dependency graph initialization (#48335)"
+    },
+    {
+      "sha": "59626852fa0ffe8aae1e3c0db507908056868c5a",
+      "short_sha": "59626852fa0",
+      "date": "2026-03-13T10:52:05+01:00",
+      "author": {
+        "name": "Enrico Golfieri",
+        "email": "enrico.golfieri@mongodb.com"
+      },
+      "summary": "SERVER-121197 wrap transactions into an automatic retry-helper for fle tests (#49470)"
+    },
+    {
+      "sha": "0e72b4deb509150104ceeeadd73b5a801097dfb3",
+      "short_sha": "0e72b4deb50",
+      "date": "2026-03-13T10:37:57+02:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#49552)"
+    },
+    {
+      "sha": "70d695213ffded77f9d9f246f5853486600620d9",
+      "short_sha": "70d695213ff",
+      "date": "2026-03-13T08:03:55+01:00",
+      "author": {
+        "name": "wolfee",
+        "email": "adam.farkas@mongodb.com"
+      },
+      "summary": "SERVER-119151 Re-enable timeseries tests in sharded collections passthrough with config transitions and add/remove shard suite (#48537)"
+    },
     {
       "sha": "7f9bd4ad0336a9b1299264d967ed2361686e6353",
       "short_sha": "7f9bd4ad033",
@@ -2655,38 +2695,9 @@
         "email": "allison.easton@mongodb.com"
       },
       "summary": "SERVER-120889 Use the priority port in runCmdOnPrimaryAndAwaitResponse (#48971)"
-    },
-    {
-      "sha": "c3e45333645ecb8e841065b8e47e803c5a7a59a6",
-      "short_sha": "c3e45333645",
-      "date": "2026-03-05T10:50:28-05:00",
-      "author": {
-        "name": "Jason Hills",
-        "email": "jason.hills@mongodb.com"
-      },
-      "summary": "SERVER-116213, SERVER-117626, SERVER-117790: Enhance SBOM automation with private folder support, team automation and branch filtering (#48555)"
     }
   ],
   "merge_picks": [
-    {
-      "commit": {
-        "sha": "c3e45333645ecb8e841065b8e47e803c5a7a59a6",
-        "short_sha": "c3e45333645",
-        "date": "2026-03-05T10:50:28-05:00",
-        "author": {
-          "name": "Jason Hills",
-          "email": "jason.hills@mongodb.com"
-        },
-        "summary": "SERVER-116213, SERVER-117626, SERVER-117790: Enhance SBOM automation with private folder support, team automation and branch filtering (#48555)"
-      },
-      "strategy_name": "conflict",
-      "result": {
-        "conflicting_files": [
-          "README.third_party.md",
-          "sbom.json"
-        ]
-      }
-    },
     {
       "commit": {
         "sha": "f125434bc09f374b4a83d6540b1dfd82129d1191",
@@ -2716,16 +2727,11 @@
         },
         "summary": "SERVER-120217 Update to using rules python (#48943)"
       },
-      "strategy_name": "huge_commit",
+      "strategy_name": "conflict",
       "result": {
-        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
-        "evaluated_vars": {
-          "num_of_files": 129,
-          "num_of_lines": 802,
-          "lines_added": 618,
-          "lines_deleted": 184,
-          "num_of_dirs": 111
-        }
+        "conflicting_files": [
+          "MODULE.bazel.lock"
+        ]
       }
     },
     {
@@ -3043,7 +3049,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-03-13 07:02:43",
+  "generated_at": "2026-03-13 10:57:49",
   "branch_name": "master",
   "display_name": "master"
 }

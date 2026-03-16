@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 250,
+    "commits_behind": 251,
     "days_behind": 9,
-    "files_affected": 1145,
-    "total_additions": 71846,
-    "total_deletions": 19324,
+    "files_affected": 1146,
+    "total_additions": 71863,
+    "total_deletions": 19327,
     "date_range": {
       "first": "2026-03-06T23:47:07+00:00",
-      "last": "2026-03-16T07:58:37+00:00"
+      "last": "2026-03-16T09:36:04+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "Revert \"SERVER-120914 UnshardCollection now fails with NamespaceNotSharded for untracked collections (#49130)\" (#49219)"
   },
   "unmerged_commits": [
+    {
+      "sha": "be81020482f5c37fd35ad2e1952370b5eb50ca63",
+      "short_sha": "be81020482f",
+      "date": "2026-03-16T10:36:04+01:00",
+      "author": {
+        "name": "Enrico Golfieri",
+        "email": "enrico.golfieri@mongodb.com"
+      },
+      "summary": "SERVER-120260 Ensure consistent failpoints even with the MultiShardedClusterFixture (#49501)"
+    },
     {
       "sha": "6aa33ecc5adb56218187390b8617e3435d11e307",
       "short_sha": "6aa33ecc5ad",
@@ -2829,7 +2839,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-03-16 08:50:41",
+  "generated_at": "2026-03-16 10:11:51",
   "branch_name": "master",
   "display_name": "master"
 }

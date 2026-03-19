@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 299,
+    "commits_behind": 300,
     "days_behind": 6,
-    "files_affected": 1592,
-    "total_additions": 72051,
+    "files_affected": 1593,
+    "total_additions": 72052,
     "total_deletions": 20643,
     "date_range": {
       "first": "2026-03-12T14:02:14+00:00",
-      "last": "2026-03-19T02:46:36+00:00"
+      "last": "2026-03-19T07:54:28+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-120718: Move join noPassthrough tests into corresponding join directory (#48844)"
   },
   "unmerged_commits": [
+    {
+      "sha": "ac23f553340e48a05732179a6cc322237dcbc45d",
+      "short_sha": "ac23f553340",
+      "date": "2026-03-19T08:54:28+01:00",
+      "author": {
+        "name": "Tommaso Tocci",
+        "email": "58224719+toto-dev@users.noreply.github.com"
+      },
+      "summary": "SERVER-121886 dbAdmin builtin role should be able to perform rawData operations (#49802)"
+    },
     {
       "sha": "26cb8d58d82b86d39d05f38105bc9e526d04c399",
       "short_sha": "26cb8d58d82",
@@ -3442,7 +3452,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-03-19 08:27:45",
+  "generated_at": "2026-03-19 08:35:55",
   "branch_name": "master",
   "display_name": "master"
 }

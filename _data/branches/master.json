@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 487,
+    "commits_behind": 488,
     "days_behind": 11,
-    "files_affected": 3521,
-    "total_additions": 347582,
-    "total_deletions": 34337,
+    "files_affected": 3522,
+    "total_additions": 347595,
+    "total_deletions": 34348,
     "date_range": {
       "first": "2026-03-12T14:02:14+00:00",
-      "last": "2026-03-24T04:47:32+00:00"
+      "last": "2026-03-24T07:25:27+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-120718: Move join noPassthrough tests into corresponding join directory (#48844)"
   },
   "unmerged_commits": [
+    {
+      "sha": "da29bb6f78df607ba33f7ec0f35878357ef8cfcd",
+      "short_sha": "da29bb6f78d",
+      "date": "2026-03-24T08:25:27+01:00",
+      "author": {
+        "name": "Meryama",
+        "email": "meryama.nadim@mongodb.com"
+      },
+      "summary": "SERVER-122241: Create a dedicated error code for timeseries bucket metadata inconsistency (#50055)"
+    },
     {
       "sha": "fcb014284e2cf71acab97fd330873ff7f86e346f",
       "short_sha": "fcb014284e2",
@@ -5544,7 +5554,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-03-24 07:12:20",
+  "generated_at": "2026-03-24 09:15:22",
   "branch_name": "master",
   "display_name": "master"
 }

@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 386,
+    "commits_behind": 387,
     "days_behind": 10,
-    "files_affected": 1338,
-    "total_additions": 44400,
+    "files_affected": 1339,
+    "total_additions": 44402,
     "total_deletions": 11540,
     "date_range": {
       "first": "2026-03-20T04:45:54+00:00",
-      "last": "2026-03-30T10:08:07+00:00"
+      "last": "2026-03-30T10:35:40+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-120367 Introduce core_high_yielding and aggregation_high_yielding suites (#48946)"
   },
   "unmerged_commits": [
+    {
+      "sha": "215be2a708208884167a7137eb00d6865600f506",
+      "short_sha": "215be2a7082",
+      "date": "2026-03-30T12:35:40+02:00",
+      "author": {
+        "name": "Alya Carina Berciu",
+        "email": "alya.berciu@mongodb.com"
+      },
+      "summary": "SERVER-122961 Prevent wildcard_index_distinct_scan.js from running with chunk migrations (#50731)"
+    },
     {
       "sha": "cc9042944802fd84b1e06ca5a719a4b661a30124",
       "short_sha": "cc904294480",
@@ -4171,7 +4181,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-03-30 10:53:14",
+  "generated_at": "2026-03-30 11:14:48",
   "branch_name": "master",
   "display_name": "master"
 }

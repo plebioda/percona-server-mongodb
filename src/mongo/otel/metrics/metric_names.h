@@ -97,10 +97,22 @@ public:
     static constexpr MetricName kOpenConnections = {"network.open_ingress_connections"};
 
     // Storage Execution Team Metrics
-    static constexpr MetricName kIndexBuildSideWritesWritten = {"index_builds.side_writes.written"};
+    static constexpr MetricName kIndexBuildSideWritesInserted = {
+        "index_builds.side_writes.inserted"};
+    static constexpr MetricName kIndexBuildSideWritesDeleted = {"index_builds.side_writes.deleted"};
     static constexpr MetricName kIndexBuildSideWritesDrained = {"index_builds.side_writes.drained"};
     static constexpr MetricName kIndexBuildSideWritesDrainDuration = {
         "index_builds.side_writes.drain_duration"};
+    static constexpr MetricName kIndexBuildSideWritesDrainBytes = {
+        "index_builds.side_writes.drain_bytes"};
+    static constexpr MetricName kIndexBuildSideWritesDrainYields = {
+        "index_builds.side_writes.drain_yields"};
+
+    static constexpr MetricName kIndexBuildKeysInsertedFromScan = {
+        "index_builds.keys_inserted_from_scan"};
+    static constexpr MetricName kIndexBuildDocsScanned = {"index_builds.docs_scanned"};
+    static constexpr MetricName kIndexBuildKeysGeneratedFromScan = {
+        "index_builds.keys_generated_from_scan"};
 
     // Test-only
     static constexpr MetricName kTest1 = {"test_only.metric1"};

@@ -39,6 +39,7 @@
 #include "mongo/db/operation_context.h"
 #include "mongo/db/repl/create_oplog_entry_gen.h"
 #include "mongo/db/repl/oplog_entry_gen.h"
+#include "mongo/db/shard_role/shard_catalog/index_descriptor.h"
 #include "mongo/db/storage/ident.h"
 #include "mongo/logv2/redaction.h"
 #include "mongo/rpc/get_status_from_command_result.h"
@@ -188,8 +189,11 @@ StatusWith<IndexBuildOplogEntry> IndexBuildOplogEntry::parse(OperationContext* o
     invariant(collUUID, str::stream() << redact(entry.toBSONForLogging()));
 
     if (auto o2 = entry.getObject2(); o2 && parseO2) {
-        auto parsedO2 = repl::StartIndexBuildOplogEntryO2::parse(
-            *o2, IDLParserContext("startIndexBuildOplogEntryO2"));
+        // TODO(SERVER-121124): Enable abortIndexBuild to parse this.
+        invariant(commandType == repl::OplogEntry::CommandType::kStartIndexBuild ||
+                  commandType == repl::OplogEntry::CommandType::kCommitIndexBuild);
+        auto parsedO2 =
+            repl::IndexBuildOplogEntryO2::parse(*o2, IDLParserContext("indexBuildOplogEntryO2"));
         auto indexes = parsedO2.getIndexes();
 
         if (indexesVec.size() != indexes.size()) {
@@ -245,6 +249,12 @@ StatusWith<IndexBuildOplogEntry> IndexBuildOplogEntry::parse(OperationContext* o
                         !status.isOK()) {
                         return status;
                     }
+                } else if (indexesVec[i].spec["unique"].trueValue() ||
+                           IndexDescriptor::isIdIndexPattern(
+                               indexesVec[i].spec.getObjectField("key"))) {
+                    return {ErrorCodes::BadValue,
+                            "constraintViolationsTrackerIdent is required for unique and _id "
+                            "indexes"};
                 }
                 indexesVec[i].setInternalIdents(
                     std::string{internalIdents.getSorterIdent()},

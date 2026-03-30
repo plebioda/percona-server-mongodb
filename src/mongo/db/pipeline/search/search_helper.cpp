@@ -266,21 +266,6 @@ void checkAndSetViewOnExpCtx(boost::intrusive_ptr<ExpressionContext> expCtx,
     }
 }
 
-bool isStoredSource(const Pipeline* pipeline) {
-    auto ds = pipeline->peekFront();
-    auto searchStage = dynamic_cast<DocumentSourceSearch*>(ds);
-    if (searchStage && searchStage->isStoredSource()) {
-        return true;
-    }
-
-    auto searchStageInternal = dynamic_cast<DocumentSourceInternalSearchMongotRemote*>(ds);
-    if (searchStageInternal && searchStageInternal->isStoredSource()) {
-        return true;
-    }
-
-    return false;
-}
-
 bool isMongotPipeline(const Pipeline* pipeline) {
     if (!pipeline || pipeline->empty()) {
         return false;
@@ -650,8 +635,8 @@ boost::optional<SearchQueryViewSpec> getViewFromExpCtx(
     boost::intrusive_ptr<ExpressionContext> expCtx) {
     if (expCtx->getView()) {
         const auto& expCtxView = *expCtx->getView();
-        return boost::make_optional(SearchQueryViewSpec(std::string(expCtxView.viewName.coll()),
-                                                        expCtxView.getOriginalBson()));
+        return boost::make_optional(SearchQueryViewSpec(
+            std::string(expCtxView.getViewName().coll()), expCtxView.getOriginalBson()));
     }
 
     return boost::none;

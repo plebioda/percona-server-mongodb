@@ -31,6 +31,7 @@
 
 #include "mongo/db/collection_crud/collection_write_path.h"
 #include "mongo/db/commands/server_status/server_status.h"
+#include "mongo/db/replicated_fast_count/replicated_fast_count_delta_utils.h"
 #include "mongo/db/shard_role/shard_catalog/clustered_collection_util.h"
 #include "mongo/db/update/document_diff_calculator.h"
 #include "mongo/db/update/update_oplog_entry_serialization.h"
@@ -162,7 +163,7 @@ void ReplicatedFastCountManager::startup(OperationContext* opCtx) {
 
     massert(11718600,
             "Expected fastcount collection to exist on startup",
-            _acquireFastCountCollectionForRead(opCtx).has_value());
+            replicated_fast_count::acquireFastCountCollectionForRead(opCtx).has_value());
 
     LOGV2(12051100, "Starting up ReplicatedFastCountManager thread");
 
@@ -187,7 +188,10 @@ void ReplicatedFastCountManager::shutdown(OperationContext* opCtx) {
     }
 
     // Shutdown background thread.
-    _isEnabled.store(false);
+    {
+        stdx::lock_guard lock(_metadataMutex);
+        _isEnabled.store(false);
+    }
     _backgroundThreadReadyForFlush.notify_one();
     _backgroundThread.join();
 
@@ -211,16 +215,22 @@ int ReplicatedFastCountManager::_hydrateMetadataFromDisk(
         ++numRecordsScanned;
 
         auto& meta = _metadata[uuid];
-        meta.sizeCount.count = data.getField(kMetaDataKey).Obj().getField(kCountKey).Long();
-        meta.sizeCount.size = data.getField(kMetaDataKey).Obj().getField(kSizeKey).Long();
-        meta.validAsOf = data.getField(kValidAsOfKey).timestamp();
+        meta.sizeCount.count = data.getField(replicated_fast_count::kMetadataKey)
+                                   .Obj()
+                                   .getField(replicated_fast_count::kCountKey)
+                                   .Long();
+        meta.sizeCount.size = data.getField(replicated_fast_count::kMetadataKey)
+                                  .Obj()
+                                  .getField(replicated_fast_count::kSizeKey)
+                                  .Long();
+        meta.validAsOf = data.getField(replicated_fast_count::kValidAsOfKey).timestamp();
     }
     return numRecordsScanned;
 }
 
 void ReplicatedFastCountManager::initializeMetadata(OperationContext* opCtx) {
 
-    auto acquisition = _acquireFastCountCollectionForRead(opCtx);
+    auto acquisition = replicated_fast_count::acquireFastCountCollectionForRead(opCtx);
 
     if (!acquisition.has_value()) {
         // This should only be the case on cold boot.
@@ -308,7 +318,7 @@ bool ReplicatedFastCountManager::isRunning_ForTest() {
 
 void ReplicatedFastCountManager::_acquireAndFlush(OperationContext* opCtx,
                                                   const FastSizeCountMap& dirtyMetadata) {
-    auto acquisition = _acquireFastCountCollectionForWrite(opCtx);
+    auto acquisition = replicated_fast_count::acquireFastCountCollectionForWrite(opCtx);
     massert(ErrorCodes::NamespaceNotFound, "Expected fastcount collection to exist", acquisition);
 
     const CollectionPtr& fastCountColl = acquisition->getCollectionPtr();
@@ -486,45 +496,14 @@ void ReplicatedFastCountManager::_insertOneMetadata(OperationContext* opCtx,
         /*opDebug=*/nullptr));
 }
 
-boost::optional<CollectionOrViewAcquisition>
-ReplicatedFastCountManager::_acquireFastCountCollectionForWrite(OperationContext* opCtx) {
-    CollectionOrViewAcquisition acquisition = acquireCollectionOrView(
-        opCtx,
-        CollectionOrViewAcquisitionRequest::fromOpCtx(
-            opCtx,
-            NamespaceString::makeGlobalConfigCollection(NamespaceString::kReplicatedFastCountStore),
-            AcquisitionPrerequisites::OperationType::kWrite),
-        LockMode::MODE_IX);
-
-    if (acquisition.getCollectionPtr()) {
-        return acquisition;
-    }
-
-    return boost::none;
-}
-
-boost::optional<CollectionOrViewAcquisition>
-ReplicatedFastCountManager::_acquireFastCountCollectionForRead(OperationContext* opCtx) {
-    CollectionOrViewAcquisition acquisition = acquireCollectionOrView(
-        opCtx,
-        CollectionOrViewAcquisitionRequest::fromOpCtx(
-            opCtx,
-            NamespaceString::makeGlobalConfigCollection(NamespaceString::kReplicatedFastCountStore),
-            AcquisitionPrerequisites::OperationType::kRead),
-        LockMode::MODE_IS);
-
-    if (acquisition.getCollectionPtr()) {
-        return acquisition;
-    }
-
-    return boost::none;
-}
-
 BSONObj ReplicatedFastCountManager::_getDocForWrite(const UUID& uuid,
                                                     const CollectionSizeCount& sizeCount,
                                                     const Timestamp& validAsOfTS) const {
-    return BSON("_id" << uuid << kValidAsOfKey << validAsOfTS << kMetaDataKey
-                      << BSON(kCountKey << sizeCount.count << kSizeKey << sizeCount.size));
+    return BSON("_id" << uuid << replicated_fast_count::kValidAsOfKey << validAsOfTS
+                      << replicated_fast_count::kMetadataKey
+                      << BSON(replicated_fast_count::kCountKey << sizeCount.count
+                                                               << replicated_fast_count::kSizeKey
+                                                               << sizeCount.size));
 }
 
 RecordId ReplicatedFastCountManager::_keyForUUID(const UUID& uuid) const {

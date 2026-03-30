@@ -68,6 +68,9 @@
 #include "mongo/db/storage/storage_parameters_gen.h"
 #include "mongo/db/validate/validate_results.h"
 #include "mongo/logv2/log.h"
+#include "mongo/otel/metrics/metric_unit.h"
+#include "mongo/otel/metrics/metrics_counter.h"
+#include "mongo/otel/metrics/metrics_service.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/bufreader.h"
 #include "mongo/util/fail_point.h"
@@ -200,6 +203,11 @@ public:
 
 auto& indexBulkBuilderSSS =
     *ServerStatusSectionBuilder<IndexBulkBuilderSSS>("indexBulkBuilder").forShard();
+
+auto& keysInsertedCounter = otel::metrics::MetricsService::instance().createInt64Counter(
+    otel::metrics::MetricNames::kIndexBuildKeysInsertedFromScan,
+    "Total number of keys inserted to indexes from collection scan",
+    otel::metrics::MetricUnit::kEvents);
 
 /**
  * Returns true if at least one prefix of any of the indexed fields causes the index to be
@@ -864,20 +872,20 @@ Status SortedDataIndexAccessMethod::applyIndexBuildSideWrite(OperationContext* o
             VersionContext::getDecoration(opCtx), fcvSnapshot);
     if (opType == IndexBuildInterceptor::Op::kInsert) {
         int64_t numInserted;
-        auto status = insertKeysAndUpdateMultikeyPaths(opCtx,
-                                                       ru,
-                                                       coll,
-                                                       entry,
-                                                       {keySet.begin(), keySet.end()},
-                                                       {},
-                                                       MultikeyPaths{},
-                                                       options,
-                                                       std::move(onDuplicateKey),
-                                                       &numInserted,
-                                                       IncludeDuplicateRecordId::kOff,
-                                                       primaryDrivenFeatureFlagEnabled
-                                                           ? ContainerWriteBehavior::kReplicate
-                                                           : ContainerWriteBehavior::kUnreplicated);
+        auto status = insertKeysAndUpdateMultikeyPaths(
+            opCtx,
+            ru,
+            coll,
+            entry,
+            {keySet.begin(), keySet.end()},
+            {},
+            MultikeyPaths{},
+            options,
+            std::move(onDuplicateKey),
+            &numInserted,
+            IncludeDuplicateRecordId::kOff,
+            primaryDrivenFeatureFlagEnabled ? ContainerWriteBehavior::kReplicate
+                                            : ContainerWriteBehavior::kDoNotReplicate);
         if (!status.isOK()) {
             return status;
         }
@@ -896,7 +904,7 @@ Status SortedDataIndexAccessMethod::applyIndexBuildSideWrite(OperationContext* o
                        options,
                        &numDeleted,
                        primaryDrivenFeatureFlagEnabled ? ContainerWriteBehavior::kReplicate
-                                                       : ContainerWriteBehavior::kUnreplicated);
+                                                       : ContainerWriteBehavior::kDoNotReplicate);
         if (!s.isOK()) {
             return s;
         }
@@ -930,16 +938,14 @@ public:
     using Spiller =
         mongo::SorterSpiller<key_string::Value, mongo::NullValue, BtreeExternalSortComparison>;
 
-    // TODO SERVER-118936: Remove IndexBuildMethodEnum method parameter.
     BulkBuilderImpl(const IndexCatalogEntry* entry,
                     SortedDataIndexAccessMethod* iam,
                     std::shared_ptr<Spiller> spiller,
                     size_t maxMemoryUsageBytes,
                     const SortOptions& opts,
                     const DatabaseName& dbName,
-                    IndexBuildMethodEnum method);
+                    ContainerWriteBehavior containerWriteBehavior);
 
-    // TODO SERVER-118936: Remove IndexBuildMethodEnum method parameter.
     BulkBuilderImpl(const IndexCatalogEntry* entry,
                     SortedDataIndexAccessMethod* iam,
                     std::shared_ptr<Spiller> spiller,
@@ -947,7 +953,7 @@ public:
                     size_t maxMemoryUsageBytes,
                     const SortOptions& opts,
                     const DatabaseName& dbName,
-                    IndexBuildMethodEnum method);
+                    ContainerWriteBehavior containerWriteBehavior);
 
     Status insert(OperationContext* opCtx,
                   const CollectionPtr& collection,
@@ -1026,8 +1032,7 @@ private:
     MultikeyPaths _indexMultikeyPaths;
 
     std::unique_ptr<Sorter> _sorter;
-    // TODO SERVER-118936: Remove IndexBuildMethodEnum method parameter.
-    IndexBuildMethodEnum _method;
+    ContainerWriteBehavior _containerWriteBehavior;
 };
 
 BulkBuilderImpl::BulkBuilderImpl(const IndexCatalogEntry* entry,
@@ -1036,12 +1041,12 @@ BulkBuilderImpl::BulkBuilderImpl(const IndexCatalogEntry* entry,
                                  size_t maxMemoryUsageBytes,
                                  const SortOptions& opts,
                                  const DatabaseName& dbName,
-                                 IndexBuildMethodEnum method)
+                                 ContainerWriteBehavior containerWriteBehavior)
     : _iam(iam),
       _progressMessage("Index Build: inserting keys from external sorter into index"),
       _indexName(entry->descriptor()->indexName()),
       _sorter(_makeSorter(std::move(spiller), opts)),
-      _method(method) {
+      _containerWriteBehavior(containerWriteBehavior) {
     countNewBuildInStats();
 }
 
@@ -1052,7 +1057,7 @@ BulkBuilderImpl::BulkBuilderImpl(const IndexCatalogEntry* entry,
                                  size_t maxMemoryUsageBytes,
                                  const SortOptions& opts,
                                  const DatabaseName& dbName,
-                                 IndexBuildMethodEnum method)
+                                 ContainerWriteBehavior containerWriteBehavior)
     : _keysInserted(stateInfo.getNumKeys().value_or(0)),
       _iam(iam),
       _progressMessage("Index Build: inserting keys from external sorter into index"),
@@ -1060,7 +1065,7 @@ BulkBuilderImpl::BulkBuilderImpl(const IndexCatalogEntry* entry,
       _isMultiKey(stateInfo.getIsMultikey()),
       _indexMultikeyPaths(createMultikeyPaths(stateInfo.getMultikeyPaths())),
       _sorter(_makeSorter(std::move(spiller), opts, stateInfo.getRanges())),
-      _method(method) {
+      _containerWriteBehavior(containerWriteBehavior) {
     countResumedBuildInStats();
 }
 
@@ -1244,6 +1249,7 @@ Status BulkBuilderImpl::commit(OperationContext* opCtx,
             WriteUnitOfWork wunit(opCtx);
             for (auto&& key : batch) {
                 _addKeyForCommit(opCtx, ru, *collection, key);
+                keysInsertedCounter.add(1);
             }
             wunit.commit();
         });
@@ -1378,7 +1384,7 @@ void BulkBuilderImpl::_addKeyForCommit(OperationContext* opCtx,
                                        RecoveryUnit& ru,
                                        const CollectionPtr& coll,
                                        const key_string::View& key) {
-    if (_method == IndexBuildMethodEnum::kPrimaryDriven) {
+    if (_containerWriteBehavior == ContainerWriteBehavior::kReplicate) {
         uassertStatusOK(container_write::insert(opCtx,
                                                 ru,
                                                 coll,
@@ -1429,19 +1435,23 @@ std::unique_ptr<IndexAccessMethod::BulkBuilder> SortedDataIndexAccessMethod::ini
     size_t maxMemoryUsageBytes,
     const boost::optional<IndexStateInfo>& stateInfo,
     const DatabaseName& dbName,
-    const IndexBuildMethodEnum& method) {
+    const ContainerWriteBehavior containerWriteBehavior) {
     const SortOptions& opts = makeSortOptions(maxMemoryUsageBytes);
-    return stateInfo
-        ? std::make_unique<BulkBuilderImpl>(entry,
-                                            this,
-                                            std::move(spiller),
-                                            *stateInfo,
-                                            maxMemoryUsageBytes,
-                                            opts,
-                                            dbName,
-                                            method)
-        : std::make_unique<BulkBuilderImpl>(
-              entry, this, std::move(spiller), maxMemoryUsageBytes, opts, dbName, method);
+    return stateInfo ? std::make_unique<BulkBuilderImpl>(entry,
+                                                         this,
+                                                         std::move(spiller),
+                                                         *stateInfo,
+                                                         maxMemoryUsageBytes,
+                                                         opts,
+                                                         dbName,
+                                                         containerWriteBehavior)
+                     : std::make_unique<BulkBuilderImpl>(entry,
+                                                         this,
+                                                         std::move(spiller),
+                                                         maxMemoryUsageBytes,
+                                                         opts,
+                                                         dbName,
+                                                         containerWriteBehavior);
 }
 
 SorterFileStats& SortedDataIndexAccessMethod::getSorterFileStats() {

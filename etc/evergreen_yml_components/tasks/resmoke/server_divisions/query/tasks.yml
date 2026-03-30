@@ -128,6 +128,19 @@ tasks:
       - func: "run tests"
 
   - <<: *task_template
+    name: aggregation_high_yielding
+    tags:
+      [
+        "assigned_to_jira_team_server_query_execution",
+        "default",
+        "aggregation",
+        "common",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "run tests"
+
+  - <<: *task_template
     name: aggregation_auth
     tags:
       [
@@ -913,6 +926,53 @@ tasks:
         vars:
           resmoke_jobs_max: 1
 
+  - <<: *task_template
+    name: concurrency_replication_high_yielding
+    tags:
+      [
+        "assigned_to_jira_team_server_query_execution",
+        "default",
+        "incompatible_mac",
+        "incompatible_ppc",
+        "incompatible_s390x",
+        "concurrency",
+        "common",
+        "repl",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "run tests"
+        vars:
+          resmoke_jobs_max: 1
+
+  - <<: *task_template
+    name: disagg_change_streams_passthrough
+    tags:
+      [
+        "assigned_to_jira_team_server_query_execution",
+        "default",
+        "change_streams",
+        "requires_extra_system_deps",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "run tests"
+
+  - <<: *gen_task_template
+    name: disagg_change_streams_secondary_reads_passthrough_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_query_execution",
+        "default",
+        "change_streams",
+        "requires_extra_system_deps",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          suite: disagg_change_streams_secondary_reads_passthrough
+          resmoke_jobs_max: 2
+
   - <<: *gen_task_template
     name: aggregation_mongos_pqs_fallback_gen
     tags:
@@ -1221,6 +1281,24 @@ tasks:
         vars:
           suite: core
 
+  - <<: *task_template
+    name: core_high_yielding
+    tags:
+      [
+        "assigned_to_jira_team_server_query_execution",
+        "development_critical",
+        "no_commit_queue",
+        "requires_large_host",
+        "jscore",
+        "common",
+        "has_bazel_target",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "run tests"
+        vars:
+          suite: core
+
   - <<: *gen_task_template
     name: jsCore_in_parts_gen
     tags: ["assigned_to_jira_team_server_query_execution", "experimental"]
@@ -1411,6 +1489,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1434,6 +1513,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1453,6 +1533,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1472,6 +1553,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1491,6 +1573,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1512,6 +1595,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1531,6 +1615,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1553,6 +1638,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1575,6 +1661,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1595,6 +1682,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1618,6 +1706,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1640,6 +1729,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1660,6 +1750,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1683,6 +1774,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1705,6 +1797,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1725,6 +1818,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1748,6 +1842,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1771,6 +1866,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1790,6 +1886,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1811,6 +1908,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1833,6 +1931,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -2432,6 +2531,35 @@ tasks:
   - <<: *task_template
     name: aggregation_repeat_queries_multiplan_single_solutions
     tags: ["assigned_to_jira_team_server_query_optimization", "default"]
+    commands:
+      - func: "do setup"
+      - func: "run tests"
+
+  - <<: *task_template
+    name: core_repeat_queries_always_replan
+    tags:
+      [
+        "assigned_to_jira_team_server_query_optimization",
+        "default",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
+        "incompatible_tsan",
+      ]
+    commands:
+      - func: "do setup"
+      - func: "run tests"
+
+  - <<: *task_template
+    name: aggregation_repeat_queries_always_replan
+    tags:
+      [
+        "assigned_to_jira_team_server_query_optimization",
+        "default",
+        "aggregation",
+        "incompatible_aubsan",
+        "incompatible_debug_mode",
+        "incompatible_tsan",
+      ]
     commands:
       - func: "do setup"
       - func: "run tests"
@@ -3133,6 +3261,7 @@ tasks:
         "extensions",
         "incompatible_windows",
         "incompatible_mac",
+        "incompatible_amazon_linux2",
       ]
     commands:
       - func: "do setup"
@@ -3147,6 +3276,7 @@ tasks:
         "extensions",
         "incompatible_windows",
         "incompatible_mac",
+        "incompatible_amazon_linux2",
       ]
     commands:
       - func: "do setup"
@@ -3161,6 +3291,7 @@ tasks:
         "extensions",
         "incompatible_windows",
         "incompatible_mac",
+        "incompatible_amazon_linux2",
       ]
     commands:
       - func: "do setup"
@@ -3175,6 +3306,7 @@ tasks:
         "extensions",
         "incompatible_windows",
         "incompatible_mac",
+        "incompatible_amazon_linux2",
       ]
     commands:
       - func: "do setup"
@@ -3189,6 +3321,7 @@ tasks:
         "extensions",
         "incompatible_windows",
         "incompatible_mac",
+        "incompatible_amazon_linux2",
       ]
     commands:
       - func: "do setup"
@@ -3203,6 +3336,7 @@ tasks:
         "extensions",
         "incompatible_windows",
         "incompatible_mac",
+        "incompatible_amazon_linux2",
       ]
     commands:
       - func: "do setup"

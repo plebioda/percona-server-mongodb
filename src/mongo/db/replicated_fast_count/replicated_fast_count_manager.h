@@ -106,11 +106,6 @@ public:
      */
     void initializeFastCountCommitFn();
 
-    inline static StringData kMetaDataKey = "meta"_sd;
-    inline static StringData kSizeKey = "sz"_sd;
-    inline static StringData kCountKey = "ct"_sd;
-    inline static StringData kValidAsOfKey = "valid-as-of"_sd;
-
     /**
      * Spawns fastcount thread.
      * Skips running thread when _isUnderTest.
@@ -221,20 +216,6 @@ private:
                             const UUID& uuid,
                             const CollectionSizeCount& sizeCount,
                             const Timestamp& validAsOfTS);
-
-    /**
-     * Acquire the fastcount collection that underpins this class with write intent.
-     * Returns boost::none if it doesn't exist.
-     */
-    boost::optional<CollectionOrViewAcquisition> _acquireFastCountCollectionForWrite(
-        OperationContext* opCtx);
-
-    /**
-     * Acquire the fastcount collection that underpins this class with read intent.
-     * Returns boost::none if it doesn't exist.
-     */
-    boost::optional<CollectionOrViewAcquisition> _acquireFastCountCollectionForRead(
-        OperationContext* opCtx);
 
     /**
      * Populates the in-memory values of _metadata with the values persisted in the internal fast

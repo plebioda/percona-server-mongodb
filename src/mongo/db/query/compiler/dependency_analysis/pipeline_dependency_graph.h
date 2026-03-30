@@ -32,6 +32,7 @@
 
 #include "mongo/base/string_data.h"
 #include "mongo/db/pipeline/document_source.h"
+#include "mongo/util/modules.h"
 
 #include <cstddef>
 #include <string>
@@ -42,13 +43,18 @@ namespace mongo::pipeline::dependency_graph {
 
 using PathRef = StringData;
 
+using CanPathBeArray = std::function<bool(StringData)>;
+
+bool defaultCanPathBeArray(StringData path);
+
 /**
  * Represents dependencies between fields and stages in a pipeline. Can be partially rebuilt when
  * the pipeline changes.
  */
 class DependencyGraph {
 public:
-    DependencyGraph(const DocumentSourceContainer& container);
+    explicit DependencyGraph(const DocumentSourceContainer& container,
+                             CanPathBeArray canMainCollPathBeArray = defaultCanPathBeArray);
     ~DependencyGraph();
     DependencyGraph(DependencyGraph&&) noexcept;
     DependencyGraph& operator=(DependencyGraph&&) noexcept;
@@ -66,6 +72,12 @@ public:
      */
     boost::intrusive_ptr<mongo::DocumentSource> getDeclaringStage(DocumentSource* stage,
                                                                   PathRef path) const;
+
+    /**
+     * Returns false if the path visible from the given DocumentSource can be assumed to not contain
+     * arrays. If nullptr, the path is assumed to originate from the pipeline input.
+     */
+    bool canPathBeArray(DocumentSource* stage, PathRef path) const;
 
     /**
      * Invalidate and recompute the subgraph starting from the earliest nodes which correspond to

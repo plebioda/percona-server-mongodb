@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 515,
+    "commits_behind": 527,
     "days_behind": 12,
-    "files_affected": 3402,
-    "total_additions": 331758,
-    "total_deletions": 26444,
+    "files_affected": 3429,
+    "total_additions": 332879,
+    "total_deletions": 26746,
     "date_range": {
       "first": "2026-03-18T17:59:05+00:00",
-      "last": "2026-03-31T05:42:06+00:00"
+      "last": "2026-03-31T09:33:30+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,126 @@
     "summary": "SERVER-121796: Fix invalid iterator issue after cache optimization in $lookup (#49869)"
   },
   "unmerged_commits": [
+    {
+      "sha": "aca47ea2d0c729ba39f11c0f76c009b32e733a83",
+      "short_sha": "aca47ea2d0c",
+      "date": "2026-03-31T11:33:30+02:00",
+      "author": {
+        "name": "Igor Praznik",
+        "email": "95708172+igpraznik@users.noreply.github.com"
+      },
+      "summary": "SERVER-115710 Ensure database version doesn't change during a sharded-cluster listDatabases command  (#48823)"
+    },
+    {
+      "sha": "36829aa24e51e1f09c33ffd12a6130017dad6835",
+      "short_sha": "36829aa24e5",
+      "date": "2026-03-31T10:19:24+01:00",
+      "author": {
+        "name": "Rustam Gusein-zade",
+        "email": "rustam.guseinzade@mongodb.com"
+      },
+      "summary": "SERVER-119607 SERVER-117497 Support chunk gaps in ChunkMap (#50278)"
+    },
+    {
+      "sha": "5061b32fc2447cb9d88f919ff613b719d54f9538",
+      "short_sha": "5061b32fc24",
+      "date": "2026-03-31T10:18:09+01:00",
+      "author": {
+        "name": "Alice Doherty",
+        "email": "66687032+alicedoherty@users.noreply.github.com"
+      },
+      "summary": "SERVER-123022 Fix mainline build requester types for GenerateAndCheckPerfResults (#50779)"
+    },
+    {
+      "sha": "ede9fa10fc9292a7a0883a01d4d9dce295df8114",
+      "short_sha": "ede9fa10fc9",
+      "date": "2026-03-31T09:53:55+01:00",
+      "author": {
+        "name": "nicola cabiddu",
+        "email": "nicolacabiddu@gmail.com"
+      },
+      "summary": "SERVER-121782 heartbeat mechanism and multiple parallel writers for all fsm tests as per specs (#49873)"
+    },
+    {
+      "sha": "b3193375364be8230a750caca861025874f07ffc",
+      "short_sha": "b3193375364",
+      "date": "2026-03-31T10:42:34+02:00",
+      "author": {
+        "name": "Ivan Fefer",
+        "email": "ivan.fefer@mongodb.com"
+      },
+      "summary": "SERVER-111689 Close router cursor when it is obviously EOF (#50411)"
+    },
+    {
+      "sha": "47d41c1eee404f3681cfe0bdc28b56a314c6c361",
+      "short_sha": "47d41c1eee4",
+      "date": "2026-03-31T10:08:35+02:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-122762 Fix cluster commit shard removal response status checking (#50548)"
+    },
+    {
+      "sha": "5c4ac4f17c165c199df36a4ff026a4b8a226b4b8",
+      "short_sha": "5c4ac4f17c1",
+      "date": "2026-03-31T09:58:50+02:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-122615 Re-enable replication during after test hooks in read_write_concern_defaults_promotion_to_sharded.js (#50601)"
+    },
+    {
+      "sha": "d8bfbc9a54e4247f167ce5f4ace30562bf8898cf",
+      "short_sha": "d8bfbc9a54e",
+      "date": "2026-03-31T09:37:50+02:00",
+      "author": {
+        "name": "Jordi Serra Torrens",
+        "email": "jordist@users.noreply.github.com"
+      },
+      "summary": "SERVER-119288 Skip allDurable pin when publishing table idents on secondary nodes (#50281)"
+    },
+    {
+      "sha": "ffe9df709c4801126cfba8d34748401de1fd542f",
+      "short_sha": "ffe9df709c4",
+      "date": "2026-03-31T09:29:02+02:00",
+      "author": {
+        "name": "wolfee",
+        "email": "adam.farkas@mongodb.com"
+      },
+      "summary": "SERVER-119927 Remove requires_fcv_80 exclusions in suite definitions (#49843)"
+    },
+    {
+      "sha": "d1eade4762786118caa8c619fff93f6f95c60537",
+      "short_sha": "d1eade47627",
+      "date": "2026-03-31T09:28:55+02:00",
+      "author": {
+        "name": "wolfee",
+        "email": "adam.farkas@mongodb.com"
+      },
+      "summary": "SERVER-119151 Re-enable timeseries tests in sharded collections passthrough with config transitions and add/remove shard suite (#49846)"
+    },
+    {
+      "sha": "372c5ab0dd3e40c090dfd3351a2e75884f3614de",
+      "short_sha": "372c5ab0dd3",
+      "date": "2026-03-31T09:28:03+02:00",
+      "author": {
+        "name": "wolfee",
+        "email": "adam.farkas@mongodb.com"
+      },
+      "summary": "SERVER-122099 Provide a general way for ShardingCoordinator's to mark their opCtx non-deprioritizable within the critical section (#50042)"
+    },
+    {
+      "sha": "458591afa3107c08550d5f68077796c5cadc59f2",
+      "short_sha": "458591afa31",
+      "date": "2026-03-31T09:27:48+02:00",
+      "author": {
+        "name": "wolfee",
+        "email": "adam.farkas@mongodb.com"
+      },
+      "summary": "SERVER-119858 Switch pre image collection truncation priority to non-deprioritizable (#50231)"
+    },
     {
       "sha": "397629d60cb53b79299d30cc31cb64baed7175a4",
       "short_sha": "397629d60cb",
@@ -5750,7 +5870,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-03-31 07:24:04",
+  "generated_at": "2026-03-31 10:23:54",
   "branch_name": "master",
   "display_name": "master"
 }

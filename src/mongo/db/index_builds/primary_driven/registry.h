@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2018-present MongoDB, Inc.
+ *    Copyright (C) 2026-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -29,56 +29,38 @@
 
 #pragma once
 
-/**
- * DiagStr concurrency helper
- */
-
-#include "mongo/util/concurrency/spin_lock.h"
+#include "mongo/db/database_name.h"
+#include "mongo/db/index_builds/index_builds_common.h"
+#include "mongo/stdx/unordered_map.h"
 #include "mongo/util/modules.h"
+#include "mongo/util/uuid.h"
 
-namespace mongo {
+#include <mutex>
+#include <vector>
 
-// todo: rename this to ThreadSafeString or something
-/** there is now one mutex per DiagStr.  If you have hundreds or millions of
-    DiagStrs you'll need to do something different.
-*/
-class MONGO_MOD_USE_REPLACEMENT(std::string + mutex) DiagStr {
-    mutable SpinLock m;
-    std::string _s;
+MONGO_MOD_PUBLIC;
+namespace mongo::index_builds::primary_driven {
 
+class Registry {
 public:
-    DiagStr(const DiagStr& r) : _s(r.get()) {}
-    DiagStr(const std::string& r) : _s(r) {}
-    DiagStr() {}
-    bool empty() const {
-        scoped_spinlock lk(m);
-        return _s.empty();
-    }
-    std::string get() const {
-        scoped_spinlock lk(m);
-        return _s;
-    }
-    void set(const char* s) {
-        scoped_spinlock lk(m);
-        _s = s;
-    }
-    void set(const std::string& s) {
-        scoped_spinlock lk(m);
-        _s = s;
-    }
-    operator std::string() const {
-        return get();
-    }
-    void operator=(const std::string& s) {
-        set(s);
-    }
-    void operator=(const DiagStr& rhs) {
-        set(rhs.get());
-    }
+    struct Entry {
+        DatabaseName dbName;
+        UUID collectionUUID;
+        std::vector<IndexBuildInfo> indexes;
+    };
 
-    // == is not defined.  use get() == ... instead.  done this way so one thinks about if composing
-    // multiple operations
-    bool operator==(const std::string& s) const;
+    void add(UUID buildUUID,
+             DatabaseName dbName,
+             UUID collectionUUID,
+             std::vector<IndexBuildInfo> indexes);
+
+    void remove(UUID buildUUID);
+
+    std::vector<std::pair<UUID, Entry>> all() const;
+
+private:
+    mutable std::mutex _mutex;
+    stdx::unordered_map<UUID, Entry, UUID::Hash> _entries;  // Keyed by index build UUID.
 };
 
-}  // namespace mongo
+}  // namespace mongo::index_builds::primary_driven

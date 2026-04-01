@@ -959,6 +959,21 @@ tasks:
       - func: "run tests"
 
   - <<: *gen_task_template
+    name: disagg_change_streams_secondary_reads_passthrough_gen
+    tags:
+      [
+        "assigned_to_jira_team_server_query_execution",
+        "default",
+        "change_streams",
+        "requires_extra_system_deps",
+      ]
+    commands:
+      - func: "generate resmoke tasks"
+        vars:
+          suite: disagg_change_streams_secondary_reads_passthrough
+          resmoke_jobs_max: 2
+
+  - <<: *gen_task_template
     name: aggregation_mongos_pqs_fallback_gen
     tags:
       [
@@ -1474,6 +1489,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1497,6 +1513,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1516,6 +1533,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1535,6 +1553,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:
@@ -1823,6 +1842,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
         "requires_large_host",
       ]
@@ -1846,6 +1866,7 @@ tasks:
         "incompatible_mac",
         "incompatible_ppc",
         "incompatible_s390x",
+        "incompatible_amazon_linux2",
         "mongot_e2e_tests",
       ]
     commands:

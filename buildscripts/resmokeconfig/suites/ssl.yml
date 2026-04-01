@@ -1,16 +1,8 @@
 test_kind: js_test
 
 selector:
-<<<<<<< HEAD
   roots:
     - jstests/ssl/*.js
-||||||| f2f0c0a5dbb
-  roots:
-    - jstests/ssl/*.js
-    - src/mongo/db/modules/*/jstests/fips/*.js
-=======
-  from_target: //jstests/suites/security:ssl
->>>>>>> 6f414a559b21459a1b11f783e39c963fffcb9612
 
 # ssl tests start their own mongod's.
 executor:

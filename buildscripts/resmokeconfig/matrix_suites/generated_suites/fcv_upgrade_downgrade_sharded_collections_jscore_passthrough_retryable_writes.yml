@@ -221,7 +221,6 @@ selector:
     - jstests/core/**/batch_write_command_w0.js
     - jstests/core/timeseries/query/timeseries_lastpoint.js
     - jstests/core/timeseries/query/timeseries_out_non_sharded.js
-    - jstests/core/timeseries/query/timeseries_view_aggregate.js
   exclude_with_any_tags:
     - assumes_standalone_mongod
     - assumes_against_mongod_not_mongos
@@ -231,6 +230,7 @@ selector:
     - assumes_unsharded_collection
     - cannot_create_unique_index_when_using_hashed_shard_key
     - requires_profiling
+    - featureFlagFLE2CleanupCommand
     - featureFlagTimeseriesUpdatesSupport
     - featureFlagRecordIdsReplicated
     - featureFlagRankFusionBasic
@@ -253,5 +253,4 @@ selector:
     - jstests/core_sharding/**/*.js
     - jstests/fle2/**/*.js
     - jstests/aggregation/**/*.js
-    - src/mongo/db/modules/*/jstests/fle2/**/*.js
 test_kind: js_test

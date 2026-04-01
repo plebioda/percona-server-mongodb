@@ -1609,6 +1609,7 @@ tasks:
         "jscore",
         "causally_consistent",
         "txns",
+        "has_bazel_target",
       ]
     commands:
       - func: "do setup"
@@ -1647,19 +1648,6 @@ tasks:
       - func: "generate resmoke tasks"
 
   - <<: *gen_task_template
-    name: sharded_collections_jscore_passthrough_random_clears_gen
-    tags:
-      [
-        "assigned_to_jira_team_server_catalog_and_routing",
-        "release_critical",
-        "incompatible_mac",
-        "sharding",
-        "jscore",
-      ]
-    commands:
-      - func: "generate resmoke tasks"
-
-  - <<: *gen_task_template
     name: sharded_collections_jscore_passthrough_rate_limited_gen
     tags:
       [
@@ -1668,6 +1656,7 @@ tasks:
         "incompatible_mac",
         "sharding",
         "jscore",
+        "has_bazel_target",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -1710,6 +1699,7 @@ tasks:
         "sharding",
         "jscore",
         "txns",
+        "has_bazel_target",
       ]
     commands:
       - func: "do setup"
@@ -1725,6 +1715,7 @@ tasks:
         "sharding",
         "jscore",
         "txns",
+        "has_bazel_target",
       ]
     commands:
       - func: "do setup"
@@ -2365,6 +2356,7 @@ tasks:
         "sharding",
         "jscore",
         "common",
+        "has_bazel_target",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -2725,12 +2717,14 @@ tasks:
   - <<: *gen_task_template
     name: sharding_legacy_timeseries_no_rawdata_gen
     # TODO (SERVER-109519): Remove this temporary suite.
+    # TODO(SERVER-122088): Remove "requires_large_host_aubsan" tag.
     tags:
       [
         "assigned_to_jira_team_server_catalog_and_routing",
         "default",
         "sharding",
         "requires_replicated_fast_count_recovery",
+        "requires_large_host_aubsan",
       ]
     commands:
       - func: "generate resmoke tasks"
@@ -2744,7 +2738,7 @@ tasks:
             --disableFeatureFlags=featureFlagCreateViewlessTimeseriesCollections
             --disableFeatureFlags=featureFlagBlockDirectSystemBucketsAccess
 
-  # TODO(SERVER-111646): Remove this temporary suite.
+  # TODO(SERVER-108818): Remove this temporary suite.
   - <<: *gen_task_template
     name: sharded_collections_jscore_passthrough_primary_driven_index_builds_gen
     tags:
@@ -3187,6 +3181,7 @@ tasks:
         "jscore",
         "causally_consistent",
         "txns",
+        "has_bazel_target",
       ]
     commands:
       - func: "do setup"

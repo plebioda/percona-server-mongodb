@@ -358,7 +358,11 @@ DEATH_TEST(ContainerIteratorChecksumDeathTest, IncorrectChecksumV2Fails, "116059
     iterator.next();
 }
 
-class ContainerIteratorTest : public testing::TestWithParam<SorterChecksumVersion> {};
+class ContainerIteratorTest : public testing::TestWithParam<SorterChecksumVersion> {
+public:
+    // TODO (SERVER-116165): Remove.
+    RAIIServerParameterControllerForTest ffContainerWrites{"featureFlagContainerWrites", true};
+};
 
 INSTANTIATE_TEST_SUITE_P(ContainerIteratorTestSuite,
                          ContainerIteratorTest,
@@ -380,6 +384,8 @@ TEST_P(ContainerIteratorTest, EmptyIteratorHasZeroChecksum) {
 class SortedContainerWriterTest : public ServiceContextMongoDTest {
 public:
     SorterTracker sorterTracker;
+    // TODO (SERVER-116165): Remove.
+    RAIIServerParameterControllerForTest ffContainerWrites{"featureFlagContainerWrites", true};
 
     /**
      * Creates and exhausts iterators created from the writer to ensure that the final checksum
@@ -546,7 +552,11 @@ TEST_F(SortedContainerWriterTest, ContainerWriterAllowsNullValueWithNonNullKey) 
 }
 
 class ContainerBasedSpillerTest : public ServiceContextMongoDTest,
-                                  public testing::WithParamInterface<int64_t> {};
+                                  public testing::WithParamInterface<int64_t> {
+public:
+    // TODO (SERVER-116165): Remove.
+    RAIIServerParameterControllerForTest ffContainerWrites{"featureFlagContainerWrites", true};
+};
 
 INSTANTIATE_TEST_SUITE_P(ContainerBasedSpillerTest,
                          ContainerBasedSpillerTest,
@@ -583,12 +593,10 @@ TEST_P(ContainerBasedSpillerTest, Spill) {
 
     auto it1 = spiller.spill(SortOptions{},
                              SorterSpiller<IntWrapper, NullValue, IWComparator>::Settings{},
-                             span.subspan(0, 2),
-                             0);
+                             span.subspan(0, 2));
     auto it2 = spiller.spill(SortOptions{},
                              SorterSpiller<IntWrapper, NullValue, IWComparator>::Settings{},
-                             span.subspan(2, 2),
-                             0);
+                             span.subspan(2, 2));
 
     ASSERT_TRUE(it1->more());
     EXPECT_EQ(it1->next().first, 50);
@@ -635,18 +643,15 @@ TEST_P(ContainerBasedSpillerTest, MergeSpills) {
     iterators.push_back(
         spiller.spill(SortOptions{},
                       SorterSpiller<IntWrapper, NullValue, IWComparator>::Settings{},
-                      span.subspan(0, 2),
-                      0));
+                      span.subspan(0, 2)));
     iterators.push_back(
         spiller.spill(SortOptions{},
                       SorterSpiller<IntWrapper, NullValue, IWComparator>::Settings{},
-                      span.subspan(2, 2),
-                      0));
+                      span.subspan(2, 2)));
     iterators.push_back(
         spiller.spill(SortOptions{},
                       SorterSpiller<IntWrapper, NullValue, IWComparator>::Settings{},
-                      span.subspan(4, 1),
-                      0));
+                      span.subspan(4, 1)));
 
     SorterStats sorterStats{nullptr};
     spiller.mergeSpills(SortOptions{},
@@ -718,8 +723,7 @@ TEST_P(ContainerBasedSpillerTest, MergeSpillsMultiplePasses) {
         iterators.push_back(
             spiller.spill(SortOptions{},
                           SorterSpiller<IntWrapper, NullValue, IWComparator>::Settings{},
-                          span.subspan(i, 1),
-                          0));
+                          span.subspan(i, 1)));
     }
 
     SorterStats sorterStats{nullptr};

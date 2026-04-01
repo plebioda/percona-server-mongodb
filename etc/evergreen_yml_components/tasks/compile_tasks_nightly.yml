@@ -4,7 +4,7 @@
 #                   Variable                   #
 ################################################
 variables:
-  # TODO: split this up into the user files.
+  # split this up into the user files.
   # List of all variants that make mongocryptd
   # If a variant is listed here and has a push task, mongocryptd is pushed
   - mongocryptd_variants: &mongocryptd_variants

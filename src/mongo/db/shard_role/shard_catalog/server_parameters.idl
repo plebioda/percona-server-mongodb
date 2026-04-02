@@ -24,29 +24,14 @@
 # delete this exception statement from your version. If you delete this
 # exception statement from all source files in the program, then also delete
 # it in the license file.
-#
 
 global:
-    cpp_namespace: "mongo"
     mod_visibility: private
+    cpp_namespace: mongo
 
-imports:
-    - "mongo/db/basic_types.idl"
-
-commands:
-    _internalClearCollectionShardingMetadata:
-        description: >-
-            An internal command that clears the local in-memory collection sharding metadata
-            and leaves the state pending for a recovery/refresh on the subsequent operation.
-        command_name: _internalClearCollectionShardingMetadata
-        cpp_name: ClearCollectionShardingMetadataRequest
-        strict: true
-        namespace: type
-        api_version: ""
-        type: namespacestring
-        fields:
-            isAuthoritative:
-                type: bool
-                description: >-
-                    Specifies whether the clear is authoritative or not
-                optional: true
+feature_flags:
+    featureFlagPerformDeepCopyOfCollections:
+        description: Forces the CollectionCatalog to always do a deep copy of collections
+        cpp_varname: gFeatureFlagPerformDeepCopyOfCollections
+        default: false
+        fcv_gated: false

@@ -1,5 +1,5 @@
-# Resmoke suite for testing deferred encryption key cleanup with AES256-CBC cipher mode.
-# These tests stress test the encryptionKeyCleanupDeferred feature with aggressive
+# Resmoke suite for testing encryption key cleanup with AES256-CBC cipher mode.
+# These tests stress test periodic encryption key cleanup with aggressive
 # cleanup intervals (1 second) while performing many dropDatabase operations.
 
 config_variables:
@@ -13,7 +13,7 @@ selector:
     - jstests/percona/tde/deferred_key_cleanup_drop_database.js
     - jstests/percona/tde/deferred_key_cleanup_stress.js
 
-# Tests start their own mongod with encryption and deferred cleanup enabled.
+# Tests start their own mongod with encryption and periodic cleanup enabled.
 executor:
   config:
     shell_options:

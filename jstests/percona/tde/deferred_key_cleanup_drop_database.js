@@ -1,10 +1,11 @@
 /**
- * Tests that deferred encryption key cleanup works correctly with dropDatabase.
+ * Tests that encryption key cleanup works correctly with dropDatabase.
  *
- * This test verifies that when encryptionKeyCleanupDeferred is enabled:
+ * This test verifies that:
  * 1. Databases can be created and dropped without errors
- * 2. Encryption keys are eventually cleaned up by the background process
+ * 2. Encryption keys are eventually cleaned up by the periodic background process
  * 3. No data corruption occurs
+ * 4. The cleanupOrphanedEncryptionKeys admin command works
  *
  * @tags: [
  *   requires_wiredtiger,
@@ -22,13 +23,12 @@
 
     jsTestLog("Starting deferred key cleanup drop database test with cipher mode: " + cipherMode);
 
-    // Start mongod with encryption and deferred key cleanup enabled
+    // Start mongod with encryption and periodic key cleanup enabled
     const conn = MongoRunner.runMongod({
         enableEncryption: "",
         encryptionKeyFile: keyFile,
         encryptionCipherMode: cipherMode,
         setParameter: {
-            encryptionKeyCleanupDeferred: true,
             encryptionKeyCleanupIntervalSeconds: cleanupIntervalSecs,
         },
     });
@@ -163,7 +163,13 @@
         assert(!dbInfo.name.startsWith(testDbPrefix), "Test database should have been dropped: " + dbInfo.name);
     }
 
-    jsTestLog("Phase 9: Create new databases to verify system is still functional");
+    jsTestLog("Phase 9: Test explicit cleanup command");
+
+    // Test that the cleanupOrphanedEncryptionKeys admin command works
+    assert.commandWorked(
+        conn.getDB("admin").runCommand({cleanupOrphanedEncryptionKeys: 1}));
+
+    jsTestLog("Phase 10: Create new databases to verify system is still functional");
 
     // Create new databases to verify system is still functional
     for (let i = 0; i < 3; i++) {

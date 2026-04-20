@@ -44,7 +44,6 @@ Copyright (C) 2022-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/service_context_test_fixture.h"
 #include "mongo/db/storage/master_key_rotation_completed.h"
 #include "mongo/db/storage/wiredtiger/encryption_keydb.h"
-#include "mongo/db/storage/wiredtiger/wiredtiger_global_options_gen.h"
 #include "mongo/db/storage/wiredtiger/wiredtiger_kv_engine.h"
 #include "mongo/logv2/log_component.h"
 #include "mongo/unittest/temp_dir.h"
@@ -1838,31 +1837,6 @@ TEST_F(WiredTigerKVEngineNoEncryptionKeyManagementTest, GetAllEncryptionKeyIdsIn
 
     auto keyIdsInUse = _engine->getAllEncryptionKeyIdsInUse();
     ASSERT_TRUE(keyIdsInUse.empty());
-}
-
-// =============================================================================
-// Tests for encryptionKeyCleanupDeferred server parameter
-// =============================================================================
-
-TEST_F(WiredTigerKVEngineEncryptionKeyManagementTest, EncryptionKeyCleanupDeferredDefaultFalse) {
-    // The default value should be false
-    ASSERT_FALSE(gEncryptionKeyCleanupDeferred.load());
-}
-
-TEST_F(WiredTigerKVEngineEncryptionKeyManagementTest, EncryptionKeyCleanupDeferredCanBeSet) {
-    // Save original value
-    bool originalValue = gEncryptionKeyCleanupDeferred.load();
-
-    // Set to true
-    gEncryptionKeyCleanupDeferred.store(true);
-    ASSERT_TRUE(gEncryptionKeyCleanupDeferred.load());
-
-    // Set back to false
-    gEncryptionKeyCleanupDeferred.store(false);
-    ASSERT_FALSE(gEncryptionKeyCleanupDeferred.load());
-
-    // Restore original value
-    gEncryptionKeyCleanupDeferred.store(originalValue);
 }
 
 }  // namespace

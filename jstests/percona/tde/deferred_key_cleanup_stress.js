@@ -1,5 +1,5 @@
 /**
- * Stress test for deferred encryption key cleanup with aggressive cleanup intervals.
+ * Stress test for encryption key cleanup with aggressive cleanup intervals.
  *
  * This test runs 16 parallel threads, each performing 200 iterations of:
  * - Creating a unique database
@@ -7,7 +7,7 @@
  * - Verifying data integrity
  * - Dropping the database
  *
- * The deferred key cleanup runs every 1 second, exercising the race condition
+ * The periodic key cleanup runs every 1 second, exercising the race condition
  * handling between dropDatabase and encryption key cleanup.
  *
  * @tags: [
@@ -37,13 +37,12 @@ import {funWithArgs} from "jstests/libs/parallel_shell_helpers.js";
             cipherMode,
     );
 
-    // Start mongod with encryption and aggressive deferred key cleanup
+    // Start mongod with encryption and aggressive periodic key cleanup
     const conn = MongoRunner.runMongod({
         enableEncryption: "",
         encryptionKeyFile: keyFile,
         encryptionCipherMode: cipherMode,
         setParameter: {
-            encryptionKeyCleanupDeferred: true,
             encryptionKeyCleanupIntervalSeconds: cleanupIntervalSecs,
         },
     });

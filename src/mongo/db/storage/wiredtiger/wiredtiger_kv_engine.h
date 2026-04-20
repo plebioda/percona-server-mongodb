@@ -513,7 +513,7 @@ public:
 
     std::vector<std::string> getAllEncryptionKeyIds() override;
 
-    std::set<std::string> getAllEncryptionKeyIdsInUse() override;
+    std::vector<std::string> getAllEncryptionKeyIdsInUse() override;
 
     bool isEncryptionKeyCleanupDeferred() const override;
 

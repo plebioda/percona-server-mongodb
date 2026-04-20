@@ -484,7 +484,7 @@ std::vector<std::string> EncryptionKeyDB::getAllKeyIds() {
     int res = _sess->open_cursor(_sess, "table:key", nullptr, nullptr, &cursor);
     if (res) {
         LOGV2_ERROR(
-            29060, "getAllKeyIds: error opening cursor", "error"_attr = wiredtiger_strerror(res));
+            29155, "getAllKeyIds: error opening cursor", "error"_attr = wiredtiger_strerror(res));
         return keyIds;
     }
 
@@ -505,10 +505,10 @@ std::vector<std::string> EncryptionKeyDB::getAllKeyIds() {
 
     if (res != WT_NOTFOUND) {
         LOGV2_ERROR(
-            29061, "getAllKeyIds: error iterating cursor", "error"_attr = wiredtiger_strerror(res));
+            29156, "getAllKeyIds: error iterating cursor", "error"_attr = wiredtiger_strerror(res));
     }
 
-    LOGV2_DEBUG(29062, 2, "getAllKeyIds: found keys", "count"_attr = keyIds.size());
+    LOGV2_DEBUG(29157, 2, "getAllKeyIds: found keys", "count"_attr = keyIds.size());
     return keyIds;
 }
 

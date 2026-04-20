@@ -31,12 +31,12 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 
 #pragma once
 
-#include <set>
 #include <string>
 #include <vector>
 
 namespace mongo {
 class DatabaseName;
+class OperationContext;
 }
 
 namespace percona {
@@ -72,18 +72,19 @@ struct KeyDBAPI {
     }
 
     /**
-     * Returns a set of all encryption keyIds currently in use by any ident in storage.
+     * Returns a sorted vector of all encryption keyIds currently in use by any ident in storage.
      * This scans the storage engine metadata to find all encrypted idents and extracts their
      * keyids. Used to reliably determine if a key can be safely deleted.
+     * The returned vector is sorted to enable efficient set-difference operations.
      */
-    virtual std::set<std::string> getAllEncryptionKeyIdsInUse() {
+    virtual std::vector<std::string> getAllEncryptionKeyIdsInUse() {
         return {};  // empty for engines which do not support KeyDB
     }
 
     /**
-     * Returns true if deferred encryption key cleanup is enabled.
-     * When enabled, encryption keys are not deleted immediately on dropDatabase;
-     * instead they are cleaned up asynchronously by a background process.
+     * Returns true if periodic encryption key cleanup is enabled (interval > 0).
+     * When enabled, orphaned encryption keys are cleaned up asynchronously by a
+     * background process that verifies the associated database no longer exists.
      */
     virtual bool isEncryptionKeyCleanupDeferred() const {
         return false;  // disabled by default for engines which do not support KeyDB
@@ -91,10 +92,20 @@ struct KeyDBAPI {
 
     /**
      * Returns the interval in seconds between orphaned encryption key cleanup attempts.
-     * Only effective when isEncryptionKeyCleanupDeferred() returns true.
+     * 0 means periodic cleanup is disabled; >0 means enabled with that interval.
      */
     virtual int32_t getEncryptionKeyCleanupIntervalSeconds() const {
         return 60;  // default 60 seconds
+    }
+
+    /**
+     * Cleans up orphaned encryption keys - keys that belong to databases that
+     * no longer exist and are not in use by any storage idents.
+     * Called unconditionally on startup, by the periodic cleanup process, and
+     * by the cleanupOrphanedEncryptionKeys admin command.
+     */
+    virtual void cleanupOrphanedEncryptionKeys(mongo::OperationContext* opCtx) {
+        // do nothing for engines which do not support KeyDB
     }
 };
 

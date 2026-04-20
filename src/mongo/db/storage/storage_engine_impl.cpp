@@ -1028,74 +1028,72 @@ bool StorageEngineImpl::_shouldRunEncryptionKeyCleanup() {
     return true;
 }
 
-std::set<std::string> StorageEngineImpl::_getExistingDatabaseNames(OperationContext* opCtx) {
-    std::set<std::string> existingDbSet;
+std::vector<std::string> StorageEngineImpl::_getExistingDatabaseNames(OperationContext* opCtx) {
+    std::vector<std::string> existingDbNames;
     Lock::GlobalLock globalLock(opCtx, MODE_IS);
     auto catalog = CollectionCatalog::get(opCtx);
     auto existingDbs = catalog->getAllDbNames();
+    existingDbNames.reserve(existingDbs.size());
     for (const auto& db : existingDbs) {
-        existingDbSet.insert(DatabaseNameUtil::serialize(db, SerializationContext::stateDefault()));
+        existingDbNames.emplace_back(
+            DatabaseNameUtil::serialize(db, SerializationContext::stateDefault()));
     }
-    return existingDbSet;
+    std::sort(existingDbNames.begin(), existingDbNames.end());
+    return existingDbNames;
 }
 
-void StorageEngineImpl::_cleanupOrphanedEncryptionKeys(OperationContext* opCtx) {
-    // Check if deferred encryption key cleanup is enabled
-    if (!_engine->isEncryptionKeyCleanupDeferred()) {
-        return;
-    }
-
-    // Check if enough time has passed since the last cleanup
-    if (!_shouldRunEncryptionKeyCleanup()) {
-        return;
-    }
-
+void StorageEngineImpl::cleanupOrphanedEncryptionKeys(OperationContext* opCtx) {
     // Get all encryption key IDs from the key database
     auto keyIds = _engine->getAllEncryptionKeyIds();
     if (keyIds.empty()) {
         return;
     }
 
-    LOGV2_DEBUG(29066, 2, "Checking for orphaned encryption keys", "keyCount"_attr = keyIds.size());
+    LOGV2_DEBUG(29159, 2, "Checking for orphaned encryption keys", "keyCount"_attr = keyIds.size());
 
-    // CRITICAL: Get the set of keyIds actually in use by idents in WiredTiger storage.
+    // Get the sorted vector of keyIds actually in use by idents in storage.
     // This is the AUTHORITATIVE check - if ANY ident (including drop-pending ones that haven't
     // been physically removed yet) uses this key, it MUST NOT be deleted.
-    // This prevents the race condition where a key is deleted while drop-pending idents
-    // encrypted with that key still exist in storage.
     auto keyIdsInUse = _engine->getAllEncryptionKeyIdsInUse();
 
-    LOGV2_DEBUG(29070,
+    LOGV2_DEBUG(29162,
                 2,
                 "Encryption key cleanup check",
                 "keysInKeyDb"_attr = keyIds.size(),
                 "keysInUseByIdents"_attr = keyIdsInUse.size());
 
-    // Get the list of existing databases from the catalog
-    auto existingDbSet = _getExistingDatabaseNames(opCtx);
+    // Get the sorted list of existing database names from the catalog
+    auto existingDbNames = _getExistingDatabaseNames(opCtx);
 
-    for (const auto& keyId : keyIds) {
-        // Skip special keys
-        if (EncryptionKeyDB::isSpecialKeyId(keyId)) {
-            continue;
-        }
+    // Sort keyIds and filter out special keys for efficient set-difference operations
+    std::sort(keyIds.begin(), keyIds.end());
+    keyIds.erase(std::remove_if(keyIds.begin(),
+                                keyIds.end(),
+                                [](const auto& k) { return EncryptionKeyDB::isSpecialKeyId(k); }),
+                 keyIds.end());
 
-        // Quick check: if database exists in catalog, skip
-        if (existingDbSet.find(keyId) != existingDbSet.end()) {
-            continue;
-        }
+    // Single-pass: find keys NOT in the catalog
+    std::vector<std::string> notInCatalog;
+    std::set_difference(keyIds.begin(),
+                        keyIds.end(),
+                        existingDbNames.begin(),
+                        existingDbNames.end(),
+                        std::back_inserter(notInCatalog));
 
-        // CRITICAL CHECK: If ANY ident in storage uses this key, do NOT delete it.
-        // This includes drop-pending idents that haven't been physically removed yet.
-        if (keyIdsInUse.count(keyId) > 0) {
-            LOGV2(29069,
-                  "Skipping encryption key deletion - key is still in use by storage idents",
-                  "keyId"_attr = keyId);
-            continue;
-        }
+    // Single-pass: of those, find keys NOT in use by any ident
+    std::vector<std::string> orphaned;
+    std::set_difference(notInCatalog.begin(),
+                        notInCatalog.end(),
+                        keyIdsInUse.begin(),
+                        keyIdsInUse.end(),
+                        std::back_inserter(orphaned));
 
-        // Database doesn't appear to exist and no idents use this key -
-        // acquire lock and verify with synchronization
+    if (orphaned.empty()) {
+        return;
+    }
+
+    // Delete orphaned keys - acquire lock per key and re-verify before deletion
+    for (const auto& keyId : orphaned) {
         try {
             auto dbName = DatabaseNameUtil::deserialize(
                 boost::none, keyId, SerializationContext::stateDefault());
@@ -1111,20 +1109,31 @@ void StorageEngineImpl::_cleanupOrphanedEncryptionKeys(OperationContext* opCtx) 
             bool dropPending = freshCatalog->isDropPending(dbName);
 
             if (!dbExists && !dropPending) {
-                LOGV2(29067,
+                LOGV2(29160,
                       "Deleting orphaned encryption key for non-existent database",
                       "keyId"_attr = keyId);
                 _engine->keydbDropDatabase(dbName);
             }
         } catch (const DBException& e) {
             // Log and continue with other keys - don't let one failure stop cleanup
-            LOGV2_DEBUG(29068,
+            LOGV2_DEBUG(29161,
                         1,
                         "Failed to clean up encryption key",
                         "keyId"_attr = keyId,
                         "error"_attr = e.toStatus());
         }
     }
+}
+
+void StorageEngineImpl::_cleanupOrphanedEncryptionKeys(OperationContext* opCtx) {
+    // Periodic wrapper: check if periodic cleanup is enabled and interval has elapsed
+    if (!_engine->isEncryptionKeyCleanupDeferred()) {
+        return;  // periodic cleanup disabled (interval == 0)
+    }
+    if (!_shouldRunEncryptionKeyCleanup()) {
+        return;
+    }
+    cleanupOrphanedEncryptionKeys(opCtx);
 }
 
 StorageEngineImpl::TimestampMonitor::TimestampMonitor(KVEngine* engine, PeriodicRunner* runner)

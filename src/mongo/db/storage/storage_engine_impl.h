@@ -60,7 +60,6 @@
 #include <functional>
 #include <list>
 #include <memory>
-#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -87,6 +86,8 @@ class StorageEngineImpl final : public StorageEngine {
     Status hotBackupTar(OperationContext* opCtx, const std::string& path) override;
     Status hotBackup(OperationContext* opCtx, const percona::S3BackupParameters& s3params) override;
     void keydbDropDatabase(const DatabaseName& dbName) override;
+
+    void cleanupOrphanedEncryptionKeys(OperationContext* opCtx) override;
 
 public:
     StorageEngineImpl(OperationContext* opCtx,
@@ -365,8 +366,8 @@ private:
                                                      const Timestamp& timestamp);
 
     /**
-     * Cleans up orphaned encryption keys - keys that belong to databases that no longer exist.
-     * Only active when encryptionKeyCleanupDeferred server parameter is enabled.
+     * Periodic wrapper for cleanupOrphanedEncryptionKeys. Checks if periodic cleanup
+     * is enabled (interval > 0) and if enough time has elapsed before delegating.
      */
     void _cleanupOrphanedEncryptionKeys(OperationContext* opCtx);
 
@@ -378,10 +379,10 @@ private:
     bool _shouldRunEncryptionKeyCleanup();
 
     /**
-     * Returns the set of existing database names as serialized strings.
+     * Returns the sorted vector of existing database names as serialized strings.
      * Acquires a global IS lock to read from the catalog.
      */
-    std::set<std::string> _getExistingDatabaseNames(OperationContext* opCtx);
+    std::vector<std::string> _getExistingDatabaseNames(OperationContext* opCtx);
 
     // Main KVEngine instance used for all user tables.
     // This must be the first member so it is destroyed last.

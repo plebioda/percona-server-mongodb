@@ -222,14 +222,14 @@ pr:
     # Default: "Merge %(merge_commit_short_sha) into %(target_branch)"
     title_format: "Merge '%(merge_commit_short_sha)' into '%(target_branch)'"
 
-    # Labels to apply to main PRs when created.
-    # These labels are applied automatically via the GitHub API.
+    # Labels always applied to main PRs when created.
     # Can be overridden at runtime with --labels or disabled with --no-labels.
     #
+    # Main PRs never contain unresolved conflicts, so `labels_on_unresolved`
+    # is not used here.
+    #
     # Default: [] (no labels)
-    labels:
-      - "ci-skip-format"
-      - "ci-skip-clang-tidy"
+    labels: []
 
   # Configuration for solution PRs (from solution branch to conflict branch).
   solution:
@@ -239,12 +239,19 @@ pr:
     # Default: "Resolve conflicts for merge %(merge_commit_short_sha) into %(target_branch)"
     title_format: "Resolve conflicts for merge '%(merge_commit_short_sha)' into '%(target_branch)'"
 
-    # Labels to apply to solution PRs when created.
-    # These labels are applied automatically via the GitHub API.
+    # Labels always applied to solution PRs.
     # Can be overridden at runtime with --labels or disabled with --no-labels.
     #
     # Default: [] (no labels)
-    labels:
+    labels: []
+
+    # Labels applied only when the solution still contains unresolved conflicts
+    # (the AI agent left files with conflict markers for a human to finish).
+    # Keeps CI (format, clang-tidy) off while markers remain, but lets it run
+    # on fully-resolved solution PRs so mergai's CI auto-fix loop can engage.
+    #
+    # Default: [] (no conditional labels)
+    labels_on_unresolved:
       - "ci-skip-format"
       - "ci-skip-clang-tidy"
 

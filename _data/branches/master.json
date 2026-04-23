@@ -5,17 +5,27 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 97,
+    "commits_behind": 100,
     "days_behind": 2,
-    "files_affected": 1579,
-    "total_additions": 31514,
-    "total_deletions": 21138,
+    "files_affected": 1609,
+    "total_additions": 32285,
+    "total_deletions": 22409,
     "date_range": {
-      "first": "2026-04-21T10:31:11+00:00",
-      "last": "2026-04-23T12:13:03+00:00"
+      "first": "2026-04-21T10:01:05+00:00",
+      "last": "2026-04-23T13:21:52+00:00"
     }
   },
   "last_merged_commit": {
+    "sha": "c520ca3eb9a5109456d01cc468767728e7f1b287",
+    "short_sha": "c520ca3eb9a",
+    "date": "2026-04-21T10:44:02+01:00",
+    "author": {
+      "name": "marcobizzarri-mdb",
+      "email": "marco.bizzarri@mongodb.com"
+    },
+    "summary": "SERVER-120560 Create the required additional hooks in FCV upgrade/downgrade (#51389)"
+  },
+  "first_unmerged_commit": {
     "sha": "6cfb75b2d85dbba59437cb247ee1d44eecb3a2a4",
     "short_sha": "6cfb75b2d85",
     "date": "2026-04-21T11:01:05+01:00",
@@ -25,17 +35,27 @@
     },
     "summary": "SERVER-100156 Remove changePrimary command (#50732)"
   },
-  "first_unmerged_commit": {
-    "sha": "0e9402b1eb780b792057ac555e56637a074ff128",
-    "short_sha": "0e9402b1eb7",
-    "date": "2026-04-21T11:31:11+01:00",
-    "author": {
-      "name": "Vesko Karaganev",
-      "email": "vesko.karaganev@mongodb.com"
-    },
-    "summary": "SERVER-124323 Erase stale pointers from dsToStageId (#52031)"
-  },
   "unmerged_commits": [
+    {
+      "sha": "7d2f54cac849ec78945c2d40c6cef61e937f16df",
+      "short_sha": "7d2f54cac84",
+      "date": "2026-04-23T14:21:52+01:00",
+      "author": {
+        "name": "Max Verbinnen",
+        "email": "64088654+Max-Verbinnen@users.noreply.github.com"
+      },
+      "summary": "SERVER-122631 Reuse CBR costing in join optimization for single table accesses (#51937)"
+    },
+    {
+      "sha": "e9f6f5320280ee75067c00d06a5e7663850677eb",
+      "short_sha": "e9f6f532028",
+      "date": "2026-04-23T09:08:01-04:00",
+      "author": {
+        "name": "Yuhong Zhang",
+        "email": "yuhong.zhang@mongodb.com"
+      },
+      "summary": "SERVER-124936 Make cloneCollectionAsCapped command read the latest size (#52338)"
+    },
     {
       "sha": "98e3f80a1ab2dda77a123ecf38eda9e2d5904a79",
       "short_sha": "98e3f80a1ab",
@@ -1005,9 +1025,42 @@
         "email": "vesko.karaganev@mongodb.com"
       },
       "summary": "SERVER-124323 Erase stale pointers from dsToStageId (#52031)"
+    },
+    {
+      "sha": "6cfb75b2d85dbba59437cb247ee1d44eecb3a2a4",
+      "short_sha": "6cfb75b2d85",
+      "date": "2026-04-21T11:01:05+01:00",
+      "author": {
+        "name": "Daniele Alessandrelli",
+        "email": "daniele.alessandrelli@mongodb.com"
+      },
+      "summary": "SERVER-100156 Remove changePrimary command (#50732)"
     }
   ],
   "merge_picks": [
+    {
+      "commit": {
+        "sha": "6cfb75b2d85dbba59437cb247ee1d44eecb3a2a4",
+        "short_sha": "6cfb75b2d85",
+        "date": "2026-04-21T11:01:05+01:00",
+        "author": {
+          "name": "Daniele Alessandrelli",
+          "email": "daniele.alessandrelli@mongodb.com"
+        },
+        "summary": "SERVER-100156 Remove changePrimary command (#50732)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 23,
+          "num_of_lines": 569,
+          "lines_added": 4,
+          "lines_deleted": 565,
+          "num_of_dirs": 12
+        }
+      }
+    },
     {
       "commit": {
         "sha": "685559c5fece349506b72f0f4561456b93f37792",
@@ -1162,7 +1215,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-04-23 13:18:10",
+  "generated_at": "2026-04-23 14:02:47",
   "branch_name": "master",
   "display_name": "master"
 }

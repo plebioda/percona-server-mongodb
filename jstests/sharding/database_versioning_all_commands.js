@@ -439,7 +439,6 @@ const allTestCases = {
             },
             skipMultiversion: true,
         },
-        changePrimary: {skip: "reads primary shard from sharding catalog with readConcern: local"},
         checkMetadataConsistency: {
             run: {
                 sendsDbVersion: true,
@@ -1053,7 +1052,6 @@ const allTestCases = {
         _refreshQueryAnalyzerConfiguration: {skip: "TODO"},
         _shardsvrAbortReshardCollection: {skip: "TODO"},
         _shardsvrBeginMigrationBlockingOperation: {skip: "TODO"},
-        _shardsvrChangePrimary: {skip: "TODO"},
         _shardsvrCheckCanConnectToConfigServer: {skip: "TODO"},
         _shardsvrCheckMetadataConsistency: {
             run: {

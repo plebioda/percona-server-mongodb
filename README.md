@@ -45,6 +45,31 @@ $ ./mongosh
 test> help
 ```
 
+<<<<<<< HEAD
+||||||| c520ca3eb9a
+## Installing Compass
+
+You can install compass using the `install_compass` script packaged with MongoDB:
+
+```bash
+$ ./install_compass
+```
+
+This will download the appropriate MongoDB Compass package for your platform
+and install it.
+
+=======
+## Installing Compass
+
+You can install compass using the `install_compass` script packaged with MongoDB:
+
+```bash
+$ ./install_compass
+```
+
+This will download the appropriate MongoDB Compass package for your platform and install it.
+
+>>>>>>> 32e8f260def5dabb0bba281f64d4d07c9ab079dd
 ## Drivers
 
 Client drivers for most programming languages are available at
@@ -79,4 +104,20 @@ If there is no existing report, submit a report following these steps:
 
 ## LICENSE
 
+<<<<<<< HEAD
 Percona Server for MongoDB is [source-available software](https://en.wikipedia.org/wiki/Source-available_software).
+||||||| c520ca3eb9a
+MongoDB is free and the source is available. Versions released prior to
+October 16, 2018 are published under the AGPL. All versions released after
+October 16, 2018, including patch fixes for prior versions, are published
+under the [Server Side Public License (SSPL) v1](LICENSE-Community.txt).
+See individual files for details which will specify the license applicable
+to each file. Files subject to the SSPL will be noted in their headers.
+=======
+MongoDB is free and the source is available. Versions released prior to October 16, 2018 are
+published under the AGPL. All versions released after October 16, 2018, including patch fixes for
+prior versions, are published under the
+[Server Side Public License (SSPL) v1](LICENSE-Community.txt). See individual files for details
+which will specify the license applicable to each file. Files subject to the SSPL will be noted in
+their headers.
+>>>>>>> 32e8f260def5dabb0bba281f64d4d07c9ab079dd

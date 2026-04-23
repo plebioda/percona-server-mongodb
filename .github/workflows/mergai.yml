@@ -20,6 +20,14 @@ on:
     types: [closed]
     branches:
       - "mergai/*/conflict"
+  # CI auto-fix: when a watched workflow finishes (success OR failure) on a
+  # mergai/* branch, run `mergai ci handle <run-id>`. The command itself
+  # decides what to do based on conclusion + per-workflow config (e.g.
+  # `code_scanning_check: true` makes a passing run consult Code Scanning
+  # for findings).
+  workflow_run:
+    workflows: ["format", "clang-tidy", "build-and-test"]
+    types: [completed]
 
 jobs:
   trigger-merge:
@@ -102,6 +110,17 @@ jobs:
             RESOLVE_CMD="$RESOLVE_CMD --agent \"$MERGAI_AGENT\""
           fi
 
+          # Retry `pr create` once with --skip-commit-list when the first
+          # attempt fails. This is the documented escape hatch for merges
+          # whose merged-commit table pushes the PR body past GitHub's
+          # 65,536 character limit (validation error).
+          pr_create_with_fallback() {
+            local pr_kind="$1"
+            mergai pr --repo "$GITHUB_REPOSITORY" create "$pr_kind" && return 0
+            echo "::warning::'mergai pr create $pr_kind' failed; retrying with --skip-commit-list"
+            mergai pr --repo "$GITHUB_REPOSITORY" create "$pr_kind" --skip-commit-list
+          }
+
           # Attempt merge; exit code 0 = success, 1 = conflicts
           if eval $MERGE_CMD; then
             echo "Merge successful. Committing merge."
@@ -109,7 +128,7 @@ jobs:
             mergai branch create main        # Create and checkout main working branch
             mergai branch push main          # Push main branch to origin
             mergai notes push                # Push mergai notes to remote
-            mergai pr --repo $GITHUB_REPOSITORY create main
+            pr_create_with_fallback main
           else
             echo "Merge conflict detected. Processing with resolution."
             mergai commit conflict           # Commit conflict state with markers
@@ -120,7 +139,7 @@ jobs:
             mergai branch push solution      # Push solution branch
             mergai branch push conflict      # Push conflict branch
             mergai notes push                # Push mergai notes to remote
-            mergai pr --repo $GITHUB_REPOSITORY create solution
+            pr_create_with_fallback solution
           fi
 
   solution-merged:
@@ -150,7 +169,7 @@ jobs:
           setup-mergai: "true"
           github-app-token: ${{ steps.app-token.outputs.token }}
           github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
-          mergai-ref: master
+          mergai-ref: handling-workflows
 
       # Finalize after solution PR is merged into conflict branch
       - name: Finalize
@@ -162,4 +181,78 @@ jobs:
           mergai finalize                  # Finalize into final merge commit
           mergai branch push main          # Push main branch to origin
           mergai notes push                # Push mergai notes to remote
-          mergai pr --repo $GITHUB_REPOSITORY create main
+          # Retry once with --skip-commit-list if the body exceeds GitHub's
+          # 65,536 character limit (typical for merges with hundreds of
+          # commits in the merged-commits table).
+          mergai pr --repo "$GITHUB_REPOSITORY" create main \
+            || { echo "::warning::'mergai pr create main' failed; retrying with --skip-commit-list" ; \
+                 mergai pr --repo "$GITHUB_REPOSITORY" create main --skip-commit-list ; }
+
+  # PSMDB-1972: when a watched CI workflow completes on a mergai/* branch,
+  # call `mergai ci handle <run-id>`. The command resolves the run itself
+  # (workflow name, head SHA, PR, conclusion), downloads artifacts if
+  # needed, consults Code Scanning when configured, and only acts when
+  # there's something to fix. The same command also accepts "all" or a
+  # workflow name as the target for manual catch-up.
+  ci-fix:
+    environment: privileged-ops
+    if: |
+      startsWith(github.event.workflow_run.head_branch, 'mergai/')
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+      GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+      GOOGLE_GENAI_USE_VERTEXAI: "true"
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          private-key: ${{ secrets.PSMDB_BOT_GH_APP_PRIVATE_KEY }}
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup workflow environment
+        uses: ./.github/actions/setup-mergai-workflow
+        with:
+          setup-gcp: "true"
+          setup-gemini: "true"
+          setup-claude: "true"
+          setup-mergai: "true"
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+          github-app-token: ${{ steps.app-token.outputs.token }}
+          github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          mergai-ref: handling-workflows
+
+      - name: Fetch and load mergai notes
+        run: |
+          mergai notes update
+          mergai context init
+
+      - name: Handle CI workflow result
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mergai ci handle ${{ github.event.workflow_run.id }}
+
+      # Push if a fix landed. `mergai ci handle` only commits when the
+      # handler produced changes, so we check for a new commit relative to
+      # the run's original head SHA.
+      - name: Push fix and notes
+        env:
+          ORIGINAL_HEAD: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$ORIGINAL_HEAD" ]; then
+            git push origin HEAD:"$HEAD_BRANCH"
+            mergai notes push
+          else
+            echo "No commit produced; nothing to push."
+          fi

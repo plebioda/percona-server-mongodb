@@ -20,6 +20,11 @@ on:
     types: [closed]
     branches:
       - "mergai/*/conflict"
+  # CI auto-fix: when a watched workflow finishes (success OR failure) on a
+  # mergai/* branch, the ci-fix job below decides what to do.
+  workflow_run:
+    workflows: ["format", "clang-tidy"]
+    types: [completed]
 
 jobs:
   trigger-merge:
@@ -163,3 +168,152 @@ jobs:
           mergai branch push main          # Push main branch to origin
           mergai notes push                # Push mergai notes to remote
           mergai pr --repo $GITHUB_REPOSITORY create main
+
+  # PSMDB-1972: when a watched CI workflow finishes with failure on a mergai
+  # branch, build a fix context from its artifacts and let `mergai ci handle`
+  # apply a fix. The handler commits any change; this job pushes it so the
+  # PR's CI re-runs.
+  ci-fix:
+    environment: privileged-ops
+    if: |
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      startsWith(github.event.workflow_run.head_branch, 'mergai/')
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+      GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+      GOOGLE_GENAI_USE_VERTEXAI: "true"
+
+    steps:
+      # Resolve the PR associated with the failing workflow run. The
+      # workflow_run event is delivered on the default branch and includes
+      # the originating PR(s). Skip if none — that means the workflow was
+      # triggered outside a PR context (e.g. push) and there is nothing
+      # for mergai to fix.
+      - name: Get PR information
+        id: pr-info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prs = context.payload.workflow_run.pull_requests;
+            if (!prs || prs.length === 0) {
+              core.info('No PR associated with this workflow run; skipping');
+              core.setOutput('skip', 'true');
+              return;
+            }
+            core.setOutput('skip', 'false');
+            core.setOutput('pr_number', prs[0].number);
+            core.setOutput('head_branch', context.payload.workflow_run.head_branch);
+            core.setOutput('head_sha', context.payload.workflow_run.head_sha);
+
+      - name: Create GitHub App token
+        if: steps.pr-info.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          private-key: ${{ secrets.PSMDB_BOT_GH_APP_PRIVATE_KEY }}
+
+      - name: Checkout PR branch
+        if: steps.pr-info.outputs.skip != 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr-info.outputs.head_branch }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup workflow environment
+        if: steps.pr-info.outputs.skip != 'true'
+        uses: ./.github/actions/setup-mergai-workflow
+        with:
+          setup-gcp: "true"
+          setup-gemini: "true"
+          setup-claude: "true"
+          setup-mergai: "true"
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+          github-app-token: ${{ steps.app-token.outputs.token }}
+          github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          mergai-ref: master
+
+      # Download every artifact uploaded by the failing run into
+      # /tmp/ci-artifacts/<artifact-name>/. mergai's context builders
+      # expect that layout (e.g. /tmp/ci-artifacts/format-results/diff.patch).
+      - name: Download workflow artifacts
+        if: steps.pr-info.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const run_id = context.payload.workflow_run.id;
+
+            fs.mkdirSync('/tmp/ci-artifacts', { recursive: true });
+
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner, repo, run_id,
+            });
+
+            for (const artifact of artifacts.data.artifacts) {
+              core.info(`Downloading artifact: ${artifact.name}`);
+              const download = await github.rest.actions.downloadArtifact({
+                owner, repo,
+                artifact_id: artifact.id,
+                archive_format: 'zip',
+              });
+              fs.writeFileSync(
+                `/tmp/ci-artifacts/${artifact.name}.zip`,
+                Buffer.from(download.data),
+              );
+            }
+
+      - name: Extract artifacts
+        if: steps.pr-info.outputs.skip != 'true'
+        run: |
+          cd /tmp/ci-artifacts
+          for f in *.zip; do
+            [ -f "$f" ] || continue
+            unzip -q -o "$f" -d "${f%.zip}"
+          done
+          ls -la
+
+      # Rebuild local note.json from git notes attached to the branch's
+      # commits, so `mergai ci handle` sees the prior CI fix history (if any)
+      # and the merge_info needed for env vars.
+      - name: Fetch and load mergai notes
+        if: steps.pr-info.outputs.skip != 'true'
+        run: |
+          mergai notes update
+          mergai context init
+
+      - name: Handle CI workflow failure
+        if: steps.pr-info.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          PR_NUMBER: ${{ steps.pr-info.outputs.pr_number }}
+        run: |
+          mergai ci handle \
+            --workflow "$WORKFLOW_NAME" \
+            --run-id "$WORKFLOW_RUN_ID" \
+            --pr "$PR_NUMBER" \
+            --artifacts-dir /tmp/ci-artifacts
+
+      # Push if a fix landed. `mergai ci handle` only commits when the
+      # handler produced changes, so we check for a new commit relative to
+      # the run's original head_sha.
+      - name: Push fix and notes
+        if: steps.pr-info.outputs.skip != 'true'
+        env:
+          ORIGINAL_HEAD: ${{ steps.pr-info.outputs.head_sha }}
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$ORIGINAL_HEAD" ]; then
+            git push origin HEAD:"${{ steps.pr-info.outputs.head_branch }}"
+            mergai notes push
+          else
+            echo "No commit produced; nothing to push."
+          fi

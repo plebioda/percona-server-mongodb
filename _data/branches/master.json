@@ -6,7 +6,7 @@
   "is_up_to_date": false,
   "divergence": {
     "commits_behind": 32,
-    "days_behind": 3,
+    "days_behind": 4,
     "files_affected": 210,
     "total_additions": 5090,
     "total_deletions": 1420,
@@ -452,7 +452,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-04-27 10:08:32",
+  "generated_at": "2026-04-27 10:50:14",
   "branch_name": "master",
   "display_name": "master"
 }

@@ -184,7 +184,7 @@ jobs:
             ls -la bazel-bin/src/mongo/tools/mongo_tidy_checks || true
             exit 1
           fi
-          CLANG_TIDY="$(python3 buildscripts/mongo_toolchain.py clang-tidy)"
+          CLANG_TIDY="$(poetry run python buildscripts/mongo_toolchain.py clang-tidy)"
           echo "Using clang-tidy: $CLANG_TIDY"
           echo "Using clang-tidy plugin: $TIDY_CHECKS_LIB"
           "$CLANG_TIDY" \

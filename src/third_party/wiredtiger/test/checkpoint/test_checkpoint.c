@@ -315,7 +315,7 @@ main(int argc, char *argv[])
          * thread. The workers have ID 0 to N-1, checkpoint thread has N, and the clock thread has N
          * + 1.
          */
-        if ((g.td = calloc((size_t)(g.nworkers + 2), sizeof(THREAD_DATA))) == NULL) {
+        if ((g.td = calloc((size_t)g.nworkers + 2, sizeof(THREAD_DATA))) == NULL) {
             (void)log_print_err("No memory", ENOMEM, 1);
             break;
         }

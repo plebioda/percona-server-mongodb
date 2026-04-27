@@ -939,6 +939,8 @@ Context::~Context()
 Context &
 Context::operator=(const Context &other)
 {
+    if (this == &other)
+        return (*this);
     _verbose = other._verbose;
     *_internal = *other._internal;
     return (*this);
@@ -2303,6 +2305,8 @@ Operation::~Operation()
 Operation &
 Operation::operator=(const Operation &other)
 {
+    if (this == &other)
+        return (*this);
     _optype = other._optype;
     _table = other._table;
     _key = other._key;
@@ -3167,6 +3171,8 @@ Table::~Table()
 Table &
 Table::operator=(const Table &other)
 {
+    if (this == &other)
+        return (*this);
     options = other.options;
     _uri = other._uri;
     *_internal = *other._internal;
@@ -3290,6 +3296,8 @@ Workload::Workload(const Workload &other)
 Workload &
 Workload::operator=(const Workload &other)
 {
+    if (this == &other)
+        return (*this);
     options = other.options;
     stats.assign(other.stats);
     *_context = *other._context;

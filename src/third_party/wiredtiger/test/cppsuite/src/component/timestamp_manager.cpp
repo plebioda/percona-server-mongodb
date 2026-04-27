@@ -36,7 +36,7 @@
 #include "src/storage/connection_manager.h"
 
 namespace test_harness {
-const std::string
+std::string
 timestamp_manager::decimal_to_hex(uint64_t value)
 {
     std::stringstream ss;

@@ -172,6 +172,7 @@ jobs:
 
       - name: Run clang-tidy
         run: |
+          set -o pipefail
           CHANGED="${{ needs.changed_files.outputs.changed_files }}"
           echo "Changed C++ files: '$CHANGED'"
           TIDY_CHECKS_LIB="bazel-bin/src/mongo/tools/mongo_tidy_checks/libmongo_tidy_checks.so"
@@ -183,8 +184,10 @@ jobs:
             ls -la bazel-bin/src/mongo/tools/mongo_tidy_checks || true
             exit 1
           fi
+          CLANG_TIDY="$(python3 buildscripts/mongo_toolchain.py clang-tidy)"
+          echo "Using clang-tidy: $CLANG_TIDY"
           echo "Using clang-tidy plugin: $TIDY_CHECKS_LIB"
-          external/mongo_toolchain_v5/v5/bin/clang-tidy \
+          "$CLANG_TIDY" \
             --load="$TIDY_CHECKS_LIB" \
             $CHANGED \
           | clang-tidy-sarif --output=clang-tidy-results.sarif

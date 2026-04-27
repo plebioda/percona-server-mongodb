@@ -63,6 +63,8 @@ jobs:
           files: |
             **/*.cpp
             **/*.c
+          files_ignore: |
+            src/third_party/**
       - name: List changed files
         run: |
           echo "Changed files: ${{ steps.changed.outputs.all_changed_files }}"

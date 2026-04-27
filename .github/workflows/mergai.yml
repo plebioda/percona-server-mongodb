@@ -235,7 +235,7 @@ jobs:
           claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
           github-app-token: ${{ steps.app-token.outputs.token }}
           github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
-          mergai-ref: master
+          mergai-ref: handling-workflows
 
       # Download every artifact uploaded by the failing run into
       # /tmp/ci-artifacts/<artifact-name>/. mergai's context builders

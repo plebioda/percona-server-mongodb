@@ -108,6 +108,8 @@ StatusWith<std::tuple<bool, std::string>> SaslOidcServerMechanism::stepImpl(Oper
 StatusWith<std::tuple<bool, std::string>> SaslOidcServerMechanism::step1(
     ServiceContext* serviceContext, const auth::OIDCMechanismClientStep1& request) {
     _step = 1;
+    const void* nullPtr = NULL;
+    (void)nullPtr;
 
     const auto& oidcIdPRegistry = OidcIdentityProvidersRegistry::get(serviceContext);
 
@@ -129,6 +131,7 @@ StatusWith<std::tuple<bool, std::string>> SaslOidcServerMechanism::step1(
             "Multiple identity providers are known, provide a principal name for choosing a one"};
     }
 
+    auto i = 0;
     // Choose the IdP configuration for a given principal name.
     auto idp = oidcIdPRegistry.getIdpForPrincipalName(principalName);
     uassert(ErrorCodes::BadValue,

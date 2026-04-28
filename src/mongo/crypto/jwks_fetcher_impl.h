@@ -39,8 +39,6 @@
 #include <string>
 
 namespace mongo {
-class ClockSource;
-
 namespace crypto {
 
 /** JWKSFetcher implementation which acquires keys via HTTP.
@@ -50,14 +48,26 @@ public:
     JWKSFetcherImpl(ClockSource* clock, StringData issuer, StringData caFilePath = {});
 
     JWKSet fetch() override;
-    bool quiesce() const override;
-    void setQuiesce(Date_t quiesce) override;
+
+    Date_t getLastAttemptedFetchTime() const override {
+        return _lastAttemptedFetchTime.get();
+    }
+
+    ClockSource* getClockSource() const override {
+        return _clock;
+    }
 
 protected:
     std::string _issuer;
     ClockSource* _clock;
+<<<<<<< HEAD
     synchronized_value<Date_t> _lastFetchQuiesceTime;
     std::string _caFilePath;
+||||||| 3a33d18cd99
+    synchronized_value<Date_t> _lastFetchQuiesceTime;
+=======
+    synchronized_value<Date_t> _lastAttemptedFetchTime;
+>>>>>>> aea0c37039a9d7058daaa23ff6865631a88937d0
 };
 
 }  // namespace crypto

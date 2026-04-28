@@ -35,12 +35,8 @@
 #include "mongo/db/database_name.h"
 #include "mongo/db/index_builds/index_builds.h"
 #include "mongo/db/index_builds/resumable_index_builds_gen.h"
-<<<<<<< HEAD
-#include "mongo/db/storage/engine_extension.h"
-||||||| 3a33d18cd99
-=======
 #include "mongo/db/storage/compact_options.h"
->>>>>>> aea0c37039a9d7058daaa23ff6865631a88937d0
+#include "mongo/db/storage/engine_extension.h"
 #include "mongo/db/storage/ident.h"
 #include "mongo/db/storage/record_store.h"
 #include "mongo/util/modules.h"

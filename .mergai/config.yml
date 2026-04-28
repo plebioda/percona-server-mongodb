@@ -433,6 +433,11 @@ workflows:
   # `clang-tidy` cannot be auto-fixed mechanically; the AI agent reads the
   # SARIF findings and edits the affected files. Capped at 2 attempts because
   # tidy fixes often need human judgement.
+  #
+  # `code_scanning_check: true` makes mergai also act on a *passing* run
+  # when GitHub Code Scanning has findings for the run's commit (clang-tidy
+  # itself returns 0 even with warnings — without this flag we'd only
+  # react to outright build failures).
   clang-tidy:
     enabled: true
     max_attempts: 2
@@ -441,3 +446,4 @@ workflows:
       type: sarif
       source: artifact
       artifact_name: clang-tidy-results
+      code_scanning_check: true

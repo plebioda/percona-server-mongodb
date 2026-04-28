@@ -107,6 +107,17 @@ jobs:
             RESOLVE_CMD="$RESOLVE_CMD --agent \"$MERGAI_AGENT\""
           fi
 
+          # Retry `pr create` once with --skip-commit-list when the first
+          # attempt fails. This is the documented escape hatch for merges
+          # whose merged-commit table pushes the PR body past GitHub's
+          # 65,536 character limit (validation error).
+          pr_create_with_fallback() {
+            local pr_kind="$1"
+            mergai pr --repo "$GITHUB_REPOSITORY" create "$pr_kind" && return 0
+            echo "::warning::'mergai pr create $pr_kind' failed; retrying with --skip-commit-list"
+            mergai pr --repo "$GITHUB_REPOSITORY" create "$pr_kind" --skip-commit-list
+          }
+
           # Attempt merge; exit code 0 = success, 1 = conflicts
           if eval $MERGE_CMD; then
             echo "Merge successful. Committing merge."
@@ -114,7 +125,7 @@ jobs:
             mergai branch create main        # Create and checkout main working branch
             mergai branch push main          # Push main branch to origin
             mergai notes push                # Push mergai notes to remote
-            mergai pr --repo $GITHUB_REPOSITORY create main
+            pr_create_with_fallback main
           else
             echo "Merge conflict detected. Processing with resolution."
             mergai commit conflict           # Commit conflict state with markers
@@ -125,7 +136,7 @@ jobs:
             mergai branch push solution      # Push solution branch
             mergai branch push conflict      # Push conflict branch
             mergai notes push                # Push mergai notes to remote
-            mergai pr --repo $GITHUB_REPOSITORY create solution
+            pr_create_with_fallback solution
           fi
 
   solution-merged:
@@ -167,7 +178,12 @@ jobs:
           mergai finalize                  # Finalize into final merge commit
           mergai branch push main          # Push main branch to origin
           mergai notes push                # Push mergai notes to remote
-          mergai pr --repo $GITHUB_REPOSITORY create main
+          # Retry once with --skip-commit-list if the body exceeds GitHub's
+          # 65,536 character limit (typical for merges with hundreds of
+          # commits in the merged-commits table).
+          mergai pr --repo "$GITHUB_REPOSITORY" create main \
+            || { echo "::warning::'mergai pr create main' failed; retrying with --skip-commit-list" ; \
+                 mergai pr --repo "$GITHUB_REPOSITORY" create main --skip-commit-list ; }
 
   # PSMDB-1972: when a watched CI workflow finishes with failure on a mergai
   # branch, build a fix context from its artifacts and let `mergai ci handle`

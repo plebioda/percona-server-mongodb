@@ -21,7 +21,7 @@ on:
     branches:
       - "mergai/*/conflict"
   # CI auto-fix: when a watched workflow finishes (success OR failure) on a
-  # mergai/* branch, run `mergai ci handle --run-id ...`. The command itself
+  # mergai/* branch, run `mergai ci handle <run-id>`. The command itself
   # decides what to do based on conclusion + per-workflow config (e.g.
   # `code_scanning_check: true` makes a passing run consult Code Scanning
   # for findings).
@@ -189,11 +189,11 @@ jobs:
                  mergai pr --repo "$GITHUB_REPOSITORY" create main --skip-commit-list ; }
 
   # PSMDB-1972: when a watched CI workflow completes on a mergai/* branch,
-  # call `mergai ci handle --run-id <id>`. The command resolves the run
-  # itself (workflow name, head SHA, PR, conclusion), downloads artifacts
-  # if needed, consults Code Scanning when configured, and only acts when
-  # there's something to fix. The same command is meant to be runnable
-  # manually with just --run-id.
+  # call `mergai ci handle <run-id>`. The command resolves the run itself
+  # (workflow name, head SHA, PR, conclusion), downloads artifacts if
+  # needed, consults Code Scanning when configured, and only acts when
+  # there's something to fix. The same command also accepts "all" or a
+  # workflow name as the target for manual catch-up.
   ci-fix:
     environment: privileged-ops
     if: |
@@ -240,7 +240,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
-        run: mergai ci handle --run-id ${{ github.event.workflow_run.id }}
+        run: mergai ci handle ${{ github.event.workflow_run.id }}
 
       # Push if a fix landed. `mergai ci handle` only commits when the
       # handler produced changes, so we check for a new commit relative to

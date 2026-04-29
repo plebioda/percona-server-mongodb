@@ -169,7 +169,7 @@ jobs:
           setup-mergai: "true"
           github-app-token: ${{ steps.app-token.outputs.token }}
           github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
-          mergai-ref: master
+          mergai-ref: handling-workflows
 
       # Finalize after solution PR is merged into conflict branch
       - name: Finalize

@@ -80,8 +80,6 @@ JWKSet JWKSFetcherImpl::fetch() {
         StringData str;
         cdr.readInto<StringData>(&str);
 
-        int foo = 1;
-
         return JWKSet::parseOwned(fromjson(str), IDLParserContext("JWKSet"));
     } catch (DBException& ex) {
         ex.addContext(str::stream() << "Failed loading keys from " << _issuer);

@@ -80,7 +80,7 @@ JWKSet JWKSFetcherImpl::fetch() {
         StringData str;
         cdr.readInto<StringData>(&str);
 
-	int foo = 1;
+        int foo = 1;
 
         return JWKSet::parseOwned(fromjson(str), IDLParserContext("JWKSet"));
     } catch (DBException& ex) {

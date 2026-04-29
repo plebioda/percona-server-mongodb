@@ -47,13 +47,8 @@ a notice will be included in
 | [JSON-Schema-Test-Suite]                             | MIT                                            | 728066f9c5c258ba3b1804a22a5b998f2ec77ec0 |                      |                                 |
 | [libarchive]                                         | A mix of BSD-2-Clause and others               | 3.8.4                                    | ✗                    | ✗                               |
 | [libdwarf]                                           | LGPL-2.1-or-later, BSD-3-Clause, Public Domain | 2.1.0                                    |                      |                                 |
-<<<<<<< HEAD
 | [libkmip]                                            | Apache-2.0 OR BSD-3-Clause                     | 66119416e2c89ab182343900418cecafe02b6e8d |                      | ✗                               |
 | [libmongocrypt]                                      | Apache-2.0                                     | 1.15.0                                   | ✗                    | ✗                               |
-||||||| 3a33d18cd99
-| [libmongocrypt]                                      | Apache-2.0                                     | 1.15.0                                   | ✗                    | ✗                               |
-=======
->>>>>>> aea0c37039a9d7058daaa23ff6865631a88937d0
 | [LibTomCrypt]                                        | Unlicense                                      | 1.18.2                                   | ✗                    | ✗                               |
 | [libunwind]                                          | MIT                                            | 1.8.1                                    |                      | ✗                               |
 | [linenoise]                                          | BSD-2-Clause                                   | 6cdc775807e57b2c3fd64bd207814f8ee1fe35f3 |                      | ✗                               |
@@ -115,20 +110,11 @@ a notice will be included in
 [googletest]: https://github.com/google/googletest.git
 [gperftools]: https://github.com/gperftools/gperftools.git
 [immer]: https://github.com/arximboldi/immer.git
-<<<<<<< HEAD
-[libarchive]: https://www.libarchive.org
-||||||| 3a33d18cd99
-=======
 [json-c]: https://github.com/json-c/json-c
->>>>>>> aea0c37039a9d7058daaa23ff6865631a88937d0
+[libarchive]: https://www.libarchive.org
 [libdwarf]: https://github.com/davea42/libdwarf-code.git
-<<<<<<< HEAD
 [libkmip]: https://github.com/OpenKMIP/libkmip.git
 [libmongocrypt]: https://github.com/mongodb/libmongocrypt.git
-||||||| 3a33d18cd99
-[libmongocrypt]: https://github.com/mongodb/libmongocrypt.git
-=======
->>>>>>> aea0c37039a9d7058daaa23ff6865631a88937d0
 [libunwind]: https://github.com/libunwind/libunwind.git
 [linenoise]: https://github.com/antirez/linenoise
 [nlohmann/json]: https://github.com/nlohmann/json.git

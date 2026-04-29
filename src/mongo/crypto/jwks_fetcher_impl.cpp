@@ -51,19 +51,11 @@
 
 namespace mongo::crypto {
 
-<<<<<<< HEAD
 JWKSFetcherImpl::JWKSFetcherImpl(ClockSource* clock, StringData issuer, StringData caFilePath)
     : _issuer(issuer),
       _clock(clock),
-      _lastFetchQuiesceTime(Date_t::min()),
+      _lastAttemptedFetchTime(Date_t::min()),
       _caFilePath(caFilePath) {}
-||||||| 3a33d18cd99
-JWKSFetcherImpl::JWKSFetcherImpl(ClockSource* clock, StringData issuer)
-    : _issuer(issuer), _clock(clock), _lastFetchQuiesceTime(Date_t::min()) {}
-=======
-JWKSFetcherImpl::JWKSFetcherImpl(ClockSource* clock, StringData issuer)
-    : _issuer(issuer), _clock(clock), _lastAttemptedFetchTime(Date_t::min()) {}
->>>>>>> aea0c37039a9d7058daaa23ff6865631a88937d0
 
 JWKSet JWKSFetcherImpl::fetch() {
     try {
@@ -87,6 +79,8 @@ JWKSet JWKSFetcherImpl::fetch() {
         ConstDataRange cdr = getJWKs.getCursor();
         StringData str;
         cdr.readInto<StringData>(&str);
+
+	int foo = 1;
 
         return JWKSet::parseOwned(fromjson(str), IDLParserContext("JWKSet"));
     } catch (DBException& ex) {

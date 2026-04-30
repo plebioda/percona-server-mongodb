@@ -391,9 +391,8 @@ int EncryptionKeyDB::get_key_by_id(const char* keyid, size_t len, unsigned char*
         memcpy(key, v.data, encryption::Key::kLength);
         if (kDebugBuild)
             dump_key(key, encryption::Key::kLength, "loaded key from key DB");
-        if (pe != nullptr) {
-            _encryptors[c_str] = pe;
-        }
+        invariant(pe);
+        _encryptors[c_str] = pe;
         return 0;
     }
     if (res != WT_NOTFOUND) {
@@ -422,9 +421,8 @@ int EncryptionKeyDB::get_key_by_id(const char* keyid, size_t len, unsigned char*
 
     if (kDebugBuild)
         dump_key(key, encryption::Key::kLength, "generated and stored key");
-    if (pe != nullptr) {
-        _encryptors[c_str] = pe;
-    }
+    invariant(pe);
+    _encryptors[c_str] = pe;
     return 0;
 }
 
@@ -463,9 +461,8 @@ int EncryptionKeyDB::delete_key_by_id(const std::string& keyid) {
     // DB is dropped just after mongod is started and before any read/write operations)
     auto it = _encryptors.find(keyid);
     if (it != _encryptors.end()) {
-        if (it->second != nullptr) {
-            percona_encryption_extension_drop_keyid(it->second);
-        }
+        invariant(it->second);
+        percona_encryption_extension_drop_keyid(it->second);
         _encryptors.erase(it);
     }
 

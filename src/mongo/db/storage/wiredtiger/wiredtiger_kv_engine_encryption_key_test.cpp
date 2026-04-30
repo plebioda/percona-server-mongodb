@@ -1682,21 +1682,19 @@ protected:
     }
 
     // Helper to trigger key creation by calling get_key_by_id
-    // This simulates what happens when an encrypted ident is created
+    // This simulates what happens when an encrypted ident is created.
+    // get_key_by_id requires a non-null PERCONA_ENCRYPTOR pointer (it is stored
+    // in EncryptionKeyDB::_encryptors). Tests using this helper must not call
+    // delete_key_by_id on the resulting keys, since the fake pointer would be
+    // passed to percona_encryption_extension_drop_keyid.
     void triggerKeyCreation(const std::string& keyId) {
         auto keyDb = _engine->getEncryptionKeyDB();
         ASSERT(keyDb);
         unsigned char keyBuf[32];  // 256-bit key
-        int res = keyDb->get_key_by_id(keyId.c_str(), keyId.length(), keyBuf, nullptr);
+        static int fakeEncryptor;
+        int res =
+            keyDb->get_key_by_id(keyId.c_str(), keyId.length(), keyBuf, &fakeEncryptor);
         ASSERT_EQ(0, res) << "Failed to create/get key with id: " << keyId;
-    }
-
-    // Helper to delete a key from the keydb
-    void deleteKeyFromKeyDb(const std::string& keyId) {
-        auto keyDb = _engine->getEncryptionKeyDB();
-        ASSERT(keyDb);
-        int res = keyDb->delete_key_by_id(keyId);
-        ASSERT_EQ(0, res) << "Failed to delete key with id: " << keyId;
     }
 };
 

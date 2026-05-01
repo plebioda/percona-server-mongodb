@@ -6,7 +6,7 @@
   "is_up_to_date": false,
   "divergence": {
     "commits_behind": 1318,
-    "days_behind": 34,
+    "days_behind": 35,
     "files_affected": 5523,
     "total_additions": 247515,
     "total_deletions": 119714,
@@ -13925,6 +13925,8 @@
       "strategy_name": "branching_point",
       "result": {
         "branches": [
+          "PSMDB-1997-fix-sporadic-failures-skip-checkpoint-cleanup",
+          "PSMDB-1997-fix-sporadic-failures-skip-checkpoint-cleanup-2",
           "master",
           "mergai/master-32e8f260def/conflict",
           "mergai/master-32e8f260def/solution",
@@ -14767,6 +14769,8 @@
       "strategy_name": "branching_point",
       "result": {
         "branches": [
+          "PSMDB-1997-fix-sporadic-failures-skip-checkpoint-cleanup",
+          "PSMDB-1997-fix-sporadic-failures-skip-checkpoint-cleanup-2",
           "master",
           "mergai/master-32e8f260def/conflict",
           "mergai/master-32e8f260def/solution",
@@ -14947,6 +14951,8 @@
       "strategy_name": "branching_point",
       "result": {
         "branches": [
+          "PSMDB-1997-fix-sporadic-failures-skip-checkpoint-cleanup",
+          "PSMDB-1997-fix-sporadic-failures-skip-checkpoint-cleanup-2",
           "master",
           "mergai/master-46cfea505a3/main",
           "mongodb"
@@ -15377,7 +15383,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-04-30 08:29:33",
+  "generated_at": "2026-05-01 08:20:45",
   "branch_name": "master",
   "display_name": "master"
 }

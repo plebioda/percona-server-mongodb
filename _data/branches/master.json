@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 1663,
-    "days_behind": 45,
-    "files_affected": 6120,
-    "total_additions": 307814,
-    "total_deletions": 134551,
+    "commits_behind": 1683,
+    "days_behind": 46,
+    "files_affected": 6146,
+    "total_additions": 309117,
+    "total_deletions": 135113,
     "date_range": {
       "first": "2026-03-26T14:31:42+00:00",
-      "last": "2026-05-11T08:36:30+00:00"
+      "last": "2026-05-12T01:56:52+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,206 @@
     "summary": "SERVER-122193: Correctly sequence logical session cache periodic refr… (#50229)"
   },
   "unmerged_commits": [
+    {
+      "sha": "58a7175a6291c2521c71320b46521eb302da3130",
+      "short_sha": "58a7175a629",
+      "date": "2026-05-11T20:56:52-05:00",
+      "author": {
+        "name": "Varun Ravichandran",
+        "email": "varun.ravichandran@mongodb.com"
+      },
+      "summary": "SERVER-125492 Provide tunable server parameters for OpenSSL primary DRBG reseed interval (#52712)"
+    },
+    {
+      "sha": "a03e90f6c48bb2e39dacb890cfc80a076ac8cd98",
+      "short_sha": "a03e90f6c48",
+      "date": "2026-05-11T21:28:10-04:00",
+      "author": {
+        "name": "Gregory Noma",
+        "email": "gregory.noma@gmail.com"
+      },
+      "summary": "SERVER-126419 Store sorter iterators in spiller (#53634)"
+    },
+    {
+      "sha": "142287227a4e88c38932bc23073004bb4db9763b",
+      "short_sha": "142287227a4",
+      "date": "2026-05-11T20:51:08-04:00",
+      "author": {
+        "name": "Stephanie",
+        "email": "53684987+seristof@users.noreply.github.com"
+      },
+      "summary": "SERVER-126410 Update stale comment about the sorter not opening a storage txn (#53623)"
+    },
+    {
+      "sha": "fba89300943d8bf00896b7b51c88907f08a00e56",
+      "short_sha": "fba89300943",
+      "date": "2026-05-11T18:12:54-04:00",
+      "author": {
+        "name": "Damian Wasilewicz",
+        "email": "33820523+DamianWasilewicz@users.noreply.github.com"
+      },
+      "summary": "SERVER-126019 Track the replicated size and count of imported collections (#53449)"
+    },
+    {
+      "sha": "e72d6be7adf85037ff946c351005f00938ad283f",
+      "short_sha": "e72d6be7adf",
+      "date": "2026-05-11T15:12:42-07:00",
+      "author": {
+        "name": "Spencer Jackson",
+        "email": "spencer.jackson@mongodb.com"
+      },
+      "summary": "SERVER-126317 Mark fuzztests that crash as failing (#53549)"
+    },
+    {
+      "sha": "d472187ff82a16769a39ea838f199352860e4647",
+      "short_sha": "d472187ff82",
+      "date": "2026-05-11T16:56:46-04:00",
+      "author": {
+        "name": "Kruti Shah",
+        "email": "70412403+krutishah139@users.noreply.github.com"
+      },
+      "summary": "SERVER-123091 Re-enable CompletesWithStepdownAfterAbort resharding donor unit tests (#53545)"
+    },
+    {
+      "sha": "0bc011222315272817044233001e2da202ee5f6c",
+      "short_sha": "0bc01122231",
+      "date": "2026-05-11T15:28:36-05:00",
+      "author": {
+        "name": "mongodb-matthew-normyle",
+        "email": "120420718+mongodb-matthew-normyle@users.noreply.github.com"
+      },
+      "summary": "SERVER-125082: Streams: fix onMetaUpdate when $setStreamMeta sets nested fields (#53523)"
+    },
+    {
+      "sha": "6a879d02cfccb54e44b45dc67c8ad5ba5c26db75",
+      "short_sha": "6a879d02cfc",
+      "date": "2026-05-11T16:14:27-04:00",
+      "author": {
+        "name": "Mihai Andrei",
+        "email": "mihai.andrei@mongodb.com"
+      },
+      "summary": "SERVER-120841 Refactor vm_builtin_acc_finalize.cpp to use Value RAII types (#53594)"
+    },
+    {
+      "sha": "3cc14b2b75f569b472af4c33364c911aec359dcb",
+      "short_sha": "3cc14b2b75f",
+      "date": "2026-05-11T16:03:58-04:00",
+      "author": {
+        "name": "Stephanie",
+        "email": "53684987+seristof@users.noreply.github.com"
+      },
+      "summary": "SERVER-126328 Have a storage engine-agnostic way to turn on write conflict fail points in unit tests (#53589)"
+    },
+    {
+      "sha": "2158513ada4b84d4e646542084c957fdd9f3270d",
+      "short_sha": "2158513ada4",
+      "date": "2026-05-11T22:01:51+02:00",
+      "author": {
+        "name": "romanskas",
+        "email": "30618745+romanskas@users.noreply.github.com"
+      },
+      "summary": "SERVER-126363 Reduce performance impact of adding includeMetrics.queryStats (#53570)"
+    },
+    {
+      "sha": "0178a2fd6854b6eee7d45d3d32e16091d2fc643a",
+      "short_sha": "0178a2fd685",
+      "date": "2026-05-11T13:52:35-05:00",
+      "author": {
+        "name": "Finley Lau",
+        "email": "finley.lau@mongodb.com"
+      },
+      "summary": "SERVER-126359 Remove stale TODO comment from lite_parsed_pipeline.h (#53569)"
+    },
+    {
+      "sha": "9e041062cf0ebc0473e0ddeabdba42e71456b4f9",
+      "short_sha": "9e041062cf0",
+      "date": "2026-05-11T14:52:25-04:00",
+      "author": {
+        "name": "Malik Endsley",
+        "email": "malik.endsley@mongodb.com"
+      },
+      "summary": "SERVER-126357: Remove leftover sorter test parameterization TODOs (#53583)"
+    },
+    {
+      "sha": "57d4497e6530ef39f3dea844fc19cb6298399096",
+      "short_sha": "57d4497e653",
+      "date": "2026-05-11T19:45:07+02:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-126383 Pull early exit for shard registry periodic reloader up into sharding initialization (#53588)"
+    },
+    {
+      "sha": "24a5c4c9791c0183a5905e45f6f7d07b9ebf3c51",
+      "short_sha": "24a5c4c9791",
+      "date": "2026-05-11T13:37:51-04:00",
+      "author": {
+        "name": "Brad Cater",
+        "email": "152920274+brad-cater-mongodb@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-120304 Snapshot time may advance before fetching a command's operationTime (#49451) (#53585)"
+    },
+    {
+      "sha": "aecefa978c359cf5aa2f7df9a01f2bdb1c18aec5",
+      "short_sha": "aecefa978c3",
+      "date": "2026-05-11T10:17:39-07:00",
+      "author": {
+        "name": "Spencer Jackson",
+        "email": "spencer.jackson@mongodb.com"
+      },
+      "summary": "SERVER-126157 Fuzztest tests should be accessible through the + alias (#53551)"
+    },
+    {
+      "sha": "e77d9ae12d155a37c16994c17f97b598b5541c1a",
+      "short_sha": "e77d9ae12d1",
+      "date": "2026-05-11T11:19:18-05:00",
+      "author": {
+        "name": "Finley Lau",
+        "email": "finley.lau@mongodb.com"
+      },
+      "summary": "SERVER-118942 Rename AggStageAstNode::bind() -> promote() (#53524)"
+    },
+    {
+      "sha": "721e9e6c5a7ccbaeee5009b0c16767aff0f135d1",
+      "short_sha": "721e9e6c5a7",
+      "date": "2026-05-11T12:06:33-04:00",
+      "author": {
+        "name": "Sean Lyons",
+        "email": "sean.lyons@mongodb.com"
+      },
+      "summary": "SERVER-126154 Use s3.put with pre-signed visibility for core dumps (#53434)"
+    },
+    {
+      "sha": "a987e53fda7b28284db3065296915844a4981c0e",
+      "short_sha": "a987e53fda7",
+      "date": "2026-05-11T16:29:29+02:00",
+      "author": {
+        "name": "Silvia Surroca",
+        "email": "silvia.surroca@mongodb.com"
+      },
+      "summary": "SERVER-121178 Implement split as a coordinator (#51941)"
+    },
+    {
+      "sha": "51cc8205c2c04a918801a1e1bab612c9b747190a",
+      "short_sha": "51cc8205c2c",
+      "date": "2026-05-11T08:17:17-04:00",
+      "author": {
+        "name": "Yuhong Zhang",
+        "email": "yuhong.zhang@mongodb.com"
+      },
+      "summary": "SERVER-126365 Temporarily guard in-memory size and count initialization oplog scanning behind a feature flag (#53573)"
+    },
+    {
+      "sha": "38b529c5b6136de2e18a75f0e30a78afb7125025",
+      "short_sha": "38b529c5b61",
+      "date": "2026-05-11T10:16:46+01:00",
+      "author": {
+        "name": "nicola cabiddu",
+        "email": "nicolacabiddu@gmail.com"
+      },
+      "summary": "SERVER-125873: wire up rename across dbs into the state machine and cope with all cluster bugs (#53017)"
+    },
     {
       "sha": "db8d9e67a2fb712bcde264f7463d3c3b8b0f7907",
       "short_sha": "db8d9e67a2f",
@@ -19188,10 +19388,56 @@
           "num_of_dirs": 43
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "a987e53fda7b28284db3065296915844a4981c0e",
+        "short_sha": "a987e53fda7",
+        "date": "2026-05-11T16:29:29+02:00",
+        "author": {
+          "name": "Silvia Surroca",
+          "email": "silvia.surroca@mongodb.com"
+        },
+        "summary": "SERVER-121178 Implement split as a coordinator (#51941)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 38,
+          "num_of_lines": 1307,
+          "lines_added": 1002,
+          "lines_deleted": 305,
+          "num_of_dirs": 14
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "e77d9ae12d155a37c16994c17f97b598b5541c1a",
+        "short_sha": "e77d9ae12d1",
+        "date": "2026-05-11T11:19:18-05:00",
+        "author": {
+          "name": "Finley Lau",
+          "email": "finley.lau@mongodb.com"
+        },
+        "summary": "SERVER-118942 Rename AggStageAstNode::bind() -> promote() (#53524)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 19,
+          "num_of_lines": 122,
+          "lines_added": 63,
+          "lines_deleted": 59,
+          "num_of_dirs": 11
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-11 09:50:08",
+  "generated_at": "2026-05-12 08:47:57",
   "branch_name": "master",
   "display_name": "master"
 }

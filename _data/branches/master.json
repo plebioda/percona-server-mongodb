@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 1683,
-    "days_behind": 46,
-    "files_affected": 6146,
-    "total_additions": 309117,
-    "total_deletions": 135113,
+    "commits_behind": 1697,
+    "days_behind": 47,
+    "files_affected": 6163,
+    "total_additions": 310124,
+    "total_deletions": 135530,
     "date_range": {
       "first": "2026-03-26T14:31:42+00:00",
-      "last": "2026-05-12T01:56:52+00:00"
+      "last": "2026-05-12T23:02:07+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,146 @@
     "summary": "SERVER-122193: Correctly sequence logical session cache periodic refr… (#50229)"
   },
   "unmerged_commits": [
+    {
+      "sha": "908c6e283673673b1b947e76371acac1f2a75628",
+      "short_sha": "908c6e28367",
+      "date": "2026-05-12T19:02:07-04:00",
+      "author": {
+        "name": "Gregory Noma",
+        "email": "gregory.noma@gmail.com"
+      },
+      "summary": "SERVER-126466 Remove build from PDIB registry upon commit on primary (#53674)"
+    },
+    {
+      "sha": "cb8adc120fd2c9eed0ef7029b62aaa162f041d99",
+      "short_sha": "cb8adc120fd",
+      "date": "2026-05-12T17:10:52-05:00",
+      "author": {
+        "name": "Anna Veselova",
+        "email": "47113149+aveselova@users.noreply.github.com"
+      },
+      "summary": "SERVER-126336: Import mozjs clang-format rules from spidermonkey repo (#53531)"
+    },
+    {
+      "sha": "f59d33ecd38bc847c4f2396cf3a4ded34c1cf28a",
+      "short_sha": "f59d33ecd38",
+      "date": "2026-05-12T16:44:22-04:00",
+      "author": {
+        "name": "Gregory Noma",
+        "email": "gregory.noma@gmail.com"
+      },
+      "summary": "SERVER-126416 Make sorter spiller callback aware of the newest spill (#53657)"
+    },
+    {
+      "sha": "2fd0e60d99dbbc7a887bf648d5294246b945b6e4",
+      "short_sha": "2fd0e60d99d",
+      "date": "2026-05-12T12:46:30-07:00",
+      "author": {
+        "name": "Spencer Jackson",
+        "email": "spencer.jackson@mongodb.com"
+      },
+      "summary": "SERVER-126156 Prevent Static Initialization Order Fiasco in bson_mutator (#53550)"
+    },
+    {
+      "sha": "0d4ec614c0af7adafc14031f6f6aff7e19096da7",
+      "short_sha": "0d4ec614c0a",
+      "date": "2026-05-12T12:46:20-07:00",
+      "author": {
+        "name": "Spencer Jackson",
+        "email": "spencer.jackson@mongodb.com"
+      },
+      "summary": "SERVER-125835 Simplify Fuzzer build options (#53552)"
+    },
+    {
+      "sha": "a25a070edbc175aa6fd6af7e0ce573fff26e1802",
+      "short_sha": "a25a070edbc",
+      "date": "2026-05-12T12:28:43-07:00",
+      "author": {
+        "name": "Spencer Jackson",
+        "email": "spencer.jackson@mongodb.com"
+      },
+      "summary": "SERVER-126322 Remove fextend-lifetimes from protobuf (#53554)"
+    },
+    {
+      "sha": "7f59a42e61116840b38a7df540404dad21298ebd",
+      "short_sha": "7f59a42e611",
+      "date": "2026-05-12T14:33:43-04:00",
+      "author": {
+        "name": "Malik Endsley",
+        "email": "malik.endsley@mongodb.com"
+      },
+      "summary": "SERVER-126155: Tolerate that WCE during load phase of primary driven index build can reset cursors inside the iterator (#53360)"
+    },
+    {
+      "sha": "510c2fc97d4f49f979ebb1cc426b58a2056198c5",
+      "short_sha": "510c2fc97d4",
+      "date": "2026-05-12T14:00:59-04:00",
+      "author": {
+        "name": "Mihai Andrei",
+        "email": "mihai.andrei@mongodb.com"
+      },
+      "summary": "SERVER-120910 Rename AssignableSlotAccessor::reset(bool, TypeTags, Value) to reset_raw() (#53633)"
+    },
+    {
+      "sha": "73505b35a517c121291fb90032a2c5e17c39d93f",
+      "short_sha": "73505b35a51",
+      "date": "2026-05-12T07:02:27-10:00",
+      "author": {
+        "name": "Shin Yee Tan",
+        "email": "shinyee.tan@mongodb.com"
+      },
+      "summary": "SERVER-126354 Add OplogEntryGroupType and multiOpType for atomic retryable writes (#53580)"
+    },
+    {
+      "sha": "317fc9ce1328e7998901323e6fb85c7def3757b0",
+      "short_sha": "317fc9ce132",
+      "date": "2026-05-12T12:00:19-05:00",
+      "author": {
+        "name": "Finley Lau",
+        "email": "finley.lau@mongodb.com"
+      },
+      "summary": "SERVER-120951 Refactor getSubPipelines() to return a pointer instead of reference (#53451)"
+    },
+    {
+      "sha": "c5dde14759d387c8f35bbb1dd969aeffc6b77332",
+      "short_sha": "c5dde14759d",
+      "date": "2026-05-12T12:46:55-04:00",
+      "author": {
+        "name": "Gregory Noma",
+        "email": "gregory.noma@gmail.com"
+      },
+      "summary": "SERVER-126436 Append to sorter iterators from spiller (#53653)"
+    },
+    {
+      "sha": "38c408367750d046fde47b83dde51a00b2a5f61a",
+      "short_sha": "38c40836775",
+      "date": "2026-05-12T16:14:50+00:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#53656)"
+    },
+    {
+      "sha": "f0e0fc335c56e5c65e1c72a827d50b698ea768ec",
+      "short_sha": "f0e0fc335c5",
+      "date": "2026-05-12T11:37:06-04:00",
+      "author": {
+        "name": "Gregory Noma",
+        "email": "gregory.noma@gmail.com"
+      },
+      "summary": "SERVER-126339 Pass last key to spiller on PDIB resume (#53562)"
+    },
+    {
+      "sha": "09b4b40457222242ae87da88310df2a36e39940d",
+      "short_sha": "09b4b404572",
+      "date": "2026-05-12T14:36:09+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-126317 Mark fuzztests that crash as failing (#53549)\" (#53655)"
+    },
     {
       "sha": "58a7175a6291c2521c71320b46521eb302da3130",
       "short_sha": "58a7175a629",
@@ -19437,7 +19577,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-12 08:47:57",
+  "generated_at": "2026-05-13 08:51:42",
   "branch_name": "master",
   "display_name": "master"
 }

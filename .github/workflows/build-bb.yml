@@ -1,0 +1,61 @@
+name: build-bb
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [master]
+
+# Cancel an in-flight build when a new commit is pushed to the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: bazel build via BuildBarn
+    runs-on: ubuntu-latest
+    # The Dex token comes from a repo secret. The credential helper at
+    # bazel/wrapper_hook/credential_helper.py picks it up as priority #1
+    # (PSMDB_RBE_DEX_TOKEN) and returns it verbatim to Bazel until exp - 60s.
+    env:
+      PSMDB_RBE_DEX_TOKEN: ${{ secrets.PSMDB_RBE_DEX_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: |
+          git fetch --tags --force origin
+          # Upstream MongoDB r* tags are required by buildscripts to resolve
+          # a version via `git describe` for releases.h generation.
+          git fetch --tags --force https://github.com/mongodb/mongo.git 'refs/tags/r*:refs/tags/r*'
+          git describe --abbrev=0
+
+      - name: Verify RBE credential is present
+        run: |
+          if [ -z "${PSMDB_RBE_DEX_TOKEN}" ]; then
+            echo "::error::Repo secret PSMDB_RBE_DEX_TOKEN is empty or unset."
+            echo "Upload a fresh Dex JWT (e.g. the local ~/.cache/rbe/token.json id_token) to the repo secret of that name."
+            exit 1
+          fi
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+
+      - name: Build //:install-devcore //:install-dbtest via RBE
+        run: |
+          bazel build \
+            --config=psmdb_buildfarm \
+            --remote_executor=grpcs://bb-psmdb.ddns.net:8981 \
+            --remote_cache=grpcs://bb-psmdb.ddns.net:8981 \
+            --bes_backend=grpcs://bb-psmdb.ddns.net:1985 \
+            --bes_results_url=https://bb-psmdb.ddns.net:7986/bazel-invocations/ \
+            --credential_helper=bb-psmdb.ddns.net=%workspace%/bazel/wrapper_hook/credential_helper.py \
+            --define=GIT_COMMIT_HASH=$(git rev-parse HEAD) \
+            --jobs=300 \
+            //:install-devcore //:install-dbtest

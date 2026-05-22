@@ -1,0 +1,170 @@
+name: build-and-test
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [master]
+
+# Cancel in-flight jobs of this workflow when a new commit lands on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# RBE endpoints are shared between jobs. Pinned here so additions like
+# integration-tests/jsttests can reuse the same values without drift.
+env:
+  RBE_REMOTE_EXECUTOR: grpcs://bb-psmdb.ddns.net:8981
+  RBE_REMOTE_CACHE: grpcs://bb-psmdb.ddns.net:8981
+  RBE_BES_BACKEND: grpcs://bb-psmdb.ddns.net:1985
+  RBE_BES_RESULTS_URL: https://bb-psmdb.ddns.net:7986/bazel-invocations/
+  RBE_CREDENTIAL_HELPER_HOST: bb-psmdb.ddns.net
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    # The Dex token comes from a repo secret. The credential helper at
+    # bazel/wrapper_hook/credential_helper.py picks it up as priority #1
+    # (PSMDB_RBE_DEX_TOKEN) and returns it verbatim to Bazel until exp - 60s.
+    env:
+      PSMDB_RBE_DEX_TOKEN: ${{ secrets.PSMDB_RBE_DEX_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: |
+          git fetch --tags --force origin
+          # Upstream MongoDB r* tags are required by buildscripts to resolve
+          # a version via `git describe` for releases.h generation.
+          git fetch --tags --force https://github.com/mongodb/mongo.git 'refs/tags/r*:refs/tags/r*'
+          git describe --abbrev=0
+
+      - name: Verify RBE credential is present
+        run: |
+          if [ -z "${PSMDB_RBE_DEX_TOKEN}" ]; then
+            echo "::error::Repo secret PSMDB_RBE_DEX_TOKEN is empty or unset."
+            echo "Upload a fresh Dex JWT (e.g. the local ~/.cache/rbe/token.json id_token) to the repo secret of that name."
+            exit 1
+          fi
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+
+      - name: Build //:install-devcore //:install-dbtest via RBE
+        run: |
+          bazel build \
+            --config=psmdb_buildfarm \
+            --remote_executor=$RBE_REMOTE_EXECUTOR \
+            --remote_cache=$RBE_REMOTE_CACHE \
+            --bes_backend=$RBE_BES_BACKEND \
+            --bes_results_url=$RBE_BES_RESULTS_URL \
+            --credential_helper=$RBE_CREDENTIAL_HELPER_HOST=%workspace%/bazel/wrapper_hook/credential_helper.py \
+            --define=GIT_COMMIT_HASH=$(git rev-parse HEAD) \
+            --jobs=300 \
+            --build_event_json_file=bazel-bep.json \
+            //:install-devcore //:install-dbtest
+
+      # Upload BEP on failure so the auto-merge workflow can fetch it via the
+      # GH artifacts API and parse the failure deterministically (BEP is
+      # machine-readable). if-no-files-found=ignore because the BEP file is
+      # written incrementally and may be empty if Bazel itself crashed before
+      # writing anything.
+      - name: Upload build failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-failure-artifacts
+          path: bazel-bep.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  unittests:
+    name: unittests
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      PSMDB_RBE_DEX_TOKEN: ${{ secrets.PSMDB_RBE_DEX_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: |
+          git fetch --tags --force origin
+          git fetch --tags --force https://github.com/mongodb/mongo.git 'refs/tags/r*:refs/tags/r*'
+          git describe --abbrev=0
+
+      - name: Verify RBE credential is present
+        run: |
+          if [ -z "${PSMDB_RBE_DEX_TOKEN}" ]; then
+            echo "::error::Repo secret PSMDB_RBE_DEX_TOKEN is empty or unset."
+            echo "Upload a fresh Dex JWT (e.g. the local ~/.cache/rbe/token.json id_token) to the repo secret of that name."
+            exit 1
+          fi
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+
+      # remote_unittest pulls in remote_test → --strategy=TestRunner=remote, so
+      # the test binaries are launched on RBE workers (not on the GH runner).
+      # It also sets --test_tag_filters=mongo_unittest plus the two exclusions
+      # required for RBE-safe execution, and --cache_test_results=auto so
+      # passing tests skip on warm-cache reruns. See .bazelrc lines 442-461.
+      #
+      # The CLI --test_tag_filters re-states the filter from .bazelrc:461
+      # (--test_tag_filters is last-wins, not merged) and appends -cpu:2 to
+      # exclude tests tagged "cpu:2". Those tests get routed by
+      # bazel/test_exec_properties.bzl to Pool=large_mem_2core_x86_64, for
+      # which the bb-psmdb scheduler currently has no registered workers
+      # ("FAILED_PRECONDITION: No workers exist for instance name prefix
+      # 'hardlinking' platform ... Pool=large_mem_2core_x86_64").
+      #
+      # The --gtest_filter excludes a single death test that provokes a fatal
+      # assertion via boost::filesystem::permissions(dir(), no_perms) on the
+      # FTDC output directory. The BB RBE worker container runs as root, so
+      # CAP_DAC_OVERRIDE makes the kernel ignore the file-mode bits, the FTDC
+      # write succeeds, the expected fatal assertion never fires, and the
+      # death test fails. The other three sibling death tests (which use
+      # mock collectors throwing C++ exceptions) pass. Long-term fix is to
+      # run the worker as non-root or have the test GTEST_SKIP() under euid 0.
+      - name: Test //src/... (mongo_unittest) via RBE
+        run: |
+          bazel test \
+            --config=psmdb_buildfarm \
+            --config=remote_unittest \
+            --remote_executor=$RBE_REMOTE_EXECUTOR \
+            --remote_cache=$RBE_REMOTE_CACHE \
+            --bes_backend=$RBE_BES_BACKEND \
+            --bes_results_url=$RBE_BES_RESULTS_URL \
+            --credential_helper=$RBE_CREDENTIAL_HELPER_HOST=%workspace%/bazel/wrapper_hook/credential_helper.py \
+            --jobs=300 \
+            --test_output=errors \
+            --test_tag_filters=mongo_unittest,-intermediate_debug,-incompatible_with_bazel_remote_test,-cpu:2 \
+            --test_arg=--gtest_filter=-FTDCControllerTestDeathTest.LogAndTerminateWhenCollectionFails \
+            --build_event_json_file=bazel-bep.json \
+            //src/...
+
+      # Upload bazel-testlogs (per-target test.log + test.xml JUnit) plus the
+      # BEP stream on failure. bazel-testlogs is a symlink into the bazel
+      # output base; upload-artifact@v4 follows symlinks. The auto-merge
+      # workflow can locate the specific failing test under
+      # bazel-testlogs/<package>/<target>/test.log and parse the JUnit XML
+      # for a structured failure list.
+      - name: Upload unittest failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unittest-failure-artifacts
+          path: |
+            bazel-testlogs/
+            bazel-bep.json
+          retention-days: 14
+          if-no-files-found: ignore

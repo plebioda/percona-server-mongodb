@@ -1,0 +1,25 @@
+name: "Free disk space and redirect Bazel to /mnt"
+description: "Reclaim space on / and stage Bazel's output base on the /mnt ephemeral disk"
+
+runs:
+  using: "composite"
+  steps:
+    # GH-hosted ubuntu-24.04 gives only ~14-20 GB free on '/', where Bazel's
+    # output base lives by default. PSMDB links locally (see the
+    # `common --nobuild_runfile_links` block in .bazelrc), so
+    # the fat *_with_debug.so binaries and the downloaded .o/.dwo objects all
+    # land on the runner. As master merges grow the action graph this tips
+    # '/' over its limit ("No space left on device"). Reclaim the preinstalled
+    # toolchains we never use, then move Bazel's output base to the ~70 GB
+    # ephemeral disk mounted at /mnt (chown'd because it is root-owned). This
+    # step runs before setup-env so apt/python installs also get the room.
+    - name: Free disk space and redirect Bazel to /mnt
+      shell: bash
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                    /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+                    /usr/local/share/boost || true
+        sudo docker image prune --all --force || true
+        sudo mkdir -p /mnt/bazel
+        sudo chown "$(id -u):$(id -g)" /mnt/bazel
+        df -h /

@@ -77,7 +77,12 @@ void initializeOidcIdentityProvidersRegistry(ServiceContext* serviceContext) {
 OidcIdentityProvidersRegistry& OidcIdentityProvidersRegistry::get(ServiceContext* serviceContext) {
     auto& uptr = getOidcIdentityProvidersRegistry(serviceContext);
     invariant(uptr);
-    return *uptr;
+    if (uptr) {
+    	return *uptr;
+    }
+
+    return std::make_unique<OidcIdentityProvidersRegistryImpl>(
+            serviceContext->getPeriodicRunner(), jwksFetcherFactory, getIdPConfigs());
 }
 
 void OidcIdentityProvidersRegistry::set(ServiceContext* serviceContext,

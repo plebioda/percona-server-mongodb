@@ -1,7 +1,14 @@
 name: build-and-test
 
+# pull_request_target runs the workflow file from the BASE branch (master) and
+# exposes secrets, while pull_request would withhold secrets for fork PRs and
+# break RBE. Because we still need to build the PR's source, the checkout step
+# below overrides the default base ref to the PR head SHA. That re-introduces
+# the "pwn-request" risk (running untrusted code with a secret), which is
+# mitigated by routing untrusted authors through the rbe-external environment
+# whose required reviewers must approve every push.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
     branches: [master]
 
@@ -26,15 +33,27 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
-    # The Dex token comes from a repo secret. The credential helper at
+    # Same-repo PRs and PRs authored by users with write access to the base
+    # repo land in the unattended "rbe" environment. Everyone else lands in
+    # "rbe-external", which is configured with required reviewers in the GH
+    # UI so a maintainer must approve before any PR-controlled code runs
+    # with the RBE secret. author_association is set server-side by GitHub
+    # and cannot be spoofed by the PR author.
+    environment: ${{ (github.event.pull_request.head.repo.full_name == github.repository || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'rbe' || 'rbe-external' }}
+    # The Dex token is scoped to the environment above; jobs that omit
+    # `environment:` cannot resolve it. The credential helper at
     # bazel/wrapper_hook/credential_helper.py picks it up as priority #1
     # (PSMDB_RBE_DEX_TOKEN) and returns it verbatim to Bazel until exp - 60s.
     env:
       PSMDB_RBE_DEX_TOKEN: ${{ secrets.PSMDB_RBE_DEX_TOKEN }}
     steps:
-      - name: Checkout
+      - name: Checkout PR head
         uses: actions/checkout@v6
         with:
+          # pull_request_target defaults to the base SHA; we need the PR's
+          # source to build it. Safe only because the environment gate above
+          # blocks untrusted authors until a maintainer approves.
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Fetch tags
@@ -88,12 +107,17 @@ jobs:
     name: unittests
     needs: build
     runs-on: ubuntu-latest
+    # See `build.environment` above for the trust model. The expression is
+    # repeated (not factored to a job output) because `environment:` is
+    # evaluated before any other job runs, so it cannot depend on `needs.`.
+    environment: ${{ (github.event.pull_request.head.repo.full_name == github.repository || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'rbe' || 'rbe-external' }}
     env:
       PSMDB_RBE_DEX_TOKEN: ${{ secrets.PSMDB_RBE_DEX_TOKEN }}
     steps:
-      - name: Checkout
+      - name: Checkout PR head
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Fetch tags
@@ -145,6 +169,7 @@ jobs:
             --bes_backend=$RBE_BES_BACKEND \
             --bes_results_url=$RBE_BES_RESULTS_URL \
             --credential_helper=$RBE_CREDENTIAL_HELPER_HOST=%workspace%/bazel/wrapper_hook/credential_helper.py \
+            --define=GIT_COMMIT_HASH=$(git rev-parse HEAD) \
             --jobs=300 \
             --test_output=errors \
             --test_tag_filters=mongo_unittest,-intermediate_debug,-incompatible_with_bazel_remote_test,-cpu:2 \

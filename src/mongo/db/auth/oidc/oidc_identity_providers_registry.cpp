@@ -77,6 +77,10 @@ void initializeOidcIdentityProvidersRegistry(ServiceContext* serviceContext) {
 OidcIdentityProvidersRegistry& OidcIdentityProvidersRegistry::get(ServiceContext* serviceContext) {
     auto& uptr = getOidcIdentityProvidersRegistry(serviceContext);
     invariant(uptr);
+    if (uptr) {
+        return *uptr;
+    }
+
     return *uptr;
 }
 

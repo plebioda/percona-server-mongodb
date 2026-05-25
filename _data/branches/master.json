@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 236,
+    "commits_behind": 238,
     "days_behind": 9,
-    "files_affected": 1531,
-    "total_additions": 57545,
-    "total_deletions": 24656,
+    "files_affected": 1541,
+    "total_additions": 59614,
+    "total_deletions": 25242,
     "date_range": {
       "first": "2026-05-18T02:31:58+00:00",
-      "last": "2026-05-25T07:25:57+00:00"
+      "last": "2026-05-25T09:11:12+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,26 @@
     "summary": "Import wiredtiger: bb840c5216cd665541a7cd140217ed0a17c514c5 from branch mongodb-master (#53904)"
   },
   "unmerged_commits": [
+    {
+      "sha": "01807c1a48581e11b47ce4d3e5e7ced3d6f2e378",
+      "short_sha": "01807c1a485",
+      "date": "2026-05-25T19:11:12+10:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#54411)"
+    },
+    {
+      "sha": "d6b7cdb26f094a92303b1e5e87e96e294308aef8",
+      "short_sha": "d6b7cdb26f0",
+      "date": "2026-05-25T19:11:04+10:00",
+      "author": {
+        "name": "Siddhartha Mahajan",
+        "email": "siddhartha.mahajan8899@gmail.com"
+      },
+      "summary": "Import wiredtiger: 46bf841062af800d92786a96abe10c02c0d9f17f from branch mongodb-master (#54412)"
+    },
     {
       "sha": "58ff273b100a7eb75ae9b64da2e8c3414b402b7e",
       "short_sha": "58ff273b100",
@@ -2742,10 +2762,33 @@
           "num_of_dirs": 48
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "d6b7cdb26f094a92303b1e5e87e96e294308aef8",
+        "short_sha": "d6b7cdb26f0",
+        "date": "2026-05-25T19:11:04+10:00",
+        "author": {
+          "name": "Siddhartha Mahajan",
+          "email": "siddhartha.mahajan8899@gmail.com"
+        },
+        "summary": "Import wiredtiger: 46bf841062af800d92786a96abe10c02c0d9f17f from branch mongodb-master (#54412)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 30,
+          "num_of_lines": 3487,
+          "lines_added": 2485,
+          "lines_deleted": 1002,
+          "num_of_dirs": 14
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-25 09:18:58",
+  "generated_at": "2026-05-25 10:18:57",
   "branch_name": "master",
   "display_name": "master"
 }

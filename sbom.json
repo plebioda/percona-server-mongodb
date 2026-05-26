@@ -25,8 +25,31 @@
       "group": "percona",
       "name": "percona-server-mongodb",
       "version": "master",
+<<<<<<< HEAD
       "cpe": "cpe:2.3:a:percona:percona-server-mongodb:master:*:*:*:*:*:*:*",
       "purl": "pkg:github/percona/percona-server-mongodb@master",
+||||||| a198be080de
+      "cpe": "cpe:2.3:a:mongodb:mongodb:master:*:*:*:*:*:*:*",
+      "purl": "pkg:github/mongodb/mongo@master",
+=======
+      "description": "The MongoDB Database",
+      "licenses": [
+        {
+          "license": {
+            "id": "SSPL-1.0",
+            "url": "https://www.mongodb.com/legal/licensing/community-edition"
+          }
+        },
+        {
+          "license": {
+            "name": "MongoDB Enterprise Advanced License",
+            "url": "https://www.mongodb.com/products/self-managed/enterprise-advanced"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:mongodb:mongodb:master:*:*:*:*:*:*:*",
+      "purl": "pkg:github/mongodb/mongo@master",
+>>>>>>> 650d9f458c5aeb3ec4f0ad960b77a566e3932b3f
       "externalReferences": [
         {
           "url": "https://raw.githubusercontent.com/percona/percona-server-mongodb/refs/heads/master/LICENSE-Community.txt",
@@ -51,7 +74,29 @@
     "supplier": {
       "name": "Percona LLC",
       "url": [
+<<<<<<< HEAD
         "https://percona.com"
+||||||| a198be080de
+        "https://mongodb.com"
+      ]
+    },
+    "tools": {
+      "services": [
+        {
+          "name": "Endor Labs Inc",
+          "version": "v1.7.968"
+        }
+=======
+        "https://mongodb.com"
+      ]
+    },
+    "tools": {
+      "services": [
+        {
+          "name": "Endor Labs Inc",
+          "version": "v1.7.973"
+        }
+>>>>>>> 650d9f458c5aeb3ec4f0ad960b77a566e3932b3f
       ]
     }
   },

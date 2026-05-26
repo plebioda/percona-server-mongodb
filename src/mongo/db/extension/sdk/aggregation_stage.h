@@ -28,6 +28,7 @@
  */
 #pragma once
 #include "mongo/bson/bsonobj.h"
+#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/extension/public/api.h"
 #include "mongo/db/extension/sdk/assert_util.h"
 #include "mongo/db/extension/sdk/distributed_plan_logic.h"
@@ -147,6 +148,12 @@ public:
      * 'deps' and update internal state.
      */
     virtual void applyPipelineSuffixDependencies(const PipelineDependenciesHandle& deps) {}
+
+    /**
+     * Notifies the logical stage that the stream identified by streamType will not produce any more
+     * documents.
+     */
+    virtual void skipStream(::MongoExtensionStreamType streamType) {}
 
 protected:
     LogicalAggStage() = delete;  // No default constructor.
@@ -352,6 +359,14 @@ private:
         });
     }
 
+    static ::MongoExtensionStatus* _extSkipStream(::MongoExtensionLogicalAggStage* extLogicalStage,
+                                                  ::MongoExtensionStreamType streamType) noexcept {
+        return wrapCXXAndConvertExceptionToStatus([&]() {
+            auto& impl = static_cast<ExtensionLogicalAggStageAdapter*>(extLogicalStage)->getImpl();
+            impl.skipStream(streamType);
+        });
+    }
+
     static constexpr ::MongoExtensionLogicalAggStageVTable VTABLE = {
         .destroy = &_extDestroy,
         .get_name = &_extGetName,
@@ -367,7 +382,8 @@ private:
         .evaluate_rule_transform = &_extEvaluateRuleTransform,
         .get_filter = &_extGetFilter,
         .apply_pipeline_suffix_dependencies = &_extApplyPipelineSuffixDependencies,
-        .get_sort_pattern = &_extGetSortPattern};
+        .get_sort_pattern = &_extGetSortPattern,
+        .skip_stream = &_extSkipStream};
     std::unique_ptr<LogicalAggStage> _stage;
 };
 
@@ -852,6 +868,46 @@ protected:
         sdk_tasserted(10957208, "Calling getSource on a source stage is not supported");
         MONGO_UNREACHABLE;
     }
+};
+
+/**
+ * Base class for source stages that produce two logical streams: a document-result stream and a
+ * metadata-result stream. The advanced() helpers wrap BSON in the envelope expected by the host
+ * Exchange: { _streamType: <N>, payload: <doc> }.
+ */
+class ExecAggStageResultsAndMetadataSource : public ExecAggStageSource {
+public:
+    /**
+     * Identifies which stream a produced document belongs to. Mirrors ::MongoExtensionStreamType
+     * from public/api.h.
+     */
+    enum class StreamType : uint8_t {
+        kDocResult = ::MongoExtensionStreamType::kMongoExtensionStreamTypeDocResult,
+        kMetaResult = ::MongoExtensionStreamType::kMongoExtensionStreamTypeMetaResult,
+    };
+
+    ExtensionGetNextResult advanced(const BSONObj& payload, StreamType streamType) {
+        BSONObjBuilder envelopeBob;
+        envelopeBob.append("_streamType", static_cast<int>(streamType));
+        envelopeBob.append("payload", payload);
+        return ExtensionGetNextResult::advanced(ExtensionBSONObj::makeAsByteBuf(envelopeBob.obj()));
+    }
+
+    /**
+     * Certain stages (e.g. $searchScore) produce per-document metadata that require this overload.
+     */
+    ExtensionGetNextResult advanced(const BSONObj& payload,
+                                    StreamType streamType,
+                                    const BSONObj& meta) {
+        BSONObjBuilder envelopeBob;
+        envelopeBob.append("_streamType", static_cast<int>(streamType));
+        envelopeBob.append("payload", payload);
+        return ExtensionGetNextResult::advanced(ExtensionBSONObj::makeAsByteBuf(envelopeBob.obj()),
+                                                ExtensionBSONObj::makeAsByteBuf(meta));
+    }
+
+protected:
+    ExecAggStageResultsAndMetadataSource(std::string_view name) : ExecAggStageSource(name) {}
 };
 
 /**

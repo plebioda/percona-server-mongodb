@@ -40,6 +40,7 @@
 #include "mongo/db/index_builds/resumable_index_builds_gen.h"
 #include "mongo/db/matcher/expression.h"
 #include "mongo/db/operation_context.h"
+#include "mongo/db/query/plan_executor.h"
 #include "mongo/db/record_id.h"
 #include "mongo/db/shard_role/shard_catalog/catalog_raii.h"
 #include "mongo/db/shard_role/shard_catalog/collection.h"
@@ -350,6 +351,10 @@ private:
 
         InsertDeleteOptions options;
 
+        // The highest spilled record id. Only set during the scan phase when replicating container
+        // writes.
+        boost::optional<RecordId> lastSpilledRecordId;
+
         // We cache index catalog entry pointer for the collection scan phase. This is necessary for
         // index build performance in the insert path.
         const IndexCatalogEntry* entryForScan = nullptr;
@@ -398,6 +403,9 @@ private:
 
     bool _isResumable = false;
 
+    // True if init() was called with a resumeInfo.
+    bool _wasResumed = false;
+
     bool _ignoreUnique = false;
 
     // True if one or more indexes being built are on time-series measurements.
@@ -426,6 +434,13 @@ private:
     // compared after yielding, which is used to indicate whether we need to refetch the index
     // catalog entry pointers in IndexToBuild. This is necessary for index build performance.
     const Collection* _collForScan = nullptr;
+
+    // Collection-scan executor and current document, used during _doCollectionScan. These are
+    // members so the ContainerBasedSpiller's SpillCallbacks (captured at spiller construction
+    // time in init()) can save/restore the executor and own the document around any internal
+    // writeConflictRetry the spiller performs.
+    std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> _exec;
+    BSONObj _objToIndex;
 
     // The temporary record store used for persisting the resume state of a resumable index build.
     boost::optional<LazyRecordStore> _resumeStateTempRecordStore;

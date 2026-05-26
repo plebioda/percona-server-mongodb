@@ -60,14 +60,8 @@ public:
 protected:
     std::string _issuer;
     ClockSource* _clock;
-<<<<<<< HEAD
-    synchronized_value<Date_t> _lastFetchQuiesceTime;
-    std::string _caFilePath;
-||||||| 3a33d18cd99
-    synchronized_value<Date_t> _lastFetchQuiesceTime;
-=======
     synchronized_value<Date_t> _lastAttemptedFetchTime;
->>>>>>> aea0c37039a9d7058daaa23ff6865631a88937d0
+    std::string _caFilePath;
 };
 
 }  // namespace crypto

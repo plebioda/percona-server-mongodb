@@ -26,7 +26,7 @@ on:
   # `code_scanning_check: true` makes a passing run consult Code Scanning
   # for findings).
   workflow_run:
-    workflows: ["format", "clang-tidy"]
+    workflows: ["format", "clang-tidy", "build-and-test"]
     types: [completed]
 
 jobs:

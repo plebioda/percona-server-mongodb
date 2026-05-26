@@ -361,12 +361,18 @@ Status storeMongoShellOptions(const moe::Environment& params,
         }
     }
 
+<<<<<<< HEAD
     if (shellGlobalParams.httpClientEnableLocalhostException) {
         HttpClient::enableLocalhostException();
     }
 
     saslGlobalParams.authenticationMechanisms = auth::kAllMechanisms;
 
+||||||| 3a33d18cd99
+    saslGlobalParams.authenticationMechanisms = auth::kAllMechanisms;
+
+=======
+>>>>>>> aea0c37039a9d7058daaa23ff6865631a88937d0
     return Status::OK();
 }
 

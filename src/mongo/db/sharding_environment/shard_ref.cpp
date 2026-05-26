@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2022-present MongoDB, Inc.
+ *    Copyright (C) 2026-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -27,51 +27,43 @@
  *    it in the license file.
  */
 
-#include "mongo/db/topology/user_write_block/write_block_bypass.h"
+#include "mongo/db/sharding_environment/shard_ref.h"
 
-#include "mongo/db/auth/action_type.h"
-#include "mongo/db/auth/authorization_session.h"
-#include "mongo/db/auth/resource_pattern.h"
-#include "mongo/db/client.h"
+#include "mongo/base/error_codes.h"
+#include "mongo/bson/bsontypes.h"
 #include "mongo/util/assert_util.h"
-#include "mongo/util/decorable.h"
+#include "mongo/util/overloaded_visitor.h"
+#include "mongo/util/str.h"
 
-#include <utility>
+#include <string>
 
 namespace mongo {
 
-namespace {
-static const auto getWriteBlockBypass = OperationContext::declareDecoration<WriteBlockBypass>();
+std::string ShardRef::toString() const {
+    return visit(OverloadedVisitor{
+                     [](const std::string& name) { return name; },
+                     [](const UUID& uuid) { return uuid.toString(); },
+                 },
+                 _ref);
 }
 
-bool WriteBlockBypass::isWriteBlockBypassEnabled() const {
-    return _writeBlockBypassEnabled;
+ShardRef ShardRef::parse(const BSONElement& element) {
+    if (element.type() == BSONType::string) {
+        return ShardRef(element.str());
+    }
+    uassert(ErrorCodes::BadValue,
+            str::stream() << "Expected string or UUID for ShardRef, got BSON type: "
+                          << typeName(element.type()),
+            element.type() == BSONType::binData && element.binDataType() == BinDataType::newUUID);
+    return ShardRef(uassertStatusOK(UUID::parse(element)));
 }
 
-void WriteBlockBypass::setFromMetadata(OperationContext* opCtx, boost::optional<bool> val) {
-    auto as = AuthorizationSession::get(opCtx->getClient());
-
-    // The caller should ensure those preconditions are met
-    invariant(!opCtx->getClient()->isInDirectClient());
-    invariant(
-        !val.has_value() ||
-        as->isAuthorizedForActionsOnResource(
-            ResourcePattern::forClusterResource(as->getUserTenantId()), ActionType::internal));
-
-    // If the mayBypassWriteBlocking field is set, set our state from that field.
-    // Otherwise, set our state based on the AuthorizationSession state.
-    set(val.has_value() ? *val : as->mayBypassWriteBlockingMode());
+void ShardRef::serialize(StringData fieldName, BSONObjBuilder* builder) const {
+    visit(OverloadedVisitor{
+              [&](const std::string& ref) { builder->append(fieldName, ref); },
+              [&](const UUID& ref) { ref.appendToBuilder(builder, fieldName); },
+          },
+          _ref);
 }
 
-void WriteBlockBypass::set(bool bypassEnabled) {
-    _writeBlockBypassEnabled = bypassEnabled;
-}
-
-void WriteBlockBypass::writeAsMetadata(BSONObjBuilder* builder) {
-    builder->append(fieldName(), _writeBlockBypassEnabled);
-}
-
-WriteBlockBypass& WriteBlockBypass::get(OperationContext* opCtx) {
-    return getWriteBlockBypass(opCtx);
-}
 }  // namespace mongo

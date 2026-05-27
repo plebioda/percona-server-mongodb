@@ -119,6 +119,7 @@ jobs:
             --credential_helper=$RBE_CREDENTIAL_HELPER_HOST=%workspace%/bazel/wrapper_hook/credential_helper.py \
             --define=GIT_COMMIT_HASH=$(git rev-parse HEAD) \
             --jobs=300 \
+            --keep_going \
             --remote_download_outputs=toplevel \
             --build_event_json_file=bazel-bep.json \
             //:install-devcore //:install-dbtest
@@ -223,6 +224,7 @@ jobs:
             --credential_helper=$RBE_CREDENTIAL_HELPER_HOST=%workspace%/bazel/wrapper_hook/credential_helper.py \
             --define=GIT_COMMIT_HASH=$(git rev-parse HEAD) \
             --jobs=300 \
+            --keep_going \
             --test_output=errors \
             --test_tag_filters=mongo_unittest,-intermediate_debug,-incompatible_with_bazel_remote_test,-cpu:2 \
             --test_arg=--gtest_filter=-FTDCControllerTestDeathTest.LogAndTerminateWhenCollectionFails \

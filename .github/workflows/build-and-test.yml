@@ -74,6 +74,24 @@ jobs:
             exit 1
           fi
 
+      # GH-hosted ubuntu-latest gives only ~14-20 GB free on '/', where Bazel's
+      # output base lives by default. PSMDB links locally (see .bazelrc:51), so
+      # the fat *_with_debug.so binaries and the downloaded .o/.dwo objects all
+      # land on the runner. As master merges grow the action graph this tips
+      # '/' over its limit ("No space left on device"). Reclaim the preinstalled
+      # toolchains we never use, then move Bazel's output base to the ~70 GB
+      # ephemeral disk mounted at /mnt (chown'd because it is root-owned). This
+      # step runs before setup-env so apt/python installs also get the room.
+      - name: Free disk space and redirect Bazel to /mnt
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/boost || true
+          sudo docker image prune --all --force || true
+          sudo mkdir -p /mnt/bazel
+          sudo chown "$(id -u):$(id -g)" /mnt/bazel
+          df -h /
+
       - name: Setup environment
         uses: ./.github/actions/setup-env
 
@@ -84,7 +102,13 @@ jobs:
           # runner; NestedSet expansion in RemoteSpawnRunner can OOM the
           # JVM during param-file materialization. 12 GB leaves headroom
           # for the runner and the remote-cache uploader.
+          #
+          # --output_user_root puts Bazel's cache on /mnt (see the disk step
+          # above). --remote_download_outputs=toplevel overrides .bazelrc:55's
+          # 'all' so only the requested install outputs (plus what local link
+          # actions pull on demand) are fetched, instead of every intermediate.
           bazel \
+            --output_user_root=/mnt/bazel \
             --host_jvm_args=-Xmx12g \
             build \
             --config=psmdb_buildfarm \
@@ -95,6 +119,7 @@ jobs:
             --credential_helper=$RBE_CREDENTIAL_HELPER_HOST=%workspace%/bazel/wrapper_hook/credential_helper.py \
             --define=GIT_COMMIT_HASH=$(git rev-parse HEAD) \
             --jobs=300 \
+            --remote_download_outputs=toplevel \
             --build_event_json_file=bazel-bep.json \
             //:install-devcore //:install-dbtest
 
@@ -143,6 +168,18 @@ jobs:
             exit 1
           fi
 
+      # See the build job for why this is needed: link actions and test-binary
+      # outputs land locally, so the default output base on '/' can fill up.
+      - name: Free disk space and redirect Bazel to /mnt
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/boost || true
+          sudo docker image prune --all --force || true
+          sudo mkdir -p /mnt/bazel
+          sudo chown "$(id -u):$(id -g)" /mnt/bazel
+          df -h /
+
       - name: Setup environment
         uses: ./.github/actions/setup-env
 
@@ -174,6 +211,7 @@ jobs:
           # action graph is much larger than build's, which is what tripped
           # the OOM in the first place.
           bazel \
+            --output_user_root=/mnt/bazel \
             --host_jvm_args=-Xmx12g \
             test \
             --config=psmdb_buildfarm \

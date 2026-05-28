@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 308,
+    "commits_behind": 309,
     "days_behind": 9,
-    "files_affected": 1741,
-    "total_additions": 72042,
+    "files_affected": 1744,
+    "total_additions": 72447,
     "total_deletions": 22199,
     "date_range": {
       "first": "2026-05-18T19:46:08+00:00",
-      "last": "2026-05-28T11:34:10+00:00"
+      "last": "2026-05-28T12:15:26+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-126230: move uds socket path from tmp (#53424)"
   },
   "unmerged_commits": [
+    {
+      "sha": "2ab68f9815deb404e31dbf424563268e20763848",
+      "short_sha": "2ab68f9815d",
+      "date": "2026-05-28T08:15:26-04:00",
+      "author": {
+        "name": "Anja Kalaba",
+        "email": "anja.kalaba@mongodb.com"
+      },
+      "summary": "SERVER-126221 Add timeseries variants of zone-based resharding tests (#54066)"
+    },
     {
       "sha": "7449a98f7c36e232c8dce2bfd0d4f61ced0fb239",
       "short_sha": "7449a98f7c3",
@@ -3626,7 +3636,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-28 12:28:07",
+  "generated_at": "2026-05-28 12:52:24",
   "branch_name": "master",
   "display_name": "master"
 }

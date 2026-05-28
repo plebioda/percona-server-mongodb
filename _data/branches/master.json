@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 306,
+    "commits_behind": 308,
     "days_behind": 9,
-    "files_affected": 1740,
-    "total_additions": 72030,
-    "total_deletions": 22182,
+    "files_affected": 1741,
+    "total_additions": 72042,
+    "total_deletions": 22199,
     "date_range": {
       "first": "2026-05-18T19:46:08+00:00",
-      "last": "2026-05-28T10:04:13+00:00"
+      "last": "2026-05-28T11:34:10+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,26 @@
     "summary": "SERVER-126230: move uds socket path from tmp (#53424)"
   },
   "unmerged_commits": [
+    {
+      "sha": "7449a98f7c36e232c8dce2bfd0d4f61ced0fb239",
+      "short_sha": "7449a98f7c3",
+      "date": "2026-05-28T13:34:10+02:00",
+      "author": {
+        "name": "Carlos Alonso",
+        "email": "c.alonso@mongodb.com"
+      },
+      "summary": "SERVER-127759: Accept resharding error codes in multi_plan_storm_drop_plan_cache test (#54618)"
+    },
+    {
+      "sha": "e1ba9b1fb3de90e7db535f4624768f334ff5f422",
+      "short_sha": "e1ba9b1fb3d",
+      "date": "2026-05-28T13:13:59+02:00",
+      "author": {
+        "name": "Jordi Olivares Provencio",
+        "email": "jordi.olivares-provencio@mongodb.com"
+      },
+      "summary": "SERVER-127753 Ignore unknown exceptions during shard catalog cleanup (#54613)"
+    },
     {
       "sha": "314b76bd0c33a47e98605b835fbb0388e818019c",
       "short_sha": "314b76bd0c3",
@@ -3606,7 +3626,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-28 11:09:24",
+  "generated_at": "2026-05-28 12:20:22",
   "branch_name": "master",
   "display_name": "master"
 }

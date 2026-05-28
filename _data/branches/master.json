@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 309,
+    "commits_behind": 311,
     "days_behind": 9,
-    "files_affected": 1744,
-    "total_additions": 72447,
-    "total_deletions": 22199,
+    "files_affected": 1746,
+    "total_additions": 72754,
+    "total_deletions": 22232,
     "date_range": {
       "first": "2026-05-18T19:46:08+00:00",
-      "last": "2026-05-28T12:15:26+00:00"
+      "last": "2026-05-28T13:04:07+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,26 @@
     "summary": "SERVER-126230: move uds socket path from tmp (#53424)"
   },
   "unmerged_commits": [
+    {
+      "sha": "cd4703a527ba21a4ae4606287acb5000f3cbcfaf",
+      "short_sha": "cd4703a527b",
+      "date": "2026-05-28T14:04:07+01:00",
+      "author": {
+        "name": "Catalin Sumanaru",
+        "email": "catalin.sumanaru@mongodb.com"
+      },
+      "summary": "SERVER-127766 Introduce QueryKnobSnapshot cache class (#54628)"
+    },
+    {
+      "sha": "c70dfa368dbf9e3598e9dc9567418e830146bf43",
+      "short_sha": "c70dfa368db",
+      "date": "2026-05-28T07:41:19-05:00",
+      "author": {
+        "name": "nandinibhartiyaMDB",
+        "email": "104035932+nandinibhartiyaMDB@users.noreply.github.com"
+      },
+      "summary": "SERVER-127713: Fix spurious TypeError in reshard_timeseries_disallow_writes.js (#54571)"
+    },
     {
       "sha": "2ab68f9815deb404e31dbf424563268e20763848",
       "short_sha": "2ab68f9815d",
@@ -3636,7 +3656,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-28 12:52:24",
+  "generated_at": "2026-05-28 13:49:37",
   "branch_name": "master",
   "display_name": "master"
 }

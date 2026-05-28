@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 303,
+    "commits_behind": 306,
     "days_behind": 9,
-    "files_affected": 1732,
-    "total_additions": 71238,
-    "total_deletions": 22212,
+    "files_affected": 1740,
+    "total_additions": 72030,
+    "total_deletions": 22182,
     "date_range": {
       "first": "2026-05-18T19:46:08+00:00",
-      "last": "2026-05-28T09:03:24+00:00"
+      "last": "2026-05-28T10:04:13+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,36 @@
     "summary": "SERVER-126230: move uds socket path from tmp (#53424)"
   },
   "unmerged_commits": [
+    {
+      "sha": "314b76bd0c33a47e98605b835fbb0388e818019c",
+      "short_sha": "314b76bd0c3",
+      "date": "2026-05-28T11:04:13+01:00",
+      "author": {
+        "name": "Rustam Gusein-zade",
+        "email": "rustam.guseinzade@mongodb.com"
+      },
+      "summary": "SERVER-122487 make movePrimary modify shard collection entries for tracked collections (#53049)"
+    },
+    {
+      "sha": "2b6894bdb3a18c30bdfebd335ded59b986c9e4e0",
+      "short_sha": "2b6894bdb3a",
+      "date": "2026-05-28T12:47:09+03:00",
+      "author": {
+        "name": "Philip Stoev",
+        "email": "philip.stoev@mongodb.com"
+      },
+      "summary": "SERVER-127756 Add explicit featureFlagPathArrayness to join passthoughs (#54622)"
+    },
+    {
+      "sha": "6fff7dedcc1d42b9506356ce11d79ea960a91209",
+      "short_sha": "6fff7dedcc1",
+      "date": "2026-05-28T12:45:00+03:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#54606)"
+    },
     {
       "sha": "98a913037203a5f55252df384829eac4dff4c405",
       "short_sha": "98a91303720",
@@ -3550,10 +3580,33 @@
           "num_of_dirs": 20
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "314b76bd0c33a47e98605b835fbb0388e818019c",
+        "short_sha": "314b76bd0c3",
+        "date": "2026-05-28T11:04:13+01:00",
+        "author": {
+          "name": "Rustam Gusein-zade",
+          "email": "rustam.guseinzade@mongodb.com"
+        },
+        "summary": "SERVER-122487 make movePrimary modify shard collection entries for tracked collections (#53049)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 28,
+          "num_of_lines": 844,
+          "lines_added": 829,
+          "lines_deleted": 15,
+          "num_of_dirs": 11
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-28 10:12:33",
+  "generated_at": "2026-05-28 11:09:24",
   "branch_name": "master",
   "display_name": "master"
 }

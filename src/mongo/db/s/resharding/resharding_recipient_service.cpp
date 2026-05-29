@@ -72,6 +72,7 @@
 #include "mongo/db/s/resharding/resharding_oplog_applier_metrics.h"
 #include "mongo/db/s/resharding/resharding_oplog_applier_progress_gen.h"
 #include "mongo/db/s/resharding/resharding_oplog_fetcher_progress_gen.h"
+#include "mongo/db/s/resharding/resharding_promise_util.h"
 #include "mongo/db/s/resharding/resharding_recipient_service_external_state.h"
 #include "mongo/db/s/resharding/resharding_server_parameters_gen.h"
 #include "mongo/db/s/resharding/resharding_util.h"
@@ -148,38 +149,7 @@ namespace {
 
 const WriteConcernOptions kNoWaitWriteConcern{1, WriteConcernOptions::SyncMode::UNSET, Seconds(0)};
 
-/**
- * Fulfills the promise if it is not already. Otherwise, does nothing.
- */
-void ensureFulfilledPromise(WithLock lk, SharedPromise<void>& sp) {
-    if (!sp.getFuture().isReady()) {
-        sp.emplaceValue();
-    }
-}
-
-void ensureFulfilledPromise(WithLock lk, SharedPromise<void>& sp, Status error) {
-    if (!sp.getFuture().isReady()) {
-        sp.setError(error);
-    }
-}
-
-template <typename T>
-void ensureFulfilledPromise(WithLock lk, SharedPromise<T>& sp, Status error) {
-    if (!sp.getFuture().isReady()) {
-        sp.setError(error);
-    }
-}
-
-template <class T>
-void ensureFulfilledPromise(WithLock lk, SharedPromise<T>& sp, T value) {
-    auto future = sp.getFuture();
-    if (!future.isReady()) {
-        sp.emplaceValue(std::move(value));
-    } else {
-        // Ensure that we would only attempt to fulfill the promise with the same value.
-        invariant(future.get() == value);
-    }
-}
+using resharding::ensureFulfilledPromise;
 
 /**
  * Returns whether it is possible for the recipient to be in 'state' when resharding will
@@ -538,7 +508,7 @@ ReshardingRecipientService::RecipientStateMachine::_notifyCoordinatorAndAwaitDec
         })
         .runOn(**executor, _cancelState.getAbortOrStepdownToken())
         .then([this] {
-            return future_util::withCancellation(_coordinatorHasDecisionPersisted.getFuture(),
+            return future_util::withCancellation(_promises.getCoordinatorCommittedFuture(),
                                                  _cancelState.getAbortOrStepdownToken());
         });
 }
@@ -751,7 +721,7 @@ void ReshardingRecipientService::RecipientStateMachine::interrupt(Status status)
     if (_dataReplication) {
         _dataReplication->shutdown();
     }
-    _promises.setError(lk, status);
+    _promises.setRunnerError(lk, status);
     ensureFulfilledPromise(lk, _completionPromise, status);
 }
 
@@ -852,14 +822,6 @@ void ReshardingRecipientService::RecipientStateMachine::_onCoordinatorStateAdvan
         if (_dataReplication) {
             _dataReplication->prepareForCriticalSection();
         }
-    }
-
-    if (newState >= CoordinatorStateEnum::kBlockingWrites) {
-        ensureFulfilledPromise(lk, _coordinatorHasEngagedCriticalSection);
-    }
-
-    if (newState >= CoordinatorStateEnum::kCommitting) {
-        ensureFulfilledPromise(lk, _coordinatorHasDecisionPersisted);
     }
 }
 
@@ -1483,9 +1445,8 @@ ExecutorFuture<void> ReshardingRecipientService::RecipientStateMachine::
                       "going to own any chunks for the collection after resharding");
 
                 reshardingPauseRecipientBeforeWaitingForCriticalSection.pauseWhileSet();
-                return future_util::withCancellation(
-                    _coordinatorHasEngagedCriticalSection.getFuture(),
-                    _cancelState.getAbortOrStepdownToken());
+                return future_util::withCancellation(_promises.getCoordinatorBlockingWritesFuture(),
+                                                     _cancelState.getAbortOrStepdownToken());
             }
 
             {
@@ -1679,7 +1640,7 @@ void ReshardingRecipientService::RecipientStateMachine::_transitionState(
         std::lock_guard<std::mutex> lk(_mutex);
         _promises.onRecipientStateAdvanced(lk, newState);
         if (newState == RecipientStateEnum::kError) {
-            _promises.setError(lk, resharding::getStatusFromAbortReason(_recipientCtx));
+            _promises.setRecipientError(lk, resharding::getStatusFromAbortReason(_recipientCtx));
         }
     }
 }
@@ -1833,18 +1794,6 @@ void ReshardingRecipientService::RecipientStateMachine::insertStateDocument(
     store.add(opCtx, recipientDoc, kNoWaitWriteConcern);
 }
 
-void ReshardingRecipientService::RecipientStateMachine::onCriticalSectionStarted() {
-    std::lock_guard<std::mutex> lk(_mutex);
-    tassert(ErrorCodes::ReshardCollectionInProgress,
-            "Critical section was engaged before this recipient enters the applying state",
-            _recipientCtx.getState() >= RecipientStateEnum::kApplying);
-
-    ensureFulfilledPromise(lk, _coordinatorHasEngagedCriticalSection);
-    if (_dataReplication) {
-        _dataReplication->prepareForCriticalSection();
-    }
-}
-
 void ReshardingRecipientService::RecipientStateMachine::commit() {
     std::lock_guard<std::mutex> lk(_mutex);
     tassert(ErrorCodes::ReshardCollectionInProgress,
@@ -1853,10 +1802,7 @@ void ReshardingRecipientService::RecipientStateMachine::commit() {
                 idl::serialize(_recipientCtx.getState())),
             _recipientCtx.getState() >= RecipientStateEnum::kStrictConsistency);
 
-    ensureFulfilledPromise(lk, _coordinatorHasEngagedCriticalSection);
-    if (!_coordinatorHasDecisionPersisted.getFuture().isReady()) {
-        _coordinatorHasDecisionPersisted.emplaceValue();
-    }
+    _promises.fulfillCoordinatorCommit(lk);
 }
 
 void ReshardingRecipientService::RecipientStateMachine::_updateRecipientDocument(
@@ -2322,10 +2268,7 @@ void ReshardingRecipientService::RecipientStateMachine::abort(bool isUserCancell
 
     {
         std::lock_guard<std::mutex> lk(_mutex);
-        ensureFulfilledPromise(
-            lk, _coordinatorHasEngagedCriticalSection, resharding::kCoordinatorAbortedError);
-        ensureFulfilledPromise(
-            lk, _coordinatorHasDecisionPersisted, resharding::kCoordinatorAbortedError);
+        _promises.setCoordinatorError(lk, resharding::kCoordinatorAbortedError);
     }
 }
 
@@ -2333,17 +2276,6 @@ void ReshardingRecipientService::RecipientStateMachine::_fulfillPromisesOnStepup
     const ReshardingRecipientDocument& document) {
     std::lock_guard<std::mutex> lk(_mutex);
     _promises.recover(lk, document);
-
-    if (_recipientCtx.getState() >= RecipientStateEnum::kStrictConsistency) {
-        // Fulfill coordinator-state-driven promises based on the inferred coordinator state.
-        // The coordinator must have reached at least kBlockingWrites before the recipient could
-        // enter kStrictConsistency, and at least kCommitting before kDone.
-        if (_recipientCtx.getState() == RecipientStateEnum::kDone) {
-            _onCoordinatorStateAdvanced(lk, CoordinatorStateEnum::kCommitting, boost::none);
-        } else {
-            _onCoordinatorStateAdvanced(lk, CoordinatorStateEnum::kBlockingWrites, boost::none);
-        }
-    }
 }
 
 otel::traces::Span ReshardingRecipientService::RecipientStateMachine::_startSpan(

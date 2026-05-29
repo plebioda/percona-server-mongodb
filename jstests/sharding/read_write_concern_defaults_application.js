@@ -862,6 +862,7 @@ let testCases = {
         // use profiling.  In the meantime, use logs.
         useLogs: true,
     },
+    updateESECMKIdentifierList: {skip: "does not accept read or write concern"},
     updateRole: {
         setUp: function (conn) {
             assert.commandWorked(

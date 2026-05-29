@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 178,
+    "commits_behind": 179,
     "days_behind": 6,
-    "files_affected": 1464,
-    "total_additions": 51735,
-    "total_deletions": 15113,
+    "files_affected": 1465,
+    "total_additions": 51753,
+    "total_deletions": 15121,
     "date_range": {
       "first": "2026-05-22T18:26:56+00:00",
-      "last": "2026-05-29T04:39:02+00:00"
+      "last": "2026-05-29T07:00:22+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-123711 scan collection for non-compliant docs on constraint upgrade sharded (#53220)"
   },
   "unmerged_commits": [
+    {
+      "sha": "5f2c18a6eb19dee4212d555cc1c82029ed6d6d14",
+      "short_sha": "5f2c18a6eb1",
+      "date": "2026-05-29T09:00:22+02:00",
+      "author": {
+        "name": "Jan",
+        "email": "jsteemann@users.noreply.github.com"
+      },
+      "summary": "SERVER-127675 Fix flaky timeseries test (#54546)"
+    },
     {
       "sha": "d01f38e334439ce851436b82779b4989678026e3",
       "short_sha": "d01f38e3344",
@@ -1903,6 +1913,26 @@
     },
     {
       "commit": {
+        "sha": "a391837ffa9847b41cd0feaedea9803fbc0cbf53",
+        "short_sha": "a391837ffa9",
+        "date": "2026-05-24T11:04:07+00:00",
+        "author": {
+          "name": "auto-revert-app[bot]",
+          "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+        },
+        "summary": "Revert \"SERVER-118423 Implement `DocsNeededBounds` reporting for extensions (#51217)\" (#54404)"
+      },
+      "strategy_name": "branching_point",
+      "result": {
+        "branches": [
+          "master",
+          "mergai/master-a391837ffa9/main",
+          "mongodb"
+        ]
+      }
+    },
+    {
+      "commit": {
         "sha": "8d20d136377f3a75a1d182a0edabf2a3a2b09570",
         "short_sha": "8d20d136377",
         "date": "2026-05-25T11:42:30+10:00",
@@ -2243,7 +2273,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-29 06:51:58",
+  "generated_at": "2026-05-29 09:17:06",
   "branch_name": "master",
   "display_name": "master"
 }

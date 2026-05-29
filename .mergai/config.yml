@@ -353,7 +353,7 @@ merge:
   # describe creates a field in the context.
   #
   # Default: "never"
-  describe: always
+  describe: never
 
 # -----------------------------------------------------------------------------
 # CONFIG COMMAND CONFIGURATION

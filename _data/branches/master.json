@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 179,
+    "commits_behind": 181,
     "days_behind": 6,
-    "files_affected": 1465,
-    "total_additions": 51753,
-    "total_deletions": 15121,
+    "files_affected": 1467,
+    "total_additions": 51759,
+    "total_deletions": 15122,
     "date_range": {
       "first": "2026-05-22T18:26:56+00:00",
-      "last": "2026-05-29T07:00:22+00:00"
+      "last": "2026-05-29T08:57:24+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,26 @@
     "summary": "SERVER-123711 scan collection for non-compliant docs on constraint upgrade sharded (#53220)"
   },
   "unmerged_commits": [
+    {
+      "sha": "5230090c975c04940abd10d964a70114ad43b2d0",
+      "short_sha": "5230090c975",
+      "date": "2026-05-29T09:57:24+01:00",
+      "author": {
+        "name": "Henri Nikku",
+        "email": "henri.nikku@mongodb.com"
+      },
+      "summary": "SERVER-127774 Use _resultSetsEqualNormalized in computation_hoisting_match_pushdown_pbt.js (#54639)"
+    },
+    {
+      "sha": "c7da59ea8d6f1bdbce38d6ce22d67de0a33e1287",
+      "short_sha": "c7da59ea8d6",
+      "date": "2026-05-29T10:54:38+02:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#54705)"
+    },
     {
       "sha": "5f2c18a6eb19dee4212d555cc1c82029ed6d6d14",
       "short_sha": "5f2c18a6eb1",
@@ -2273,7 +2293,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-29 09:17:06",
+  "generated_at": "2026-05-29 10:01:31",
   "branch_name": "master",
   "display_name": "master"
 }

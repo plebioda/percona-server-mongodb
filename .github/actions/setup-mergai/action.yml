@@ -6,8 +6,14 @@ description: "Setting up the mergai tool"
 
 inputs:
   token:
-    description: "GitHub token to checkout mergai repository"
-    required: true # Required because Percona-Lab/mergai is a private repository
+    # Percona-Lab/mergai is public, so no caller-supplied token is needed:
+    # actions/checkout defaults this to the job's GITHUB_TOKEN, which can read
+    # any public repo. Override only to pin a different identity. (Forcing this
+    # required broke tokenless callers — an empty value fails input validation
+    # before checkout can fall back to its default.)
+    description: "GitHub token for the mergai checkout (default: job GITHUB_TOKEN)."
+    required: false
+    default: ${{ github.token }}
   ref:
     description: "Git reference (branch, tag, commit SHA) to checkout mergai from"
     required: false

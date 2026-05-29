@@ -149,6 +149,7 @@
 #include "mongo/db/router_role/routing_cache/catalog_cache.h"
 #include "mongo/db/router_role/routing_cache/routing_information_cache.h"
 #include "mongo/db/rss/replicated_storage_service.h"
+#include "mongo/db/s/active_migrations_registry.h"
 #include "mongo/db/s/migration_blocking_operation/multi_update_coordinator.h"
 #include "mongo/db/s/migration_chunk_cloner_source_op_observer.h"
 #include "mongo/db/s/query_analysis_op_observer_configsvr.h"
@@ -222,6 +223,7 @@
 #include "mongo/db/topology/periodic_replica_set_configshard_maintenance_mode_checker.h"
 #include "mongo/db/topology/shard_registry.h"
 #include "mongo/db/topology/sharding_state.h"
+#include "mongo/db/topology/user_write_block/replica_set_write_block_op_observer.h"
 #include "mongo/db/topology/user_write_block/user_write_block_mode_op_observer.h"
 #include "mongo/db/topology/vector_clock/vector_clock_metadata_hook.h"
 #include "mongo/db/transaction/session_catalog_mongod_transaction_interface_impl.h"
@@ -457,6 +459,8 @@ void registerPrimaryOnlyServices(ServiceContext* serviceContext) {
         auto shardingCoordinatorService =
             std::make_unique<ShardingCoordinatorService>(serviceContext);
         DDLLockManager::get(serviceContext)->setRecoverable(shardingCoordinatorService.get());
+        ActiveMigrationsRegistry::get(serviceContext)
+            .setRecoverable(shardingCoordinatorService.get());
 
         services.emplace_back(std::move(shardingCoordinatorService));
         services.push_back(std::make_unique<RenameCollectionParticipantService>(serviceContext));
@@ -1496,6 +1500,7 @@ void setUpObservers(ServiceContext* serviceContext) {
         opObserverRegistry->addObserver(std::make_unique<ShardServerOpObserver>());
         opObserverRegistry->addObserver(std::make_unique<ReshardingOpObserver>());
         opObserverRegistry->addObserver(std::make_unique<UserWriteBlockModeOpObserver>());
+        opObserverRegistry->addObserver(std::make_unique<ReplicaSetWriteBlockOpObserver>());
 
         if (!gMultitenancySupport) {
             opObserverRegistry->addObserver(
@@ -1518,6 +1523,7 @@ void setUpObservers(ServiceContext* serviceContext) {
         opObserverRegistry->addObserver(std::make_unique<FindAndModifyImagesOpObserver>());
         opObserverRegistry->addObserver(std::make_unique<ChangeStreamPreImagesOpObserver>());
         opObserverRegistry->addObserver(std::make_unique<UserWriteBlockModeOpObserver>());
+        opObserverRegistry->addObserver(std::make_unique<ReplicaSetWriteBlockOpObserver>());
 
         auto replCoord = repl::ReplicationCoordinator::get(serviceContext);
         if (!gMultitenancySupport && replCoord && replCoord->getSettings().isReplSet()) {
@@ -2035,6 +2041,17 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
                                                                         true /* memLeakAllowed */);
     }
 
+    // Stop FTDC before tearing down FlowControl. The FTDC background thread runs serverStatus
+    // collection (including FlowControl::get()) concurrently. Joining the FTDC thread here
+    // ensures it is fully quiesced before FlowControl::shutdown() resets the unique_ptr
+    // decoration, preventing a TSAN data race between the two threads.
+    {
+        SectionScopedTimer scopedTimer(serviceContext->getFastClockSource(),
+                                       TimedSectionId::shutDownFTDC,
+                                       &shutdownTimeElapsedBuilder);
+        stopMongoDFTDC();
+    }
+
     // Stop flow control before service lifecycle storage-access shutdown so the periodic job does
     // not overlap it.
     {
@@ -2072,14 +2089,6 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
                                        TimedSectionId::shutDownOtelTraces,
                                        &shutdownTimeElapsedBuilder);
         otel::traces::shutdown(serviceContext);
-    }
-
-    // Shutdown Full-Time Data Capture
-    {
-        SectionScopedTimer scopedTimer(serviceContext->getFastClockSource(),
-                                       TimedSectionId::shutDownFTDC,
-                                       &shutdownTimeElapsedBuilder);
-        stopMongoDFTDC();
     }
 
     {

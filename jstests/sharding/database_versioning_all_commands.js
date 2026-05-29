@@ -662,6 +662,10 @@ const allTestCases = {
         getDatabaseVersion: {skip: "executes locally on mongos (not sent to any remote node)"},
         getDefaultRWConcern: {skip: "executes locally on mongos (not sent to any remote node)"},
         getDiagnosticData: {skip: "executes locally on mongos (not sent to any remote node)"},
+        getESECMKIdentifierListStatus: {
+            skip: "executes locally on mongos (not sent to any remote node)",
+            conditional: true,
+        },
         getESERotateActiveKEKStatus: {
             skip: "executes locally on mongos (not sent to any remote node)",
             conditional: true,
@@ -1133,6 +1137,7 @@ const allTestCases = {
         _shardsvrCommitCollModCollectionMetadata: {skip: "internal command"},
         _shardsvrCommitDropCollectionMetadata: {skip: "internal command"},
         _shardsvrCommitCreateCollectionMetadata: {skip: "internal command"},
+        _shardsvrCommitRenameCollectionMetadata: {skip: "internal command"},
         _shardsvrRenameCollection: {skip: "TODO"},
         _shardsvrRenameCollectionParticipant: {skip: "TODO"},
         _shardsvrRenameCollectionParticipantUnblock: {skip: "TODO"},
@@ -1332,6 +1337,7 @@ const allTestCases = {
         getDatabaseVersion: {skip: "TODO"},
         getDefaultRWConcern: {skip: "TODO"},
         getDiagnosticData: {skip: "TODO"},
+        getESECMKIdentifierListStatus: {skip: "TODO", conditional: true},
         getESERotateActiveKEKStatus: {skip: "TODO", conditional: true},
         getLog: {skip: "TODO"},
         getMore: {skip: "TODO"},

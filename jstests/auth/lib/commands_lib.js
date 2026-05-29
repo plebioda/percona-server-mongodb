@@ -6431,6 +6431,21 @@ export const authCommandsLib = {
             ],
         },
         {
+            testname: "getESECMKIdentifierListStatus",
+            command: {getESECMKIdentifierListStatus: 1},
+            skipTest: () => {
+                return !getBuildInfo().modules.includes("atlas");
+            },
+            testcases: [
+                {
+                    runOnDb: adminDbName,
+                    roles: roles_hostManager,
+                    privileges: [{resource: {cluster: true}, actions: ["getESECMKIdentifierListStatus"]}],
+                    expectFail: true,
+                },
+            ],
+        },
+        {
             testname: "oidcListKeys",
             command: {oidcListKeys: 1},
             // Only enterprise knows of this command.

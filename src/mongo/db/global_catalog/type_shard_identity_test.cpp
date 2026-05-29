@@ -36,12 +36,37 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/bson/oid.h"
 #include "mongo/client/connection_string.h"
+#include "mongo/db/sharding_environment/shard_ref.h"
 #include "mongo/unittest/unittest.h"
+#include "mongo/util/uuid.h"
 
 namespace mongo {
 namespace {
 
 TEST(ShardIdentityType, RoundTrip) {
+    auto clusterId(OID::gen());
+    auto uuid = UUID::gen();
+    BSONObjBuilder docBuilder;
+    docBuilder.append("_id", "shardIdentity");
+    docBuilder.append("shardName", "s1");
+    docBuilder.append("clusterId", clusterId);
+    docBuilder.append("configsvrConnectionString", "test/a:123");
+    uuid.appendToBuilder(&docBuilder, "uuid");
+    auto doc = docBuilder.obj();
+
+    auto result = ShardIdentityType::fromShardIdentityDocument(doc);
+    ASSERT_OK(result.getStatus());
+
+    auto shardIdentity = result.getValue();
+    ASSERT_EQ("test/a:123", shardIdentity.getConfigsvrConnectionString().toString());
+    ASSERT_EQ("s1", shardIdentity.getShardName());
+    ASSERT_EQ(clusterId, shardIdentity.getClusterId());
+    ASSERT_EQ(uuid, shardIdentity.getUuid());
+
+    ASSERT_BSONOBJ_EQ(doc, shardIdentity.toShardIdentityDocument());
+}
+
+TEST(ShardIdentityType, ParseMissingUuid) {
     auto clusterId(OID::gen());
     auto doc = BSON("_id" << "shardIdentity"
                           << "shardName"
@@ -51,13 +76,7 @@ TEST(ShardIdentityType, RoundTrip) {
 
     auto result = ShardIdentityType::fromShardIdentityDocument(doc);
     ASSERT_OK(result.getStatus());
-
-    auto shardIdentity = result.getValue();
-    ASSERT_EQ("test/a:123", shardIdentity.getConfigsvrConnectionString().toString());
-    ASSERT_EQ("s1", shardIdentity.getShardName());
-    ASSERT_EQ(clusterId, shardIdentity.getClusterId());
-
-    ASSERT_BSONOBJ_EQ(doc, shardIdentity.toShardIdentityDocument());
+    ASSERT_FALSE(result.getValue().getUuid().has_value());
 }
 
 TEST(ShardIdentityType, ParseMissingId) {

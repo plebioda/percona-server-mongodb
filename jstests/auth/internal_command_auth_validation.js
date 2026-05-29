@@ -788,12 +788,14 @@ const internalCommandsMap = {
         testname: "_shardsvrCommitRefineCollectionShardKey",
         command: {
             _shardsvrCommitRefineCollectionShardKey: "test.x",
+            primaryShardId: "",
         },
     },
     _shardsvrCommitCollModCollectionMetadata: {
         testname: "_shardsvrCommitCollModCollectionMetadata",
         command: {
             _shardsvrCommitCollModCollectionMetadata: "test.x",
+            primaryShardId: "",
         },
     },
     _shardsvrCommitDropCollectionMetadata: {
@@ -804,6 +806,16 @@ const internalCommandsMap = {
         testname: "_shardsvrCommitCreateCollectionMetadata",
         command: {
             _shardsvrCommitCreateCollectionMetadata: "test.x",
+            primaryShardId: "",
+        },
+    },
+    _shardsvrCommitRenameCollectionMetadata: {
+        testname: "_shardsvrCommitRenameCollectionMetadata",
+        command: {
+            _shardsvrCommitRenameCollectionMetadata: "",
+            fromNss: "test.x",
+            toNss: "test.y",
+            primaryShardId: "",
         },
     },
     _shardsvrSetAllowMigrations: {

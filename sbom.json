@@ -25,6 +25,21 @@
       "group": "percona",
       "name": "percona-server-mongodb",
       "version": "master",
+      "description": "The MongoDB Database",
+      "licenses": [
+        {
+          "license": {
+            "id": "SSPL-1.0",
+            "url": "https://www.mongodb.com/legal/licensing/community-edition"
+          }
+        },
+        {
+          "license": {
+            "name": "MongoDB Enterprise Advanced License",
+            "url": "https://www.mongodb.com/products/self-managed/enterprise-advanced"
+          }
+        }
+      ],
       "cpe": "cpe:2.3:a:percona:percona-server-mongodb:master:*:*:*:*:*:*:*",
       "purl": "pkg:github/percona/percona-server-mongodb@master",
       "externalReferences": [
@@ -52,6 +67,14 @@
       "name": "Percona LLC",
       "url": [
         "https://percona.com"
+      ]
+    },
+    "tools": {
+      "services": [
+        {
+          "name": "Endor Labs Inc",
+          "version": "v1.7.973"
+        }
       ]
     }
   },

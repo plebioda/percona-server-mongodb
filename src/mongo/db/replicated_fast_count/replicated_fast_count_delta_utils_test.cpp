@@ -45,6 +45,7 @@
 #include "mongo/db/shard_role/shard_catalog/catalog_raii.h"
 #include "mongo/db/shard_role/shard_catalog/catalog_test_fixture.h"
 #include "mongo/db/shard_role/shard_catalog/create_collection.h"
+#include "mongo/db/shard_role/shard_role.h"
 #include "mongo/db/shard_role/transaction_resources.h"
 #include "mongo/db/storage/recovery_unit.h"
 #include "mongo/db/storage/write_unit_of_work.h"
@@ -64,7 +65,7 @@ TEST_F(ReadAndIncrementSizeCountsTest, IncrementZeros) {
     deltas[uuid] = SizeCountDelta{.sizeCount = {0, 0}, .state = DDLState::kNone};
 
     // Read before the document exists.
-    readAndIncrementSizeCounts(operationContext(), deltas);
+    store.readAndIncrementSizeCounts(operationContext(), deltas);
 
     EXPECT_EQ(deltas.size(), 1);
     ASSERT_TRUE(deltas.contains(uuid));
@@ -78,7 +79,7 @@ TEST_F(ReadAndIncrementSizeCountsTest, IncrementZeros) {
         SizeCountStore::Entry{.timestamp = Timestamp(1, 1), .size = 0, .count = 0});
 
     // Read after (0,0) document exists.
-    readAndIncrementSizeCounts(operationContext(), deltas);
+    store.readAndIncrementSizeCounts(operationContext(), deltas);
 
     EXPECT_EQ(deltas.size(), 1);
     ASSERT_TRUE(deltas.contains(uuid));
@@ -101,7 +102,7 @@ TEST_F(ReadAndIncrementSizeCountsTest, NegativeResult) {
     deltas[uuid] =
         SizeCountDelta{.sizeCount = {.size = -400, .count = -20}, .state = DDLState::kNone};
 
-    readAndIncrementSizeCounts(operationContext(), deltas);
+    store.readAndIncrementSizeCounts(operationContext(), deltas);
 
     EXPECT_EQ(deltas.size(), 1);
     ASSERT_TRUE(deltas.contains(uuid));
@@ -134,7 +135,7 @@ TEST_F(ReadAndIncrementSizeCountsTest, ReadEmptySet) {
 
     SizeCountDeltas deltas;
 
-    readAndIncrementSizeCounts(operationContext(), deltas);
+    store.readAndIncrementSizeCounts(operationContext(), deltas);
 
     EXPECT_TRUE(deltas.empty());
 }
@@ -166,7 +167,7 @@ TEST_F(ReadAndIncrementSizeCountsTest, ReadDocumentEqualSet) {
     deltas[uuid1] = SizeCountDelta{.sizeCount = {5, 1}, .state = DDLState::kNone};
     deltas[uuid2] = SizeCountDelta{.sizeCount = {50, 10}, .state = DDLState::kNone};
 
-    readAndIncrementSizeCounts(operationContext(), deltas);
+    store.readAndIncrementSizeCounts(operationContext(), deltas);
 
     EXPECT_EQ(deltas.size(), 2);
     ASSERT_TRUE(deltas.contains(uuid1));
@@ -203,7 +204,7 @@ TEST_F(ReadAndIncrementSizeCountsTest, ReadDocumentSubset) {
     SizeCountDeltas deltas;
     deltas[uuid1] = SizeCountDelta{.sizeCount = {5, 1}, .state = DDLState::kNone};
 
-    readAndIncrementSizeCounts(operationContext(), deltas);
+    store.readAndIncrementSizeCounts(operationContext(), deltas);
 
     EXPECT_EQ(deltas.size(), 1);
     ASSERT_TRUE(deltas.contains(uuid1));
@@ -232,7 +233,7 @@ TEST_F(ReadAndIncrementSizeCountsTest, ReadDocumentSuperset) {
     deltas[uuid1] = SizeCountDelta{.sizeCount = {5, 1}, .state = DDLState::kNone};
     deltas[uuid2] = SizeCountDelta{.sizeCount = {50, 10}, .state = DDLState::kNone};
 
-    readAndIncrementSizeCounts(operationContext(), deltas);
+    store.readAndIncrementSizeCounts(operationContext(), deltas);
 
     EXPECT_EQ(deltas.size(), 2);
     ASSERT_TRUE(deltas.contains(uuid1));
@@ -270,7 +271,7 @@ TEST_F(ReadAndIncrementSizeCountsTest, ReadDocumentsDisjointSet) {
     SizeCountDeltas deltas;
     deltas[uuid3] = SizeCountDelta{.sizeCount = {5, 1}, .state = DDLState::kNone};
 
-    readAndIncrementSizeCounts(operationContext(), deltas);
+    store.readAndIncrementSizeCounts(operationContext(), deltas);
 
     EXPECT_EQ(deltas.size(), 1);
     ASSERT_TRUE(deltas.contains(uuid3));
@@ -448,10 +449,16 @@ protected:
         ASSERT_OK(createCollection(_opCtx, _nss1.dbName(), BSON("create" << _nss1.coll())));
         ASSERT_OK(createCollection(_opCtx, _nss2.dbName(), BSON("create" << _nss2.coll())));
         {
-            AutoGetCollection coll1(_opCtx, _nss1, LockMode::MODE_IS);
-            AutoGetCollection coll2(_opCtx, _nss2, LockMode::MODE_IS);
-            _uuid1 = coll1->uuid();
-            _uuid2 = coll2->uuid();
+            auto coll1 = acquireCollection(_opCtx,
+                                           CollectionAcquisitionRequest::fromOpCtx(
+                                               _opCtx, _nss1, AcquisitionPrerequisites::kRead),
+                                           LockMode::MODE_IS);
+            auto coll2 = acquireCollection(_opCtx,
+                                           CollectionAcquisitionRequest::fromOpCtx(
+                                               _opCtx, _nss2, AcquisitionPrerequisites::kRead),
+                                           LockMode::MODE_IS);
+            _uuid1 = coll1.uuid();
+            _uuid2 = coll2.uuid();
         }
     }
 

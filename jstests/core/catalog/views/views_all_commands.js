@@ -172,6 +172,7 @@ let viewsCommandTests = {
     _shardsvrJoinDDLCoordinators: {skip: isAnInternalCommand},
     _shardsvrCommitCreateDatabaseMetadata: {skip: isAnInternalCommand},
     _shardsvrCommitDropDatabaseMetadata: {skip: isAnInternalCommand},
+    _shardsvrCommitRenameCollectionMetadata: {skip: isAnInternalCommand},
     _shardsvrCommitReshardCollection: {skip: isAnInternalCommand},
     _shardsvrCreateCollection: {skip: isAnInternalCommand},
     _shardsvrCreateCollectionParticipant: {skip: isAnInternalCommand},
@@ -446,6 +447,7 @@ let viewsCommandTests = {
     getDatabaseVersion: {skip: isUnrelated},
     getDefaultRWConcern: {skip: isUnrelated},
     getDiagnosticData: {skip: isUnrelated},
+    getESECMKIdentifierListStatus: {skip: isUnrelated},
     getESERotateActiveKEKStatus: {skip: isUnrelated},
     getLog: {skip: isUnrelated},
     getMore: {

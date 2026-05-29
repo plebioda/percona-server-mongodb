@@ -57,7 +57,6 @@
 #include "mongo/db/shard_role/shard_catalog/shard_filtering_metadata_refresh.h"
 #include "mongo/db/sharding_environment/client/shard.h"
 #include "mongo/db/sharding_environment/grid.h"
-#include "mongo/db/sharding_environment/sharding_feature_flags_gen.h"
 #include "mongo/db/sharding_environment/sharding_logging.h"
 #include "mongo/db/topology/shard_registry.h"
 #include "mongo/db/topology/sharding_state.h"
@@ -281,9 +280,8 @@ ExecutorFuture<void> RefineCollectionShardKeyCoordinator::_runImpl(
                 // the shard catalog with current information. This flag is evaluated at insertion
                 // time because on secondaries, metadata is cleared during the onDelete of the
                 // critical section document.
-                if (feature_flags::gShardAuthoritativeCollMetadata.isEnabled(
-                        VersionContext::getDecoration(opCtx),
-                        serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
+                if (_doc.getAuthoritativeMetadataAccessLevel() >=
+                    AuthoritativeMetadataAccessLevelEnum::kWritesAllowed) {
                     blockCRUDOperationsRequest.setClearCollMetadata(false);
                 }
 
@@ -342,23 +340,14 @@ ExecutorFuture<void> RefineCollectionShardKeyCoordinator::_runImpl(
 
                 uassertStatusOK(Shard::CommandResponse::getEffectiveStatus(commitResponse));
 
-                if (feature_flags::gShardAuthoritativeCollMetadata.isEnabled(
-                        VersionContext::getDecoration(opCtx),
-                        serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
-                    const auto involvedShards = getShardsWithDataForCollection(opCtx, nss());
+                if (_doc.getAuthoritativeMetadataAccessLevel() >=
+                    AuthoritativeMetadataAccessLevelEnum::kWritesAllowed) {
+                    // The DB primary shard must always know that a collection is tracked, even when
+                    // it does not own any chunks.
+                    const auto involvedShards = getDataShardsAndDbPrimaryShard(opCtx, nss());
                     const auto session = getNewSession(opCtx);
                     sharding_ddl_util::commitRefineCollectionShardKeyToShardCatalog(
                         opCtx, nss(), involvedShards, session, executor, token);
-
-                    // The DB primary shard must always know that a collection is tracked, even when
-                    // it does not own any chunks. We persist a placeholder chunk locally so that
-                    // disk recovery can distinguish a chunkless-tracked collection from an
-                    // untracked one.
-                    const auto primaryShardId = ShardingState::get(opCtx)->shardId();
-                    if (std::find(involvedShards.begin(), involvedShards.end(), primaryShardId) ==
-                        involvedShards.end()) {
-                        shard_catalog_commit::commitChunklessCollectionLocally(opCtx, nss());
-                    }
                 }
 
                 // Checkpoint the configTime to ensure that, in the case of a stepdown, the new
@@ -393,9 +382,8 @@ ExecutorFuture<void> RefineCollectionShardKeyCoordinator::_runImpl(
             auto opCtxHolder = makeOperationContext();
             auto* opCtx = opCtxHolder.get();
 
-            if (!feature_flags::gShardAuthoritativeCollMetadata.isEnabled(
-                    VersionContext::getDecoration(opCtx),
-                    serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
+            if (_doc.getAuthoritativeMetadataAccessLevel() ==
+                AuthoritativeMetadataAccessLevelEnum::kNone) {
                 // Refresh all shards so cache is warmed up for queries.
                 sharding_util::tellShardsToRefreshCollection(
                     opCtx, getShardsWithDataForCollection(opCtx, nss()), nss(), **executor);
@@ -467,9 +455,8 @@ void RefineCollectionShardKeyCoordinator::_exitCriticalSection(
     // releasing the critical section; the commit phase is responsible for updating the shard
     // catalog (both durable and in-memory) with current information on both primary and secondary
     // nodes.
-    bool isDDLAuthoritative = feature_flags::gShardAuthoritativeCollMetadata.isEnabled(
-        VersionContext::getDecoration(opCtx),
-        serverGlobalParams.featureCompatibility.acquireFCVSnapshot());
+    bool isDDLAuthoritative = _doc.getAuthoritativeMetadataAccessLevel() >=
+        AuthoritativeMetadataAccessLevelEnum::kWritesAllowed;
     if (isDDLAuthoritative) {
         unblockCRUDOperationsRequest.setClearCollMetadata(false);
     }

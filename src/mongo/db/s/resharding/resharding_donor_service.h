@@ -41,11 +41,11 @@
 #include "mongo/db/pipeline/process_interface/mongo_process_interface.h"
 #include "mongo/db/repl/primary_only_service.h"
 #include "mongo/db/s/forwardable_operation_metadata.h"
+#include "mongo/db/s/primary_only_service_helpers/cancel_state.h"
 #include "mongo/db/s/resharding/donor_document_gen.h"
 #include "mongo/db/s/resharding/resharding_change_streams_monitor.h"
 #include "mongo/db/s/resharding/resharding_future_util.h"
 #include "mongo/db/s/resharding/resharding_metrics.h"
-#include "mongo/db/s/resharding/resharding_participant_cancel_state.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/sharding_environment/shard_id.h"
 #include "mongo/executor/scoped_task_executor.h"
@@ -283,6 +283,10 @@ private:
         const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
         std::shared_ptr<HierarchicalCancelableOperationContextFactory> factory);
 
+    void _createChangeStreamsMonitor(
+        const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
+        std::shared_ptr<HierarchicalCancelableOperationContextFactory> factory);
+
     ExecutorFuture<void> _awaitAllRecipientsDoneCloningThenTransitionToDonatingOplogEntries(
         const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
         std::shared_ptr<HierarchicalCancelableOperationContextFactory> factory);
@@ -298,7 +302,8 @@ private:
      * If verification is enabled, waits for the the change streams monitor to complete.
      */
     ExecutorFuture<void> _awaitChangeStreamsMonitorCompleted(
-        const std::shared_ptr<executor::ScopedTaskExecutor>& executor);
+        const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
+        std::shared_ptr<HierarchicalCancelableOperationContextFactory> factory);
 
     // Drops the original collection and throws if the returned status is not either Status::OK()
     // or NamespaceNotFound.
@@ -397,7 +402,7 @@ private:
 
     // Manages abort state and provides cancellation tokens for async operations. Initialized in
     // _initCancelState().
-    std::unique_ptr<ReshardingParticipantCancelState> _cancelState;
+    std::unique_ptr<primary_only_service_helpers::CancelState> _cancelState;
 
     // The identifier associated to the recoverable critical section.
     const BSONObj _critSecReason;

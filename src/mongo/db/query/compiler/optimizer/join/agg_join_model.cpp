@@ -31,6 +31,9 @@
 
 #include "mongo/base/status_with.h"
 #include "mongo/bson/bsonobjbuilder.h"
+#include "mongo/db/exec/classic/subplan.h"
+#include "mongo/db/matcher/expression.h"
+#include "mongo/db/matcher/extensions_callback_noop.h"
 #include "mongo/db/pipeline/document_source_geo_near.h"
 #include "mongo/db/pipeline/document_source_internal_join_hint.h"
 #include "mongo/db/pipeline/document_source_lookup.h"
@@ -40,7 +43,9 @@
 #include "mongo/db/query/compiler/dependency_analysis/pipeline_dependency_graph.h"
 #include "mongo/db/query/compiler/optimizer/join/path_resolver.h"
 #include "mongo/db/query/compiler/optimizer/join/predicate_extractor.h"
+#include "mongo/db/query/compiler/parsers/matcher/expression_parser.h"
 #include "mongo/db/query/util/disjoint_set.h"
+#include "mongo/util/assert_util.h"
 
 #include <memory>
 #include <utility>
@@ -77,6 +82,10 @@ StatusWith<std::unique_ptr<CanonicalQuery>> createCanonicalQueryFromSingleMatchE
     CanonicalQueryParams params{.expCtx = expCtx, .parsedFind = std::move(pfc.getValue())};
     auto cq = CanonicalQuery::make(std::move(params));
     expCtx->setPlanCache(oldPlanCache);
+    if (cq.isOK() && SubplanStage::canUseSubplanning(*cq.getValue())) {
+        return Status(ErrorCodes::QueryFeatureNotAllowed,
+                      "Encountered rooted $or, can't use subplanning together with join opt");
+    }
     return cq;
 }
 
@@ -87,7 +96,11 @@ struct Predicates {
 
 StatusWith<Predicates> extractPredicatesFromLookup(DocumentSourceLookUp& stage) {
     auto expCtx = stage.getSubpipelineExpCtx();
-    if (stage.hasPipeline() && !stage.getResolvedIntrospectionPipeline().empty()) {
+
+    std::vector<JoinPredicateExpr> joinPredicates;
+    std::unique_ptr<MatchExpression> singleTablePredicates;
+
+    if (!stage.getResolvedIntrospectionPipeline().empty()) {
         auto ds = stage.getResolvedIntrospectionPipeline().peekFront();
         auto match = dynamic_cast<DocumentSourceMatch*>(ds);
         tassert(11317205, "expected $match stage as leading stage in subpipeline", match);
@@ -99,25 +112,41 @@ StatusWith<Predicates> extractPredicatesFromLookup(DocumentSourceLookUp& stage) 
                           "Encountered subpipeline with $match containing non-equijoin correlated "
                           "predicates");
         }
-
-        std::unique_ptr<CanonicalQuery> cq;
-        if (splitRes->singleTablePredicates) {
-            auto swCq = createCanonicalQueryFromSingleMatchExpression(
-                expCtx, stage.getFromNs(), std::move(splitRes->singleTablePredicates));
-            if (!swCq.isOK()) {
-                return swCq.getStatus();
-            }
-            cq = std::move(swCq.getValue());
-        } else {
-            cq = makeFullScanCQ(expCtx);
+        joinPredicates = std::move(splitRes->joinPredicates);
+        singleTablePredicates = std::move(splitRes->singleTablePredicates);
+    } else if (stage.hasAdditionalFilter()) {
+        // isLookupEligible() already rejects pipeline-form $lookups with an absorbed filter.
+        // TODO (SERVER-125579): Extend to pipeline-form $lookups via a non-gated accessor and
+        // remove the tassert.
+        auto swExpr = MatchExpressionParser::parse(stage.getAdditionalFilter(),
+                                                   stage.getSubpipelineExpCtx(),
+                                                   ExtensionsCallbackNoop(),
+                                                   Pipeline::kAllowedMatcherFeatures);
+        if (!swExpr.isOK()) {
+            return swExpr.getStatus();
         }
-
-        return {{
-            .canonicalQuery = std::move(cq),
-            .joinPredicates = std::move(splitRes->joinPredicates),
-        }};
+        singleTablePredicates = std::move(swExpr.getValue());
     }
-    return {{.canonicalQuery = makeFullScanCQ(expCtx)}};
+    // If neither branch is hit, then this a non-pipeline or empty subpipeline (pipeline: []) lookup
+    // with no absorbed filters. In this case, 'joinPredicates' and 'singleTablePredicates' stay
+    // empty and the foreign CQ is the full scan.
+
+    std::unique_ptr<CanonicalQuery> cq;
+    if (singleTablePredicates) {
+        auto swCq = createCanonicalQueryFromSingleMatchExpression(
+            expCtx, stage.getFromNs(), std::move(singleTablePredicates));
+        if (!swCq.isOK()) {
+            return swCq.getStatus();
+        }
+        cq = std::move(swCq.getValue());
+    } else {
+        cq = makeFullScanCQ(expCtx);
+    }
+
+    return {{
+        .canonicalQuery = std::move(cq),
+        .joinPredicates = std::move(joinPredicates),
+    }};
 }
 
 BSONObj resolvedPathToBSON(const ResolvedPath& rp) {
@@ -149,17 +178,26 @@ bool isLookupEligible(const DocumentSourceLookUp& lookup) {
         return false;
     }
 
-    // TODO SERVER-116033: Support absorbed single-table additional filter predicates.
+    // $lookup specified with localField/foreignField only (no pipeline spec). An absorbed filter,
+    // if any, is reachable via getAdditionalFilter() and handled in extractPredicatesFromLookup().
+    if (!lookup.hasPipeline()) {
+        return true;
+    }
+
+    // $lookup with pipeline (pipeline:[] or pipeline:[$match, ...]). getAdditionalFilter() returns
+    // {} when hasPipeline() is true, so an absorbed filter on this form is dropped. Thus, we
+    // reject this case.
+    // TODO (SERVER-125579): Support absorbed filter alongside pipeline-form $lookup.
     if (lookup.hasAdditionalFilter()) {
         return false;
     }
 
-    if (!lookup.hasPipeline() || lookup.getResolvedIntrospectionPipeline().empty()) {
-        // A $lookup with no sub-pipeline is eligible.
+    // pipeline:[] with no absorbed filter is eligible — no sub-pipeline to inspect.
+    if (lookup.getResolvedIntrospectionPipeline().empty()) {
         return true;
     }
 
-    // If the $lookup has a sub-pipeline, then it may only contain a $match stage.
+    // Otherwise the sub-pipeline must contain a single $match stage.
     return lookup.getResolvedIntrospectionPipeline().size() == 1 &&
         dynamic_cast<DocumentSourceMatch*>(lookup.getResolvedIntrospectionPipeline().peekFront());
 }
@@ -296,6 +334,11 @@ StatusWith<AggJoinModel> AggJoinModel::constructJoinModel(const Pipeline& pipeli
         // Bail out & return the failure status- we failed to generate a CanonicalQuery from a
         // pipeline prefix.
         return swCQ.getStatus();
+    }
+
+    if (SubplanStage::canUseSubplanning(*swCQ.getValue())) {
+        return Status(ErrorCodes::QueryFeatureNotAllowed,
+                      "Encountered rooted $or, can't use subplanning together with join opt");
     }
 
     if (swCQ.getValue()->getSortPattern()) {

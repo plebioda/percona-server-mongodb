@@ -432,7 +432,8 @@ TimeseriesValidationStatus _validateTimeSeriesMinMax(const TimeseriesOptions& ti
                                                      const BSONElement& controlMin,
                                                      const BSONElement& controlMax,
                                                      StringData fieldName,
-                                                     int version) {
+                                                     int version,
+                                                     const CollatorInterface* collator) {
     const auto min = minmax.min();
     const auto max = minmax.max();
     auto checkMinAndMaxMatch = [&]() {
@@ -458,15 +459,18 @@ TimeseriesValidationStatus _validateTimeSeriesMinMax(const TimeseriesOptions& ti
             return minTimestampsMatch && maxTimestampsMatch;
         } else {
             // We cannot guarantee that the field order of the BSON objects will be the same.
+            // The collation must match what the bucket catalog used when computing the
+            // original min/max to avoid false mismatches.
             return controlMin.wrap().woCompare(min,
                                                /*ordering=*/BSONObj(),
                                                BSONObj::ComparisonRules::kConsiderFieldName |
-                                                   BSONObj::ComparisonRules::kIgnoreFieldOrder) ==
-                0 &&
+                                                   BSONObj::ComparisonRules::kIgnoreFieldOrder,
+                                               collator) == 0 &&
                 controlMax.wrap().woCompare(max,
                                             /*ordering=*/BSONObj(),
                                             BSONObj::ComparisonRules::kConsiderFieldName |
-                                                BSONObj::ComparisonRules::kIgnoreFieldOrder) == 0;
+                                                BSONObj::ComparisonRules::kIgnoreFieldOrder,
+                                            collator) == 0;
         }
     };
 
@@ -527,7 +531,8 @@ TimeseriesValidationStatus _validateTimeSeriesDataTimeField(const CollectionPtr&
                                 *bucketCount,
                                 idx)};
             }
-            minmax.update(metric.wrap(fieldName), boost::none, coll->getDefaultCollator());
+            // Time fields are not compared as strings so skip passing comparator.
+            minmax.update(metric.wrap(fieldName), boost::none, /*stringComparator=*/nullptr);
             ++(*bucketCount);
         }
     } else {
@@ -558,7 +563,9 @@ TimeseriesValidationStatus _validateTimeSeriesDataTimeField(const CollectionPtr&
                         }
                     }
                     prevTimestamp = curTimestamp;
-                    minmax.update(metric.wrap(fieldName), boost::none, coll->getDefaultCollator());
+                    // Time fields are not compared as strings so skip passing comparator.
+                    minmax.update(
+                        metric.wrap(fieldName), boost::none, /*stringComparator=*/nullptr);
                     ++(*bucketCount);
                 } else {
                     return {TimeseriesValidationResult::kMissingTime,
@@ -576,12 +583,14 @@ TimeseriesValidationStatus _validateTimeSeriesDataTimeField(const CollectionPtr&
                                   << e.toString()};
         }
     }
+    // Time fields are not compared as strings so skip passing comparator.
     if (auto status = _validateTimeSeriesMinMax(coll->getTimeseriesOptions().value(),
                                                 minmax,
                                                 controlMin,
                                                 controlMax,
                                                 fieldName,
-                                                version);
+                                                version,
+                                                /*collator=*/nullptr);
         status.result != TimeseriesValidationResult::kValid) {
         return status;
     }
@@ -657,7 +666,8 @@ TimeseriesValidationStatus _validateTimeSeriesDataField(const CollectionPtr& col
                                                 controlMin,
                                                 controlMax,
                                                 fieldName,
-                                                version);
+                                                version,
+                                                coll->getDefaultCollator());
         status.result != TimeseriesValidationResult::kValid) {
         return status;
     }
@@ -847,6 +857,7 @@ auto ValidateAdaptor::validateRecord(OperationContext* opCtx,
             record.data(), record.size(), _validateState->getBSONValidateMode(), validationVersion);
 
         if (!bsonValidationStatus.isOK()) {
+            bool includeReason{false};
             switch (bsonValidationStatus.code()) {
                 case ErrorCodes::NonConformantBSON:
                     LOGV2_WARNING_OPTIONS(6825900,
@@ -857,6 +868,12 @@ auto ValidateAdaptor::validateRecord(OperationContext* opCtx,
                     ++nNonCompliantDocuments;
                     results->addWarning(kBSONValidationNonConformantReason);
                     break;
+                case ErrorCodes::InvalidBSONColumn:
+                    // For these cases, include the reason with the validation results, the
+                    // cardinality of reasons is bounded.  For other error messages, keep these
+                    // separate.
+                    includeReason = true;
+                    [[fallthrough]];
                 default:
                     LOGV2_ERROR_OPTIONS(12395400,
                                         {logv2::LogTruncation::Disabled},
@@ -865,9 +882,12 @@ auto ValidateAdaptor::validateRecord(OperationContext* opCtx,
                                         "reason"_attr = bsonValidationStatus);
                     return {.status = bsonValidationStatus,
                             .errorMessage = fmt::format(
-                                "BSON validation failed with error '{}'. For more info, see logs "
+                                "BSON validation failed with error '{}'{}. For more info, "
+                                "see logs "
                                 "with log id 12395400",
-                                ErrorCodes::errorString(bsonValidationStatus.code()))};
+                                ErrorCodes::errorString(bsonValidationStatus.code()),
+                                includeReason ? fmt::format(": {}", bsonValidationStatus.reason())
+                                              : std::string(""))};
             }
         } else if (!_validateState->nss().isOplog()) {
             // Additionally check size if the BSON object is compliant. Do not run this check on the

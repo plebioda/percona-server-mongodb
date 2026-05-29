@@ -487,13 +487,16 @@ private:
     };
 
     struct IterationFrame {
-        explicit IterationFrame(const Impl& impl) : metrics{} {
+        explicit IterationFrame(const Impl& impl) : client(impl.client()), metrics{} {
             metrics.start();
         }
         ~IterationFrame() {
             metrics.finish();
+            // Clean up any stale deferred admission token on error paths or at end of iteration.
+            admission::IngressRequestRateLimiter::clearDeferredAdmissionToken(client);
         }
 
+        Client* client;
         metrics_detail::Metrics metrics;
     };
 
@@ -753,11 +756,12 @@ void SessionWorkflow::Impl::_sendResponse() {
 }
 
 Status SessionWorkflow::Impl::_rateLimit() const {
-    if (!gFeatureFlagIngressRateLimiting.isEnabled() || !gIngressRequestRateLimiterEnabled.load()) {
+    if (!gFeatureFlagIngressRateLimiting.isEnabled() ||
+        !admission::gIngressRequestRateLimiterEnabled.load()) {
         return Status::OK();
     }
 
-    auto& admissionRateLimiter = IngressRequestRateLimiter::get(_serviceContext);
+    auto& admissionRateLimiter = admission::IngressRequestRateLimiter::get(_serviceContext);
     return admissionRateLimiter.admitRequest(client());
 }
 
@@ -807,7 +811,8 @@ Future<DbResponse> SessionWorkflow::Impl::_dispatchWork() {
         return makeDbResponseErrorForRateLimiting(_work->in(), status);
     }
 
-    networkCounter.hitLogicalIn(NetworkCounter::ConnectionType::kIngress, _work->in().size());
+    globalNetworkCounter().hitLogicalIn(NetworkCounter::ConnectionType::kIngress,
+                                        _work->in().size());
 
     // Pass sourced Message to handler to generate response.
     _work->initOperation();
@@ -867,7 +872,7 @@ void SessionWorkflow::Impl::_acceptResponse(DbResponse response) {
     // the dbresponses continue to indicate the exhaust stream should continue.
     _nextWork = work.synthesizeExhaust(response);
 
-    networkCounter.hitLogicalOut(NetworkCounter::ConnectionType::kIngress, toSink.size());
+    globalNetworkCounter().hitLogicalOut(NetworkCounter::ConnectionType::kIngress, toSink.size());
 
     beforeCompressingExhaustResponse.executeIf(
         [&](auto&&) {}, [&](auto&&) { return work.hasCompressorId() && _nextWork; });

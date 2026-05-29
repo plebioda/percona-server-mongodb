@@ -485,29 +485,12 @@ void CollectionShardingRuntime::clearFilteringMetadata_authoritative(OperationCo
 
 void CollectionShardingRuntime::clearFilteringMetadata_authoritative(OperationContext* opCtx,
                                                                      const UUID& collectionUuid) {
-    if (_metadataType == MetadataType::kTracked) {
-        tassert(11995200,
-                "Expected to find matching uuid if collection is tracked and metadata is known",
-                _metadataManager && _metadataManager->getCollectionUuid().has_value() &&
-                    collectionUuid == _metadataManager->getCollectionUuid().get());
-    }
-
     _clearFilteringMetadata(opCtx, /* collIsDropped */ false);
     _authoritativeState = AuthoritativeState::kAuthoritative;
 }
 
 void CollectionShardingRuntime::clearFilteringMetadataForDroppedCollection_authoritative(
     OperationContext* opCtx, const UUID& collectionUuid) {
-    // TODO (SERVER-123346): Re-enable this assertion once unshardCollection does not leave stale
-    // UUID metadata on shards.
-    //
-    // if (_metadataType == MetadataType::kTracked) {
-    //    tassert(12220902,
-    //        "Expected to find matching uuid if collection is tracked and metadata is known",
-    //        _metadataManager && _metadataManager->getCollectionUuid().has_value() &&
-    //            collectionUuid == _metadataManager->getCollectionUuid().get());
-    //}
-
     _clearFilteringMetadata(opCtx, /* collIsDropped */ true);
     _authoritativeState = AuthoritativeState::kAuthoritative;
 }
@@ -848,9 +831,6 @@ CollectionCriticalSection::CollectionCriticalSection(OperationContext* opCtx,
                                    _opCtx->getServiceContext()->getPreciseClockSource()->now() +
                                    Milliseconds(migrationLockAcquisitionMaxWaitMS.load())));
     auto scopedCsr = CollectionShardingRuntime::acquireExclusive(_opCtx, _nss);
-    tassert(7032305,
-            "Collection metadata unknown when entering critical section",
-            scopedCsr->getCurrentMetadataIfKnown());
     scopedCsr->enterCriticalSectionCatchUpPhase(_opCtx, _reason);
 }
 
@@ -867,9 +847,6 @@ void CollectionCriticalSection::enterCommitPhase() {
                                    _opCtx->getServiceContext()->getPreciseClockSource()->now() +
                                    Milliseconds(migrationLockAcquisitionMaxWaitMS.load())));
     auto scopedCsr = CollectionShardingRuntime::acquireExclusive(_opCtx, _nss);
-    tassert(7032304,
-            "Collection metadata unknown when entering critical section commit phase",
-            scopedCsr->getCurrentMetadataIfKnown());
     scopedCsr->enterCriticalSectionCommitPhase(_opCtx, _reason);
 }
 

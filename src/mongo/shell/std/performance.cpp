@@ -26,34 +26,47 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
-#pragma once
 
-#include "mongo/base/status.h"
-#include "mongo/client/authenticate.h"
+#include "mongo/scripting/mozjs/shell/internal_module_registry.h"
 
-#include <algorithm>
-#include <string>
+#include <chrono>
 
-namespace mongo {
+#include <jsapi.h>
 
-inline Status validateAuthMechanism(const std::string& value) {
-    static constexpr std::array<StringData, 7> kValidMechanisms = {
-        "MONGODB-X509"_sd,
-        "PLAIN"_sd,
-        "GSSAPI"_sd,
-        "SCRAM-SHA-1"_sd,
-        "SCRAM-SHA-256"_sd,
-        "MONGODB-AWS"_sd,
-        "MONGODB-OIDC"_sd,
-    };
-    if (std::find(kValidMechanisms.begin(), kValidMechanisms.end(), value) ==
-        kValidMechanisms.end()) {
-        return {ErrorCodes::BadValue,
-                str::stream() << "Unknown authentication mechanism '" << value
-                              << "'. Supported mechanisms: MONGODB-X509, PLAIN, GSSAPI, "
-                                 "SCRAM-SHA-1, SCRAM-SHA-256, MONGODB-AWS, MONGODB-OIDC"};
-    }
-    return Status::OK();
+#include <js/CallArgs.h>
+#include <js/PropertySpec.h>
+#include <js/Value.h>
+
+namespace mongo::JSFiles {
+extern const JSFile std_performance;
+}  // namespace mongo::JSFiles
+
+namespace mongo::mozjs::std_modules {
+namespace {
+
+constexpr double kNanosPerMillis = 1e6;
+const auto kPerformanceProcessStart = std::chrono::steady_clock::now();
+
+double performanceNowMillis() {
+    const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - kPerformanceProcessStart);
+    return static_cast<double>(elapsedNs.count()) / kNanosPerMillis;
 }
 
-}  // namespace mongo
+bool now(JSContext* cx, unsigned argc, JS::Value* vp) {
+    JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+    args.rval().setDouble(performanceNowMillis());
+    return true;
+}
+
+}  // namespace
+
+bool initializePerformanceBinding(JSContext* cx, JS::HandleObject target) {
+    return JS_DefineFunction(cx, target, "now", now, 0, JSPROP_ENUMERATE);
+}
+
+MONGO_REGISTER_INTERNAL_MODULE_WITH_SETUP("performance",
+                                          initializePerformanceBinding,
+                                          &::mongo::JSFiles::std_performance);
+
+}  // namespace mongo::mozjs::std_modules

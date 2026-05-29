@@ -41,13 +41,14 @@
 #include "mongo/db/pipeline/process_interface/mongo_process_interface.h"
 #include "mongo/db/repl/primary_only_service.h"
 #include "mongo/db/s/forwardable_operation_metadata.h"
+#include "mongo/db/s/primary_only_service_helpers/cancel_state.h"
 #include "mongo/db/s/resharding/recipient_document_gen.h"
 #include "mongo/db/s/resharding/resharding_change_streams_monitor.h"
 #include "mongo/db/s/resharding/resharding_data_replication.h"
 #include "mongo/db/s/resharding/resharding_future_util.h"
 #include "mongo/db/s/resharding/resharding_metrics.h"
 #include "mongo/db/s/resharding/resharding_oplog_applier_metrics.h"
-#include "mongo/db/s/resharding/resharding_participant_cancel_state.h"
+#include "mongo/db/s/resharding/resharding_recipient_promises.h"
 #include "mongo/db/s/resharding/resharding_util.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/sharding_environment/shard_id.h"
@@ -126,24 +127,7 @@ private:
 class ReshardingRecipientService::RecipientStateMachine final
     : public repl::PrimaryOnlyService::TypedInstance<RecipientStateMachine> {
 public:
-    struct CloneDetails {
-        Timestamp cloneTimestamp;
-        int64_t approxDocumentsToCopy;
-        int64_t approxBytesToCopy;
-        std::vector<DonorShardFetchTimestamp> donorShards;
-
-        auto lens() const {
-            return std::tie(cloneTimestamp, approxDocumentsToCopy, approxBytesToCopy);
-        }
-
-        friend bool operator==(const CloneDetails& a, const CloneDetails& b) {
-            return a.lens() == b.lens();
-        }
-
-        friend bool operator!=(const CloneDetails& a, const CloneDetails& b) {
-            return a.lens() != b.lens();
-        }
-    };
+    using CloneDetails = ReshardingRecipientPromises::CloneDetails;
 
     explicit RecipientStateMachine(
         const ReshardingRecipientService* recipientService,
@@ -186,20 +170,28 @@ public:
     void prepareForCriticalSection();
 
     /**
-     * Returns a Future fulfilled once the recipient locally updates its state to
-     * RecipientStateEnum::kApplying or RecipientStateEnum::kError.
+     * Returns a future that becomes ready once the recipient has transitioned to
+     * RecipientStateEnum::kCreatingCollection and that state change has been majority committed.
      */
-    SharedSemiFuture<void> awaitInApplyingOrError() const {
-        return _inApplyingOrError.getFuture();
+    SharedSemiFuture<void> awaitTransitionedToCreateCollection() const {
+        return _promises.getTransitionedToCreateCollectionFuture();
     }
 
     /**
-     * Returns a Future fulfilled once the recipient locally persists its final state before the
-     * coordinator makes its decision to commit or abort (RecipientStateEnum::kError or
-     * RecipientStateEnum::kStrictConsistency).
+     * Returns a Future fulfilled once the recipient transitions to RecipientStateEnum::kApplying
+     * or RecipientStateEnum::kError and that state change has been majority committed.
+     */
+    SharedSemiFuture<void> awaitInApplyingOrError() const {
+        return _promises.getInApplyingOrErrorFuture();
+    }
+
+    /**
+     * Returns a Future fulfilled once the recipient majority commits its final state before the
+     * coordinator makes its decision to commit or abort (RecipientStateEnum::kStrictConsistency
+     * or RecipientStateEnum::kError).
      */
     SharedSemiFuture<void> awaitInStrictConsistencyOrError() const {
-        return _inStrictConsistencyOrError.getFuture();
+        return _promises.getInStrictConsistencyOrErrorFuture();
     }
 
     /**
@@ -221,10 +213,6 @@ public:
      * phase. Throws an error if verification is not enabled or skipCloningAndApplying is true.
      */
     SharedSemiFuture<int64_t> awaitChangeStreamsMonitorCompletedForTest();
-
-    SharedSemiFuture<CloneDetails> awaitAllDonorsPreparedToDonateForTest() {
-        return _allDonorsPreparedToDonate.getFuture();
-    }
 
     inline const CommonReshardingMetadata& getMetadata() const {
         return _metadata;
@@ -257,19 +245,13 @@ public:
      * Throws PrimaryOnlyServiceInitializing if the recipient is not yet initialized.
      *
      * Promises fulfilled here:
-     *   newState >= kCloning && cloneDetails -> _allDonorsPreparedToDonate (with cloneDetails)
+     *   newState >= kCloning && cloneDetails -> _allDonorsPreparedToDonate (in _promises)
      *   newState >= kBlockingWrites          -> _dataReplication->prepareForCriticalSection()
      *   newState >= kBlockingWrites          -> _coordinatorHasEngagedCriticalSection
      *   newState >= kCommitting              -> _coordinatorHasDecisionPersisted
      */
     void onCoordinatorStateAdvanced(CoordinatorStateEnum newState,
                                     boost::optional<CloneDetails> cloneDetails = boost::none);
-
-    /**
-     * Returns a future that becomes ready once the recipient has transitioned to creating the
-     * temporary resharding collection.
-     */
-    SemiFuture<void> awaitTransitionedToCreateCollection();
 
     static void insertStateDocument(OperationContext* opCtx,
                                     const ReshardingRecipientDocument& recipientDoc);
@@ -421,6 +403,10 @@ private:
         const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
         std::shared_ptr<HierarchicalCancelableOperationContextFactory> factory);
 
+    void _createChangeStreamsMonitor(
+        const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
+        std::shared_ptr<HierarchicalCancelableOperationContextFactory> factory);
+
     ExecutorFuture<void> _awaitChangeStreamsMonitorCompleted(
         const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
         std::shared_ptr<HierarchicalCancelableOperationContextFactory> factory);
@@ -447,7 +433,7 @@ private:
     // in the cloner resume data documents. Otherwise, return none.
     boost::optional<CloningMetrics> _tryFetchCloningMetrics(OperationContext* opCtx);
 
-    void _fulfillPromisesOnStepup(boost::optional<mongo::ReshardingRecipientMetrics> metrics);
+    void _fulfillPromisesOnStepup(const ReshardingRecipientDocument&);
 
     /**
      * Creates a new span with the resharding UUID set as an attribute.
@@ -519,7 +505,7 @@ private:
     mutable std::mutex _mutex;
 
     // Manages abort state and provides cancellation tokens for async operations.
-    ReshardingParticipantCancelState _cancelState;
+    primary_only_service_helpers::CancelState _cancelState;
 
     std::unique_ptr<ReshardingDataReplicationInterface> _dataReplication;
     std::shared_ptr<ReshardingChangeStreamsMonitor> _changeStreamsMonitor;
@@ -533,20 +519,14 @@ private:
     // It states whether or not the user has aborted the resharding operation.
     boost::optional<bool> _userCanceled;
 
+    ReshardingRecipientPromises _promises;
+
     // Each promise below corresponds to a state on the recipient state machine. They are listed in
     // ascending order, such that the first promise below will be the first promise fulfilled.
-    SharedPromise<CloneDetails> _allDonorsPreparedToDonate;
-
-    SharedPromise<void> _inApplyingOrError;
-    SharedPromise<void> _inStrictConsistencyOrError;
-
     SharedPromise<void> _coordinatorHasEngagedCriticalSection;
     SharedPromise<void> _coordinatorHasDecisionPersisted;
 
     SharedPromise<void> _completionPromise;
-
-    // This promise is emplaced if the recipient has majority committed the createCollection state.
-    SharedPromise<void> _transitionedToCreateCollection;
 };
 
 }  // namespace mongo

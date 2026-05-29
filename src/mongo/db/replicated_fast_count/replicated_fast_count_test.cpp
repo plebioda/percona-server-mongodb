@@ -39,28 +39,49 @@
 #include "mongo/db/replicated_fast_count/replicated_fast_count_init.h"
 #include "mongo/db/replicated_fast_count/replicated_fast_count_manager.h"
 #include "mongo/db/replicated_fast_count/replicated_fast_count_test_helpers.h"
-#include "mongo/db/shard_role/shard_catalog/catalog_raii.h"
 #include "mongo/db/shard_role/shard_catalog/catalog_test_fixture.h"
 #include "mongo/db/shard_role/shard_catalog/create_collection.h"
+#include "mongo/db/shard_role/shard_role.h"
 #include "mongo/db/shard_role/transaction_resources.h"
+#include "mongo/db/storage/kv/kv_engine.h"
+#include "mongo/db/storage/record_store.h"
 #include "mongo/db/storage/recovery_unit.h"
+#include "mongo/db/storage/storage_engine.h"
 #include "mongo/db/storage/write_unit_of_work.h"
 #include "mongo/unittest/death_test.h"
 #include "mongo/unittest/unittest.h"
 
 namespace mongo::replicated_fast_count {
 namespace {
-class ReplicatedFastCountTest : public CatalogTestFixture {
+// Selects whether the fast count metadata is persisted through the collection-backed path or the
+// container-backed path. Used to parameterize tests so the same bodies exercise both paths.
+enum class FastCountStoreMode { kCollection, kContainer };
+
+/**
+ * Shared test fixture for replicated fast count tests. Derived fixtures choose the persistence
+ * mode by overriding `getMode()`, which drives whether the container-write feature flags are
+ * enabled before `setUpReplicatedFastCount()` decides which backing store to provision.
+ */
+class ReplicatedFastCountTestBase : public CatalogTestFixture {
 public:
-    ReplicatedFastCountTest()
+    ReplicatedFastCountTestBase()
         : CatalogTestFixture(Options().setPersistenceProvider(
               std::make_unique<replicated_fast_count_test_helpers::
                                    ReplicatedFastCountTestPersistenceProvider>())) {}
 
 protected:
+    virtual FastCountStoreMode getMode() const = 0;
+
     void setUp() override {
         CatalogTestFixture::setUp();
         _opCtx = operationContext();
+
+        if (getMode() == FastCountStoreMode::kContainer) {
+            _ffDurability = std::make_unique<RAIIServerParameterControllerForTest>(
+                "featureFlagReplicatedFastCountDurability", true);
+            _ffContainerWrites = std::make_unique<RAIIServerParameterControllerForTest>(
+                "featureFlagContainerWrites", true);
+        }
 
         auto* registry = dynamic_cast<OpObserverRegistry*>(getServiceContext()->getOpObserver());
         ASSERT(registry);
@@ -79,12 +100,21 @@ protected:
         ASSERT_OK(createCollection(_opCtx, _nss2.dbName(), BSON("create" << _nss2.coll())));
         ASSERT_OK(createCollection(_opCtx, _nss3.dbName(), BSON("create" << _nss3.coll())));
         {
-            AutoGetCollection coll1(_opCtx, _nss1, LockMode::MODE_IS);
-            AutoGetCollection coll2(_opCtx, _nss2, LockMode::MODE_IS);
-            AutoGetCollection coll3(_opCtx, _nss3, LockMode::MODE_IS);
-            _uuid1 = coll1->uuid();
-            _uuid2 = coll2->uuid();
-            _uuid3 = coll3->uuid();
+            auto coll1 = acquireCollection(_opCtx,
+                                           CollectionAcquisitionRequest::fromOpCtx(
+                                               _opCtx, _nss1, AcquisitionPrerequisites::kRead),
+                                           LockMode::MODE_IS);
+            auto coll2 = acquireCollection(_opCtx,
+                                           CollectionAcquisitionRequest::fromOpCtx(
+                                               _opCtx, _nss2, AcquisitionPrerequisites::kRead),
+                                           LockMode::MODE_IS);
+            auto coll3 = acquireCollection(_opCtx,
+                                           CollectionAcquisitionRequest::fromOpCtx(
+                                               _opCtx, _nss3, AcquisitionPrerequisites::kRead),
+                                           LockMode::MODE_IS);
+            _uuid1 = coll1.uuid();
+            _uuid2 = coll2.uuid();
+            _uuid3 = coll3.uuid();
         }
     }
 
@@ -118,7 +148,39 @@ protected:
 
     BSONObj sampleDocForInsert = BSON("_id" << 0 << "x" << 0);
     BSONObj sampleDocForUpdate = BSON("_id" << 0 << "x" << 0 << "y" << 0);
+
+    std::unique_ptr<RAIIServerParameterControllerForTest> _ffDurability;
+    std::unique_ptr<RAIIServerParameterControllerForTest> _ffContainerWrites;
 };
+
+/**
+ * Parameterized fixture that runs each test case in both collection-backed and container-backed
+ * modes.
+ */
+class ReplicatedFastCountTest : public ReplicatedFastCountTestBase,
+                                public ::testing::WithParamInterface<FastCountStoreMode> {
+protected:
+    FastCountStoreMode getMode() const override {
+        return GetParam();
+    }
+};
+
+/**
+ * Collection-only fixture for tests that inherently depend on the collection-backed storage path
+ * (e.g. tests that manipulate the internal fast count collection directly or validate the applyOps
+ * payload layout emitted by the collection-backed flush path).
+ */
+class ReplicatedFastCountCollectionOnlyTest : public ReplicatedFastCountTestBase {
+protected:
+    FastCountStoreMode getMode() const override {
+        return FastCountStoreMode::kCollection;
+    }
+};
+
+
+inline std::string modeToString(FastCountStoreMode mode) {
+    return mode == FastCountStoreMode::kCollection ? "Collection" : "Container";
+}
 
 const NamespaceString replicatedFastCountStoreNss =
     NamespaceString::makeGlobalConfigCollection(NamespaceString::kReplicatedFastCountStore);
@@ -130,7 +192,7 @@ const std::function<BSONObj(int)> docGeneratorForUpdate = [](int i) {
     return BSON("_id" << i << "x" << i << "y" << i * 2);
 };
 
-TEST_F(ReplicatedFastCountTest, UncommittedChangesResetOnCommit) {
+TEST_P(ReplicatedFastCountTest, UncommittedChangesResetOnCommit) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
     const int numDocs = 5;
     replicated_fast_count_test_helpers::insertDocs(_opCtx,
@@ -143,7 +205,7 @@ TEST_F(ReplicatedFastCountTest, UncommittedChangesResetOnCommit) {
                                                    sampleDocForInsert);
 }
 
-TEST_F(ReplicatedFastCountTest, UncommittedChangesResetOnRollback) {
+TEST_P(ReplicatedFastCountTest, UncommittedChangesResetOnRollback) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
     const int numDocs = 5;
     replicated_fast_count_test_helpers::insertDocs(_opCtx,
@@ -157,7 +219,7 @@ TEST_F(ReplicatedFastCountTest, UncommittedChangesResetOnRollback) {
                                                    /*abortWithoutCommit=*/true);
 }
 
-TEST_F(ReplicatedFastCountTest, UpdatesAreCorrectlyAccountedFor) {
+TEST_P(ReplicatedFastCountTest, UpdatesAreCorrectlyAccountedFor) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocs = 10;
@@ -183,7 +245,7 @@ TEST_F(ReplicatedFastCountTest, UpdatesAreCorrectlyAccountedFor) {
                                                    sampleDocForUpdate);
 }
 
-TEST_F(ReplicatedFastCountTest, DeletesAreCorrectlyAccountedFor) {
+TEST_P(ReplicatedFastCountTest, DeletesAreCorrectlyAccountedFor) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocs = 10;
@@ -206,7 +268,7 @@ TEST_F(ReplicatedFastCountTest, DeletesAreCorrectlyAccountedFor) {
                                                             sampleDocForInsert);
 }
 
-TEST_F(ReplicatedFastCountTest, DirtyMetadataWrittenToInternalCollection) {
+TEST_P(ReplicatedFastCountTest, DirtyMetadataWrittenToInternalCollection) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocsColl1 = 5;
@@ -233,14 +295,16 @@ TEST_F(ReplicatedFastCountTest, DirtyMetadataWrittenToInternalCollection) {
 
     // Verify that the committed changes have not been written to the internal fast count collection
     // yet.
-    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalCollection(
+    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalStore(
         _opCtx,
+        _fastCountManager,
         _uuid1,
         /*expectPersisted=*/false,
         /*expectedCount=*/0,
         /*expectedSize=*/0);
-    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalCollection(
+    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalStore(
         _opCtx,
+        _fastCountManager,
         _uuid2,
         /*expectPersisted=*/false,
         /*expectedCount=*/0,
@@ -249,21 +313,23 @@ TEST_F(ReplicatedFastCountTest, DirtyMetadataWrittenToInternalCollection) {
     // Manually trigger an iteration to write dirty metadata to the internal collection.
     _fastCountManager->flushSync(_opCtx);
 
-    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalCollection(
+    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalStore(
         _opCtx,
+        _fastCountManager,
         _uuid1,
         /*expectPersisted=*/true,
         numDocsColl1,
         numDocsColl1 * sampleDocForInsert.objsize());
-    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalCollection(
+    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalStore(
         _opCtx,
+        _fastCountManager,
         _uuid2,
         /*expectPersisted=*/true,
         numDocsColl2,
         numDocsColl2 * sampleDocForInsert.objsize());
 }
 
-TEST_F(ReplicatedFastCountTest, DirtyMetadataWrittenAsSingleApplyOpsEntry) {
+TEST_P(ReplicatedFastCountTest, DirtyMetadataWrittenAsSingleApplyOpsEntry) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocsColl1 = 5;
@@ -289,15 +355,13 @@ TEST_F(ReplicatedFastCountTest, DirtyMetadataWrittenAsSingleApplyOpsEntry) {
 
     _fastCountManager->flushSync(_opCtx);
 
-    auto applyOpsEntries =
-        replicated_fast_count_test_helpers::getApplyOpsForNss(_opCtx, replicatedFastCountStoreNss);
+    auto applyOpsEntries = replicated_fast_count_test_helpers::getApplyOpsForFastCountStore(_opCtx);
 
     EXPECT_EQ(applyOpsEntries.size(), 1u);
     auto& applyOpsEntry = applyOpsEntries.front();
 
     replicated_fast_count_test_helpers::assertFastCountApplyOpsMatches(
         applyOpsEntry,
-        replicatedFastCountStoreNss,
         {
             {_uuid1,
              replicated_fast_count_test_helpers::FastCountOpType::kInsert,
@@ -310,7 +374,7 @@ TEST_F(ReplicatedFastCountTest, DirtyMetadataWrittenAsSingleApplyOpsEntry) {
         });
 }
 
-TEST_F(ReplicatedFastCountTest, UpdatesWrittenToApplyOpsCorrectly) {
+TEST_P(ReplicatedFastCountTest, UpdatesWrittenToApplyOpsCorrectly) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocsColl1 = 10;
@@ -371,11 +435,10 @@ TEST_F(ReplicatedFastCountTest, UpdatesWrittenToApplyOpsCorrectly) {
                                                    sampleDocForInsert,
                                                    sampleDocForUpdate);
 
-    // Write to the internal collection again, this time recording the updates.
     _fastCountManager->flushSync(_opCtx);
 
-    auto applyOpsEntry = replicated_fast_count_test_helpers::getLatestApplyOpsForNss(
-        _opCtx, replicatedFastCountStoreNss);
+    auto applyOpsEntry =
+        replicated_fast_count_test_helpers::getLatestApplyOpsForFastCountStore(_opCtx);
 
     const int64_t sizeDelta = sampleDocForUpdate.objsize() - sampleDocForInsert.objsize();
     const int64_t newExpectedSizeColl1 =
@@ -385,20 +448,19 @@ TEST_F(ReplicatedFastCountTest, UpdatesWrittenToApplyOpsCorrectly) {
 
     replicated_fast_count_test_helpers::assertFastCountApplyOpsMatches(
         applyOpsEntry,
-        replicatedFastCountStoreNss,
         {
             {_uuid1,
              replicated_fast_count_test_helpers::FastCountOpType::kUpdate,
-             /*expectedCount=*/boost::none,
-             /*expectedSize=*/newExpectedSizeColl1},
+             numDocsColl1,
+             newExpectedSizeColl1},
             {_uuid2,
              replicated_fast_count_test_helpers::FastCountOpType::kUpdate,
-             /*expectedCount=*/boost::none,
-             /*expectedSize=*/newExpectedSizeColl2},
+             numDocsColl2,
+             newExpectedSizeColl2},
         });
 }
 
-TEST_F(ReplicatedFastCountTest, MixedOperationsInApplyOps) {
+TEST_P(ReplicatedFastCountTest, MixedUpdatesAndInsertInApplyOps) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocsColl1 = 25;
@@ -444,8 +506,8 @@ TEST_F(ReplicatedFastCountTest, MixedOperationsInApplyOps) {
 
     _fastCountManager->flushSync(_opCtx);
 
-    auto applyOpsEntry = replicated_fast_count_test_helpers::getLatestApplyOpsForNss(
-        _opCtx, replicatedFastCountStoreNss);
+    auto applyOpsEntry =
+        replicated_fast_count_test_helpers::getLatestApplyOpsForFastCountStore(_opCtx);
 
     const int64_t sizeDelta = sampleDocForUpdate.objsize() - sampleDocForInsert.objsize();
     const int64_t newExpectedSizeColl1 =
@@ -453,21 +515,19 @@ TEST_F(ReplicatedFastCountTest, MixedOperationsInApplyOps) {
 
     replicated_fast_count_test_helpers::assertFastCountApplyOpsMatches(
         applyOpsEntry,
-        replicatedFastCountStoreNss,
         {
             {_uuid1,
              replicated_fast_count_test_helpers::FastCountOpType::kUpdate,
-             /*expectedCount=*/boost::none,
-             /*expectedSize=*/newExpectedSizeColl1},
+             numDocsColl1,
+             newExpectedSizeColl1},
             {_uuid2,
              replicated_fast_count_test_helpers::FastCountOpType::kUpdate,
-             /*expectedCount=*/boost::none,
-             /*expectedSize=*/numDocsColl2 * sampleDocForInsert.objsize()},
-            {_uuid3, replicated_fast_count_test_helpers::FastCountOpType::kDelete},
+             numDocsColl2,
+             numDocsColl2 * sampleDocForInsert.objsize()},
         });
 }
 
-TEST_F(ReplicatedFastCountTest, DropsWrittenToApplyOpsCorrectly) {
+TEST_P(ReplicatedFastCountTest, DropsWrittenToApplyOpsCorrectly) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocs = 5;
@@ -488,16 +548,14 @@ TEST_F(ReplicatedFastCountTest, DropsWrittenToApplyOpsCorrectly) {
     // We should detect that we dropped the collection _nss1 and delete the fast count entry for it.
     _fastCountManager->flushSync(_opCtx);
 
-    auto applyOpsEntry = replicated_fast_count_test_helpers::getLatestApplyOpsForNss(
-        _opCtx, replicatedFastCountStoreNss);
+    auto applyOpsEntry =
+        replicated_fast_count_test_helpers::getLatestApplyOpsForFastCountStore(_opCtx);
 
     replicated_fast_count_test_helpers::assertFastCountApplyOpsMatches(
-        applyOpsEntry,
-        replicatedFastCountStoreNss,
-        {{_uuid1, replicated_fast_count_test_helpers::FastCountOpType::kDelete}});
+        applyOpsEntry, {{_uuid1, replicated_fast_count_test_helpers::FastCountOpType::kDelete}});
 }
 
-TEST_F(ReplicatedFastCountTest, InsertsAndDropToCollectionSameFlush) {
+TEST_P(ReplicatedFastCountTest, InsertsAndDropToCollectionSameFlush) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocs = 5;
@@ -527,18 +585,16 @@ TEST_F(ReplicatedFastCountTest, InsertsAndDropToCollectionSameFlush) {
 
     _fastCountManager->flushSync(_opCtx);
 
-    auto applyOpsEntry = replicated_fast_count_test_helpers::getLatestApplyOpsForNss(
-        _opCtx, replicatedFastCountStoreNss);
+    auto applyOpsEntry =
+        replicated_fast_count_test_helpers::getLatestApplyOpsForFastCountStore(_opCtx);
 
     // We should only see the oplog entry removing the fast count entry for the collection we
     // dropped, and not any entries for the inserts we did before dropping the collection.
     replicated_fast_count_test_helpers::assertFastCountApplyOpsMatches(
-        applyOpsEntry,
-        replicatedFastCountStoreNss,
-        {{_uuid1, replicated_fast_count_test_helpers::FastCountOpType::kDelete}});
+        applyOpsEntry, {{_uuid1, replicated_fast_count_test_helpers::FastCountOpType::kDelete}});
 }
 
-TEST_F(ReplicatedFastCountTest, StartupFailsIfFastCountCollectionNotPresent) {
+TEST_F(ReplicatedFastCountCollectionOnlyTest, StartupFailsIfFastCountCollectionNotPresent) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     {
@@ -552,7 +608,7 @@ TEST_F(ReplicatedFastCountTest, StartupFailsIfFastCountCollectionNotPresent) {
     ASSERT_THROWS_CODE(_fastCountManager->startup(_opCtx), DBException, 11718600);
 }
 
-TEST_F(ReplicatedFastCountTest, DirtyWriteNotLostIfWrittenAfterMetadataSnapshot) {
+TEST_P(ReplicatedFastCountTest, DirtyWriteNotLostIfWrittenAfterMetadataSnapshot) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int64_t numInitialDocs = 5;
@@ -616,8 +672,9 @@ TEST_F(ReplicatedFastCountTest, DirtyWriteNotLostIfWrittenAfterMetadataSnapshot)
     _fastCountManager->flushSync(_opCtx);
 
     // Verify that all of our writes were persisted to disk.
-    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalCollection(
+    replicated_fast_count_test_helpers::checkFastCountMetadataInInternalStore(
         _opCtx,
+        _fastCountManager,
         _uuid1,
         /*expectPersisted=*/true,
         numTotalDocs,
@@ -650,7 +707,7 @@ BSONObj makeApplyOpsDeleteOp(const NamespaceString& nss, const UUID& uuid, int i
                      << "ns" << nss.ns_forTest() << "ui" << uuid << "o" << BSON("_id" << id));
 }
 
-TEST_F(ReplicatedFastCountTest, ApplyOpsInsertsAreCorrectlyAccountedFor) {
+TEST_P(ReplicatedFastCountTest, ApplyOpsInsertsAreCorrectlyAccountedFor) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocsColl1 = 3;
@@ -686,7 +743,7 @@ TEST_F(ReplicatedFastCountTest, ApplyOpsInsertsAreCorrectlyAccountedFor) {
     replicated_fast_count_test_helpers::checkUncommittedFastCountChanges(_opCtx, _uuid2, 0, 0);
 }
 
-TEST_F(ReplicatedFastCountTest, ApplyOpsUpdatesAreCorrectlyAccountedFor) {
+TEST_P(ReplicatedFastCountTest, ApplyOpsUpdatesAreCorrectlyAccountedFor) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocs = 5;
@@ -726,7 +783,7 @@ TEST_F(ReplicatedFastCountTest, ApplyOpsUpdatesAreCorrectlyAccountedFor) {
     replicated_fast_count_test_helpers::checkUncommittedFastCountChanges(_opCtx, _uuid1, 0, 0);
 }
 
-TEST_F(ReplicatedFastCountTest, ApplyOpsDeletesAreCorrectlyAccountedFor) {
+TEST_P(ReplicatedFastCountTest, ApplyOpsDeletesAreCorrectlyAccountedFor) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
 
     const int numDocs = 10;
@@ -767,8 +824,24 @@ TEST_F(ReplicatedFastCountTest, ApplyOpsDeletesAreCorrectlyAccountedFor) {
 
 enum class CapType { kCount, kSize };
 
-class ReplicatedFastCountCappedCollectionTest : public ReplicatedFastCountTest,
-                                                public ::testing::WithParamInterface<CapType> {};
+inline std::string capTypeToString(CapType type) {
+    return type == CapType::kCount ? "Count" : "Size";
+}
+
+// Parameterized over (FastCountStoreMode, CapType) so the capped-collection eviction path is
+// exercised against both the collection-backed and container-backed fast count stores.
+class ReplicatedFastCountCappedCollectionTest
+    : public ReplicatedFastCountTestBase,
+      public ::testing::WithParamInterface<std::tuple<FastCountStoreMode, CapType>> {
+protected:
+    FastCountStoreMode getMode() const override {
+        return std::get<0>(GetParam());
+    }
+
+    CapType getCapType() const {
+        return std::get<1>(GetParam());
+    }
+};
 
 TEST_P(ReplicatedFastCountCappedCollectionTest, CorrectSizeCountAfterCapReached) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
@@ -776,7 +849,7 @@ TEST_P(ReplicatedFastCountCappedCollectionTest, CorrectSizeCountAfterCapReached)
     const NamespaceString nssCapped = NamespaceString::createNamespaceString_forTest(
         "replicated_fast_count_test", "cappedWithMaxCount");
 
-    if (GetParam() == CapType::kCount) {
+    if (getCapType() == CapType::kCount) {
         // The size parameter is not optional when specifying the max count. We intentionally make
         // the size larger here so the count is the limiting bound.
         ASSERT_OK(createCollection(_opCtx,
@@ -791,7 +864,10 @@ TEST_P(ReplicatedFastCountCappedCollectionTest, CorrectSizeCountAfterCapReached)
                                                  << maxDocs * sampleDocForInsert.objsize())));
     }
 
-    AutoGetCollection cappedColl(_opCtx, nssCapped, LockMode::MODE_IX);
+    auto cappedColl = acquireCollection(_opCtx,
+                                        CollectionAcquisitionRequest::fromOpCtx(
+                                            _opCtx, nssCapped, AcquisitionPrerequisites::kWrite),
+                                        LockMode::MODE_IX);
 
     for (int i = 0; i < maxDocs + 5; ++i) {
         // Using the query-level InsertCommandRequest path here lets us avoid handling capped
@@ -803,37 +879,49 @@ TEST_P(ReplicatedFastCountCappedCollectionTest, CorrectSizeCountAfterCapReached)
         ASSERT_OK(result.results[0].getStatus());
 
         if (i < maxDocs - 1) {
-            const auto [actualSize, actualCount] = cappedColl->latestSizeCount(_opCtx);
+            const auto [actualSize, actualCount] =
+                cappedColl.getCollectionPtr()->latestSizeCount(_opCtx);
             const long long expectedCount = i + 1;
             EXPECT_EQ(actualSize, expectedCount * sampleDocForInsert.objsize());
             EXPECT_EQ(actualCount, expectedCount);
         } else {
             // After the collection cap has been reached, the size and count should stay the same.
-            const auto [actualSize, actualCount] = cappedColl->latestSizeCount(_opCtx);
+            const auto [actualSize, actualCount] =
+                cappedColl.getCollectionPtr()->latestSizeCount(_opCtx);
             EXPECT_EQ(actualSize, maxDocs * sampleDocForInsert.objsize());
             EXPECT_EQ(actualCount, maxDocs);
         }
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(,
-                         ReplicatedFastCountCappedCollectionTest,
-                         ::testing::Values(CapType::kCount, CapType::kSize));
+INSTANTIATE_TEST_SUITE_P(
+    ,
+    ReplicatedFastCountCappedCollectionTest,
+    ::testing::Combine(::testing::Values(FastCountStoreMode::kCollection,
+                                         FastCountStoreMode::kContainer),
+                       ::testing::Values(CapType::kCount, CapType::kSize)),
+    [](const ::testing::TestParamInfo<std::tuple<FastCountStoreMode, CapType>>& info) {
+        return modeToString(std::get<0>(info.param)) + capTypeToString(std::get<1>(info.param));
+    });
 
-TEST_F(ReplicatedFastCountTest, ReplicatedFastCountDoesNotTrackLocalCollections) {
+TEST_P(ReplicatedFastCountTest, ReplicatedFastCountDoesNotTrackLocalCollections) {
     const NamespaceString internalNss =
         NamespaceString::createNamespaceString_forTest("local.coll");
     ASSERT_OK(createCollection(_opCtx, internalNss.dbName(), BSON("create" << internalNss.coll())));
 
-    AutoGetCollection internalColl(_opCtx, internalNss, LockMode::MODE_IX);
-    const UUID internalUuid = internalColl->uuid();
+    auto internalColl =
+        acquireCollection(_opCtx,
+                          CollectionAcquisitionRequest::fromOpCtx(
+                              _opCtx, internalNss, AcquisitionPrerequisites::kWrite),
+                          LockMode::MODE_IX);
+    const UUID internalUuid = internalColl.uuid();
     const long long docsToInsertCount = 10;
 
     long long expectedSize = 0;
     WriteUnitOfWork wuow(_opCtx, WriteUnitOfWork::kGroupForPossiblyRetryableOperations);
     for (size_t i = 0; i < docsToInsertCount; ++i) {
         const BSONObj document = docGeneratorForInsert(i);
-        ASSERT_OK(Helpers::insert(_opCtx, *internalColl, document));
+        ASSERT_OK(Helpers::insert(_opCtx, internalColl.getCollectionPtr(), document));
         expectedSize += document.objsize();
     }
 
@@ -851,26 +939,30 @@ TEST_F(ReplicatedFastCountTest, ReplicatedFastCountDoesNotTrackLocalCollections)
         _opCtx, internalUuid, 0, 0);
 
     // Size and count data for `internalColl` are still tracked through the record store.
-    EXPECT_EQ(internalColl->numRecords(_opCtx), docsToInsertCount);
-    EXPECT_EQ(internalColl->dataSize(_opCtx), expectedSize);
+    EXPECT_EQ(internalColl.getCollectionPtr()->numRecords(_opCtx), docsToInsertCount);
+    EXPECT_EQ(internalColl.getCollectionPtr()->dataSize(_opCtx), expectedSize);
 }
 
-TEST_F(ReplicatedFastCountTest, ReplicatedFastCountTracksNonLocalInternalCollections) {
+TEST_P(ReplicatedFastCountTest, ReplicatedFastCountTracksNonLocalInternalCollections) {
     for (const auto& internalDbName : {"config", "admin"}) {
         const NamespaceString internalNss =
             NamespaceString::createNamespaceString_forTest(internalDbName, "coll");
         ASSERT_OK(
             createCollection(_opCtx, internalNss.dbName(), BSON("create" << internalNss.coll())));
 
-        AutoGetCollection internalColl(_opCtx, internalNss, LockMode::MODE_IX);
-        const UUID internalUuid = internalColl->uuid();
+        auto internalColl =
+            acquireCollection(_opCtx,
+                              CollectionAcquisitionRequest::fromOpCtx(
+                                  _opCtx, internalNss, AcquisitionPrerequisites::kWrite),
+                              LockMode::MODE_IX);
+        const UUID internalUuid = internalColl.uuid();
         const long long docsToInsertCount = 10;
 
         long long expectedSize = 0;
         WriteUnitOfWork wuow(_opCtx, WriteUnitOfWork::kGroupForPossiblyRetryableOperations);
         for (size_t i = 0; i < docsToInsertCount; ++i) {
             const BSONObj document = docGeneratorForInsert(i);
-            ASSERT_OK(Helpers::insert(_opCtx, *internalColl, document));
+            ASSERT_OK(Helpers::insert(_opCtx, internalColl.getCollectionPtr(), document));
             expectedSize += document.objsize();
         }
 
@@ -893,18 +985,24 @@ TEST_F(ReplicatedFastCountTest, ReplicatedFastCountTracksNonLocalInternalCollect
  * Tests that operations with replicated size and count are logged with 'sizeMetadata' (information
  * stored in the top-level 'm' field) in their oplog entries.
  */
-class SizeMetadataLoggingTest : public ReplicatedFastCountTest {};
+// The SizeMetadataLoggingTest cases inspect oplog entries produced on user collections, which are
+// unaffected by which backing path the fast count store uses. They run in collection-only mode to
+// avoid redundant coverage.
+class SizeMetadataLoggingTest : public ReplicatedFastCountCollectionOnlyTest {};
 
 TEST_F(SizeMetadataLoggingTest, BasicInsertOplogEntry) {
     RAIIServerParameterControllerForTest featureFlag("featureFlagReplicatedFastCount", true);
-    AutoGetCollection coll(_opCtx, _nss1, LockMode::MODE_IX);
+    auto coll = acquireCollection(
+        _opCtx,
+        CollectionAcquisitionRequest::fromOpCtx(_opCtx, _nss1, AcquisitionPrerequisites::kWrite),
+        LockMode::MODE_IX);
 
     const auto docToInsert = docGeneratorForInsert(0);
     const auto expectedSizeDelta = docToInsert.objsize();
 
     {
         WriteUnitOfWork wuow{_opCtx};
-        ASSERT_OK(Helpers::insert(_opCtx, *coll, docToInsert));
+        ASSERT_OK(Helpers::insert(_opCtx, coll.getCollectionPtr(), docToInsert));
         wuow.commit();
     }
 
@@ -1038,7 +1136,8 @@ TEST_F(SizeMetadataLoggingTest, BasicGroupCommit) {
 
 using ReplicatedFastCountDeathTest = ReplicatedFastCountTest;
 
-// TODO SERVER-120203: Re-enable this test.
+// TODO SERVER-120203: Re-enable this test. It doesn't seem like DEATH_TEST_REGEX_P exists, so also
+// add a container version of this test.
 //  DEATH_TEST_REGEX_F(ReplicatedFastCountDeathTest,
 //                     CannotHaveNegativeCommittedSizeOrCount,
 //                     R"(Invariant failure.*Expected fast count size and count to be
@@ -1048,6 +1147,14 @@ using ReplicatedFastCountDeathTest = ReplicatedFastCountTest;
 
 //     _fastCountManager->commit(changes, boost::none);
 // }
+
+INSTANTIATE_TEST_SUITE_P(,
+                         ReplicatedFastCountTest,
+                         ::testing::Values(FastCountStoreMode::kCollection,
+                                           FastCountStoreMode::kContainer),
+                         [](const ::testing::TestParamInfo<FastCountStoreMode>& info) {
+                             return modeToString(info.param);
+                         });
 
 }  // namespace
 

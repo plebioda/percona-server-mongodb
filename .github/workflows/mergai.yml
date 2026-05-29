@@ -20,6 +20,7 @@ on:
     types: [closed]
     branches:
       - "mergai/*/conflict"
+      - "mergai/*/main"
   # CI auto-fix: when a watched workflow finishes (success OR failure) on a
   # mergai/* branch, run `mergai ci fix <run-id>`. The command itself
   # decides what to do based on conclusion + per-workflow config (e.g.
@@ -145,7 +146,12 @@ jobs:
   solution-merged:
     # 'privileged-ops' environment controls access to merge operations
     environment: privileged-ops
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    # Solution PRs (textual conflict resolution) merge into the conflict
+    # branch. Semantic PRs merge into main and are handled by `semantic-merged`.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.merged == true
+      && endsWith(github.event.pull_request.base.ref, '/conflict')
     runs-on: ubuntu-latest
 
     steps:
@@ -188,14 +194,74 @@ jobs:
             || { echo "::warning::'mergai pr create main' failed; retrying with --skip-commit-list" ; \
                  mergai pr --repo "$GITHUB_REPOSITORY" create main --skip-commit-list ; }
 
+  semantic-merged:
+    # 'privileged-ops' environment controls access to merge operations
+    environment: privileged-ops
+    # Semantic PRs (fixes for a clean-but-broken merge) merge into the main
+    # branch. Once merged, fold the reviewed fixes into the merge commit by
+    # re-running finalize, then force-push main. The main PR (main -> target)
+    # already exists and updates itself, so nothing is created here.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.merged == true
+      && endsWith(github.event.pull_request.base.ref, '/main')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          private-key: ${{ secrets.PSMDB_BOT_GH_APP_PRIVATE_KEY }}
+
+      - name: Checkout main branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup workflow environment
+        uses: ./.github/actions/setup-mergai-workflow
+        with:
+          setup-gcp: "false"
+          setup-gemini: "false"
+          setup-mergai: "true"
+          github-app-token: ${{ steps.app-token.outputs.token }}
+          github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          mergai-ref: handling-workflows
+
+      # Re-finalize: the semantic fixes merged into main are squashed into the
+      # merge commit. `mergai finalize` accumulates the squashed-commit and
+      # modified-file lists across repeated finalizes, so the message stays
+      # complete. main was rewritten, so the push is forced.
+      - name: Finalize semantic fixes into the merge commit
+        run: |
+          mergai notes update              # Fetch and merge notes from remote
+          mergai context init              # Rebuild context from commit notes
+          mergai commit sync               # Record any manual commits in notes
+          mergai finalize                  # Fold semantic fixes into the merge commit
+          mergai branch push main --force  # main was rewritten by finalize
+          mergai notes push                # Push mergai notes to remote
+
   # PSMDB-1972: drive the CI auto-fix / finalize loop as a gated state
   # machine. On every watched workflow completion for a mergai/* branch we ask
   # `mergai ci status --state` whether the *whole* watched set (format,
   # clang-tidy, build-and-test) for the current HEAD is done, then:
   #   * in-progress / none -> no-op (a later completion finalizes the set);
   #   * failure            -> `mergai ci fix all` (+ post explanation comment),
-  #                           push the fix commit if one landed, push notes;
-  #   * success            -> `mergai commit squash`, force-push if HEAD moved.
+  #                           push notes. Where the fix lands is branch-aware:
+  #                             - solution/semantic branches: commit inline and
+  #                               push (the open PR is the review surface);
+  #                             - main branch: the failure is a *semantic
+  #                               conflict* (clean merge that doesn't build), so
+  #                               the fix is relocated onto a `semantic` branch
+  #                               + PR (base main) for review.
+  #   * success            -> no-op. Nothing is squashed on green: squashing is
+  #                           a finalize-only step that runs after a human merges
+  #                           the review PR, so an open PR's commits (e.g. the
+  #                           resolve commit) survive for review.
   # Reacting to each completion individually would either fire before the set
   # is green or fire once per workflow; gating on the aggregate state makes
   # the loop converge.
@@ -205,9 +271,10 @@ jobs:
   #   * ci-gate   — read-only. Computes the aggregate state with the default
   #                 GITHUB_TOKEN; needs no AI tokens, no GitHub App token, and
   #                 no `privileged-ops` environment. Runs on every completion.
-  #   * ci-handle — privileged. Gated on ci-gate's state == failure|success,
-  #                 so in-progress/none completions never spin it up (and never
-  #                 trip the privileged-ops approval/secrets path).
+  #   * ci-handle — privileged. Gated on ci-gate's state == failure, so
+  #                 in-progress/none/success completions never spin it up (and
+  #                 never trip the privileged-ops approval/secrets path).
+  #                 success is a no-op now that squashing is finalize-only.
   ci-gate:
     if: |
       startsWith(github.event.workflow_run.head_branch, 'mergai/')
@@ -259,9 +326,10 @@ jobs:
 
   ci-handle:
     needs: ci-gate
-    # Only the actionable states reach the privileged job; in-progress/none
-    # simply fall through here (a later completion finalizes the set).
-    if: needs.ci-gate.outputs.state == 'failure' || needs.ci-gate.outputs.state == 'success'
+    # Only failure reaches the privileged job; in-progress/none/success simply
+    # fall through here. success no longer triggers a squash (squashing is
+    # finalize-only, after a human merges the review PR), so it is a no-op.
+    if: needs.ci-gate.outputs.state == 'failure'
     environment: privileged-ops
     runs-on: ubuntu-latest
     env:
@@ -350,35 +418,56 @@ jobs:
           GH_REPO: ${{ github.repository }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
+          # `mergai ci fix all` resolves the failing runs from the *current*
+          # branch and commits the fix on HEAD, so we always run it on the
+          # branch CI ran on. Where the fix ends up depends on that branch:
+          #
+          #   * solution / semantic branches are review branches: the fix rides
+          #     inline as another commit and is reviewed in the existing PR.
+          #     Nothing is squashed here -- the squash happens only at finalize,
+          #     after the PR is merged, so the resolve commit survives.
+          #
+          #   * the main branch carries the bare merge commit and is NOT a
+          #     review branch. A failure here is a *semantic conflict* (a clean
+          #     merge that doesn't build/pass). We must not advance main with an
+          #     un-reviewed fix, so the fix commit is relocated onto a dedicated
+          #     `semantic` branch and reviewed via a `semantic` PR (base = main)
+          #     before finalize squashes it into the merge commit. origin/main
+          #     is never pushed here.
           before=$(git rev-parse HEAD)
           mergai ci fix all
           mergai ci comment post
           after=$(git rev-parse HEAD)
-          if [ "$before" != "$after" ]; then
-            echo "Fix commit produced ($after); pushing to $HEAD_BRANCH"
-            git push origin HEAD:"$HEAD_BRANCH"
-          else
-            echo "No fix commit produced."
-          fi
-          mergai notes push
 
-      # Whole watched set is green: collapse the solution commits into the
-      # merge commit. squash is a no-op once HEAD is already the merge commit,
-      # so the loop converges after the squashed commit passes CI.
-      - name: Squash on green (state=success)
-        if: needs.ci-gate.outputs.state == 'success'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-        run: |
-          before=$(git rev-parse HEAD)
-          mergai commit squash
-          after=$(git rev-parse HEAD)
-          if [ "$before" != "$after" ]; then
-            echo "Squashed $before -> $after; force-pushing to $HEAD_BRANCH"
-            git push --force-with-lease origin HEAD:"$HEAD_BRANCH"
+          if [ "$before" = "$after" ]; then
+            echo "No fix commit produced."
             mergai notes push
-          else
-            echo "Nothing to squash (HEAD already the merge commit)."
+            exit 0
           fi
+
+          case "$HEAD_BRANCH" in
+            */main)
+              SEMANTIC_BRANCH="${HEAD_BRANCH%/main}/semantic"
+              echo "Semantic conflict on $HEAD_BRANCH; relocating fix to $SEMANTIC_BRANCH"
+              # Move the just-produced fix commits onto the semantic branch.
+              git checkout -B "$SEMANTIC_BRANCH"
+              if git ls-remote --exit-code --heads origin "$SEMANTIC_BRANCH" >/dev/null 2>&1; then
+                # Semantic branch already exists: replay only the new fix
+                # commits on top of it so earlier semantic fixes are preserved.
+                git fetch origin "$SEMANTIC_BRANCH"
+                git rebase --onto "origin/$SEMANTIC_BRANCH" "$before"
+              fi
+              git push --force-with-lease origin "HEAD:$SEMANTIC_BRANCH"
+              # Open the semantic PR once; later fixes just update the branch.
+              if [ -z "$(gh pr list --head "$SEMANTIC_BRANCH" --state open --json number --jq '.[].number')" ]; then
+                mergai pr --repo "$GITHUB_REPOSITORY" create semantic \
+                  || { echo "::warning::'mergai pr create semantic' failed; retrying with --skip-commit-list" ; \
+                       mergai pr --repo "$GITHUB_REPOSITORY" create semantic --skip-commit-list ; }
+              fi
+              ;;
+            *)
+              echo "Fix commit produced ($after); pushing inline to $HEAD_BRANCH"
+              git push origin "HEAD:$HEAD_BRANCH"
+              ;;
+          esac
+          mergai notes push

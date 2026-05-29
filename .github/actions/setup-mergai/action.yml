@@ -6,14 +6,15 @@ description: "Setting up the mergai tool"
 
 inputs:
   token:
-    # Percona-Lab/mergai is public, so no caller-supplied token is needed:
-    # actions/checkout defaults this to the job's GITHUB_TOKEN, which can read
-    # any public repo. Override only to pin a different identity. (Forcing this
-    # required broke tokenless callers — an empty value fails input validation
-    # before checkout can fall back to its default.)
+    # Percona-Lab/mergai is public, so no caller-supplied token is needed —
+    # the job's GITHUB_TOKEN can read any public repo. This is an optional
+    # override to pin a different identity. The github.token fallback lives at
+    # the usage site below, NOT in a `default:` here: callers forward an empty
+    # string (e.g. an unset github-app-token), and an explicitly-passed empty
+    # value overrides an input default, so the default would never apply.
     description: "GitHub token for the mergai checkout (default: job GITHUB_TOKEN)."
     required: false
-    default: ${{ github.token }}
+    default: ""
   ref:
     description: "Git reference (branch, tag, commit SHA) to checkout mergai from"
     required: false
@@ -30,7 +31,10 @@ runs:
       with:
         repository: Percona-Lab/mergai
         ref: ${{ inputs.ref }}
-        token: ${{ inputs.token }}
+        # Fall back to the job's GITHUB_TOKEN when no override is supplied.
+        # Must be `|| github.token` here rather than an input default: a caller
+        # forwarding an empty string overrides the default, but `'' || x` → x.
+        token: ${{ inputs.token || github.token }}
         path: mergai # Checkout to 'mergai' subdirectory, not the workspace root
 
     # Install mergai using pipx for isolated Python environment.

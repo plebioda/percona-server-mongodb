@@ -255,6 +255,22 @@ pr:
       - "ci-skip-format"
       - "ci-skip-clang-tidy"
 
+  # Configuration for semantic PRs (from semantic branch to main branch).
+  # Semantic PRs carry fixes for semantic conflicts: a clean (textual) merge
+  # whose result fails to build/test.
+  semantic:
+    # Format string for semantic PR titles using %(token) syntax.
+    # Same tokens available as main.title_format.
+    #
+    # Default: "Resolve semantic conflicts for merge %(merge_commit_short_sha) into %(target_branch)"
+    title_format: "Resolve semantic conflicts for merge '%(merge_commit_short_sha)' into '%(target_branch)'"
+
+    # Labels always applied to semantic PRs.
+    # Can be overridden at runtime with --labels or disabled with --no-labels.
+    #
+    # Default: [] (no labels)
+    labels: []
+
 # -----------------------------------------------------------------------------
 # PROMPT CONFIGURATION
 # -----------------------------------------------------------------------------

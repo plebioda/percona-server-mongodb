@@ -189,9 +189,9 @@ jobs:
                  mergai pr --repo "$GITHUB_REPOSITORY" create main --skip-commit-list ; }
 
   # PSMDB-1972: drive the CI auto-fix / finalize loop as a gated state
-  # machine. On every watched workflow completion for a mergai/* branch this
-  # job asks `mergai ci status --state` whether the *whole* watched set
-  # (format, clang-tidy, build-and-test) for the current HEAD is done, then:
+  # machine. On every watched workflow completion for a mergai/* branch we ask
+  # `mergai ci status --state` whether the *whole* watched set (format,
+  # clang-tidy, build-and-test) for the current HEAD is done, then:
   #   * in-progress / none -> no-op (a later completion finalizes the set);
   #   * failure            -> `mergai ci fix all` (+ post explanation comment),
   #                           push the fix commit if one landed, push notes;
@@ -199,17 +199,71 @@ jobs:
   # Reacting to each completion individually would either fire before the set
   # is green or fire once per workflow; gating on the aggregate state makes
   # the loop converge.
-  ci-handle:
-    environment: privileged-ops
+  #
+  # The state machine is split into two jobs so the privileged half only runs
+  # when there is privileged work to do:
+  #   * ci-gate   — read-only. Computes the aggregate state with the default
+  #                 GITHUB_TOKEN; needs no AI tokens, no GitHub App token, and
+  #                 no `privileged-ops` environment. Runs on every completion.
+  #   * ci-handle — privileged. Gated on ci-gate's state == failure|success,
+  #                 so in-progress/none completions never spin it up (and never
+  #                 trip the privileged-ops approval/secrets path).
+  ci-gate:
     if: |
       startsWith(github.event.workflow_run.head_branch, 'mergai/')
     runs-on: ubuntu-latest
+    permissions:
+      actions: read    # mergai ci status -> get_workflow_runs
+      contents: read   # checkout
     # Serialize completions for the same branch so two near-simultaneous
-    # workflow_run events can't each observe the other as in-progress and
-    # both no-op (a deadlock). The last-queued run sees the full set done.
+    # workflow_run events can't each observe the other as in-progress and both
+    # no-op (a deadlock). The last-queued gate sees the full set done. This
+    # serialization belongs on the gate — it is what observes the aggregate
+    # state; the downstream handle just acts on the gate's verdict.
     concurrency:
       group: ci-handle-${{ github.event.workflow_run.head_branch }}
       cancel-in-progress: false
+    outputs:
+      state: ${{ steps.gate.outputs.state }}
+    steps:
+      # Checkout with the default token: the gate only reads workflow-run
+      # status and the watched set from .mergai/config.yml — no writes, so no
+      # GitHub App token needed.
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      - name: Setup workflow environment
+        uses: ./.github/actions/setup-mergai-workflow
+        with:
+          setup-gcp: "false"
+          setup-gemini: "false"
+          setup-claude: "false"
+          setup-mergai: "true"
+          mergai-ref: handling-workflows
+
+      # Gate: reduce the latest run of each watched workflow for the current
+      # HEAD to a single token (in-progress|success|failure|none). Exit code is
+      # always 0; the decision is on stdout and exposed as a job output.
+      - name: Gate on watched workflow completion
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          STATE=$(mergai ci status --state)
+          echo "Watched-workflow gate state for HEAD: $STATE"
+          echo "state=$STATE" >> "$GITHUB_OUTPUT"
+
+  ci-handle:
+    needs: ci-gate
+    # Only the actionable states reach the privileged job; in-progress/none
+    # simply fall through here (a later completion finalizes the set).
+    if: needs.ci-gate.outputs.state == 'failure' || needs.ci-gate.outputs.state == 'success'
+    environment: privileged-ops
+    runs-on: ubuntu-latest
     env:
       GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
       GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
@@ -285,31 +339,12 @@ jobs:
           mergai notes update
           mergai context init
 
-      # Gate: reduce the latest run of each watched workflow for the current
-      # HEAD to a single token (in-progress|success|failure|none). Exit code is
-      # always 0; the decision is on stdout.
-      - name: Gate on watched workflow completion
-        id: gate
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          STATE=$(mergai ci status --state)
-          echo "Watched-workflow gate state for HEAD: $STATE"
-          echo "state=$STATE" >> "$GITHUB_OUTPUT"
-
-      - name: Wait for the rest of the set (state=in-progress|none)
-        if: steps.gate.outputs.state == 'in-progress' || steps.gate.outputs.state == 'none'
-        run: |
-          echo "Gate state '${{ steps.gate.outputs.state }}' — nothing to do."
-          echo "A later watched-workflow completion will finalize the set."
-
       # Any watched run for HEAD failed/cancelled: attempt fixes, post the
       # recorded explanation comment, push a fix commit if one landed, and
       # always push notes (ci_comments / posted markers may have changed even
       # when no commit was produced).
       - name: Apply CI fixes (state=failure)
-        if: steps.gate.outputs.state == 'failure'
+        if: needs.ci-gate.outputs.state == 'failure'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
@@ -331,7 +366,7 @@ jobs:
       # merge commit. squash is a no-op once HEAD is already the merge commit,
       # so the loop converges after the squashed commit passes CI.
       - name: Squash on green (state=success)
-        if: steps.gate.outputs.state == 'success'
+        if: needs.ci-gate.outputs.state == 'success'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}

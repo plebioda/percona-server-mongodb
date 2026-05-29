@@ -21,7 +21,7 @@ on:
     branches:
       - "mergai/*/conflict"
   # CI auto-fix: when a watched workflow finishes (success OR failure) on a
-  # mergai/* branch, run `mergai ci handle <run-id>`. The command itself
+  # mergai/* branch, run `mergai ci fix <run-id>`. The command itself
   # decides what to do based on conclusion + per-workflow config (e.g.
   # `code_scanning_check: true` makes a passing run consult Code Scanning
   # for findings).
@@ -188,17 +188,28 @@ jobs:
             || { echo "::warning::'mergai pr create main' failed; retrying with --skip-commit-list" ; \
                  mergai pr --repo "$GITHUB_REPOSITORY" create main --skip-commit-list ; }
 
-  # PSMDB-1972: when a watched CI workflow completes on a mergai/* branch,
-  # call `mergai ci handle <run-id>`. The command resolves the run itself
-  # (workflow name, head SHA, PR, conclusion), downloads artifacts if
-  # needed, consults Code Scanning when configured, and only acts when
-  # there's something to fix. The same command also accepts "all" or a
-  # workflow name as the target for manual catch-up.
-  ci-fix:
+  # PSMDB-1972: drive the CI auto-fix / finalize loop as a gated state
+  # machine. On every watched workflow completion for a mergai/* branch this
+  # job asks `mergai ci status --state` whether the *whole* watched set
+  # (format, clang-tidy, build-and-test) for the current HEAD is done, then:
+  #   * in-progress / none -> no-op (a later completion finalizes the set);
+  #   * failure            -> `mergai ci fix all` (+ post explanation comment),
+  #                           push the fix commit if one landed, push notes;
+  #   * success            -> `mergai commit squash`, force-push if HEAD moved.
+  # Reacting to each completion individually would either fire before the set
+  # is green or fire once per workflow; gating on the aggregate state makes
+  # the loop converge.
+  ci-handle:
     environment: privileged-ops
     if: |
       startsWith(github.event.workflow_run.head_branch, 'mergai/')
     runs-on: ubuntu-latest
+    # Serialize completions for the same branch so two near-simultaneous
+    # workflow_run events can't each observe the other as in-progress and
+    # both no-op (a deadlock). The last-queued run sees the full set done.
+    concurrency:
+      group: ci-handle-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
     env:
       GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
       GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
@@ -211,6 +222,44 @@ jobs:
           app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
           private-key: ${{ secrets.PSMDB_BOT_GH_APP_PRIVATE_KEY }}
 
+      # -----------------------------------------------------------------------
+      # Why we trust github.event.workflow_run.head_branch / head_sha here
+      # -----------------------------------------------------------------------
+      # A workflow_run event carries head_branch/head_sha describing what the
+      # completed workflow ran against. How those are populated depends on the
+      # triggering event:
+      #
+      #   * format, clang-tidy  -> triggered by `pull_request`. The run executes
+      #     in the PR head context, so head_branch = the PR source branch
+      #     (mergai/.../solution or mergai/.../main) and head_sha = the PR head.
+      #
+      #   * build-and-test      -> triggered by `pull_request_target`. By design
+      #     this event runs in the BASE branch context (that is how it exposes
+      #     secrets safely). The documented behavior is that head_branch/head_sha
+      #     point at the PR BASE for *fork* PRs.
+      #
+      # Classic failure mode (fork PRs): on a build-and-test completion you would
+      # check out the base (conflict) branch and commit a "fix" on the wrong
+      # branch, and the gate could never reconcile the solution-branch SHA with
+      # the base SHA.
+      #
+      # That failure mode does NOT apply to mergai PRs: mergai's head branches
+      # (mergai/.../solution, mergai/.../main) live in the SAME repo as the base,
+      # and for same-repo PRs GitHub reports the real PR head ref for
+      # pull_request_target too. Verified on live PRs -- format, clang-tidy and
+      # build-and-test all report the identical head_branch and head_sha for a
+      # given PR commit. So gating on "latest run per watched workflow whose
+      # head_sha == HEAD" is correct, and checking out head_branch lands on the
+      # right (head) branch.
+      #
+      # We gate via `get_workflow_runs(branch=...)` (what `mergai ci status`
+      # uses), NOT the commit Checks API: the Checks API on the PR head SHA
+      # surfaces only mergai-bot's own jobs, not the watched workflows.
+      #
+      # If mergai ever opens solution/main PRs from a FORK, revisit this: resolve
+      # the PR from the run and gate on the PR head SHA instead of the event
+      # fields.
+      # -----------------------------------------------------------------------
       - name: Checkout PR branch
         uses: actions/checkout@v6
         with:
@@ -236,23 +285,65 @@ jobs:
           mergai notes update
           mergai context init
 
-      - name: Handle CI workflow result
+      # Gate: reduce the latest run of each watched workflow for the current
+      # HEAD to a single token (in-progress|success|failure|none). Exit code is
+      # always 0; the decision is on stdout.
+      - name: Gate on watched workflow completion
+        id: gate
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
-        run: mergai ci handle ${{ github.event.workflow_run.id }}
+        run: |
+          STATE=$(mergai ci status --state)
+          echo "Watched-workflow gate state for HEAD: $STATE"
+          echo "state=$STATE" >> "$GITHUB_OUTPUT"
 
-      # Push if a fix landed. `mergai ci handle` only commits when the
-      # handler produced changes, so we check for a new commit relative to
-      # the run's original head SHA.
-      - name: Push fix and notes
+      - name: Wait for the rest of the set (state=in-progress|none)
+        if: steps.gate.outputs.state == 'in-progress' || steps.gate.outputs.state == 'none'
+        run: |
+          echo "Gate state '${{ steps.gate.outputs.state }}' — nothing to do."
+          echo "A later watched-workflow completion will finalize the set."
+
+      # Any watched run for HEAD failed/cancelled: attempt fixes, post the
+      # recorded explanation comment, push a fix commit if one landed, and
+      # always push notes (ci_comments / posted markers may have changed even
+      # when no commit was produced).
+      - name: Apply CI fixes (state=failure)
+        if: steps.gate.outputs.state == 'failure'
         env:
-          ORIGINAL_HEAD: ${{ github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          if [ "$(git rev-parse HEAD)" != "$ORIGINAL_HEAD" ]; then
+          before=$(git rev-parse HEAD)
+          mergai ci fix all
+          mergai ci comment post
+          after=$(git rev-parse HEAD)
+          if [ "$before" != "$after" ]; then
+            echo "Fix commit produced ($after); pushing to $HEAD_BRANCH"
             git push origin HEAD:"$HEAD_BRANCH"
+          else
+            echo "No fix commit produced."
+          fi
+          mergai notes push
+
+      # Whole watched set is green: collapse the solution commits into the
+      # merge commit. squash is a no-op once HEAD is already the merge commit,
+      # so the loop converges after the squashed commit passes CI.
+      - name: Squash on green (state=success)
+        if: steps.gate.outputs.state == 'success'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          before=$(git rev-parse HEAD)
+          mergai commit squash
+          after=$(git rev-parse HEAD)
+          if [ "$before" != "$after" ]; then
+            echo "Squashed $before -> $after; force-pushing to $HEAD_BRANCH"
+            git push --force-with-lease origin HEAD:"$HEAD_BRANCH"
             mergai notes push
           else
-            echo "No commit produced; nothing to push."
+            echo "Nothing to squash (HEAD already the merge commit)."
           fi

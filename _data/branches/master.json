@@ -1933,26 +1933,6 @@
     },
     {
       "commit": {
-        "sha": "a391837ffa9847b41cd0feaedea9803fbc0cbf53",
-        "short_sha": "a391837ffa9",
-        "date": "2026-05-24T11:04:07+00:00",
-        "author": {
-          "name": "auto-revert-app[bot]",
-          "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
-        },
-        "summary": "Revert \"SERVER-118423 Implement `DocsNeededBounds` reporting for extensions (#51217)\" (#54404)"
-      },
-      "strategy_name": "branching_point",
-      "result": {
-        "branches": [
-          "master",
-          "mergai/master-a391837ffa9/main",
-          "mongodb"
-        ]
-      }
-    },
-    {
-      "commit": {
         "sha": "8d20d136377f3a75a1d182a0edabf2a3a2b09570",
         "short_sha": "8d20d136377",
         "date": "2026-05-25T11:42:30+10:00",
@@ -2293,7 +2273,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-29 10:01:31",
+  "generated_at": "2026-05-29 10:46:24",
   "branch_name": "master",
   "display_name": "master"
 }

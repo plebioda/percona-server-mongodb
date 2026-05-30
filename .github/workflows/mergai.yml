@@ -436,11 +436,13 @@ jobs:
           #     is never pushed here.
           before=$(git rev-parse HEAD)
           mergai ci fix all
-          mergai ci comment post
           after=$(git rev-parse HEAD)
 
+          # No fix commit (e.g. an unfixable failure): `ci comment post` still
+          # publishes the recorded explanation on the run's own PR.
           if [ "$before" = "$after" ]; then
             echo "No fix commit produced."
+            mergai ci comment post
             mergai notes push
             exit 0
           fi
@@ -464,10 +466,23 @@ jobs:
                   || { echo "::warning::'mergai pr create semantic' failed; retrying with --skip-commit-list" ; \
                        mergai pr --repo "$GITHUB_REPOSITORY" create semantic --skip-commit-list ; }
               fi
+              # The fixes were relocated to the semantic PR: the rolling fixes
+              # summary + notifications go there, and the main PR (the failing
+              # run's PR) gets a one-time pointer to it. Resolve the semantic
+              # PR number now that it exists.
+              SEMANTIC_PR=$(gh pr list --head "$SEMANTIC_BRANCH" --state open --json number --jq '.[0].number')
+              if [ -n "$SEMANTIC_PR" ]; then
+                mergai ci comment post --review-pr "$SEMANTIC_PR"
+              else
+                echo "::warning::Could not resolve semantic PR number; posting comments inline."
+                mergai ci comment post
+              fi
               ;;
             *)
               echo "Fix commit produced ($after); pushing inline to $HEAD_BRANCH"
               git push origin "HEAD:$HEAD_BRANCH"
+              # Review branch: the rolling fixes summary lives on this PR.
+              mergai ci comment post
               ;;
           esac
           mergai notes push

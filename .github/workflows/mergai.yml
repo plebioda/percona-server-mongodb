@@ -245,6 +245,24 @@ jobs:
           mergai branch push main --force  # main was rewritten by finalize
           mergai notes push                # Push mergai notes to remote
 
+      # Close the loop on the main PR: the semantic (solution) PR has been
+      # merged and its fixes squashed into the merge commit. Mirrors the
+      # one-time pointer the ci-handle job posts when the semantic PR opens.
+      - name: Comment on the main PR that the solution PR was merged
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SEMANTIC_PR: ${{ github.event.pull_request.number }}
+          MAIN_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          MAIN_PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$MAIN_BRANCH" \
+            --state open --json number --jq '.[0].number')
+          if [ -n "$MAIN_PR" ]; then
+            gh pr comment "$MAIN_PR" --repo "$GITHUB_REPOSITORY" \
+              --body "✅ Semantic fixes from #${SEMANTIC_PR} were merged and squashed into the merge commit."
+          else
+            echo "::warning::Could not resolve the main PR for $MAIN_BRANCH; skipping comment."
+          fi
+
   # PSMDB-1972: drive the CI auto-fix / finalize loop as a gated state
   # machine. On every watched workflow completion for a mergai/* branch we ask
   # `mergai ci status --state` whether the *whole* watched set (format,

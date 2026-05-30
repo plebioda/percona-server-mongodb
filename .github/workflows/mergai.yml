@@ -258,7 +258,7 @@ jobs:
             --state open --json number --jq '.[0].number')
           if [ -n "$MAIN_PR" ]; then
             gh pr comment "$MAIN_PR" --repo "$GITHUB_REPOSITORY" \
-              --body "✅ Semantic fixes from #${SEMANTIC_PR} were merged and squashed into the merge commit."
+              --body "✅ Semantic fixes from #${SEMANTIC_PR} were merged and finalized."
           else
             echo "::warning::Could not resolve the main PR for $MAIN_BRANCH; skipping comment."
           fi
@@ -487,7 +487,7 @@ jobs:
                 SEMANTIC_PR=$(gh pr list --head "$SEMANTIC_BRANCH" --state open --json number --jq '.[0].number')
                 MAIN_PR=$(gh pr list --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number')
                 if [ -n "$MAIN_PR" ] && [ -n "$SEMANTIC_PR" ]; then
-                  gh pr comment "$MAIN_PR" --body "🔧 CI failed on this merge. mergai opened #${SEMANTIC_PR} with automated fixes for review; they'll be squashed into the merge commit once that PR is merged."
+                  gh pr comment "$MAIN_PR" --body "🔧 CI failed on this merge. mergai opened #${SEMANTIC_PR} with automated fixes for review."
                 fi
               else
                 SEMANTIC_PR=$(gh pr list --head "$SEMANTIC_BRANCH" --state open --json number --jq '.[0].number')

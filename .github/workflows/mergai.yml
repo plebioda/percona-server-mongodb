@@ -244,10 +244,14 @@ jobs:
           mergai finalize                  # Fold semantic fixes into the merge commit
           mergai branch push main --force  # main was rewritten by finalize
           mergai notes push                # Push mergai notes to remote
+          # Refresh the main PR description so it now includes the merged-in
+          # solutions (the semantic fixes), which the merge notice points to.
+          mergai pr --repo "$GITHUB_REPOSITORY" update main \
+            || echo "::warning::'mergai pr update main' failed"
 
       # Close the loop on the main PR: the semantic (solution) PR has been
-      # merged and its fixes squashed into the merge commit. Mirrors the
-      # one-time pointer the ci-handle job posts when the semantic PR opens.
+      # merged and finalized into the merge commit. Mirrors the one-time
+      # pointer the ci-handle job posts when the semantic PR opens.
       - name: Comment on the main PR that the solution PR was merged
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -258,7 +262,7 @@ jobs:
             --state open --json number --jq '.[0].number')
           if [ -n "$MAIN_PR" ]; then
             gh pr comment "$MAIN_PR" --repo "$GITHUB_REPOSITORY" \
-              --body "✅ Semantic fixes from #${SEMANTIC_PR} were merged and finalized."
+              --body "PR #${SEMANTIC_PR} merged. See the PR comment for details."
           else
             echo "::warning::Could not resolve the main PR for $MAIN_BRANCH; skipping comment."
           fi
@@ -487,7 +491,7 @@ jobs:
                 SEMANTIC_PR=$(gh pr list --head "$SEMANTIC_BRANCH" --state open --json number --jq '.[0].number')
                 MAIN_PR=$(gh pr list --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number')
                 if [ -n "$MAIN_PR" ] && [ -n "$SEMANTIC_PR" ]; then
-                  gh pr comment "$MAIN_PR" --body "🔧 CI failed on this merge. mergai opened #${SEMANTIC_PR} with automated fixes for review."
+                  gh pr comment "$MAIN_PR" --body "One or more checks failed. PR #${SEMANTIC_PR} opened with fixes for review."
                 fi
               else
                 SEMANTIC_PR=$(gh pr list --head "$SEMANTIC_BRANCH" --state open --json number --jq '.[0].number')

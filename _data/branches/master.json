@@ -5,37 +5,127 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 203,
-    "days_behind": 5,
-    "files_affected": 1380,
-    "total_additions": 58603,
-    "total_deletions": 18442,
+    "commits_behind": 232,
+    "days_behind": 9,
+    "files_affected": 1660,
+    "total_additions": 69630,
+    "total_deletions": 19883,
     "date_range": {
-      "first": "2026-05-25T01:42:30+00:00",
-      "last": "2026-05-29T23:46:16+00:00"
+      "first": "2026-05-22T18:26:56+00:00",
+      "last": "2026-06-01T09:57:08+00:00"
     }
   },
   "last_merged_commit": {
-    "sha": "a391837ffa9847b41cd0feaedea9803fbc0cbf53",
-    "short_sha": "a391837ffa9",
-    "date": "2026-05-24T11:04:07+00:00",
+    "sha": "650d9f458c5aeb3ec4f0ad960b77a566e3932b3f",
+    "short_sha": "650d9f458c5",
+    "date": "2026-05-22T12:38:16-05:00",
     "author": {
-      "name": "auto-revert-app[bot]",
-      "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      "name": "mongo-pr-bot[bot]",
+      "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
     },
-    "summary": "Revert \"SERVER-118423 Implement `DocsNeededBounds` reporting for extensions (#51217)\" (#54404)"
+    "summary": "SERVER-111072 Auto-generated SBOM files [master] (#54314)"
   },
   "first_unmerged_commit": {
-    "sha": "8d20d136377f3a75a1d182a0edabf2a3a2b09570",
-    "short_sha": "8d20d136377",
-    "date": "2026-05-25T11:42:30+10:00",
+    "sha": "25e034e700d58aadc71af425a923e9b424ca37cc",
+    "short_sha": "25e034e700d",
+    "date": "2026-05-22T14:26:56-04:00",
     "author": {
-      "name": "Luke Chen",
-      "email": "luke.chen@mongodb.com"
+      "name": "kmznam",
+      "email": "97981975+kmznam@users.noreply.github.com"
     },
-    "summary": "Import wiredtiger: 4a37da0329e41b8b6552ea6de60d8a98ba4fff96 from branch mongodb-master (#54405)"
+    "summary": "SERVER-123711 scan collection for non-compliant docs on constraint upgrade sharded (#53220)"
   },
   "unmerged_commits": [
+    {
+      "sha": "07b326bc09870c00f01d8c2a772ea2a96e2f43ea",
+      "short_sha": "07b326bc098",
+      "date": "2026-06-01T11:57:08+02:00",
+      "author": {
+        "name": "ppolato",
+        "email": "82828243+ppolato@users.noreply.github.com"
+      },
+      "summary": "SERVER-126964 Populate shard UUID fields during FCV upgrade (#54620)"
+    },
+    {
+      "sha": "2fd77d1e4fc0cb3a2efc051b947e630aff8f9039",
+      "short_sha": "2fd77d1e4fc",
+      "date": "2026-06-01T11:53:17+02:00",
+      "author": {
+        "name": "Silvia Surroca",
+        "email": "silvia.surroca@mongodb.com"
+      },
+      "summary": "SERVER-127797 Increase the timeout of list_cluster_catalog_max_time_ms.js (#54666)"
+    },
+    {
+      "sha": "930ae0a1fe891689a40994a75990285d8b6c301e",
+      "short_sha": "930ae0a1fe8",
+      "date": "2026-06-01T11:50:56+02:00",
+      "author": {
+        "name": "mivanova3",
+        "email": "68105381+mivanova3@users.noreply.github.com"
+      },
+      "summary": "SERVER-127109 Emit multiPlanner stats once per planning invocation in… (#54630)"
+    },
+    {
+      "sha": "8c6d8410135c23e968170348104561bc100717fc",
+      "short_sha": "8c6d8410135",
+      "date": "2026-06-01T11:08:22+02:00",
+      "author": {
+        "name": "Aitor Esteve Alvarado",
+        "email": "aitor.esteve@mongodb.com"
+      },
+      "summary": "SERVER-127948 Update config.shard.catalog.collections after config.shard.catalog.chunks (#54815)"
+    },
+    {
+      "sha": "7112a2242118a274c194b6433712f9a897d5b1bb",
+      "short_sha": "7112a224211",
+      "date": "2026-06-01T10:00:41+01:00",
+      "author": {
+        "name": "Alexander Ignatyev",
+        "email": "alexander.ignatyev@mongodb.com"
+      },
+      "summary": "SERVER-126487 Fallback from join reordering when a $lookup \"as\" field shadows an earlier localField (#54738)"
+    },
+    {
+      "sha": "29f76adf686cc21bc3c4860af9e7a1b4dc001715",
+      "short_sha": "29f76adf686",
+      "date": "2026-06-01T10:49:59+02:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#54799)"
+    },
+    {
+      "sha": "5eea4c6af9fe88e112b08668cbf7da2589749c48",
+      "short_sha": "5eea4c6af9f",
+      "date": "2026-06-01T09:19:08+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-127564 Don't count placement-version waits toward recovery retry cap (#54530)"
+    },
+    {
+      "sha": "1cc3e215f1746d23a614435b452a229affa3c2bd",
+      "short_sha": "1cc3e215f17",
+      "date": "2026-06-01T09:10:50+02:00",
+      "author": {
+        "name": "wolfee",
+        "email": "adam.farkas@mongodb.com"
+      },
+      "summary": "SERVER-123912 Retry catalog list consistency check steps on network errors (#54724)"
+    },
+    {
+      "sha": "01d6f43099d2dc76b52de49bd5c3b23080200e73",
+      "short_sha": "01d6f43099d",
+      "date": "2026-06-01T14:47:24+10:00",
+      "author": {
+        "name": "Alex Pullen",
+        "email": "93811034+LX6T@users.noreply.github.com"
+      },
+      "summary": "Import wiredtiger: f0565a2f936e37bcd72b68cffc40ce86bb1ff7ed from branch mongodb-master (#54810)"
+    },
     {
       "sha": "e9d0b000fb07e524089640daffa863ad9b41b1b0",
       "short_sha": "e9d0b000fb0",
@@ -2065,9 +2155,312 @@
         "email": "luke.chen@mongodb.com"
       },
       "summary": "Import wiredtiger: 4a37da0329e41b8b6552ea6de60d8a98ba4fff96 from branch mongodb-master (#54405)"
+    },
+    {
+      "sha": "a391837ffa9847b41cd0feaedea9803fbc0cbf53",
+      "short_sha": "a391837ffa9",
+      "date": "2026-05-24T11:04:07+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-118423 Implement `DocsNeededBounds` reporting for extensions (#51217)\" (#54404)"
+    },
+    {
+      "sha": "0e7050d2b9684d7df362af39cefad394821cc3aa",
+      "short_sha": "0e7050d2b96",
+      "date": "2026-05-23T14:05:27-04:00",
+      "author": {
+        "name": "Billy Donahue",
+        "email": "BillyDonahue@users.noreply.github.com"
+      },
+      "summary": "SERVER-127058 StringData DocumentSource::getSourceName (#54016)"
+    },
+    {
+      "sha": "c9709d65c1a40375c7e19369ff0ada7bd1d80d92",
+      "short_sha": "c9709d65c1a",
+      "date": "2026-05-23T03:25:08+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-124332. Populate sample metadata in explain output (#53931)\" (#54399)"
+    },
+    {
+      "sha": "e4fc866a78abf7637e3537fca316fcf9297d1a54",
+      "short_sha": "e4fc866a78a",
+      "date": "2026-05-22T22:06:31-04:00",
+      "author": {
+        "name": "Parker Felix",
+        "email": "68665637+parker-felix@users.noreply.github.com"
+      },
+      "summary": "SERVER-127475: Remove featureFlagReplicatedFastCountDurability check in shouldUseReplicatedFastCountContainers (#54376)"
+    },
+    {
+      "sha": "4bd36565b9ae79cd4c2dd7de59f215a4f651bdd2",
+      "short_sha": "4bd36565b9a",
+      "date": "2026-05-22T21:39:23-04:00",
+      "author": {
+        "name": "Matt Broadstone",
+        "email": "mbroadst@mongodb.com"
+      },
+      "summary": "SERVER-127414 DeferredToken::get() accounts for elapsed time before sleep (#54368)"
+    },
+    {
+      "sha": "a48dcebbc69aec2a3f4b32614be7e48604f17204",
+      "short_sha": "a48dcebbc69",
+      "date": "2026-05-22T17:56:47-07:00",
+      "author": {
+        "name": "Thomas Goyne",
+        "email": "thomas.goyne@mongodb.com"
+      },
+      "summary": "SERVER-127040: Replace AutoGetCollection in index build tests with collection acquisitions (#53828)"
+    },
+    {
+      "sha": "63745eaa450b30322ff17ccf63d3d58893c796a7",
+      "short_sha": "63745eaa450",
+      "date": "2026-05-22T19:26:06-04:00",
+      "author": {
+        "name": "Xuerui Fa",
+        "email": "xuerui.fa@mongodb.com"
+      },
+      "summary": "SERVER-125965: Wait for stable timestamp to advance in initial sync (#54176)"
+    },
+    {
+      "sha": "7d1b18f756199542e6a41278043c8115d86815e2",
+      "short_sha": "7d1b18f7561",
+      "date": "2026-05-22T16:19:00-07:00",
+      "author": {
+        "name": "Chye Lin Chee",
+        "email": "chyelin.chee@mongodb.com"
+      },
+      "summary": "SERVER-127367 Fix Evergreen timeout for tls_protocols.js Windows server 2022 (#54239)"
+    },
+    {
+      "sha": "862ad0e50b5a148383f86e008bdafa4ef2818303",
+      "short_sha": "862ad0e50b5",
+      "date": "2026-05-22T16:06:27-07:00",
+      "author": {
+        "name": "Abdul Qadeer",
+        "email": "abdul.qadeer@mongodb.com"
+      },
+      "summary": "SERVER-125598 Integrate ReshardingPromiseRegistry with donor state machine (#54098)"
+    },
+    {
+      "sha": "36e3e2ea23e2067aeb3da6380b80758acbebdd56",
+      "short_sha": "36e3e2ea23e",
+      "date": "2026-05-22T18:45:08-04:00",
+      "author": {
+        "name": "Brett Nawrocki",
+        "email": "90278537+brettnawrocki@users.noreply.github.com"
+      },
+      "summary": "SERVER-127276 Move coordinator driven promises to ReshardingRecipientPromises (#54384)"
+    },
+    {
+      "sha": "88fbe993b7d572c3ff595c1bf8de95bb04e23be5",
+      "short_sha": "88fbe993b7d",
+      "date": "2026-05-22T15:24:38-07:00",
+      "author": {
+        "name": "Andrew Bradshaw",
+        "email": "andrew.bradshaw@mongodb.com"
+      },
+      "summary": "SERVER-113557 Bolt binary before we split off symbols (#53518)"
+    },
+    {
+      "sha": "b7fbac8dd4d59a353895f61f93f226796f3421bd",
+      "short_sha": "b7fbac8dd4d",
+      "date": "2026-05-22T17:12:48-04:00",
+      "author": {
+        "name": "Steve McClure",
+        "email": "steve.mcclure@mongodb.com"
+      },
+      "summary": "SERVER-126358: log `attr` in `assert(expr, msg, attr)` (#54299)"
+    },
+    {
+      "sha": "a509e05dc1aed37f0fb1d50c516e563eefa6562e",
+      "short_sha": "a509e05dc1a",
+      "date": "2026-05-22T14:07:13-07:00",
+      "author": {
+        "name": "Jinfeng Ni",
+        "email": "jinfeng.ni@mongodb.com"
+      },
+      "summary": "SERVER-122063 Attach metrics to insert response on shards for query stats (#53174)"
+    },
+    {
+      "sha": "53c3f3c5fb9115e6995b66efa686569ee10c0b3a",
+      "short_sha": "53c3f3c5fb9",
+      "date": "2026-05-22T15:51:25-05:00",
+      "author": {
+        "name": "Shin Yee Tan",
+        "email": "shinyee.tan@mongodb.com"
+      },
+      "summary": "SERVER-127012 Side write drains that are batched should use kGroupForTransactions (#54381)"
+    },
+    {
+      "sha": "c1fe003eeca2a2ad632fa13d0293061069658d23",
+      "short_sha": "c1fe003eeca",
+      "date": "2026-05-22T14:36:25-06:00",
+      "author": {
+        "name": "adriangzz",
+        "email": "adriangonzalezmontemayor@gmail.com"
+      },
+      "summary": "SERVER-126324 Add stub implementation of updateESECMKIdentifierList command (#54111)"
+    },
+    {
+      "sha": "cd4d6770ed239ba4393dae802c48bd3dc3644301",
+      "short_sha": "cd4d6770ed2",
+      "date": "2026-05-22T14:59:34-05:00",
+      "author": {
+        "name": "Finley Lau",
+        "email": "finley.lau@mongodb.com"
+      },
+      "summary": "SERVER-125594 Implement desugaring infrastructure for hybrid search lite parsed stages (#52718)"
+    },
+    {
+      "sha": "3b3507cb34f8b588e8506a3db99c42f0bfb29293",
+      "short_sha": "3b3507cb34f",
+      "date": "2026-05-22T15:51:01-04:00",
+      "author": {
+        "name": "Parker Felix",
+        "email": "68665637+parker-felix@users.noreply.github.com"
+      },
+      "summary": "SERVER-127435 Read from timestamps container directly in initializeMetadata (#54354)"
+    },
+    {
+      "sha": "460b5db2b9a40d1b3d875202322608dde5b4399a",
+      "short_sha": "460b5db2b9a",
+      "date": "2026-05-22T15:34:31-04:00",
+      "author": {
+        "name": "Billy Donahue",
+        "email": "BillyDonahue@users.noreply.github.com"
+      },
+      "summary": "SERVER-127342 PlanStage etc use StringData (#54212)"
+    },
+    {
+      "sha": "138419c76cb5fc08755443a8712b961227c96181",
+      "short_sha": "138419c76cb",
+      "date": "2026-05-22T14:58:45-04:00",
+      "author": {
+        "name": "Ernesto Rodriguez Reina",
+        "email": "erreina@users.noreply.github.com"
+      },
+      "summary": "SERVER-126254 Fix fsyncLock leaves durableOpTime stuck behind lastWritten (#53504)"
+    },
+    {
+      "sha": "25e034e700d58aadc71af425a923e9b424ca37cc",
+      "short_sha": "25e034e700d",
+      "date": "2026-05-22T14:26:56-04:00",
+      "author": {
+        "name": "kmznam",
+        "email": "97981975+kmznam@users.noreply.github.com"
+      },
+      "summary": "SERVER-123711 scan collection for non-compliant docs on constraint upgrade sharded (#53220)"
     }
   ],
   "merge_picks": [
+    {
+      "commit": {
+        "sha": "138419c76cb5fc08755443a8712b961227c96181",
+        "short_sha": "138419c76cb",
+        "date": "2026-05-22T14:58:45-04:00",
+        "author": {
+          "name": "Ernesto Rodriguez Reina",
+          "email": "erreina@users.noreply.github.com"
+        },
+        "summary": "SERVER-126254 Fix fsyncLock leaves durableOpTime stuck behind lastWritten (#53504)"
+      },
+      "strategy_name": "important_files",
+      "result": {
+        "matched_files": [
+          "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp"
+        ]
+      }
+    },
+    {
+      "commit": {
+        "sha": "cd4d6770ed239ba4393dae802c48bd3dc3644301",
+        "short_sha": "cd4d6770ed2",
+        "date": "2026-05-22T14:59:34-05:00",
+        "author": {
+          "name": "Finley Lau",
+          "email": "finley.lau@mongodb.com"
+        },
+        "summary": "SERVER-125594 Implement desugaring infrastructure for hybrid search lite parsed stages (#52718)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 17,
+          "num_of_lines": 5378,
+          "lines_added": 5378,
+          "lines_deleted": 0,
+          "num_of_dirs": 2
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "63745eaa450b30322ff17ccf63d3d58893c796a7",
+        "short_sha": "63745eaa450",
+        "date": "2026-05-22T19:26:06-04:00",
+        "author": {
+          "name": "Xuerui Fa",
+          "email": "xuerui.fa@mongodb.com"
+        },
+        "summary": "SERVER-125965: Wait for stable timestamp to advance in initial sync (#54176)"
+      },
+      "strategy_name": "important_files",
+      "result": {
+        "matched_files": [
+          "src/mongo/db/repl/initial_sync/initial_syncer.cpp",
+          "src/mongo/db/repl/initial_sync/initial_syncer.h"
+        ]
+      }
+    },
+    {
+      "commit": {
+        "sha": "0e7050d2b9684d7df362af39cefad394821cc3aa",
+        "short_sha": "0e7050d2b96",
+        "date": "2026-05-23T14:05:27-04:00",
+        "author": {
+          "name": "Billy Donahue",
+          "email": "BillyDonahue@users.noreply.github.com"
+        },
+        "summary": "SERVER-127058 StringData DocumentSource::getSourceName (#54016)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 118,
+          "num_of_lines": 443,
+          "lines_added": 218,
+          "lines_deleted": 225,
+          "num_of_dirs": 8
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "a391837ffa9847b41cd0feaedea9803fbc0cbf53",
+        "short_sha": "a391837ffa9",
+        "date": "2026-05-24T11:04:07+00:00",
+        "author": {
+          "name": "auto-revert-app[bot]",
+          "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+        },
+        "summary": "Revert \"SERVER-118423 Implement `DocsNeededBounds` reporting for extensions (#51217)\" (#54404)"
+      },
+      "strategy_name": "branching_point",
+      "result": {
+        "branches": [
+          "master",
+          "mergai/master-a391837ffa9/semantic",
+          "mongodb"
+        ]
+      }
+    },
     {
       "commit": {
         "sha": "8d20d136377f3a75a1d182a0edabf2a3a2b09570",
@@ -2494,10 +2887,33 @@
           "num_of_dirs": 12
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "01d6f43099d2dc76b52de49bd5c3b23080200e73",
+        "short_sha": "01d6f43099d",
+        "date": "2026-06-01T14:47:24+10:00",
+        "author": {
+          "name": "Alex Pullen",
+          "email": "93811034+LX6T@users.noreply.github.com"
+        },
+        "summary": "Import wiredtiger: f0565a2f936e37bcd72b68cffc40ce86bb1ff7ed from branch mongodb-master (#54810)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 24,
+          "num_of_lines": 1204,
+          "lines_added": 968,
+          "lines_deleted": 236,
+          "num_of_dirs": 12
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-05-30 10:13:06",
+  "generated_at": "2026-06-01 11:44:59",
   "branch_name": "master",
   "display_name": "master"
 }

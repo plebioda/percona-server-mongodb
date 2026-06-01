@@ -37,6 +37,9 @@
 namespace mongo {
 
 namespace {
+// intentional clang-tidy error: cannot initialize 'int' with a string literal
+// (clang-diagnostic-error)
+int kInjectedError = "this is not an int";
 using Self = ReshardingRecipientPromises;
 using RecoverMethod = void (Self::*)(WithLock, const ReshardingRecipientDocument&);
 using RecoveryFn = ReshardingPromiseRegistry<ReshardingRecipientDocument>::RecoveryFn;

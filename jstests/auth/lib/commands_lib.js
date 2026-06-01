@@ -6431,6 +6431,21 @@ export const authCommandsLib = {
             ],
         },
         {
+            testname: "updateESECMKIdentifierList",
+            command: {updateESECMKIdentifierList: 1},
+            skipTest: () => {
+                return !getBuildInfo().modules.includes("atlas");
+            },
+            testcases: [
+                {
+                    runOnDb: adminDbName,
+                    roles: roles_hostManager,
+                    privileges: [{resource: {cluster: true}, actions: ["updateESECMKIdentifierList"]}],
+                    expectFail: true,
+                },
+            ],
+        },
+        {
             testname: "getESECMKIdentifierListStatus",
             command: {getESECMKIdentifierListStatus: 1},
             skipTest: () => {

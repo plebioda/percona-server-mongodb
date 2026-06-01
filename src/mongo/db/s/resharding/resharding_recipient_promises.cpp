@@ -37,7 +37,7 @@
 namespace mongo {
 
 namespace {
-   using Self = ReshardingRecipientPromises;
+using Self = ReshardingRecipientPromises;
 using RecoverMethod = void (Self::*)(WithLock, const ReshardingRecipientDocument&);
 using RecoveryFn = ReshardingPromiseRegistry<ReshardingRecipientDocument>::RecoveryFn;
 

@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 279,
+    "commits_behind": 294,
     "days_behind": 10,
-    "files_affected": 1853,
-    "total_additions": 80995,
-    "total_deletions": 22558,
+    "files_affected": 1914,
+    "total_additions": 85505,
+    "total_deletions": 22973,
     "date_range": {
       "first": "2026-05-22T18:26:56+00:00",
-      "last": "2026-06-02T09:46:43+00:00"
+      "last": "2026-06-02T15:00:43+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,156 @@
     "summary": "SERVER-123711 scan collection for non-compliant docs on constraint upgrade sharded (#53220)"
   },
   "unmerged_commits": [
+    {
+      "sha": "890c7192111d73106ee3fc971d4b493cf28bb0e2",
+      "short_sha": "890c7192111",
+      "date": "2026-06-02T17:00:43+02:00",
+      "author": {
+        "name": "Yujin Kang Park",
+        "email": "36410031+ykangpark@users.noreply.github.com"
+      },
+      "summary": "SERVER-127544 Replace wildcard multikey side recovery unit with per-snapshot in-process cache (#54528)"
+    },
+    {
+      "sha": "12c0fe15dbad92051c6d91fc075511e1e4362983",
+      "short_sha": "12c0fe15dba",
+      "date": "2026-06-02T10:57:27-04:00",
+      "author": {
+        "name": "Gregory Noma",
+        "email": "gregory.noma@gmail.com"
+      },
+      "summary": "SERVER-127680 Build more types of indexes in resumable PDIB testing (#54832)"
+    },
+    {
+      "sha": "1a20e0fc8f457678fef61ab184ad37c2f00ac5a1",
+      "short_sha": "1a20e0fc8f4",
+      "date": "2026-06-02T10:56:36-04:00",
+      "author": {
+        "name": "Gil Alon",
+        "email": "47804748+galon1@users.noreply.github.com"
+      },
+      "summary": "SERVER-122074 Refactor `WriteCmdQueryStatsBatchRegistrar` to shapify delete commands on mongos (#54681)"
+    },
+    {
+      "sha": "69af9535d6ca4e45a5953caf6ea107d011e53010",
+      "short_sha": "69af9535d6c",
+      "date": "2026-06-02T15:53:20+01:00",
+      "author": {
+        "name": "nicola cabiddu",
+        "email": "nicolacabiddu@gmail.com"
+      },
+      "summary": "SERVER-127880 use new jepsen linearizable tests for nightly runs to support DSC/ASC (#54717)"
+    },
+    {
+      "sha": "2975199f2259b56a2ce19dc0518aaede72037ceb",
+      "short_sha": "2975199f225",
+      "date": "2026-06-02T09:52:10-05:00",
+      "author": {
+        "name": "Shin Yee Tan",
+        "email": "shinyee.tan@mongodb.com"
+      },
+      "summary": "SERVER-127828 Batched ops using kGroupForAtomicWrite should update config.transactions (#54789)"
+    },
+    {
+      "sha": "6b0de5eca0b5abbe51d6a6c412b51334040c65f1",
+      "short_sha": "6b0de5eca0b",
+      "date": "2026-06-02T10:46:41-04:00",
+      "author": {
+        "name": "Alex Sarkesian",
+        "email": "alex.sarkesian@mongodb.com"
+      },
+      "summary": "SERVER-127929: Convert `metrics.ttl` into OTel metrics (#54780)"
+    },
+    {
+      "sha": "215c984fc01496f8dde55f8f333fc3fa2e5b2ab9",
+      "short_sha": "215c984fc01",
+      "date": "2026-06-02T10:23:21-04:00",
+      "author": {
+        "name": "Owen Chen",
+        "email": "owen.chen@mongodb.com"
+      },
+      "summary": "SERVER-127788 Fix mock OCSP responder hang on SIGINT under CPython (#54649)"
+    },
+    {
+      "sha": "06216ac2995c870634344e2a093b5a5638a0542c",
+      "short_sha": "06216ac2995",
+      "date": "2026-06-02T10:16:24-04:00",
+      "author": {
+        "name": "Felipe Farinon",
+        "email": "felipe.farinon@mongodb.com"
+      },
+      "summary": "SERVER-116154 Do not push $lookup to SBE if it would use a collscan and classic can use an index (#54178)"
+    },
+    {
+      "sha": "cf3d63f3b7364a4bb88d19fcdb33268b3c99f7fc",
+      "short_sha": "cf3d63f3b73",
+      "date": "2026-06-02T16:12:21+02:00",
+      "author": {
+        "name": "Ivan Fefer",
+        "email": "ivan.fefer@mongodb.com"
+      },
+      "summary": "SERVER-127093 Avoid generating huge transactions in batch_size.js (#54897)"
+    },
+    {
+      "sha": "f4789c512c821953a0813ff532a381b3612b6645",
+      "short_sha": "f4789c512c8",
+      "date": "2026-06-02T09:59:17-04:00",
+      "author": {
+        "name": "Logan Karbiner",
+        "email": "lkarbiner@users.noreply.github.com"
+      },
+      "summary": "SERVER-36681 Handle non-existent dotted fields as null (#46641)"
+    },
+    {
+      "sha": "de829942be0e99a5ce126331733296705e36ba5d",
+      "short_sha": "de829942be0",
+      "date": "2026-06-02T09:58:55-04:00",
+      "author": {
+        "name": "Steve McClure",
+        "email": "steve.mcclure@mongodb.com"
+      },
+      "summary": "SERVER-128028: Fix stale-process misconnection in MongoRunner (#54865)"
+    },
+    {
+      "sha": "ca8e0f72899c281fce9c6542ffbc15dbfe1d27c7",
+      "short_sha": "ca8e0f72899",
+      "date": "2026-06-02T14:18:11+01:00",
+      "author": {
+        "name": "marcobizzarri-mdb",
+        "email": "marco.bizzarri@mongodb.com"
+      },
+      "summary": "SERVER-119484 Do not assume previousVersion is only set during downgrade (#53492)"
+    },
+    {
+      "sha": "289a02c6e892fe3861ce0840a54322b8a3e51a3f",
+      "short_sha": "289a02c6e89",
+      "date": "2026-06-02T09:14:09-04:00",
+      "author": {
+        "name": "Alex Li",
+        "email": "98560274+lia394126@users.noreply.github.com"
+      },
+      "summary": "SERVER-126305 Mark mixed_version_replica_set.js incompatible on future git tag variants (#54023)"
+    },
+    {
+      "sha": "b9db9d2181de2431986ea10ccfffc6960fbf5e8b",
+      "short_sha": "b9db9d2181d",
+      "date": "2026-06-02T14:29:45+02:00",
+      "author": {
+        "name": "Yujin Kang Park",
+        "email": "36410031+ykangpark@users.noreply.github.com"
+      },
+      "summary": "SERVER-128053 Tolerate QueryPlanKilled in multikey_timestamp_consistency (#54899)"
+    },
+    {
+      "sha": "f958a32362a0751e7b4291d07a64bbcb3251c05d",
+      "short_sha": "f958a32362a",
+      "date": "2026-06-02T12:16:45+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-127441 Make RenameCollectionCoordinator use the new setAllowMigrations (#54835)"
+    },
     {
       "sha": "de2523be273b41e4af3eb9e24b16c203e38897bb",
       "short_sha": "de2523be273",
@@ -2926,7 +3076,6 @@
       "result": {
         "branches": [
           "master",
-          "mergai/master-a391837ffa9/main",
           "mergai/master-a391837ffa9/semantic",
           "mongodb"
         ]
@@ -3473,10 +3622,33 @@
           "num_of_dirs": 11
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "f4789c512c821953a0813ff532a381b3612b6645",
+        "short_sha": "f4789c512c8",
+        "date": "2026-06-02T09:59:17-04:00",
+        "author": {
+          "name": "Logan Karbiner",
+          "email": "lkarbiner@users.noreply.github.com"
+        },
+        "summary": "SERVER-36681 Handle non-existent dotted fields as null (#46641)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 35,
+          "num_of_lines": 3134,
+          "lines_added": 3018,
+          "lines_deleted": 116,
+          "num_of_dirs": 16
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-02 10:45:16",
+  "generated_at": "2026-06-02 16:10:07",
   "branch_name": "master",
   "display_name": "master"
 }

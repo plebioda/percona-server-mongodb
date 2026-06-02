@@ -217,6 +217,7 @@ enums:
             useTenant: "useTenant"
             useUUID: "useUUID"
             update: "update"
+            updateESECMKIdentifierList: "updateESECMKIdentifierList"
             updateRole: "updateRole" # ID only
             updateUser: "updateUser" # ID only
             validate: "validate"

@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 321,
+    "commits_behind": 325,
     "days_behind": 11,
-    "files_affected": 2055,
-    "total_additions": 87634,
-    "total_deletions": 24229,
+    "files_affected": 2072,
+    "total_additions": 88256,
+    "total_deletions": 24366,
     "date_range": {
       "first": "2026-05-22T18:26:56+00:00",
-      "last": "2026-06-03T06:44:28+00:00"
+      "last": "2026-06-03T08:53:51+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,46 @@
     "summary": "SERVER-123711 scan collection for non-compliant docs on constraint upgrade sharded (#53220)"
   },
   "unmerged_commits": [
+    {
+      "sha": "a9f219632d52d5d68db4dacef883b956e15b5dba",
+      "short_sha": "a9f219632d5",
+      "date": "2026-06-03T08:53:51+00:00",
+      "author": {
+        "name": "Joan Bruguera Micó (at MongoDB)",
+        "email": "joan.bruguera-mico@mongodb.com"
+      },
+      "summary": "SERVER-127642 Update stale TODO (#54990)"
+    },
+    {
+      "sha": "867df618fcd6b0660d3e50fd19bbef207dcdb2cb",
+      "short_sha": "867df618fcd",
+      "date": "2026-06-03T10:34:23+02:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-127660 Refactor user input shardId translations (#54706)"
+    },
+    {
+      "sha": "e5433fed193949a36e47c65b62c70164d4a90533",
+      "short_sha": "e5433fed193",
+      "date": "2026-06-03T09:27:41+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-127440 Make MigrationBlockingOperationCoordinator use the new setAllowMigrations (#54836)"
+    },
+    {
+      "sha": "b0ac91a7ea468887130ec405c880354f19d0e017",
+      "short_sha": "b0ac91a7ea4",
+      "date": "2026-06-03T09:14:41+02:00",
+      "author": {
+        "name": "mongodb-sage-bot[bot]",
+        "email": "247496174+mongodb-sage-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-115630: Remove implicit session start fallback for replay (#54248)"
+    },
     {
       "sha": "b39862352c9632aee39466c9cf026a8fcad279e1",
       "short_sha": "b39862352c9",
@@ -3944,7 +3984,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-03 07:29:08",
+  "generated_at": "2026-06-03 09:35:12",
   "branch_name": "master",
   "display_name": "master"
 }

@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 325,
+    "commits_behind": 326,
     "days_behind": 11,
-    "files_affected": 2072,
-    "total_additions": 88256,
-    "total_deletions": 24366,
+    "files_affected": 2073,
+    "total_additions": 88255,
+    "total_deletions": 24369,
     "date_range": {
       "first": "2026-05-22T18:26:56+00:00",
-      "last": "2026-06-03T08:53:51+00:00"
+      "last": "2026-06-03T09:09:18+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-123711 scan collection for non-compliant docs on constraint upgrade sharded (#53220)"
   },
   "unmerged_commits": [
+    {
+      "sha": "0f8bba1d5b1ee0348ab335eb391c0d5000384463",
+      "short_sha": "0f8bba1d5b1",
+      "date": "2026-06-03T11:09:18+02:00",
+      "author": {
+        "name": "Silvia Surroca",
+        "email": "silvia.surroca@mongodb.com"
+      },
+      "summary": "SERVER-128078 Remove check preconditions for chunk operations from the sharding coordinator initialization (#54924)"
+    },
     {
       "sha": "a9f219632d52d5d68db4dacef883b956e15b5dba",
       "short_sha": "a9f219632d5",
@@ -3373,6 +3383,26 @@
     },
     {
       "commit": {
+        "sha": "a391837ffa9847b41cd0feaedea9803fbc0cbf53",
+        "short_sha": "a391837ffa9",
+        "date": "2026-05-24T11:04:07+00:00",
+        "author": {
+          "name": "auto-revert-app[bot]",
+          "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+        },
+        "summary": "Revert \"SERVER-118423 Implement `DocsNeededBounds` reporting for extensions (#51217)\" (#54404)"
+      },
+      "strategy_name": "branching_point",
+      "result": {
+        "branches": [
+          "master",
+          "mergai/master-a391837ffa9/main",
+          "mongodb"
+        ]
+      }
+    },
+    {
+      "commit": {
         "sha": "8d20d136377f3a75a1d182a0edabf2a3a2b09570",
         "short_sha": "8d20d136377",
         "date": "2026-05-25T11:42:30+10:00",
@@ -3984,7 +4014,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-03 09:35:12",
+  "generated_at": "2026-06-03 11:08:42",
   "branch_name": "master",
   "display_name": "master"
 }

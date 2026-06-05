@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 176,
+    "commits_behind": 180,
     "days_behind": 3,
-    "files_affected": 980,
-    "total_additions": 26759,
-    "total_deletions": 9305,
+    "files_affected": 1118,
+    "total_additions": 31168,
+    "total_deletions": 12043,
     "date_range": {
       "first": "2026-06-01T20:04:09+00:00",
-      "last": "2026-06-05T07:50:08+00:00"
+      "last": "2026-06-05T09:23:04+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,46 @@
     "summary": "SERVER-124330 Enable analyze command 'sample' mode without testOnly registration (#54142)"
   },
   "unmerged_commits": [
+    {
+      "sha": "c1a971467a6388340ac68dbd0171329541520553",
+      "short_sha": "c1a971467a6",
+      "date": "2026-06-05T10:23:04+01:00",
+      "author": {
+        "name": "Projjal Chanda",
+        "email": "projjal.chanda@mongodb.com"
+      },
+      "summary": "SERVER-127237 Pass SimpleMemoryUsageTracker to Expression::evaluate() (#54615)"
+    },
+    {
+      "sha": "4b67f6a4ca9c383581dc5de7198807a8d4cb399d",
+      "short_sha": "4b67f6a4ca9",
+      "date": "2026-06-05T11:02:58+02:00",
+      "author": {
+        "name": "Alberto Massari",
+        "email": "alberto.massari@mongodb.com"
+      },
+      "summary": "SERVER-126970 Introduce swapAndPop and isNullish SBE instructions (#53933)"
+    },
+    {
+      "sha": "38815eecc186b069528c28969b6738b5a5360ba6",
+      "short_sha": "38815eecc18",
+      "date": "2026-06-05T11:40:48+03:00",
+      "author": {
+        "name": "Philip Stoev",
+        "email": "philip.stoev@mongodb.com"
+      },
+      "summary": "SERVER-127872 CBR: Introduce stride sampling for testing purposes (#54715)"
+    },
+    {
+      "sha": "37dc144bb419fa01fe9bf35d49120ef42b8da97a",
+      "short_sha": "37dc144bb41",
+      "date": "2026-06-05T09:55:10+02:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-127751 Expose ShardHandle via ShardingState (#54636)"
+    },
     {
       "sha": "be8c7d8fdfaf7b9656a8783282a185cd5a0ab4fe",
       "short_sha": "be8c7d8fdfa",
@@ -2156,10 +2196,79 @@
           "num_of_dirs": 12
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "37dc144bb419fa01fe9bf35d49120ef42b8da97a",
+        "short_sha": "37dc144bb41",
+        "date": "2026-06-05T09:55:10+02:00",
+        "author": {
+          "name": "Allison Easton",
+          "email": "allison.easton@mongodb.com"
+        },
+        "summary": "SERVER-127751 Expose ShardHandle via ShardingState (#54636)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 22,
+          "num_of_lines": 229,
+          "lines_added": 159,
+          "lines_deleted": 70,
+          "num_of_dirs": 12
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "38815eecc186b069528c28969b6738b5a5360ba6",
+        "short_sha": "38815eecc18",
+        "date": "2026-06-05T11:40:48+03:00",
+        "author": {
+          "name": "Philip Stoev",
+          "email": "philip.stoev@mongodb.com"
+        },
+        "summary": "SERVER-127872 CBR: Introduce stride sampling for testing purposes (#54715)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 25,
+          "num_of_lines": 2196,
+          "lines_added": 1102,
+          "lines_deleted": 1094,
+          "num_of_dirs": 14
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "4b67f6a4ca9c383581dc5de7198807a8d4cb399d",
+        "short_sha": "4b67f6a4ca9",
+        "date": "2026-06-05T11:02:58+02:00",
+        "author": {
+          "name": "Alberto Massari",
+          "email": "alberto.massari@mongodb.com"
+        },
+        "summary": "SERVER-126970 Introduce swapAndPop and isNullish SBE instructions (#53933)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 50,
+          "num_of_lines": 852,
+          "lines_added": 445,
+          "lines_deleted": 407,
+          "num_of_dirs": 14
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-05 08:36:25",
+  "generated_at": "2026-06-05 10:00:40",
   "branch_name": "master",
   "display_name": "master"
 }

@@ -50,7 +50,7 @@ class StatusWith;
  * Validate that a string is either empty or is parseable to a HostAndPort. This is intended for use
  * as an IDL validator callback.
  */
-Status validateHostAndPort(const std::string& hostAndPortStr, const boost::optional<TenantId>&);
+Status validateHostAndPort(StringData hostAndPortStr, const boost::optional<TenantId>&);
 
 /**
  * Name of a process on the network.
@@ -89,7 +89,7 @@ struct HostAndPort {
      *
      * If "p" is -1, port() returns ServerGlobalParams::DefaultDBPort.
      */
-    HostAndPort(const std::string& h, int p);
+    HostAndPort(std::string h, int p);
 
     /**
      * (Re-)initializes this HostAndPort by parsing "s".  Returns
@@ -117,6 +117,11 @@ struct HostAndPort {
      * Returns true if the hostname is an IP matching the default route.
      */
     bool isDefaultRoute() const;
+
+    /**
+     * Returns true if the hostname is a Unix domain socket.
+     */
+    bool isUds() const;
 
     /**
      * Returns a string representation of "host:port".

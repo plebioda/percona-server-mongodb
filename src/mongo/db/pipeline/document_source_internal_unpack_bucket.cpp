@@ -44,7 +44,7 @@
 #include "mongo/bson/bsontypes.h"
 #include "mongo/db/exec/document_value/document.h"
 #include "mongo/db/exec/document_value/document_metadata_fields.h"
-#include "mongo/db/index/s2_common.h"
+#include "mongo/db/index/geo/s2_common.h"
 #include "mongo/db/matcher/expression.h"
 #include "mongo/db/matcher/expression_geo.h"
 #include "mongo/db/pipeline/accumulation_statement.h"
@@ -1452,7 +1452,7 @@ bool extractFromAcc(const AccumulatorN* acc,
         // perform the lastpoint rewrite.
         if (auto constInit = dynamic_cast<ExpressionConstant*>(init.get()); constInit) {
             // Since this is a $const expression, the input to evaluate() should not matter.
-            auto constVal = constInit->evaluate(Document(), nullptr);
+            auto constVal = constInit->evaluate(Document(), nullptr, {});
             if (!constVal.numeric() || (constVal.coerceToLong() != 1)) {
                 return false;
             }

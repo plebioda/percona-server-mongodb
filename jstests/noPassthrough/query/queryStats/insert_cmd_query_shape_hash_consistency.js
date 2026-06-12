@@ -175,9 +175,9 @@ describe("QueryShapeHash Consistency: mongos $queryStats vs mongod slow query lo
                 this.routerDB.runCommand({
                     insert: this.collNames.unsharded,
                     documents: [
-                        {id: -1, v: 1},
-                        {id: 2, v: 2},
-                        {id: 3, v: 3},
+                        {_id: -1, v: 1},
+                        {_id: 2, v: 2},
+                        {_id: 3, v: 3},
                     ],
                     comment: comment,
                 }),
@@ -192,7 +192,7 @@ describe("QueryShapeHash Consistency: mongos $queryStats vs mongod slow query lo
             // verify queryShapeHash of slow query log on shard0 match router's $queryStats
             assertQueryStatsAndMongodHashesMatch(
                 this.st.s,
-                this.collNames.sharded,
+                this.collNames.unsharded,
                 comment,
                 this.shard0DB,
                 "insert on unsharded collection",
@@ -208,9 +208,9 @@ describe("QueryShapeHash Consistency: mongos $queryStats vs mongod slow query lo
                 this.routerDB.runCommand({
                     insert: this.collNames.sharded,
                     documents: [
-                        {id: -1, v: 1},
-                        {id: 2, v: 2},
-                        {id: 3, v: 3},
+                        {_id: -1, v: 1},
+                        {_id: 2, v: 2},
+                        {_id: 3, v: 3},
                     ],
                     comment: comment,
                 }),

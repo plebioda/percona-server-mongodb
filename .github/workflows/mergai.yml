@@ -30,7 +30,7 @@ on:
     types: [completed]
     branches:
       - "mergai/**"
-  # Review-handling entry point: a `/mergai review` comment on a PR.
+  # Review-handling entry point: a `/mergai review fix` comment on a PR.
   issue_comment:
     types: [created]
   # Review-handling entry point: a review submitted as "Changes requested".
@@ -600,7 +600,7 @@ jobs:
           description: "CI auto-fix ${{ job.status }}"
 
   # Handle code-review feedback on a mergai PR. Triggered by:
-  #   * a `/mergai review` comment on the PR (issue_comment), or
+  #   * a `/mergai review fix` comment on the PR (issue_comment), or
   #   * a review submitted as "Changes requested" (pull_request_review).
   # Runs the agent over the PR's unresolved review threads, commits + pushes
   # the fixes inline on the PR branch, and posts a reply per thread. Mirrors
@@ -618,11 +618,11 @@ jobs:
         && startsWith(github.event.pull_request.head.ref, 'mergai/'))
       || (github.event_name == 'issue_comment'
         && github.event.issue.pull_request != null
-        && contains(github.event.comment.body, '/mergai review'))
+        && contains(github.event.comment.body, '/mergai review fix'))
     environment: privileged-ops
     runs-on: ubuntu-latest
     # Serialize review runs for the same PR so two near-simultaneous triggers
-    # (e.g. a review plus a `/mergai review` comment) don't race on the branch.
+    # (e.g. a review plus a `/mergai review fix` comment) don't race on the branch.
     concurrency:
       group: mergai-review-${{ github.event.issue.number || github.event.pull_request.number }}
       cancel-in-progress: false
@@ -721,7 +721,9 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           before=$(git rev-parse HEAD)
-          mergai review fix --pr-number "$PR_NUMBER"
+          # --ack posts a short acknowledgement comment on the PR (how many
+          # comments were found / addressed, even if none) for quick feedback.
+          mergai review fix --pr-number "$PR_NUMBER" --ack
           after=$(git rev-parse HEAD)
           if [ "$before" != "$after" ]; then
             echo "Review fix commit produced ($after)."

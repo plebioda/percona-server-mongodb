@@ -1,0 +1,65 @@
+# Composite action that posts a GitHub *commit status* to a PR head SHA so a
+# mergai workflow job is visible in the PR's "checks" section while it runs.
+#
+# Why a commit status: mergai jobs are triggered by workflow_dispatch,
+# workflow_run, issue_comment and pull_request_review — none of which GitHub
+# associates with the PR head's check suite automatically, so the work is
+# invisible on the PR. Posting a commit status to the PR head SHA surfaces it
+# in the checks section (and links back to this run).
+#
+# Each job calls this twice: once with state=pending at the start, and once
+# with the final state in an `if: always()` step at the end. The `context`
+# (e.g. "mergai / ci-handle") is the check name shown on the PR, so distinct
+# jobs appear as distinct check lines.
+name: "Report mergai status"
+description: "Post a commit status to a SHA so a mergai job shows in the PR checks section."
+
+inputs:
+  token:
+    description: "Token with statuses:write (GitHub App token, or GITHUB_TOKEN with statuses:write)."
+    required: true
+  sha:
+    description: "Commit SHA to attach the status to (the PR head)."
+    required: true
+  context:
+    description: 'Status context — the check name shown in the PR (e.g. "mergai / ci-handle").'
+    required: true
+  state:
+    description: "Status state: pending | success | failure | error."
+    required: true
+  description:
+    description: "Short human description shown next to the status."
+    required: false
+    default: ""
+  target-url:
+    description: "URL the status links to. Defaults to this workflow run."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Post commit status
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ github.repository }}
+        SHA: ${{ inputs.sha }}
+        STATE: ${{ inputs.state }}
+        CONTEXT: ${{ inputs.context }}
+        DESCRIPTION: ${{ inputs.description }}
+        TARGET_URL: ${{ inputs.target-url }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set -euo pipefail
+        url="${TARGET_URL:-$RUN_URL}"
+        # Best-effort: a status failure must never fail the job it is reporting on.
+        if gh api -X POST "repos/$REPO/statuses/$SHA" \
+            -f state="$STATE" \
+            -f context="$CONTEXT" \
+            -f description="$DESCRIPTION" \
+            -f target_url="$url" >/dev/null; then
+          echo "status '$CONTEXT' = $STATE on ${SHA:0:11} (-> $url)"
+        else
+          echo "::warning::failed to set status '$CONTEXT' on $SHA"
+        fi

@@ -161,6 +161,15 @@ jobs:
           app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
           private-key: ${{ secrets.PSMDB_BOT_GH_APP_PRIVATE_KEY }}
 
+      - name: Report mergai status (pending)
+        uses: ./.github/actions/report-status
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          sha: ${{ github.event.pull_request.head.sha }}
+          context: "mergai / finalize-solution"
+          state: pending
+          description: "Finalizing solution PR…"
+
       - name: Setup workflow environment
         uses: ./.github/actions/setup-mergai-workflow
         with:
@@ -184,6 +193,16 @@ jobs:
           # --skip-commit-list-on-failure retries without the merged-commit
           # table if the body exceeds GitHub's 65,536 character limit.
           mergai pr --repo "$GITHUB_REPOSITORY" create main --skip-commit-list-on-failure
+
+      - name: Report mergai status (final)
+        if: always()
+        uses: ./.github/actions/report-status
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          sha: ${{ github.event.pull_request.head.sha }}
+          context: "mergai / finalize-solution"
+          state: ${{ job.status == 'success' && 'success' || (job.status == 'cancelled' && 'error' || 'failure') }}
+          description: "Finalize ${{ job.status }}"
 
   semantic-merged:
     environment: privileged-ops
@@ -210,6 +229,15 @@ jobs:
           ref: ${{ github.event.pull_request.base.ref }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+
+      - name: Report mergai status (pending)
+        uses: ./.github/actions/report-status
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          sha: ${{ github.event.pull_request.head.sha }}
+          context: "mergai / finalize-semantic"
+          state: pending
+          description: "Finalizing semantic PR…"
 
       - name: Setup workflow environment
         uses: ./.github/actions/setup-mergai-workflow
@@ -248,6 +276,16 @@ jobs:
           # --allow-missing makes a missing main PR a warning, not a failure.
           mergai pr --repo "$GITHUB_REPOSITORY" comment main --allow-missing \
             --body "PR #${SEMANTIC_PR} merged. See the PR comment for details."
+
+      - name: Report mergai status (final)
+        if: always()
+        uses: ./.github/actions/report-status
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          sha: ${{ github.event.pull_request.head.sha }}
+          context: "mergai / finalize-semantic"
+          state: ${{ job.status == 'success' && 'success' || (job.status == 'cancelled' && 'error' || 'failure') }}
+          description: "Finalize ${{ job.status }}"
 
   # Drive the CI auto-fix / finalize loop as a gated state
   # machine. On every watched workflow completion for a mergai/* branch we ask
@@ -430,6 +468,15 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
+      - name: Report mergai status (pending)
+        uses: ./.github/actions/report-status
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          sha: ${{ github.event.workflow_run.head_sha }}
+          context: "mergai / ci-handle"
+          state: pending
+          description: "Applying CI fixes…"
+
       - name: Setup workflow environment
         uses: ./.github/actions/setup-mergai-workflow
         with:
@@ -542,6 +589,16 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: mergai notes push
 
+      - name: Report mergai status (final)
+        if: always()
+        uses: ./.github/actions/report-status
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          sha: ${{ github.event.workflow_run.head_sha }}
+          context: "mergai / ci-handle"
+          state: ${{ job.status == 'success' && 'success' || (job.status == 'cancelled' && 'error' || 'failure') }}
+          description: "CI auto-fix ${{ job.status }}"
+
   # Handle code-review feedback on a mergai PR. Triggered by:
   #   * a `/mergai review` comment on the PR (issue_comment), or
   #   * a review submitted as "Changes requested" (pull_request_review).
@@ -594,13 +651,18 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request_review" ]; then
             PR_NUMBER='${{ github.event.pull_request.number }}'
             HEAD_REF='${{ github.event.pull_request.head.ref }}'
+            HEAD_SHA='${{ github.event.pull_request.head.sha }}'
           else
             PR_NUMBER='${{ github.event.issue.number }}'
-            HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq .headRefName)
+            read -r HEAD_REF HEAD_SHA < <(
+              gh pr view "$PR_NUMBER" --json headRefName,headRefOid \
+                --jq '"\(.headRefName) \(.headRefOid)"'
+            )
           fi
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
-          echo "Resolved PR #$PR_NUMBER (head: $HEAD_REF)"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "Resolved PR #$PR_NUMBER (head: $HEAD_REF @ $HEAD_SHA)"
           case "$HEAD_REF" in
             mergai/*) echo "is_mergai=true" >> "$GITHUB_OUTPUT" ;;
             *)
@@ -615,6 +677,16 @@ jobs:
           ref: ${{ steps.pr.outputs.head_ref }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+
+      - name: Report mergai status (pending)
+        if: steps.pr.outputs.is_mergai == 'true'
+        uses: ./.github/actions/report-status
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          sha: ${{ steps.pr.outputs.head_sha }}
+          context: "mergai / review"
+          state: pending
+          description: "Addressing review comments…"
 
       - name: Setup workflow environment
         if: steps.pr.outputs.is_mergai == 'true'
@@ -682,3 +754,13 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
         run: mergai notes push
+
+      - name: Report mergai status (final)
+        if: always() && steps.pr.outputs.is_mergai == 'true'
+        uses: ./.github/actions/report-status
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          sha: ${{ steps.pr.outputs.head_sha }}
+          context: "mergai / review"
+          state: ${{ job.status == 'success' && 'success' || (job.status == 'cancelled' && 'error' || 'failure') }}
+          description: "Review handling ${{ job.status }}"

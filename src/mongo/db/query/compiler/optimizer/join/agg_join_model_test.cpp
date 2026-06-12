@@ -751,6 +751,52 @@ TEST_F(PipelineAnalyzerTest, PipelineEligibleForJoinReorderingSingleLookupUnwind
     goldenCtx.outStream() << joinModel.toString(true) << std::endl;
 }
 
+TEST_F(PipelineAnalyzerTest, LetLocalFieldPrefixedByAsField) {
+    // A $expr/let join predicate whose local field ('X.y') is prefixed by the $lookup "as" field
+    // ('X'). The local reference is evaluated against the input document before the foreign result
+    // overwrites 'X', so 'X.y' must resolve to the base collection -- not to the just-added foreign
+    // node. Resolving it to the foreign node would attribute both sides of the predicate to the
+    // same node and produce an illegal self-edge.
+    const auto query = R"([
+            {$lookup: {from: "A", as: "X", let: {l: "$X.y"},
+                       pipeline: [{$match: {$expr: {$eq: ["$z", "$$l"]}}}] }
+            },
+            {$unwind: "$X"}
+        ])";
+
+    auto pipeline = makePipeline(query, {"A"});
+    markFieldsAsScalar(*pipeline, {"X.y"_sd}, {{"A", {"z"_sd}}});
+
+    ASSERT_TRUE(AggJoinModel::pipelineEligibleForJoinReordering(*pipeline));
+
+    auto swJoinModel = AggJoinModel::constructJoinModel(*pipeline, defaultBuildParams);
+    ASSERT_OK(swJoinModel);
+
+    const auto& joinModel = swJoinModel.getValue();
+    const auto& joinGraph = joinModel.getGraph();
+    ASSERT_EQ(joinGraph.numNodes(), 2);
+    ASSERT_EQ(joinGraph.numEdges(), 1);
+
+    // The single edge must connect two distinct nodes (the base and the foreign collection),
+    // i.e. it must not be a self-edge.
+    const auto& edge = joinGraph.getEdge((EdgeId)0);
+    ASSERT_NE(edge.left, edge.right);
+    ASSERT_EQ(1, edge.predicates.size());
+    ASSERT_EQ(JoinPredicate::ExprEq, edge.predicates[0].op);
+
+    // The local side 'X.y' must be attributed to the base collection (node 0), not the foreign
+    // node created from the $lookup.
+    const auto& resolvedPaths = joinModel.getResolvedPaths();
+    bool foundLocalOnBase = false;
+    for (const auto& rp : resolvedPaths) {
+        if (rp.fieldName.fullPath() == "X.y") {
+            ASSERT_EQ((NodeId)0, rp.nodeId);
+            foundLocalOnBase = true;
+        }
+    }
+    ASSERT_TRUE(foundLocalOnBase);
+}
+
 TEST_F(PipelineAnalyzerTest, PipelineIneligibleForJoinReordering) {
     const auto query = R"([
             {$lookup: {from: "A", localField: "a", foreignField: "b", as: "fromA"}}
@@ -2310,6 +2356,33 @@ TEST_F(PipelineAnalyzerTest, ImplicitEdgeInferenceSelfEdgeSkipped) {
     const auto& joinGraph = swJoinModel.getValue().getGraph();
     ASSERT_EQ(joinGraph.numNodes(), 2);
     ASSERT_EQ(joinGraph.numEdges(), 1);
+}
+
+TEST_F(PipelineAnalyzerTest, LeadingMatchAfterLimitPushdownBailsOut) {
+    // Regression test: a $limit before a $match prevents the $match from being folded into the
+    // base collection's CanonicalQuery (the $match runs *after* the limit, so it can't become a
+    // find-layer filter). The limit is still pushed down, leaving the $match as the first stage
+    // surfacing in the join-building loop -- before any $lookup has been absorbed. That $match
+    // can't encode a join predicate (there is no foreign node yet), so we must bail out
+    // gracefully rather than trip tassert 11116400.
+    const auto query = R"([
+        { $limit: 1 },
+        { $match: { x: 1 } },
+        {
+            $lookup: {
+                from: "B",
+                localField: "x",
+                foreignField: "y",
+                as: "joined"
+            }
+        },
+        { $unwind: "$joined" }
+    ])";
+
+    auto pipeline = makePipeline(query, {"B"});
+    markFieldsAsScalar(*pipeline, {"x"_sd}, {{"B", {"y"_sd}}});
+    auto swJoinModel = AggJoinModel::constructJoinModel(*pipeline, defaultBuildParams);
+    ASSERT_NOT_OK(swJoinModel);
 }
 
 }  // namespace

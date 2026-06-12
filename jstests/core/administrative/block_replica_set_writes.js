@@ -5,9 +5,8 @@
 //   requires_replication,
 //   uses_parallel_shell,
 //   does_not_support_stepdowns,
-//   assumes_against_mongod_not_mongos,
-//   assumes_read_concern_unchanged,
 //   assumes_read_preference_unchanged,
+//   assumes_against_mongod_not_mongos,
 //   featureFlagBlockReplicaSetWrites,
 //   does_not_support_config_fuzzer
 // ]
@@ -16,6 +15,7 @@ import {configureFailPoint} from "jstests/libs/fail_point_util.js";
 import {disableReplicaSetWriteBlock, enableReplicaSetWriteBlock} from "jstests/libs/block_replica_set_writes_utils.js";
 import {afterEach, before, describe, it} from "jstests/libs/mochalite.js";
 import {PersistenceProviderUtil} from "jstests/libs/server-rss/persistence_provider_util.js";
+import {isEnterpriseShell, runEncryptedTest} from "jstests/fle2/libs/encrypted_client_util.js";
 
 describe("Test blockReplicaSetWrites command on replica set level", function () {
     before(function () {
@@ -180,12 +180,22 @@ describe("Test blockReplicaSetWrites command on replica set level", function () 
         const testColl = testDB.getCollection("testColl");
         assert.commandWorked(testColl.insert({_id: 1}));
 
-        // Profiling is not supported in some configurations (e.g. Disaggregated Storage), so we skip the test in that case.
-        const enableProfileRes = testDB.runCommand({profile: 2});
-        if (!enableProfileRes.ok && enableProfileRes.code === ErrorCodes.CommandNotSupported) {
-            jsTest.log.info(
-                "Skipping system.profile testing since profiling is not supported: " + tojsononeline(enableProfileRes),
-            );
+        // Profiling is not supported in some configurations (e.g. Disaggregated Storage) or in
+        // suites that apply the secondary read-preference override (which rejects profile commands
+        // because system.profile is not replicated).
+        let enableProfileRes;
+        try {
+            enableProfileRes = testDB.runCommand({profile: 2});
+        } catch (e) {
+            jsTest.log.info("Skipping system.profile testing since profiling is not supported", {e});
+            return;
+        }
+        if (!enableProfileRes.ok) {
+            const knownUnsupportedCodes = [ErrorCodes.CommandNotSupported, ErrorCodes.InvalidOptions];
+            assert(knownUnsupportedCodes.includes(enableProfileRes.code), "Unexpected error enabling profiling", {
+                enableProfileRes,
+            });
+            jsTest.log.info("Skipping system.profile testing since profiling is not supported", {enableProfileRes});
             return;
         }
 
@@ -588,5 +598,90 @@ describe("Test blockReplicaSetWrites command on replica set level", function () 
             testColl.getIndexes().find((idx) => idx.name === "a_1"),
             "Expected index to exist after write block is disabled",
         );
+    });
+
+    it("Test that new cloneCollectionAsCapped is blocked by replica set write block", function () {
+        const testDB = this.replicaSetPrimary.getDB(this.testDbName);
+        const srcColl = testDB.getCollection("srcColl");
+        assert.commandWorked(srcColl.insert([{_id: 1}, {_id: 2}]));
+
+        // Enable replica set write block and check that cloneCollectionAsCapped is blocked.
+        enableReplicaSetWriteBlock(
+            this.replicaSetPrimaryAdminDB,
+            false /* allowDeletions */,
+            "InsufficientDiskSpace" /* reason */,
+        );
+        assert.commandFailedWithCode(
+            testDB.runCommand({
+                cloneCollectionAsCapped: "srcColl",
+                toCollection: "dstColl",
+                size: 1024 * 1024,
+            }),
+            ErrorCodes.ReplicaSetWritesBlocked,
+        );
+
+        // Disable write block and check that cloneCollectionAsCapped succeeds.
+        disableReplicaSetWriteBlock(this.replicaSetPrimaryAdminDB, "InsufficientDiskSpace" /* reason */);
+        assert.commandWorked(
+            testDB.runCommand({
+                cloneCollectionAsCapped: "srcColl",
+                toCollection: "dstColl",
+                size: 1024 * 1024,
+            }),
+        );
+        assert.eq(2, testDB.getCollection("dstColl").countDocuments({}));
+    });
+
+    it("Test that new QE compact and cleanup are blocked when allowDeletions: false", function () {
+        // blockedColl is a non-existent collection, so when the commands are not blocked we expect
+        // them to fail with NamespaceNotFound. The deletions check fires before collection validation, so a
+        // non-existent collection is sufficient to verify the rejection.
+        const testDB = this.replicaSetPrimary.getDB(this.testDbName);
+        const compactCmd = {compactStructuredEncryptionData: "blockedColl", compactionTokens: {}};
+        const cleanupCmd = {cleanupStructuredEncryptionData: "blockedColl", cleanupTokens: {}};
+
+        // Enable replica set write block with allowDeletions: false and check that the commands are blocked.
+        enableReplicaSetWriteBlock(
+            this.replicaSetPrimaryAdminDB,
+            false /* allowDeletions */,
+            "InsufficientDiskSpace" /* reason */,
+        );
+        assert.commandFailedWithCode(testDB.runCommand(compactCmd), ErrorCodes.ReplicaSetWritesBlocked);
+        assert.commandFailedWithCode(testDB.runCommand(cleanupCmd), ErrorCodes.ReplicaSetWritesBlocked);
+
+        // Disable replica set write block and check that new QE compact and cleanup are not blocked anymore.
+        disableReplicaSetWriteBlock(this.replicaSetPrimaryAdminDB, "InsufficientDiskSpace" /* reason */);
+        assert.commandFailedWithCode(testDB.runCommand(compactCmd), ErrorCodes.NamespaceNotFound);
+        assert.commandFailedWithCode(testDB.runCommand(cleanupCmd), ErrorCodes.NamespaceNotFound);
+    });
+
+    it("Test that new QE compact and cleanup complete end-to-end on a real encrypted collection when allowDeletions: true", function () {
+        if (!isEnterpriseShell()) {
+            jsTest.log.info("Skipping enterprise-only QE compact/cleanup write-block test");
+            return;
+        }
+        const fleDbName = "block_replica_set_writes_fle";
+        const fleCollName = "encrypted";
+        const encryptedFields = {
+            fields: [{path: "first", bsonType: "string", queries: {queryType: "equality", contention: 0}}],
+        };
+        runEncryptedTest(db, fleDbName, fleCollName, encryptedFields, (edb, client) => {
+            const coll = edb[fleCollName];
+            for (let i = 0; i < 5; i++) {
+                assert.commandWorked(coll.insert({first: "roger_" + i}));
+            }
+            try {
+                enableReplicaSetWriteBlock(
+                    this.replicaSetPrimaryAdminDB,
+                    true /* allowDeletions */,
+                    "InsufficientDiskSpace",
+                );
+                // Check that compact and cleanup complete successfully when allowDeletions: true.
+                assert.commandWorked(coll.compact());
+                assert.commandWorked(coll.cleanup());
+            } finally {
+                disableReplicaSetWriteBlock(this.replicaSetPrimaryAdminDB, "InsufficientDiskSpace");
+            }
+        });
     });
 });

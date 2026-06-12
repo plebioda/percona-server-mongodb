@@ -30,7 +30,10 @@
 
 #include "mongo/db/query/plan_executor_impl.h"
 
+#include "mongo/base/counter.h"
 #include "mongo/base/error_codes.h"
+#include "mongo/db/client.h"
+#include "mongo/db/commands/server_status/server_status_metric.h"
 #include "mongo/db/curop.h"
 #include "mongo/db/exec/classic/cached_plan.h"
 #include "mongo/db/exec/classic/collection_scan.h"
@@ -48,6 +51,7 @@
 #include "mongo/db/query/plan_explainer_impl.h"
 #include "mongo/db/query/plan_insert_listener.h"
 #include "mongo/db/query/plan_yield_policy_impl.h"
+#include "mongo/db/query/query_execution_knobs_gen.h"
 #include "mongo/db/repl/optime.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/shard_role/shard_catalog/shard_filtering_util.h"
@@ -55,7 +59,9 @@
 #include "mongo/db/storage/exceptions.h"
 #include "mongo/logv2/log.h"
 #include "mongo/platform/compiler.h"
+#include "mongo/util/aligned.h"
 #include "mongo/util/decorable.h"
+#include "mongo/util/duration.h"
 #include "mongo/util/fail_point.h"
 #include "mongo/util/future.h"
 
@@ -63,6 +69,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
@@ -75,7 +82,65 @@ namespace mongo {
 namespace {
 const BSONObj kEmptyPBRT;
 const std::vector<NamespaceStringOrUUID> kEmptyNssVector;
+
+// Count of user-connection plan executors currently in a WCE retry streak while the adaptive
+// retry limit is enabled. Internal-client streaks and limit-disabled paths do not acquire the
+// guard, so they are not counted. int32_t is enough (bounded by active user connections).
+// CacheExclusive puts the gauge on its own cache line.
+CacheExclusive<AtomicWord<int32_t>> gWriteConflictRetryWaiters{};
+
+// serverStatus / FTDC mirror. Updated alongside the source gauge by WriteConflictStreakGuard.
+auto& writeConflictRetryWaitersGauge =
+    *MetricBuilder<Atomic64Metric>("operation.writeConflictRetryWaiters");
+
+// Monotonic counter incremented once per op that exceeds its adaptive retry limit.
+auto& writeConflictRetryLimitHitMetric =
+    *MetricBuilder<Counter64>("operation.writeConflictRetryLimitHit");
+
+// Avoid logging the same message about long-running collection scans from different queries too
+// frequently.
+logv2::SeveritySuppressor longCollectionScanLogSeveritySuppressor{
+    Seconds(300), logv2::LogSeverity::Info(), logv2::LogSeverity::Debug(3)};
+
 }  // namespace
+
+// Exposed in the header so unit tests can call the formula without a live PlanExecutor.
+int adaptiveWriteConflictRetryLimit(int limitMax, int limitMin, int threshold, int waiters) {
+    if (limitMax <= 0) {
+        return 0;
+    }
+    if (limitMin < 0) {
+        limitMin = 0;
+    }
+    if (limitMin > limitMax) {
+        limitMin = limitMax;
+    }
+    if (threshold <= 0) {
+        return limitMax;
+    }
+    // Saturate at limitMin once waiters reaches threshold.
+    const int clampedWaiters = waiters > threshold ? threshold : waiters;
+    return limitMax - (limitMax - limitMin) * clampedWaiters / threshold;
+}
+
+int32_t PlanExecutorImpl::getWriteConflictRetryWaiterCount_forTest() {
+    return gWriteConflictRetryWaiters->loadRelaxed();
+}
+
+// Slow-path helpers for the guard. The inline acquire() / release() in the header gate on _held
+// before calling these.
+void PlanExecutorImpl::WriteConflictStreakGuard::acquireSlow() {
+    // Pass `old + 1` to set() instead of reloading the gauge.
+    const int32_t newVal = gWriteConflictRetryWaiters->fetchAndAddRelaxed(1) + 1;
+    writeConflictRetryWaitersGauge.set(newVal);
+    _held = true;
+}
+
+void PlanExecutorImpl::WriteConflictStreakGuard::releaseSlow() noexcept {
+    const int32_t newVal = gWriteConflictRetryWaiters->fetchAndSubtractRelaxed(1) - 1;
+    writeConflictRetryWaitersGauge.set(newVal);
+    _held = false;
+}
 
 const OperationContext::Decoration<boost::optional<repl::OpTime>> clientsLastKnownCommittedOpTime =
     OperationContext::declareDecoration<boost::optional<repl::OpTime>>();
@@ -108,6 +173,31 @@ PlanExecutorImpl::PlanExecutorImpl(OperationContext* opCtx,
       _planExplainer(plan_explainer_factory::make(
           _root.get(), cachedPlanHash, std::move(replanReason), std::move(maybeExplainData))),
       _mustReturnOwnedBson(returnOwnedBson),
+      _responseDeadlineType([&]() -> ResponseDeadlineType {
+          // Determine response deadline type for change stream queries.
+          if (_expCtx && _expCtx->getChangeStreamSpec().has_value()) {
+              // Read value of 'operationResponseMaxMS' query knob to determine whether we
+              // should set a response deadline for gracefully interrupting long-running operations
+              // or logging a warning about long-running oplog scans.
+              if (auto value = _expCtx->getQueryKnobConfiguration().getOperationResponseMaxMS();
+                  value > 0) {
+                  // Use the response deadline to periodically interrupt the executor after a
+                  // user-configurable time period of performing work. This allows us to return
+                  // an updated PBRT to the consumer and check for interrupts more frequently during
+                  // long-running operations.
+                  return ResponseDeadlineType::kInterruptWork;
+              }
+              // Use the response deadline to log an info message about long-running operations that
+              // exceed 'kLongOperationResponseLogInfoDeadline'.
+              // This allows end users to discover that long-running operations can be interrupted
+              // via configuration. Currently only used for change stream queries.
+              return ResponseDeadlineType::kLogInfoMessage;
+          }
+
+          // No response deadline.
+          return ResponseDeadlineType::kNone;
+      }()),
+      _responseDeadlineValue(_calculateResponseDeadlineValue()),
       _nss(std::move(nss)) {
     invariant(!_expCtx || _expCtx->getOperationContext() == _opCtx);
     invariant(!_cq || !_expCtx || _cq->getExpCtx() == _expCtx);
@@ -243,6 +333,10 @@ void PlanExecutorImpl::restoreStateWithoutRetrying(const RestoreContext& context
 
 void PlanExecutorImpl::detachFromOperationContext() {
     invariant(_currentState == kSaved);
+
+    // Reset response deadline because the request is over.
+    _responseDeadlineValue.reset();
+
     _opCtx = nullptr;
     _root->detachFromOperationContext();
     if (_expCtx) {
@@ -264,6 +358,11 @@ void PlanExecutorImpl::reattachToOperationContext(OperationContext* opCtx) {
     if (_expCtx) {
         _expCtx->setOperationContext(opCtx);
     }
+
+    // The response deadline value needs to be (re)computed here on every invocation, because
+    // the same plan executor instance can be used to service multiple getMore requests.
+    _responseDeadlineValue = _calculateResponseDeadlineValue();
+
     _currentState = kSaved;
 }
 
@@ -383,19 +482,27 @@ PlanExecutor::ExecState PlanExecutorImpl::_getNextImpl(Document* objOut, RecordI
         return PlanExecutor::ADVANCED;
     }
 
-    // The below are incremented on every WriteConflict or TemporarilyUnavailable error accordingly,
-    // and reset to 0 on any successful call to _root->work.
-    size_t writeConflictsInARow = 0;
-    size_t tempUnavailErrorsInARow = 0;
+    // Per-call retry state: streak counters and the RAII gauge guard. Counters are incremented
+    // on every WriteConflict or TemporarilyUnavailable error accordingly, and reset to 0 on any
+    // successful call to _root->work. The guard's destructor releases the gauge if still held on
+    // any function-exit path (return / EOF / exception).
+    WriteConflictRetryState retryState;
 
     // Capped insert data; declared outside the loop so we hold a shared pointer to the capped
     // insert notifier the entire time we are in the loop.  Holding a shared pointer to the
     // capped insert notifier is necessary for the notifierVersion to advance.
     auto notifier = makeNotifier();
 
+    PlanStage::StageState code = PlanStage::ADVANCED;
+
     // This callback is used by the yielding code once all storage resources are released.
     const auto afterSnapshotAndLocksRelinquishedCb = [&]() {
         doWaitDuringYield();
+
+        if (_responseDeadlineType != ResponseDeadlineType::kNone) {
+            // The called function can modify the value of 'code' to PlanStage::StageState::IS_EOF.
+            _handleResponseDeadline(code);
+        }
     };
 
     for (;;) {
@@ -409,14 +516,21 @@ PlanExecutor::ExecState PlanExecutorImpl::_getNextImpl(Document* objOut, RecordI
                                                            afterSnapshotAndLocksRelinquishedCb,
                                                            RestoreContext::RestoreType::kYield,
                                                            _afterSnapshotAbandonFn));
+
+            if (code == PlanStage::IS_EOF) {
+                return PlanExecutor::IS_EOF;
+            }
         }
 
         WorkingSetID id = WorkingSet::INVALID_ID;
-        PlanStage::StageState code = _root->work(&id);
+        code = _root->work(&id);
 
         if (code != PlanStage::NEED_YIELD) {
-            writeConflictsInARow = 0;
-            tempUnavailErrorsInARow = 0;
+            // A successful work() step (or NEED_TIME / IS_EOF) ends any WCE streak. release()
+            // is idempotent and is a no-op if no streak was active.
+            retryState.streakGuard.release();
+            retryState.writeConflictsInARow = 0;
+            retryState.tempUnavailErrorsInARow = 0;
         }
 
         if (PlanStage::ADVANCED == code) {
@@ -466,7 +580,7 @@ PlanExecutor::ExecState PlanExecutorImpl::_getNextImpl(Document* objOut, RecordI
             // This result didn't have the data the caller wanted, try again.
 
         } else if (PlanStage::NEED_YIELD == code) {
-            _handleNeedYield(writeConflictsInARow, tempUnavailErrorsInARow);
+            _handleNeedYield(retryState);
 
         } else if (PlanStage::NEED_TIME == code) {
             // Fall through to yield check at end of large conditional.
@@ -497,8 +611,73 @@ std::unique_ptr<insert_listener::Notifier> PlanExecutorImpl::makeNotifier() {
     return nullptr;
 }
 
-void PlanExecutorImpl::_handleNeedYield(size_t& writeConflictsInARow,
-                                        size_t& tempUnavailErrorsInARow) {
+boost::optional<Date_t> PlanExecutorImpl::_calculateResponseDeadlineValue() const {
+    if (_responseDeadlineType == ResponseDeadlineType::kNone) {
+        // No response deadline configured.
+        return boost::none;
+    }
+
+    auto now = _opCtx->getServiceContext()->getPreciseClockSource()->now();
+    if (_responseDeadlineType == ResponseDeadlineType::kInterruptWork) {
+        auto value = _expCtx->getQueryKnobConfiguration().getOperationResponseMaxMS();
+        tassert(
+            10290002,
+            "Expected 'operationResponseMaxMS' to be set to a value > 0 if response deadline type "
+            "is 'kInterruptWork'",
+            value > 0);
+
+        // Use configured operation response timeout as the response deadline. If the
+        // response deadline is reached, the executor will return whatever results it has
+        // accumulated plus an updated PBRT to the consumer.
+        return now + Milliseconds(value);
+    }
+
+    // Use hard-coded response deadline to inform the user about a long-running oplog scan at
+    // most once per change stream query.
+    tassert(10290003,
+            "Expected response deadline type to be 'kLogInfoMessage'",
+            _responseDeadlineType == ResponseDeadlineType::kLogInfoMessage);
+    return now + kLongOperationResponseLogInfoDeadline;
+}
+
+void PlanExecutorImpl::_handleResponseDeadline(PlanStage::StageState& code) {
+    tassert(10290004,
+            "expecting response deadline type to be set",
+            _responseDeadlineType != ResponseDeadlineType::kNone);
+    tassert(10290005,
+            "expecting response deadline value to be set",
+            _responseDeadlineValue.has_value());
+
+    if (auto now = _opCtx->getServiceContext()->getPreciseClockSource()->now();
+        now < *_responseDeadlineValue) {
+        // There is a response deadline, but it has not been reached.
+        return;
+    }
+
+    if (_responseDeadlineType == ResponseDeadlineType::kInterruptWork) {
+        // Set code to EOF so we exit the for loop directly after yielding. Also cancel any
+        // outstanding awaitData waits.
+        code = PlanStage::IS_EOF;
+        awaitDataState(_opCtx).shouldWaitForInserts = false;
+
+        LOGV2_DEBUG(
+            10290000, 3, "Interrupting long-running collection scan after configured deadline");
+    } else if (_responseDeadlineType == ResponseDeadlineType::kLogInfoMessage) {
+        // Avoid logging the same message again for this executor.
+        _responseDeadlineType = ResponseDeadlineType::kNone;
+        _responseDeadlineValue.reset();
+        LOGV2_DEBUG(10290001,
+                    longCollectionScanLogSeveritySuppressor().toInt(),
+                    "Long-running collection scan detected for query. This message will only be "
+                    "logged once per query. Set the value of the 'operationResponseMaxMS' "
+                    "server parameter to periodically return updates from long-running operations "
+                    "and prevent timeouts. See the documentation for more details: "
+                    "https://docs.mongodb.com/manual/reference/parameters/"
+                    "#param.operationResponseMaxMS");
+    }
+}
+
+void PlanExecutorImpl::_handleNeedYield(WriteConflictRetryState& retryState) {
     invariant(shard_role_details::getRecoveryUnit(_opCtx));
 
     if (_expCtx->getTemporarilyUnavailableException()) {
@@ -511,17 +690,19 @@ void PlanExecutorImpl::_handleNeedYield(size_t& writeConflictsInARow,
                 "auto-yield");
         }
 
-        tempUnavailErrorsInARow++;
+        retryState.tempUnavailErrorsInARow++;
         handleTemporarilyUnavailableException(
             _opCtx,
-            tempUnavailErrorsInARow,
+            retryState.tempUnavailErrorsInARow,
             "plan executor",
             NamespaceStringOrUUID(_nss),
             Status(ErrorCodes::TemporarilyUnavailable, "temporarily unavailable"),
-            writeConflictsInARow);
+            retryState.writeConflictsInARow);
     } else if (!_oplogWaitConfig || !_oplogWaitConfig->waitedForOplogVisiblity()) {
-        // If we didn't wait for oplog visiblity, then we must be yielding because of a
-        // WriteConflictException.
+        // If we didn't wait for oplog visibility, then we must be yielding because of a
+        // WriteConflictException. Oplog-visibility yields and TUE yields (handled above) do
+        // not contribute to the retry-limit gauge -- only the WCE path below acquires the
+        // streak guard.
         if (!_yieldPolicy->canAutoYield() ||
             MONGO_unlikely(skipWriteConflictRetries.shouldFail())) {
             throwWriteConflictException(
@@ -529,7 +710,38 @@ void PlanExecutorImpl::_handleNeedYield(size_t& writeConflictsInARow,
                 "disabled.");
         }
 
-        writeConflictsInARow++;
+        retryState.writeConflictsInARow++;
+
+        // Adaptive per-op retry limit. Only applies to user-connection ops while the feature
+        // is on; internal clients (mongos -> mongod, cross-shard, __system peers) and
+        // sessionless threads are exempt.
+        const int limitMax = internalQueryWriteConflictRetryLimitMax.loadRelaxed();
+        auto* const client = _opCtx->getClient();
+        if (limitMax > 0 && client && client->isFromUserConnection() &&
+            !client->isInternalClient()) {
+            retryState.streakGuard.acquire();
+            const int limitMin = internalQueryWriteConflictRetryLimitMin.loadRelaxed();
+            const int threshold =
+                internalQueryWriteConflictRetryLimitWaitersThreshold.loadRelaxed();
+            const int waiters = gWriteConflictRetryWaiters->loadRelaxed();
+            const int effectiveLimit =
+                adaptiveWriteConflictRetryLimit(limitMax, limitMin, threshold, waiters);
+            // We use > instead of >= because writeConflictsInARow is already increased above.
+            if (effectiveLimit > 0 &&
+                retryState.writeConflictsInARow > static_cast<size_t>(effectiveLimit)) {
+                std::string msg = fmt::format(
+                    "Aborting after {} consecutive WriteConflictExceptions; adaptive limit "
+                    "was {} (limitMax={}, limitMin={}, threshold={}, waiters={}).",
+                    retryState.writeConflictsInARow,
+                    effectiveLimit,
+                    limitMax,
+                    limitMin,
+                    threshold,
+                    waiters);
+                writeConflictRetryLimitHitMetric.increment();
+                throwWriteConflictRetryLimitExceededException(std::move(msg));
+            }
+        }
 
         // Fall back to the legacy hold-ticket sleep path once the op has hit the threshold.
         // Holding the ticket during the sleep throttles concurrent ops entering the conflict
@@ -537,15 +749,15 @@ void PlanExecutorImpl::_handleNeedYield(size_t& writeConflictsInARow,
         const bool releaseTicketEnabled =
             internalQueryEnableWriteConflictBackoffWithoutTicket.loadRelaxed();
         const bool fallbackToHoldTicket = releaseTicketEnabled &&
-            static_cast<int64_t>(writeConflictsInARow) >
+            static_cast<int64_t>(retryState.writeConflictsInARow) >
                 gInternalQueryWriteConflictBackoffMaxReleaseTicketCycles.loadRelaxed();
 
         if (releaseTicketEnabled && !fallbackToHoldTicket) {
             // Defer the logAndBackoff() call to the yield handler.
-            _writeConflictsInARowToLog = writeConflictsInARow;
+            _writeConflictsInARowToLog = retryState.writeConflictsInARow;
         } else {
             // Do the log and backoff immediately, while we're holding the ticket.
-            logWriteConflictAndBackoff(writeConflictsInARow);
+            logWriteConflictAndBackoff(retryState.writeConflictsInARow);
         }
     }
 
@@ -597,10 +809,11 @@ size_t PlanExecutorImpl::getNextBatch(size_t batchSize, AppendBSONObjFn append) 
 
     WorkingSetID id = WorkingSet::INVALID_ID;
 
-    // The below are incremented on every WriteConflict or TemporarilyUnavailable error
-    // accordingly, and reset to 0 on any successful call to _root->work.
-    size_t writeConflictsInARow = 0;
-    size_t tempUnavailErrorsInARow = 0;
+    // Per-call retry state: streak counters and the RAII gauge guard. Counters are incremented
+    // on every WriteConflict or TemporarilyUnavailable error accordingly, and reset to 0 on any
+    // successful call to _root->work. The guard's destructor releases the gauge if still held on
+    // any function-exit path (return / EOF / exception / stashResult-break).
+    WriteConflictRetryState retryState;
 
     size_t numResults = 0;
     BSONObj objOut;
@@ -621,8 +834,11 @@ size_t PlanExecutorImpl::getNextBatch(size_t batchSize, AppendBSONObjFn append) 
         PlanStage::StageState code = _root->work(&id);
 
         if (code != PlanStage::NEED_YIELD) {
-            writeConflictsInARow = 0;
-            tempUnavailErrorsInARow = 0;
+            // A successful work() step (or NEED_TIME / IS_EOF) ends any WCE streak. release()
+            // is idempotent and is a no-op if no streak was active.
+            retryState.streakGuard.release();
+            retryState.writeConflictsInARow = 0;
+            retryState.tempUnavailErrorsInARow = 0;
         }
 
         if (code == PlanStage::ADVANCED) {
@@ -668,7 +884,7 @@ size_t PlanExecutorImpl::getNextBatch(size_t batchSize, AppendBSONObjFn append) 
             _checkIfKilled();
 
         } else if (code == PlanStage::NEED_YIELD) {
-            _handleNeedYield(writeConflictsInARow, tempUnavailErrorsInARow);
+            _handleNeedYield(retryState);
 
         } else if (code == PlanStage::NEED_TIME) {
             // Do nothing except reset counters; need more time.

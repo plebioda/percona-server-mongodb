@@ -53,6 +53,7 @@
 #include "mongo/db/shard_role/transaction_resources.h"
 #include "mongo/db/storage/checkpoint_schedule_policy.h"
 #include "mongo/db/storage/checkpointer.h"
+#include "mongo/db/storage/flush_all_files_observer.h"
 #include "mongo/db/storage/kv/kv_engine_test_harness.h"
 #include "mongo/db/storage/record_data.h"
 #include "mongo/db/storage/storage_engine_impl.h"
@@ -687,6 +688,21 @@ TEST_F(WiredTigerKVEngineTest, SetOldestTimestampBackwardsWithoutForceIsNoop) {
     // Moving forwards with force=false should advance the timestamp.
     _helper->getWiredTigerKVEngine()->setOldestTimestamp(initTs + 1, false);
     ASSERT_EQ(initTs + 1, _helper->getWiredTigerKVEngine()->getOldestTimestamp());
+}
+
+TEST_F(WiredTigerKVEngineTest, ForceStableTimestampBackwardsMovesOldestTimestampBack) {
+    auto* engine = _helper->getWiredTigerKVEngine();
+
+    // Advance the oldest timestamp to a high value.
+    const Timestamp highTs = Timestamp(100, 0);
+    engine->setOldestTimestamp(highTs, false);
+    ASSERT_EQ(highTs, engine->getOldestTimestamp());
+
+    // Force the stable timestamp backwards. This also sets WiredTiger's oldest_timestamp to the
+    // lower value, so the cached oldest timestamp must follow.
+    const Timestamp lowTs = Timestamp(50, 0);
+    engine->setStableTimestamp(lowTs, true);
+    ASSERT_EQ(lowTs, engine->getOldestTimestamp());
 }
 
 /**
@@ -1658,6 +1674,47 @@ TEST_F(WiredTigerKVEngineTest, GetStorageTierFromStorageOptionsCold) {
 TEST_F(WiredTigerKVEngineTest, GetStorageTierFromStorageOptionsEmpty) {
     auto* engine = _helper->getWiredTigerKVEngine();
     ASSERT_EQ(engine->getStorageTierFromStorageOptions(BSONObj()), boost::none);
+}
+
+// Minimal FlushAllFilesObserver that records how many times it was notified.
+class CountingFlushAllFilesObserver : public FlushAllFilesObserver {
+public:
+    void onFlushAllFiles() override {
+        ++timesNotified;
+    }
+
+    int timesNotified = 0;
+};
+
+TEST_F(WiredTigerKVEngineTest, FlushAllFilesObserverRoundTrip) {
+    auto* engine = _helper->getWiredTigerKVEngine();
+    ASSERT_EQ(nullptr, engine->getFlushAllFilesObserver());
+
+    CountingFlushAllFilesObserver observer;
+    engine->setFlushAllFilesObserver(&observer);
+    ASSERT_EQ(&observer, engine->getFlushAllFilesObserver());
+
+    engine->setFlushAllFilesObserver(nullptr);
+    ASSERT_EQ(nullptr, engine->getFlushAllFilesObserver());
+}
+
+TEST_F(WiredTigerKVEngineTest, FlushAllFilesNotifiesRegisteredObserver) {
+    auto* engine = _helper->getWiredTigerKVEngine();
+    auto opCtx = _makeOperationContext();
+
+    // Give flushAllFiles() a coherent stable timestamp so its checkpoint is well-defined.
+    engine->setInitialDataTimestamp(Timestamp(1, 1));
+    engine->setStableTimestamp(Timestamp(1, 1), false);
+
+    CountingFlushAllFilesObserver observer;
+    engine->setFlushAllFilesObserver(&observer);
+    engine->flushAllFiles(opCtx.get(), /*callerHoldsReadLock=*/false);
+    ASSERT_EQ(1, observer.timesNotified);
+
+    // After the observer is cleared, flushAllFiles() must neither notify nor crash.
+    engine->setFlushAllFilesObserver(nullptr);
+    engine->flushAllFiles(opCtx.get(), /*callerHoldsReadLock=*/false);
+    ASSERT_EQ(1, observer.timesNotified);
 }
 
 }  // namespace

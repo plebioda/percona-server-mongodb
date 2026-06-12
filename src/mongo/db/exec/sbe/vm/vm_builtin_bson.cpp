@@ -42,10 +42,10 @@ value::TagValueMaybeOwned ByteCode::builtinTypeMatch(ArityType arity) {
         auto typeMaskVal = static_cast<uint32_t>(value::bitcastTo<int32_t>(typeMask.value));
         bool matches = static_cast<bool>(getBSONTypeMask(input.tag) & typeMaskVal);
 
-        return {false, value::TypeTags::Boolean, value::bitcastFrom<bool>(matches)};
+        return value::TagValueMaybeOwned::boolean(matches);
     }
 
-    return {false, value::TypeTags::Nothing, 0};
+    return value::TagValueMaybeOwned::nothing();
 }
 
 value::TagValueMaybeOwned ByteCode::builtinFillType(ArityType arity) {
@@ -61,10 +61,10 @@ value::TagValueMaybeOwned ByteCode::builtinFillType(ArityType arity) {
 
     if (static_cast<bool>(getBSONTypeMask(input.tag) & typeMask)) {
         // Return the fill value.
-        return value::TagValueMaybeOwned::fromRaw(moveFromStack(2));
+        return moveMaybeOwnedFromStack(2);
     } else {
         // Return the input value.
-        return value::TagValueMaybeOwned::fromRaw(moveFromStack(0));
+        return moveMaybeOwnedFromStack(0);
     }
 }
 

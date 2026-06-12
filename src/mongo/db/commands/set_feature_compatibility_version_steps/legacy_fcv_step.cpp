@@ -163,7 +163,7 @@ void handleDropPendingDBsGarbage(OperationContext* parentOpCtx) {
         opCtx, repl::ReadConcernLevel::kSnapshotReadConcern);
     for (const auto& shardType : opTimeWithShards.value) {
         const auto shardStatus =
-            Grid::get(opCtx)->shardRegistry()->getShard(opCtx, shardType.getName());
+            Grid::get(opCtx)->shardRegistry()->getShard(opCtx, ShardRef(shardType.getName()));
         if (!shardStatus.isOK()) {
             continue;
         }
@@ -228,7 +228,7 @@ void dropAuthoritativeShardCatalogCollectionsOnShards(OperationContext* opCtx) {
 
     for (const auto& shardType : opTimeWithShards.value) {
         const auto shardStatus =
-            Grid::get(opCtx)->shardRegistry()->getShard(opCtx, shardType.getName());
+            Grid::get(opCtx)->shardRegistry()->getShard(opCtx, ShardRef(shardType.getName()));
         if (shardStatus == ErrorCodes::ShardNotFound) {
             continue;
         }
@@ -760,6 +760,17 @@ private:
                                     collection->uuid().toString()),
                                 collection->getValidationLevel() !=
                                     ValidationLevelEnum::constraint);
+                        uassert(
+                            ErrorCodes::CannotDowngrade,
+                            fmt::format(
+                                "Cannot downgrade the cluster when there are collections with "
+                                "prepareConstraintValidationLevel set. Please unset the option or "
+                                "drop the collection(s) before downgrading. First detected "
+                                "collection with prepareConstraintValidationLevel set: {} "
+                                "(UUID: {}).",
+                                collection->ns().toStringForErrorMsg(),
+                                collection->uuid().toString()),
+                            !collection->getCollectionOptions().prepareConstraintValidationLevel);
                     }
 
                     if (storageTierDisabled) {

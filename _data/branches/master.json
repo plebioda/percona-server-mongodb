@@ -6,7 +6,7 @@
   "is_up_to_date": false,
   "divergence": {
     "commits_behind": 154,
-    "days_behind": 2,
+    "days_behind": 3,
     "files_affected": 1651,
     "total_additions": 100217,
     "total_deletions": 31133,
@@ -1701,12 +1701,10 @@
         },
         "summary": "SERVER-111602 Remove special handling for using 'wiredTigerCursorModify' for DSC (#55039)"
       },
-      "strategy_name": "branching_point",
+      "strategy_name": "important_files",
       "result": {
-        "branches": [
-          "master",
-          "mergai/master-0be72e16742/conflict",
-          "mongodb"
+        "matched_files": [
+          "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp"
         ]
       }
     },
@@ -1845,7 +1843,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-12 17:50:20",
+  "generated_at": "2026-06-12 19:51:08",
   "branch_name": "master",
   "display_name": "master"
 }

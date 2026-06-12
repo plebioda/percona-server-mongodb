@@ -150,6 +150,8 @@ public:
     static constexpr MetricName kIndexBuildsSucceeded =
         MetricNameMaker::make("index_builds.succeeded");
     static constexpr MetricName kIndexBuildsFailed = MetricNameMaker::make("index_builds.failed");
+    static constexpr MetricName kIndexBuildsToBeResumed =
+        MetricNameMaker::make("index_builds.to_be_resumed");
     static constexpr MetricName kIndexBuildSideWritesInserted =
         MetricNameMaker::make("index_builds.side_writes.inserted");
     static constexpr MetricName kIndexBuildSideWritesDeleted =
@@ -245,24 +247,6 @@ public:
 
     // Replication Team Metrics
     static constexpr MetricName kOplogApplyBytes = MetricNameMaker::make("oplog.apply.bytes");
-    static constexpr MetricName kOplogApplyBufferCount =
-        MetricNameMaker::make("serverStatus.metrics.repl.buffer.apply.count");
-    static constexpr MetricName kOplogApplyBufferSize =
-        MetricNameMaker::make("serverStatus.metrics.repl.buffer.apply.size");
-    static constexpr MetricName kOplogWriteBufferCount =
-        MetricNameMaker::make("serverStatus.metrics.repl.buffer.write.count");
-    static constexpr MetricName kOplogWriteBufferSize =
-        MetricNameMaker::make("serverStatus.metrics.repl.buffer.write.size");
-    static constexpr MetricName kApplyBatchesNum =
-        MetricNameMaker::make("serverStatus.metrics.repl.apply.batches.num");
-    static constexpr MetricName kApplyBatchesTotalMillis =
-        MetricNameMaker::make("serverStatus.metrics.repl.apply.batches.totalMillis");
-    static constexpr MetricName kInitialSyncFailedAttempts =
-        MetricNameMaker::make("serverStatus.metrics.repl.initialSync.failedAttempts");
-    static constexpr MetricName kInitialSyncFailures =
-        MetricNameMaker::make("serverStatus.metrics.repl.initialSync.failures");
-    static constexpr MetricName kInitialSyncCompleted =
-        MetricNameMaker::make("serverStatus.metrics.repl.initialSync.completed");
 
     // Query Integration Team Metrics
 
@@ -281,6 +265,9 @@ public:
         MetricNameMaker::make("serverStatus.globalLock.activeClients.readers");
     static constexpr MetricName kGlobalLockActiveClientsWriters =
         MetricNameMaker::make("serverStatus.globalLock.activeClients.writers");
+
+    static constexpr MetricName kOperationLatency =
+        MetricNameMaker::make("serverStatus.opLatencies.latency");
 
     // Op Counters
     static constexpr MetricName kInsertOpCount =

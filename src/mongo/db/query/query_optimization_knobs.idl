@@ -647,16 +647,12 @@ server_parameters:
             query_knob:
                 wire_name: maxNumberNodesConsideredForImplicitEdges
 
-    # The current state of this code propagates STPs inside an $or/$nor. This represents a
-    # correctness issue and therefore it is unsafe to run this logic enabled by default.
-    # TODO SERVER-127878: make this knob disabled by default, so we run join opt with
-    # STP propagation by default.
     internalInferSingleTablePredicates:
         description: "Infer and propagate single table predicates across equivalence classes. This "
         set_at: [startup, runtime]
         cpp_varname: "internalInferSingleTablePredicates"
         cpp_vartype: AtomicWord<bool>
-        default: false
+        default: true
         redact: false
         annotations:
             query_knob:
@@ -821,6 +817,9 @@ server_parameters:
         annotations:
             query_knob:
                 wire_name: planRankerMode
+                pqs_settable: true
+                fcv:
+                    min: "9.0"
 
     automaticCEPlanRankingStrategy:
         description: "Controls the plan ranking strategy to use when automaticCE is selected as internalQueryCBRCEMode"
@@ -834,6 +833,9 @@ server_parameters:
         annotations:
             query_knob:
                 wire_name: automaticCEPlanRankingStrategy
+                pqs_settable: true
+                fcv:
+                    min: "9.0"
 
     samplingConfidenceInterval:
         description: >-
@@ -849,6 +851,9 @@ server_parameters:
         annotations:
             query_knob:
                 wire_name: samplingConfidenceInterval
+                pqs_settable: true
+                fcv:
+                    min: "9.0"
 
     samplingMarginOfError:
         description: >-
@@ -867,6 +872,9 @@ server_parameters:
         annotations:
             query_knob:
                 wire_name: samplingMarginOfError
+                pqs_settable: true
+                fcv:
+                    min: "9.0"
 
     internalQuerySamplingCEMethod:
         description: >-
@@ -882,6 +890,9 @@ server_parameters:
         annotations:
             query_knob:
                 wire_name: samplingCEMethod
+                pqs_settable: true
+                fcv:
+                    min: "9.0"
 
     # TODO SERVER-63949: Consolidate CBRSamplingCEMethod and JoinSamplingCEMethod.
     internalJoinOptimizationSamplingCEMethod:
@@ -923,6 +934,19 @@ server_parameters:
             purposes and should not be used in production.
         set_at: [startup, runtime]
         cpp_varname: "internalQuerySamplingBySequentialScan"
+        cpp_vartype: AtomicWord<bool>
+        default: false
+        redact: false
+
+    # TODO SERVER-127563: Revisit the naming and organization of CBR-related knobs
+    internalQuerySamplingByStrides:
+        description:
+            Indicate sampling CE to generate a repeatable sample by sequentially scanning
+            the target collection and filtering to documents whose _id satisfies
+            shardHash(_id) % max(1, collCard / sampleSize) == 0, capped at the requested sample size.
+            This sampling method is useful for testing purposes and should not be used in production.
+        set_at: [startup, runtime]
+        cpp_varname: "internalQuerySamplingByStrides"
         cpp_vartype: AtomicWord<bool>
         default: false
         redact: false
@@ -1055,6 +1079,15 @@ server_parameters:
         annotations:
             query_knob:
                 wire_name: enablePipelineOptimizationAdditionalTestingRules
+
+    internalEnableDependencyGraphValidation:
+        description: "Enable insertion of $_internalAssertDataAssumptions stages to validate dependency graph arrayness analysis."
+        set_at: [startup, runtime]
+        cpp_varname: "internalEnableDependencyGraphValidation"
+        cpp_vartype: AtomicWord<bool>
+        default: false
+        test_only: true
+        redact: false
 
     internalEnablePathArrayness:
         description: "Whether or not to use PathArrayness when applying optimizations"

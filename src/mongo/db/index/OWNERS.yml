@@ -49,12 +49,6 @@ filters:
   - "multikey_paths*":
     approvers:
       - 10gen/query-execution-write-exec
-  - "2d_*":
-    approvers:
-      - 10gen/query-integration-features
-  - "s2_*":
-    approvers:
-      - 10gen/query-integration-features
   - "wildcard_access_method*":
     approvers:
       - 10gen/query-execution-write-exec

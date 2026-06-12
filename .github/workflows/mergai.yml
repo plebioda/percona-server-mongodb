@@ -12,7 +12,7 @@ on:
         description: "MergAI git ref to use (branch/tag/commit)"
         required: false
         type: string
-        default: "master"
+        default: "handling-reviews"
       mergai-agent:
         description: "AI agent to use for merge/describe/resolve (e.g., claude-cli:claude-opus-4-5)"
         required: false
@@ -700,7 +700,7 @@ jobs:
           claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
           github-app-token: ${{ steps.app-token.outputs.token }}
           github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
-          mergai-ref: master
+          mergai-ref: handling-reviews
 
       - name: Fetch and load mergai notes
         if: steps.pr.outputs.is_mergai == 'true'

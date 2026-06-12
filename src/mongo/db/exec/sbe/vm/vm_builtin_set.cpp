@@ -36,7 +36,7 @@ namespace sbe {
 namespace vm {
 value::TagValueMaybeOwned ByteCode::builtinAddToSet(ArityType arity) {
     auto [ownAgg, tagAgg, valAgg] = getFromStack(0);
-    auto [tagField, valField] = moveOwnedFromStack(1);
+    auto [tagField, valField] = moveRawOwnedFromStack(1);
     value::ValueGuard guardField{tagField, valField};
 
     // Create a new array is it does not exist yet.
@@ -62,8 +62,8 @@ value::TagValueMaybeOwned ByteCode::builtinAddToSet(ArityType arity) {
 }
 
 value::TagValueMaybeOwned ByteCode::builtinAddToSetCapped(ArityType arity) {
-    auto accumulatorState = value::TagValueOwned::fromRaw(moveOwnedFromStack(0));
-    auto newElem = value::TagValueMaybeOwned::fromRaw(moveFromStack(1));
+    auto accumulatorState = moveOwnedFromStack(0);
+    auto newElem = moveMaybeOwnedFromStack(1);
 
     auto sizeCap = viewFromStack(2);
 
@@ -81,7 +81,7 @@ value::TagValueMaybeOwned ByteCode::builtinAddToSetCapped(ArityType arity) {
 value::TagValueMaybeOwned ByteCode::builtinCollAddToSet(ArityType arity) {
     auto [ownAgg, tagAgg, valAgg] = getFromStack(0);
     auto collView = viewFromStack(1);
-    auto [tagField, valField] = moveOwnedFromStack(2);
+    auto [tagField, valField] = moveRawOwnedFromStack(2);
     value::ValueGuard guardField{tagField, valField};
 
     // If the collator is Nothing or if it's some unexpected type, don't push back the value
@@ -115,11 +115,11 @@ value::TagValueMaybeOwned ByteCode::builtinCollAddToSet(ArityType arity) {
 }
 
 value::TagValueMaybeOwned ByteCode::builtinCollAddToSetCapped(ArityType arity) {
-    auto accumulatorState = value::TagValueOwned::fromRaw(moveOwnedFromStack(0));
+    auto accumulatorState = moveOwnedFromStack(0);
 
     auto collatorView = viewFromStack(1);
 
-    auto newElem = value::TagValueMaybeOwned::fromRaw(moveFromStack(2));
+    auto newElem = moveMaybeOwnedFromStack(2);
 
     auto sizeCap = viewFromStack(3);
 
@@ -136,8 +136,8 @@ value::TagValueMaybeOwned ByteCode::builtinCollAddToSetCapped(ArityType arity) {
 }
 
 value::TagValueMaybeOwned ByteCode::builtinSetUnionCapped(ArityType arity) {
-    auto accumulatorState = value::TagValueOwned::fromRaw(moveOwnedFromStack(0));
-    auto newSetMembers = value::TagValueOwned::fromRaw(moveOwnedFromStack(1));
+    auto accumulatorState = moveOwnedFromStack(0);
+    auto newSetMembers = moveOwnedFromStack(1);
 
     auto sizeCap = viewFromStack(2);
 
@@ -153,11 +153,11 @@ value::TagValueMaybeOwned ByteCode::builtinSetUnionCapped(ArityType arity) {
 }
 
 value::TagValueMaybeOwned ByteCode::builtinCollSetUnionCapped(ArityType arity) {
-    auto accumulatorState = value::TagValueOwned::fromRaw(moveOwnedFromStack(0));
+    auto accumulatorState = moveOwnedFromStack(0);
 
     auto collatorView = viewFromStack(1);
 
-    auto newSetMembers = value::TagValueOwned::fromRaw(moveOwnedFromStack(2));
+    auto newSetMembers = moveOwnedFromStack(2);
 
     auto sizeCap = viewFromStack(3);
 
@@ -312,7 +312,7 @@ value::TagValueMaybeOwned setIsSubset(value::TypeTags lhsTag,
                                       const CollatorInterface* collator = nullptr) {
 
     if (!value::isArray(lhsTag) || !value::isArray(rhsTag)) {
-        return {false, value::TypeTags::Nothing, 0};
+        return value::TagValueMaybeOwned::nothing();
     }
 
     bool isSubset = true;
@@ -341,7 +341,7 @@ value::TagValueMaybeOwned ByteCode::builtinCollSetUnion(ArityType arity) {
 
     auto collView = viewFromStack(0);
     if (collView.tag != value::TypeTags::collator) {
-        return {false, value::TypeTags::Nothing, 0};
+        return value::TagValueMaybeOwned::nothing();
     }
 
     std::vector<value::TypeTags> argTags;
@@ -349,7 +349,7 @@ value::TagValueMaybeOwned ByteCode::builtinCollSetUnion(ArityType arity) {
     for (size_t idx = 1; idx < arity; ++idx) {
         auto arg = viewFromStack(idx);
         if (!value::isArray(arg.tag)) {
-            return {false, value::TypeTags::Nothing, 0};
+            return value::TagValueMaybeOwned::nothing();
         }
 
         argTags.push_back(arg.tag);
@@ -366,7 +366,7 @@ value::TagValueMaybeOwned ByteCode::builtinSetUnion(ArityType arity) {
     for (size_t idx = 0; idx < arity; ++idx) {
         auto arg = viewFromStack(idx);
         if (!value::isArray(arg.tag)) {
-            return {false, value::TypeTags::Nothing, 0};
+            return value::TagValueMaybeOwned::nothing();
         }
 
         argTags.push_back(arg.tag);
@@ -381,7 +381,7 @@ value::TagValueMaybeOwned ByteCode::builtinCollSetIntersection(ArityType arity) 
 
     auto collView = viewFromStack(0);
     if (collView.tag != value::TypeTags::collator) {
-        return {false, value::TypeTags::Nothing, 0};
+        return value::TagValueMaybeOwned::nothing();
     }
 
     std::vector<value::TypeTags> argTags;
@@ -390,7 +390,7 @@ value::TagValueMaybeOwned ByteCode::builtinCollSetIntersection(ArityType arity) 
     for (size_t idx = 1; idx < arity; ++idx) {
         auto arg = viewFromStack(idx);
         if (!value::isArray(arg.tag)) {
-            return {false, value::TypeTags::Nothing, 0};
+            return value::TagValueMaybeOwned::nothing();
         }
 
         argTags.push_back(arg.tag);
@@ -407,7 +407,7 @@ value::TagValueMaybeOwned ByteCode::builtinSetIntersection(ArityType arity) {
     for (size_t idx = 0; idx < arity; ++idx) {
         auto arg = viewFromStack(idx);
         if (!value::isArray(arg.tag)) {
-            return {false, value::TypeTags::Nothing, 0};
+            return value::TagValueMaybeOwned::nothing();
         }
 
         argTags.push_back(arg.tag);
@@ -422,14 +422,14 @@ value::TagValueMaybeOwned ByteCode::builtinCollSetDifference(ArityType arity) {
 
     auto collView = viewFromStack(0);
     if (collView.tag != value::TypeTags::collator) {
-        return {false, value::TypeTags::Nothing, 0};
+        return value::TagValueMaybeOwned::nothing();
     }
 
     auto lhs = viewFromStack(1);
     auto rhs = viewFromStack(2);
 
     if (!value::isArray(lhs.tag) || !value::isArray(rhs.tag)) {
-        return {false, value::TypeTags::Nothing, 0};
+        return value::TagValueMaybeOwned::nothing();
     }
 
     return setDifference(
@@ -441,7 +441,7 @@ value::TagValueMaybeOwned ByteCode::builtinCollSetEquals(ArityType arity) {
 
     auto collView = viewFromStack(0);
     if (collView.tag != value::TypeTags::collator) {
-        return {false, value::TypeTags::Nothing, 0};
+        return value::TagValueMaybeOwned::nothing();
     }
 
     std::vector<value::TypeTags> argTags;
@@ -450,7 +450,7 @@ value::TagValueMaybeOwned ByteCode::builtinCollSetEquals(ArityType arity) {
     for (size_t idx = 1; idx < arity; ++idx) {
         auto arg = viewFromStack(idx);
         if (!value::isArray(arg.tag)) {
-            return {false, value::TypeTags::Nothing, 0};
+            return value::TagValueMaybeOwned::nothing();
         }
 
         argTags.push_back(arg.tag);
@@ -465,7 +465,7 @@ value::TagValueMaybeOwned ByteCode::builtinCollSetIsSubset(ArityType arity) {
 
     auto collView = viewFromStack(0);
     if (collView.tag != value::TypeTags::collator) {
-        return {false, value::TypeTags::Nothing, 0};
+        return value::TagValueMaybeOwned::nothing();
     }
 
     auto lhs = viewFromStack(1);
@@ -482,7 +482,7 @@ value::TagValueMaybeOwned ByteCode::builtinSetDifference(ArityType arity) {
     auto rhs = viewFromStack(1);
 
     if (!value::isArray(lhs.tag) || !value::isArray(rhs.tag)) {
-        return {false, value::TypeTags::Nothing, 0};
+        return value::TagValueMaybeOwned::nothing();
     }
 
     return setDifference(lhs.tag, lhs.value, rhs.tag, rhs.value);
@@ -497,7 +497,7 @@ value::TagValueMaybeOwned ByteCode::builtinSetEquals(ArityType arity) {
     for (size_t idx = 0; idx < arity; ++idx) {
         auto arg = viewFromStack(idx);
         if (!value::isArray(arg.tag)) {
-            return {false, value::TypeTags::Nothing, 0};
+            return value::TagValueMaybeOwned::nothing();
         }
 
         argTags.push_back(arg.tag);
@@ -519,7 +519,7 @@ value::TagValueMaybeOwned ByteCode::builtinSetIsSubset(ArityType arity) {
 value::TagValueMaybeOwned ByteCode::builtinSetToArray(ArityType arity) {
     tassert(11080010, "Unexpected arity value", arity == 1);
 
-    auto input = value::TagValueMaybeOwned::fromRaw(moveFromStack(0));
+    auto input = moveMaybeOwnedFromStack(0);
 
     if (input.tag() != value::TypeTags::ArraySet && input.tag() != value::TypeTags::ArrayMultiSet) {
         // passthrough if its not a set

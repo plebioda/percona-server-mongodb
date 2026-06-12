@@ -196,7 +196,7 @@ void deleteCollection(OperationContext* opCtx,
                 auto now = VectorClock::get(getGlobalServiceContext())->getTime();
                 const auto clusterTime = now.clusterTime().asTimestamp();
                 NamespacePlacementType placementInfo(
-                    NamespaceString(nss), clusterTime, {} /*shards*/);
+                    NamespaceString(nss), clusterTime, std::vector<ShardRef>{} /*shards*/);
                 placementInfo.setUuid(uuid);
                 write_ops::InsertCommandRequest insertPlacementEntry(
                     NamespaceString::kConfigsvrPlacementHistoryNamespace, {placementInfo.toBSON()});
@@ -812,7 +812,7 @@ std::vector<BatchedCommandRequest> getOperationsToCreateOrShardCollectionOnShard
         NamespacePlacementType placementInfo{
             nss,
             placementVersion.getTimestamp(),
-            std::vector<mongo::ShardId>(shardIds.cbegin(), shardIds.cend())};
+            std::vector<mongo::ShardRef>(shardIds.cbegin(), shardIds.cend())};
         placementInfo.setUuid(uuid);
         return write_ops::InsertCommandRequest(NamespaceString::kConfigsvrPlacementHistoryNamespace,
                                                {placementInfo.toBSON()});
@@ -961,6 +961,41 @@ void sendFetchCollMetadataToShards(OperationContext* opCtx,
         **executor, token, std::move(request));
 
     sendAuthenticatedCommandToShards(opCtx, opts, shardIds);
+}
+
+void cloneAuthoritativeCollectionMetadataToShards(
+    OperationContext* opCtx,
+    const NamespaceString& nss,
+    const ShardId& primaryShardId,
+    const std::function<OperationSessionInfo()>& osiGenerator,
+    AuthoritativeMetadataAccessLevelEnum authoritativeAccessLevel,
+    const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
+    const CancellationToken& token) {
+    const auto cm = uassertStatusOK(
+        Grid::get(opCtx)->catalogCache()->getCollectionPlacementInfoWithRefresh(opCtx, nss));
+    uassert(ErrorCodes::RequestAlreadyFulfilled,
+            str::stream() << "The collection " << nss.toStringForErrorMsg() << " is not tracked",
+            cm.hasRoutingTable());
+    std::set<ShardId> shardSet;
+    cm.getAllShardIds(&shardSet);
+    // The DB primary must always know that a collection is tracked, even when it owns no chunks.
+    shardSet.insert(primaryShardId);
+    const std::vector<ShardId> shardIds(shardSet.begin(), shardSet.end());
+
+    // TODO (SERVER-127654): Remove this workaround to manually stop and resume migrations once
+    // setFCV stops all chunk operations.
+    stopMigrations(opCtx,
+                   nss,
+                   boost::none /* expectedCollectionUUID */,
+                   osiGenerator,
+                   authoritativeAccessLevel);
+    sendFetchCollMetadataToShards(
+        opCtx, nss, shardIds, primaryShardId, osiGenerator(), executor, token);
+    resumeMigrations(opCtx,
+                     nss,
+                     boost::none /* expectedCollectionUUID */,
+                     osiGenerator,
+                     authoritativeAccessLevel);
 }
 
 void commitRefineCollectionShardKeyToShardCatalog(
@@ -1158,8 +1193,8 @@ boost::optional<ShardId> pickShardOwningCollectionChunks(OperationContext* opCtx
     return chunks.empty() ? boost::none : boost::optional<ShardId>(chunks[0].getShard());
 }
 
-std::vector<ShardId> getListOfShardsOwningChunksForCollection(OperationContext* opCtx,
-                                                              const UUID& collUuid) {
+std::vector<ShardRef> getListOfShardsOwningChunksForCollection(OperationContext* opCtx,
+                                                               const UUID& collUuid) {
     // Use the content of config.chunks to obtain the placement of the collection.
     // The request is equivalent to 'configDb.chunks.distinct("shard", {uuid:collectionUuid})'.
     DistinctCommandRequest distinctRequest(NamespaceString::kConfigsvrChunksNamespace);
@@ -1176,18 +1211,18 @@ std::vector<ShardId> getListOfShardsOwningChunksForCollection(OperationContext* 
                                 Shard::RetryPolicy::kIdempotent));
 
     uassertStatusOK(Shard::CommandResponse::getEffectiveStatus(reply));
-    std::vector<ShardId> shardIds;
+    std::vector<ShardRef> shardRefs;
     for (const auto& valueElement : reply.response.getField("values").Array()) {
-        shardIds.emplace_back(valueElement.String());
+        shardRefs.emplace_back(ShardRef::parse(valueElement));
     }
-    return shardIds;
+    return shardRefs;
 }
 
 void upsertPlacementHistoryDocInTransaction(const txn_api::TransactionClient& txnClient,
                                             const NamespaceString& nss,
                                             const boost::optional<UUID>& uuid,
                                             const Timestamp& timestamp,
-                                            std::vector<ShardId>&& shards,
+                                            std::vector<ShardRef>&& shards,
                                             int stmtId) {
     write_ops::UpdateCommandRequest upsertPlacementChangeRequest(
         NamespaceString::kConfigsvrPlacementHistoryNamespace);

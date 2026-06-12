@@ -61,7 +61,6 @@
 #include "mongo/db/shard_role/lock_manager/lock_manager_defs.h"
 #include "mongo/db/shard_role/shard_catalog/document_validation.h"
 #include "mongo/db/shard_role/transaction_resources.h"
-#include "mongo/db/sharding_environment/sharding_feature_flags_gen.h"
 #include "mongo/db/storage/exceptions.h"
 #include "mongo/db/storage/kv/kv_engine.h"
 #include "mongo/db/storage/recovery_unit.h"
@@ -182,23 +181,18 @@ Status _applyOperationsForTransaction(OperationContext* opCtx,
                                       const std::vector<OplogEntry>& txnOps,
                                       repl::OplogApplication::Mode oplogApplicationMode) {
 
-    const bool allowCollectionCreatinInPreparedTransactions =
-        feature_flags::gCreateCollectionInPreparedTransactions.isEnabled(
-            VersionContext::getDecoration(opCtx),
-            serverGlobalParams.featureCompatibility.acquireFCVSnapshot());
     // Apply each the operations via repl::applyOperation.
     for (const auto& op : txnOps) {
         try {
             if (op.getOpType() == repl::OpTypeEnum::kNoop ||
-                op.getOpType() == repl::OpTypeEnum::kKeyMaterial) {
+                op.getOpType() == repl::OpTypeEnum::kKeyMaterial ||
+                op.getOpType() == repl::OpTypeEnum::kCMKRotation) {
                 continue;
             }
 
-            if (!allowCollectionCreatinInPreparedTransactions) {
-                // Presently, it is not allowed to run a prepared transaction with a command inside.
-                // TODO(SERVER-46105)
-                invariant(!op.isCommand());
-            }
+            // Presently, it is not allowed to run a prepared transaction with a command inside.
+            // TODO (SERVER-46105) change this invariant
+            invariant(!op.isCommand());
 
             // VersionContext fixes a FCV snapshot over the opCtx, making FCV-gated feature
             // flags checks in secondaries behave as they did on the primary, thus ensuring
@@ -634,7 +628,8 @@ Status _applyPrepareTransaction(OperationContext* opCtx,
     // transaction.
     for (const auto& op : txnOps) {
         if (op.getOpType() == repl::OpTypeEnum::kNoop ||
-            op.getOpType() == repl::OpTypeEnum::kKeyMaterial) {
+            op.getOpType() == repl::OpTypeEnum::kKeyMaterial ||
+            op.getOpType() == repl::OpTypeEnum::kCMKRotation) {
             continue;
         }
         auto indexBuildsCoord = IndexBuildsCoordinator::get(opCtx);

@@ -44,6 +44,7 @@
 #include "mongo/db/shard_role/shard_catalog/drop_collection.h"
 #include "mongo/db/sharding_environment/client/shard.h"
 #include "mongo/db/sharding_environment/shard_id.h"
+#include "mongo/db/sharding_environment/shard_ref.h"
 #include "mongo/db/transaction/transaction_api.h"
 #include "mongo/db/write_concern_options.h"
 #include "mongo/executor/scoped_task_executor.h"
@@ -394,6 +395,20 @@ MONGO_MOD_NEEDS_REPLACEMENT void sendFetchCollMetadataToShards(
     const CancellationToken& token);
 
 /**
+ * Makes a single tracked collection's authoritative metadata durable on the shards owning its
+ * chunks and on `primaryShardId`. Throws `RequestAlreadyFulfilled` if the collection is untracked.
+ * TODO (SERVER-98118): Remove this once v9.0 becomes last-lts.
+ */
+MONGO_MOD_PARENT_PRIVATE void cloneAuthoritativeCollectionMetadataToShards(
+    OperationContext* opCtx,
+    const NamespaceString& nss,
+    const ShardId& primaryShardId,
+    const std::function<OperationSessionInfo()>& osiGenerator,
+    AuthoritativeMetadataAccessLevelEnum authoritativeAccessLevel,
+    const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
+    const CancellationToken& token);
+
+/**
  *  Commits a refineCollectionShardKey operations to the shard catalog by sending the command
  * `_shardsvrCommitRefineCollectionShardKey` to all given shards.
  */
@@ -503,7 +518,7 @@ MONGO_MOD_NEEDS_REPLACEMENT boost::optional<ShardId> pickShardOwningCollectionCh
  * Returns the list of shards that currently own chunks for the given collection UUID.
  * Queries config.chunks to determine the current placement.
  */
-MONGO_MOD_PRIVATE std::vector<ShardId> getListOfShardsOwningChunksForCollection(
+MONGO_MOD_PRIVATE std::vector<ShardRef> getListOfShardsOwningChunksForCollection(
     OperationContext* opCtx, const UUID& collUuid);
 
 /**
@@ -515,7 +530,7 @@ MONGO_MOD_PRIVATE void upsertPlacementHistoryDocInTransaction(
     const NamespaceString& nss,
     const boost::optional<UUID>& uuid,
     const Timestamp& timestamp,
-    std::vector<ShardId>&& shards,
+    std::vector<ShardRef>&& shards,
     int stmtId);
 
 /**

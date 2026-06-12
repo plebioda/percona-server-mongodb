@@ -102,10 +102,6 @@ void assertSearchMetaAccessValidHelper(
             auto stageName = StringData(source->getSourceName());
             if (stageName == DocumentSourceInternalSearchMongotRemote::kStageName ||
                 stageName == DocumentSourceSearch::kStageName || stageName == kSetVarName ||
-                // TODO SERVER-126017: Remove kExtensionSearchStageName once search.cpp's
-                // expand() always wraps $_extensionSearch inside
-                // $_internalDocumentResultsAndMetadata and never emits it as a top-level stage.
-                stageName == kExtensionSearchStageName ||
                 isExtensionSearchWrappedInDocResAndMetadata(source)) {
                 searchMetaSet = true;
                 if (stageName == kSetVarName) {
@@ -254,6 +250,10 @@ bool hasReferenceToSearchMeta(const DocumentSource& ds) {
     ds.addVariableRefs(&refs);
     return Variables::hasVariableReferenceTo(refs,
                                              std::set<Variables::Id>{Variables::kSearchMetaId});
+}
+
+bool canMovePastDuringSplit(const DocumentSource& ds) {
+    return !hasReferenceToSearchMeta(ds) && ds.constraints().preservesOrderAndMetadata;
 }
 
 bool isSearchPipeline(const Pipeline* pipeline) {

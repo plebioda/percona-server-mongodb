@@ -214,6 +214,11 @@ public:
             return {.canRunOnTimeseries = false};
         }
 
+        // View resolution should happen *after* desugaring, so this should be unreachable.
+        FirstStageViewApplicationPolicy getFirstStageViewApplicationPolicy() const override {
+            MONGO_UNREACHABLE_TASSERT(12197200);
+        }
+
         ReadConcernSupportResult supportsReadConcern(repl::ReadConcernLevel level,
                                                      bool isImplicitDefault) const override {
             return this->onlyReadConcernLocalSupported(
@@ -486,6 +491,10 @@ public:
 
     boost::optional<MongoExtensionDocsNeededBoundsInfo> getDocsNeededBounds() const {
         return _logicalStage->getDocsNeededBounds();
+    }
+
+    void skipMetadataStream() override {
+        _logicalStage->skipMetadataStream();
     }
 
     DepsTracker::State getDependencies(DepsTracker* deps) const override;

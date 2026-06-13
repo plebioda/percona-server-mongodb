@@ -30,6 +30,9 @@ on:
     types: [completed]
     branches:
       - "mergai/**"
+  # Manual CI-fix entry point: a `/mergai ci fix` comment on a mergai PR.
+  issue_comment:
+    types: [created]
 
 jobs:
   trigger-merge:
@@ -531,6 +534,184 @@ jobs:
       # may have changed even when no commit was produced.
       - name: Push mergai notes
         if: needs.ci-gate.outputs.state == 'failure'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mergai notes push
+
+  # Manual CI-fix entry point: a `/mergai ci fix` comment on a mergai PR.
+  # Lets a human fix the checks that have ALREADY failed without waiting for the
+  # rest of the watched set to finish. The automatic loop is gated: ci-gate
+  # reduces the watched set for HEAD to a single aggregate state, and ci-handle
+  # only runs when that aggregate is `failure` - i.e. when the *whole* watched
+  # set is done. So an early failure (e.g. `format`) while `build-and-test` is
+  # still in progress or waiting for approval does not trigger a fix until
+  # everything completes. `mergai ci fix all` itself does NOT require the
+  # aggregate to be complete - it resolves every unprocessed actionable (failed)
+  # run for HEAD and fixes it - so this job bypasses the gate and calls it
+  # directly. Routing mirrors ci-handle (semantic branch for */main, inline push
+  # for review branches).
+  #
+  # An explicit `/mergai ci fix` is a deliberate human request, so it OVERRIDES
+  # the `mergai-skip-ci-fix` label (that label only gates the automatic
+  # ci-handle): this job never reads it.
+  ci-fix-comment:
+    # issue_comment fires on every PR/issue comment in the repo, so the command
+    # filter lives here; the head-branch (mergai-only) check can't be expressed
+    # for issue_comment in `if:` (no head ref in the payload) and is enforced in
+    # the "Resolve PR" step below.
+    if: >-
+      github.event_name == 'issue_comment'
+        && github.event.issue.pull_request != null
+        && contains(github.event.comment.body, '/mergai ci fix')
+    environment: privileged-ops
+    runs-on: ubuntu-latest
+    # Serialize per PR so two near-simultaneous `/mergai ci fix` comments don't
+    # race on the branch. The automatic ci-handle is keyed on the head branch,
+    # which an issue_comment event cannot resolve at concurrency-eval time (the
+    # payload carries no head ref), so cross-job serialization with ci-handle is
+    # not expressible here; the PR number is the best available key.
+    concurrency:
+      group: mergai-ci-fix-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    env:
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+      GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+      GOOGLE_GENAI_USE_VERTEXAI: "true"
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          private-key: ${{ secrets.PSMDB_BOT_GH_APP_PRIVATE_KEY }}
+
+      # Resolve the PR number and head branch from the issue_comment payload and
+      # confirm it is a mergai PR (head branch under mergai/). The payload has no
+      # head ref, so we look it up; a non-mergai PR sets is_mergai=false and every
+      # later step is skipped (the job ends green).
+      - name: Resolve PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          PR_NUMBER='${{ github.event.issue.number }}'
+          HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq .headRefName)
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "Resolved PR #$PR_NUMBER (head: $HEAD_REF)"
+          case "$HEAD_REF" in
+            mergai/*) echo "is_mergai=true" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "is_mergai=false" >> "$GITHUB_OUTPUT"
+              echo "PR #$PR_NUMBER is not a mergai PR; skipping." ;;
+          esac
+
+      - name: Checkout PR branch
+        if: steps.pr.outputs.is_mergai == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr.outputs.head_ref }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Setup workflow environment
+        if: steps.pr.outputs.is_mergai == 'true'
+        uses: ./.github/actions/setup-mergai-workflow
+        with:
+          setup-gcp: "true"
+          setup-gemini: "true"
+          setup-claude: "true"
+          setup-mergai: "true"
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+          github-app-token: ${{ steps.app-token.outputs.token }}
+          github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          mergai-ref: master
+
+      - name: Fetch and load mergai notes
+        if: steps.pr.outputs.is_mergai == 'true'
+        run: |
+          mergai notes update
+          mergai context init
+
+      # Fix every failed-but-unprocessed run for HEAD now, without waiting for
+      # the rest of the watched set. `mergai ci fix all` commits the fix on HEAD
+      # (the PR branch). --ack posts a short acknowledgement comment (how many
+      # failing checks were found / fixed, even if none) for quick feedback on
+      # the trigger. `fix_produced`/`before` are exposed for the routing steps.
+      - name: Apply CI fixes
+        id: fix
+        if: steps.pr.outputs.is_mergai == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          before=$(git rev-parse HEAD)
+          mergai ci fix all --ack
+          after=$(git rev-parse HEAD)
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          if [ "$before" = "$after" ]; then
+            echo "No fix commit produced."
+            echo "fix_produced=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Fix commit produced ($after)."
+            echo "fix_produced=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # No fix commit (e.g. an unfixable failure, or nothing failing yet):
+      # `ci comment post` still publishes any recorded explanation on the PR.
+      - name: Post explanation comment (no fix produced)
+        if: steps.pr.outputs.is_mergai == 'true' && steps.fix.outputs.fix_produced == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mergai ci comment post
+
+      # */main carries the bare merge commit and is NOT a review branch. A
+      # failure there is a semantic conflict (a clean merge that doesn't
+      # build/pass). We must not advance main with an un-reviewed fix, so the fix
+      # commit is relocated onto a dedicated `semantic` branch and reviewed via a
+      # `semantic` PR (base = main). origin/main is never pushed here.
+      - name: Relocate fix to semantic branch (semantic conflict on */main)
+        if: steps.pr.outputs.is_mergai == 'true' && steps.fix.outputs.fix_produced == 'true' && endsWith(steps.pr.outputs.head_ref, '/main')
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ steps.pr.outputs.head_ref }}
+        run: |
+          echo "Semantic conflict on $HEAD_BRANCH; relocating the fix to a semantic branch"
+          mergai branch create semantic
+          mergai branch push semantic
+          mergai pr --repo "$GITHUB_REPOSITORY" create semantic --skip-commit-list-on-failure
+          SEMANTIC_PR=$(mergai pr --repo "$GITHUB_REPOSITORY" number semantic)
+          mergai pr --repo "$GITHUB_REPOSITORY" comment main --allow-missing \
+            --body "One or more checks failed. PR #${SEMANTIC_PR} opened with fixes for review."
+          mergai pr --repo "$GITHUB_REPOSITORY" update semantic \
+            || echo "::warning::'mergai pr update semantic' failed"
+          mergai ci comment post --review-pr "$SEMANTIC_PR"
+
+      # solution / semantic branches are review branches: the fix rides inline as
+      # another commit and is reviewed in the existing PR. Nothing is folded here
+      # (folding into the merge commit is finalize-only, after the PR is merged).
+      - name: Push inline fix (review branch)
+        if: steps.pr.outputs.is_mergai == 'true' && steps.fix.outputs.fix_produced == 'true' && !endsWith(steps.pr.outputs.head_ref, '/main')
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ steps.pr.outputs.head_ref }}
+        run: |
+          echo "Pushing inline fix to $HEAD_BRANCH"
+          git push origin "HEAD:$HEAD_BRANCH"
+          mergai pr --repo "$GITHUB_REPOSITORY" update \
+            || echo "::warning::'mergai pr update' failed"
+          mergai ci comment post
+
+      # Always push notes when a fix was attempted: ci_comments / posted markers
+      # may have changed even when no commit was produced.
+      - name: Push mergai notes
+        if: steps.pr.outputs.is_mergai == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}

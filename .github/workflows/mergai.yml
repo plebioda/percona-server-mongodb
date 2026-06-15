@@ -771,16 +771,24 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          # CUTOFF pins the run to the comment set as it stood when it was
+          # triggered: the review's submission time, or the comment's creation
+          # time. `mergai review fix --since` ignores anything posted (or
+          # edited) after it, so a comment added while this run waits for the
+          # privileged-ops approval cannot be pulled into the set.
           if [ "${{ github.event_name }}" = "pull_request_review" ]; then
             PR_NUMBER='${{ github.event.pull_request.number }}'
             HEAD_REF='${{ github.event.pull_request.head.ref }}'
+            CUTOFF='${{ github.event.review.submitted_at }}'
           else
             PR_NUMBER='${{ github.event.issue.number }}'
             HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq .headRefName)
+            CUTOFF='${{ github.event.comment.created_at }}'
           fi
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
-          echo "Resolved PR #$PR_NUMBER (head: $HEAD_REF)"
+          echo "cutoff=$CUTOFF" >> "$GITHUB_OUTPUT"
+          echo "Resolved PR #$PR_NUMBER (head: $HEAD_REF, cutoff: $CUTOFF)"
           case "$HEAD_REF" in
             mergai/*) echo "is_mergai=true" >> "$GITHUB_OUTPUT" ;;
             *)
@@ -827,11 +835,13 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          CUTOFF: ${{ steps.pr.outputs.cutoff }}
         run: |
           before=$(git rev-parse HEAD)
           # --ack posts a short acknowledgement comment on the PR (how many
-          # comments were found / addressed, even if none) for quick feedback.
-          mergai review fix --pr-number "$PR_NUMBER" --ack
+          # comments were found / addressed / ignored, even if none) for quick
+          # feedback. --since pins the comment set to the trigger time (CUTOFF).
+          mergai review fix --pr-number "$PR_NUMBER" --since "$CUTOFF" --ack
           after=$(git rev-parse HEAD)
           if [ "$before" != "$after" ]; then
             echo "Review fix commit produced ($after)."

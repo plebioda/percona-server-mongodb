@@ -36,6 +36,7 @@
 #include "mongo/db/index_builds/index_builds.h"
 #include "mongo/db/index_builds/resumable_index_builds_gen.h"
 #include "mongo/db/storage/compact_options.h"
+// Percona: EngineExtension base class for storage engine customizations (audit, encryption)
 #include "mongo/db/storage/engine_extension.h"
 #include "mongo/db/storage/flush_all_files_observer.h"
 #include "mongo/db/storage/ident.h"

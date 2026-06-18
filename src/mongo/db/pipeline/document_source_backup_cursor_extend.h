@@ -124,7 +124,9 @@ public:
         return constraints;
     }
 
-    Value serialize(const SerializationOptions& opts = SerializationOptions()) const final;
+    // Default value repeated here to match base class signature (C++ requires this for overrides).
+    Value serialize(const query_shape::SerializationOptions& opts =
+                        query_shape::SerializationOptions{}) const final;
 
     boost::optional<DistributedPlanLogic> distributedPlanLogic(
         const DistributedPlanContext* ctx) final {

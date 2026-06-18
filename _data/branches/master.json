@@ -4098,7 +4098,6 @@
           "mergai/master-8752933b6cb/main",
           "mergai/master-8752933b6cb/semantic",
           "mergai/master-93ffbc04538/conflict",
-          "mergai/master-93ffbc04538/solution",
           "mergai/master-e613c37f89b/conflict",
           "mergai/master-e613c37f89b/solution",
           "mongodb"
@@ -4672,7 +4671,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-18 06:53:01",
+  "generated_at": "2026-06-18 07:19:39",
   "branch_name": "master",
   "display_name": "master"
 }

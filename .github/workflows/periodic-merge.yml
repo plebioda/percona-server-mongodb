@@ -64,7 +64,7 @@ jobs:
         uses: ./.github/actions/setup-mergai
         with:
           token: ${{ steps.app-token.outputs.token }}
-          ref: master
+          ref: ${{ vars.MERGAI_REF || 'master' }}
 
       # In-progress guard, run as early as possible: an open mergai PR means a
       # merge cycle is already underway, so stop and let it finish before doing

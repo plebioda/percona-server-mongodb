@@ -44,6 +44,8 @@
 #include <boost/smart_ptr.hpp>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
+using namespace std::literals::string_view_literals;
+
 namespace mongo {
 namespace {
 
@@ -212,7 +214,7 @@ TEST_F(DocumentSourceScoreTest, CheckLengthyDocScoreMetadataUpdated) {
           }
       })");
     Document inputDoc =
-        Document{{"field1", "hello"_sd}, {"field2", 10}, {"myScore", 5.3}, {"field3", true}};
+        Document{{"field1", "hello"sv}, {"field2", 10}, {"myScore", 5.3}, {"field3", true}};
 
     const auto desugaredList =
         DocumentSourceScore::createFromBson(spec.firstElement(), getExpCtx());
@@ -236,7 +238,7 @@ TEST_F(DocumentSourceScoreTest, ErrorsIfScoreNotDouble) {
           }
       })");
     Document inputDoc =
-        Document{{"field1", "hello"_sd}, {"field2", 10}, {"myScore", "5.3"_sd}, {"field3", true}};
+        Document{{"field1", "hello"sv}, {"field2", 10}, {"myScore", "5.3"sv}, {"field3", true}};
 
     const auto desugaredList =
         DocumentSourceScore::createFromBson(spec.firstElement(), getExpCtx());
@@ -256,7 +258,7 @@ TEST_F(DocumentSourceScoreTest, ErrorsIfExpressionFieldPathDoesNotExist) {
               normalization: "none"
           }
       })");
-    Document inputDoc = Document{{"field1", "hello"_sd}, {"field2", 10}, {"field3", true}};
+    Document inputDoc = Document{{"field1", "hello"sv}, {"field2", 10}, {"field3", true}};
 
     const auto desugaredList =
         DocumentSourceScore::createFromBson(spec.firstElement(), getExpCtx());
@@ -277,7 +279,7 @@ TEST_F(DocumentSourceScoreTest, ErrorsIfScoreInvalidExpression) {
           }
       })");
     Document inputDoc =
-        Document{{"field1", "hello"_sd}, {"otherScore", 10}, {"myScore", 5.3}, {"field3", true}};
+        Document{{"field1", "hello"sv}, {"otherScore", 10}, {"myScore", 5.3}, {"field3", true}};
 
     // Assert cannot parse expression
     ASSERT_THROWS_CODE(DocumentSourceScore::createFromBson(spec.firstElement(), getExpCtx()),
@@ -293,7 +295,7 @@ TEST_F(DocumentSourceScoreTest, ChecksScoreMetadatUpdatedValidExpression) {
           }
       })");
     Document inputDoc =
-        Document{{"field1", "hello"_sd}, {"otherScore", 10}, {"myScore", 5.3}, {"field3", true}};
+        Document{{"field1", "hello"sv}, {"otherScore", 10}, {"myScore", 5.3}, {"field3", true}};
 
     const auto desugaredList =
         DocumentSourceScore::createFromBson(spec.firstElement(), getExpCtx());

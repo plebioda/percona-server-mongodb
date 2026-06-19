@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2025-present MongoDB, Inc.
+ *    Copyright (C) 2026-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -27,56 +27,43 @@
  *    it in the license file.
  */
 
-#include "MongoStringDataStringViewApi.h"
+#include "mongo/transport/handoff/handoff_s2n_init.h"
 
-#include <array>
-#include <string>
+#include <s2n.h>
 
-#include <clang/Tooling/Core/Replacement.h>
-
-namespace mongo::tidy {
-
-using namespace clang;
-using namespace clang::ast_matchers;
-
+namespace mongo {
 namespace {
 
-struct Replacement {
-    std::string oldName;
-    std::string newName;
-};
+/**
+ * s2n-tls's documentation states that `s2n_init()` must be called before any of the library's
+ * facilities are used.
+ * `s2n_init`'s contract states that it must not be called more than once.
+ * `s2n_cleanup` is a deprecated no-op, so when `s2n_init` says not more than once, it means process
+ * wide.
+ * s2n-tls does not provide a public "is initialized" function.
+ * As an alternative, we use a trick learned from aws-sdk-cpp's `s2n_tls_channel_handler.c`.
+ * `s2n_disable_atexit()`, which is harmless because s2n-tls's atexit support is disabled by
+ * default, will fail if `s2n_init` has been called previously. So, we can use `s2n_disable_atexit`
+ * to check whether the library has been initialized.
+ */
+struct S2NInitOnce {
+    S2NInitOnce() : errorMessage(nullptr) {
+        if (s2n_disable_atexit() != S2N_SUCCESS) {
+            return;  // already initialized
+        }
+        if (s2n_init() != S2N_SUCCESS) {
+            errorMessage = s2n_strerror(s2n_errno, "EN");
+        }
+    }
 
-const std::string klass = "mongo::StringData";
-
-const std::array replacements{
-    Replacement{"rawData", "data"},
-    Replacement{"startsWith", "starts_with"},
-    Replacement{"endsWith", "ends_with"},
+    const char* errorMessage;
 };
 
 }  // namespace
 
-void MongoStringDataStringViewApi::registerMatchers(MatchFinder* finder) {
-    for (auto&& r : replacements) {
-        finder->addMatcher(
-            cxxMemberCallExpr(callee(cxxMethodDecl(ofClass(hasName(klass)), hasName(r.oldName))))
-                .bind(r.oldName),
-            this);
-    }
+const char* s2nInitOnce() {
+    static const S2NInitOnce instance;
+    return instance.errorMessage;
 }
 
-void MongoStringDataStringViewApi::check(const MatchFinder::MatchResult& result) {
-    for (auto&& r : replacements) {
-        auto call = result.Nodes.getNodeAs<clang::CXXMemberCallExpr>(r.oldName);
-        if (!call)
-            continue;
-        auto memberLoc = call->getExprLoc();
-        if (memberLoc.isInvalid())
-            continue;
-        diag(memberLoc, "replace '" + r.oldName + "' with '" + r.newName + "'")
-            << clang::FixItHint::CreateReplacement(clang::CharSourceRange::getTokenRange(memberLoc),
-                                                   r.newName);
-    }
-}
-
-}  // namespace mongo::tidy
+}  // namespace mongo

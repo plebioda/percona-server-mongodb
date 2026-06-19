@@ -52,6 +52,7 @@
 #include <array>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <tuple>
 
 #include <boost/optional/optional.hpp>
@@ -330,8 +331,8 @@ static void serializeValue(BufBuilder& buf, TypeTags tag, Value val) {
             auto arr = getArrayView(val);
             buf.appendNum(arr->size());
             for (size_t idx = 0; idx < arr->size(); ++idx) {
-                auto [tag, val] = arr->getAt(idx);
-                serializeValue(buf, tag, val);
+                auto tagVal = arr->getAt(idx);
+                serializeValue(buf, tagVal.tag, tagVal.value);
             }
             break;
         }
@@ -348,8 +349,8 @@ static void serializeValue(BufBuilder& buf, TypeTags tag, Value val) {
             buf.appendNum(obj->size());
             for (size_t idx = 0; idx < obj->size(); ++idx) {
                 buf.appendCStr(obj->field(idx));
-                auto [tag, val] = obj->getAt(idx);
-                serializeValue(buf, tag, val);
+                auto tagVal = obj->getAt(idx);
+                serializeValue(buf, tagVal.tag, tagVal.value);
             }
             break;
         }
@@ -441,7 +442,7 @@ static void serializeValueIntoKeyString(key_string::Builder& buf,
                                         Value val,
                                         const CollatorInterface* collator) {
 
-    const auto stringTransformFn = [&](StringData stringData) {
+    const auto stringTransformFn = [&](std::string_view stringData) {
         return collator->getComparisonString(stringData);
     };
 

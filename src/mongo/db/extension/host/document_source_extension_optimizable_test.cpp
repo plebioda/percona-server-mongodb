@@ -61,9 +61,12 @@
 #include "mongo/util/serialization_context.h"
 #include "mongo/util/time_support.h"
 
-namespace mongo::extension {
+#include <string_view>
 
-auto nss = NamespaceString::createNamespaceString_forTest("document_source_extension_test"_sd);
+namespace mongo::extension {
+using namespace std::literals::string_view_literals;
+
+auto nss = NamespaceString::createNamespaceString_forTest("document_source_extension_test"sv);
 
 class DocumentSourceExtensionOptimizableTest : public AggregationContextFixture {
 public:
@@ -109,6 +112,9 @@ protected:
     sdk::ExtensionAggStageDescriptorAdapter _transformStaticDescriptor{
         sdk::shared_test_stages::TransformAggStageDescriptor::make()};
 
+    sdk::ExtensionAggStageDescriptorAdapter _internalTransformStaticDescriptor{
+        sdk::shared_test_stages::InternalTransformAggStageDescriptor::make()};
+
     static inline BSONObj kValidSpec = BSON(
         sdk::shared_test_stages::TransformAggStageDescriptor::kStageName << BSON("foo" << true));
     static inline BSONObj kInvalidSpec =
@@ -142,6 +148,24 @@ TEST_F(DocumentSourceExtensionOptimizableTest, ParseTransformSuccess) {
     // serializes to its query shape. The transform extension's query shape is just its stage
     // definition.
     ASSERT_BSONOBJ_EQ(serializedPipeline[0], kValidSpec);
+}
+
+TEST_F(DocumentSourceExtensionOptimizableTest, RegisterInternalStageRestrictsClientType) {
+    std::unique_ptr<host::HostPortal> hostPortal = std::make_unique<host::HostPortal>();
+    host_connector::HostPortalAdapter portal{
+        MONGODB_EXTENSION_API_VERSION, 1, "", std::move(hostPortal)};
+    portal.getImpl().registerStageDescriptor(&_internalTransformStaticDescriptor);
+
+    BSONObj internalSpec =
+        BSON(sdk::shared_test_stages::InternalTransformAggStageDescriptor::kStageName << BSONObj());
+    auto lpds = LiteParsedDocumentSource::parse(_nss, internalSpec, LiteParserOptions{});
+    ASSERT_EQUALS(lpds->getClientType(), AllowedWithClientType::kInternal);
+
+    // clone() must preserve the metadata: the router copies the LiteParsedPipeline (cloning every
+    // stage spec) before validating, so a clone that dropped kInternal would escape client-type
+    // validation on mongos.
+    auto cloned = lpds->clone();
+    ASSERT_EQUALS(cloned->getClientType(), AllowedWithClientType::kInternal);
 }
 
 TEST_F(DocumentSourceExtensionOptimizableTest, ExpandToExtAst) {
@@ -2543,8 +2567,8 @@ void testViewPolicyHelper(const NamespaceString& nss,
     host::DocumentSourceExtensionOptimizable::LiteParsedExpanded liteParsed(
         ConfigurableViewPolicyTestAstNode::kStageName, std::move(handle), nss, ifrContext);
 
-    const auto viewNss = NamespaceString::createNamespaceString_forTest("test.view"_sd);
-    const auto resolvedNss = NamespaceString::createNamespaceString_forTest("test.collection"_sd);
+    const auto viewNss = NamespaceString::createNamespaceString_forTest("test.view"sv);
+    const auto resolvedNss = NamespaceString::createNamespaceString_forTest("test.collection"sv);
     std::vector<BSONObj> viewPipeline = {BSON("$match" << BSON("x" << 1))};
     auto view = ResolvedNamespace::makeForView(viewNss, resolvedNss, std::move(viewPipeline));
 
@@ -2575,7 +2599,7 @@ public:
             if (stage.isEmpty()) {
                 continue;
             }
-            StringData stageName = stage.firstElement().fieldNameStringData();
+            std::string_view stageName = stage.firstElement().fieldNameStringData();
             if (stageName != "$match" && stageName != "$addFields" && stageName != "$set") {
                 uasserted(
                     ErrorCodes::BadValue,
@@ -2596,8 +2620,8 @@ void runViewPipelineValidatorCallback(const std::vector<BSONObj>& viewPipeline) 
     host::DocumentSourceExtensionOptimizable::LiteParsedExpanded liteParsed(
         ViewPipelineValidatorTestAstNode::kStageName, std::move(handle), nss, ifrContext);
 
-    const auto viewNss = NamespaceString::createNamespaceString_forTest("test.view"_sd);
-    const auto resolvedNss = NamespaceString::createNamespaceString_forTest("test.coll"_sd);
+    const auto viewNss = NamespaceString::createNamespaceString_forTest("test.view"sv);
+    const auto resolvedNss = NamespaceString::createNamespaceString_forTest("test.coll"sv);
     std::vector<BSONObj> pipelineCopy = viewPipeline;
     auto view = ResolvedNamespace::makeForView(viewNss, resolvedNss, std::move(pipelineCopy));
 
@@ -2608,7 +2632,7 @@ TEST_F(DocumentSourceExtensionOptimizableTest,
        LiteParsedExpandedGetViewPolicyWithDefaultPrependAndCallback) {
     unittest::ServerParameterGuard featureFlag{"featureFlagExtensionsInsideHybridSearch", true};
 
-    const auto viewNss = NamespaceString::createNamespaceString_forTest("test.view"_sd);
+    const auto viewNss = NamespaceString::createNamespaceString_forTest("test.view"sv);
     testViewPolicyHelper(_nss,
                          MongoExtensionFirstStageViewApplicationPolicy::kDefaultPrepend,
                          FirstStageViewApplicationPolicy::kDefaultPrepend,
@@ -2619,7 +2643,7 @@ TEST_F(DocumentSourceExtensionOptimizableTest,
        LiteParsedExpandedGetViewPolicyWithDoNothingAndCallback) {
     unittest::ServerParameterGuard featureFlag{"featureFlagExtensionsInsideHybridSearch", true};
 
-    const auto viewNss = NamespaceString::createNamespaceString_forTest("test.view"_sd);
+    const auto viewNss = NamespaceString::createNamespaceString_forTest("test.view"sv);
     testViewPolicyHelper(_nss,
                          MongoExtensionFirstStageViewApplicationPolicy::kDoNothing,
                          FirstStageViewApplicationPolicy::kDoNothing,
@@ -3019,7 +3043,7 @@ TEST_F(DocumentSourceExtensionOptimizableTest, ExtensionStageDocsNeededBoundsUnk
 
 class StageRulesTest : public DocumentSourceExtensionOptimizableTest {
 public:
-    static constexpr StringData kStageName = "$testRulesStage"_sd;
+    static constexpr std::string_view kStageName = "$testRulesStage"sv;
 
     inline static const PipelineRewriteRule kReorderRule{"reorderRule",
                                                          kPipelineRewriteRuleTagReordering};

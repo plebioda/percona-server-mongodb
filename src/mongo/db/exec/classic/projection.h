@@ -29,8 +29,8 @@
 
 #pragma once
 
-#include "mongo/base/string_data.h"
 #include "mongo/bson/bsonobj.h"
+#include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/exec/classic/plan_stage.h"
 #include "mongo/db/exec/classic/working_set.h"
 #include "mongo/db/exec/document_value/document_metadata_fields.h"
@@ -43,6 +43,7 @@
 #include "mongo/util/string_map.h"
 
 #include <memory>
+#include <string_view>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -59,7 +60,7 @@ protected:
                     const BSONObj& projObj,
                     WorkingSet* ws,
                     std::unique_ptr<PlanStage> child,
-                    StringData stageType);
+                    std::string_view stageType);
 
 public:
     bool isEOF() const final;
@@ -153,7 +154,7 @@ private:
     std::vector<bool> _includeKey;
 
     // If the i-th entry of _includeKey is true this is the field name for the i-th key field.
-    std::vector<StringData> _keyFieldNames;
+    std::vector<std::string_view> _keyFieldNames;
 };
 
 /**
@@ -190,7 +191,30 @@ public:
     template <typename Container>
     static BSONObj transform(const BSONObj& doc,
                              const Container& fields,
-                             projection_ast::ProjectType projectType);
+                             projection_ast::ProjectType projectType) {
+        BSONObjBuilder bob;
+        auto nFieldsLeft = fields.size();
+
+        if (projectType == projection_ast::ProjectType::kInclusion) {
+            for (const auto& elt : doc) {
+                if (fields.count(elt.fieldNameStringData()) > 0) {
+                    bob.append(elt);
+                    if (--nFieldsLeft == 0) {
+                        break;
+                    }
+                }
+            }
+        } else {
+            for (const auto& elt : doc) {
+                if (nFieldsLeft == 0 || fields.count(elt.fieldNameStringData()) == 0) {
+                    bob.append(elt);
+                } else {
+                    --nFieldsLeft;
+                }
+            }
+        }
+        return bob.obj();
+    }
 
 private:
     void transform(WorkingSetMember* member) const final;

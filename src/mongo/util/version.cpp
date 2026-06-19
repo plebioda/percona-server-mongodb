@@ -89,17 +89,11 @@ public:
         return {"unknown"};
     }
 
-<<<<<<< HEAD
-    std::vector<StringData> perconaFeatures() const final {
+    std::vector<std::string_view> perconaFeatures() const final {
         return {"unknown"};
     }
 
-    StringData allocator() const noexcept final {
-||||||| 2eff3754f8e
-    StringData allocator() const noexcept final {
-=======
     std::string_view allocator() const noexcept final {
->>>>>>> 186b646fff11714dec4c57c809177937bd46dfcb
         return "unknown";
     }
 

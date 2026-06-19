@@ -42,14 +42,8 @@ namespace mongo {
 class MONGO_MOD_OPEN JWKSFetcherFactory {
 public:
     virtual ~JWKSFetcherFactory() = default;
-<<<<<<< HEAD
-    virtual std::unique_ptr<crypto::JWKSFetcher> makeJWKSFetcher(StringData issuer,
-                                                                 StringData caFilePath) const = 0;
-||||||| 2eff3754f8e
-    virtual std::unique_ptr<crypto::JWKSFetcher> makeJWKSFetcher(StringData issuer) const = 0;
-=======
-    virtual std::unique_ptr<crypto::JWKSFetcher> makeJWKSFetcher(std::string_view issuer) const = 0;
->>>>>>> 186b646fff11714dec4c57c809177937bd46dfcb
+    virtual std::unique_ptr<crypto::JWKSFetcher> makeJWKSFetcher(std::string_view issuer,
+                                                                 std::string_view caFilePath) const = 0;
 };
 
 

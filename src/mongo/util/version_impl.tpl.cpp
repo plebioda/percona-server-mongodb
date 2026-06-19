@@ -74,17 +74,11 @@ public:
         return modulesList;
     }
 
-<<<<<<< HEAD
-    std::vector<StringData> perconaFeatures() const final {
+    std::vector<std::string_view> perconaFeatures() const final {
         return perconaFeatureList;
     }
 
-    StringData allocator() const final {
-||||||| 2eff3754f8e
-    StringData allocator() const final {
-=======
     std::string_view allocator() const final {
->>>>>>> 186b646fff11714dec4c57c809177937bd46dfcb
         return kAllocator;
     }
 
@@ -121,7 +115,7 @@ private:
     std::string_view kJsEngine = "@buildinfo_js_engine@"sv;
     std::vector<std::string_view> modulesList{@buildinfo_modules@};
     std::vector<VersionInfoInterface::BuildInfoField> buildEnvironment{@buildinfo_environment_data@};
-    std::vector<StringData> perconaFeatureList{
+    std::vector<std::string_view> perconaFeatureList{
         "MemoryEngine",
         "HotBackup",
         "BackupCursorAggregationStage",

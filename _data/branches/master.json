@@ -5,35 +5,35 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 49,
+    "commits_behind": 36,
     "days_behind": 0,
-    "files_affected": 5172,
-    "total_additions": 37615,
-    "total_deletions": 28210,
+    "files_affected": 5109,
+    "total_additions": 34360,
+    "total_deletions": 27981,
     "date_range": {
-      "first": "2026-06-18T09:11:42+00:00",
+      "first": "2026-06-18T15:21:43+00:00",
       "last": "2026-06-19T05:10:09+00:00"
     }
   },
   "last_merged_commit": {
-    "sha": "bf8477f1a3bec557408a977ba431f93875bdcbc1",
-    "short_sha": "bf8477f1a3b",
-    "date": "2026-06-18T09:59:25+01:00",
+    "sha": "04bd171799dc7b4082f2c550feb69f4026ff417a",
+    "short_sha": "04bd171799d",
+    "date": "2026-06-18T11:00:22-04:00",
     "author": {
-      "name": "Daniele Alessandrelli",
-      "email": "daniele.alessandrelli@mongodb.com"
+      "name": "Matt Olma",
+      "email": "67564577+mattsimply@users.noreply.github.com"
     },
-    "summary": "SERVER-126825 Remove `timeseriesBucketingParametersHaveChanged` from shard catalog (#55963)"
+    "summary": "SERVER-125083: Introduce a new jstest suite for testing the dependency graph (#55757)"
   },
   "first_unmerged_commit": {
-    "sha": "86c8c9f87a7295c515548225b47891f1ee61ded4",
-    "short_sha": "86c8c9f87a7",
-    "date": "2026-06-18T11:11:42+02:00",
+    "sha": "0c231743c0c7d05f26fe5d3ae2187f48a13a3858",
+    "short_sha": "0c231743c0c",
+    "date": "2026-06-18T11:21:43-04:00",
     "author": {
-      "name": "Yujin Kang Park",
-      "email": "36410031+ykangpark@users.noreply.github.com"
+      "name": "Nick Zolnierz",
+      "email": "nicholas.zolnierz@mongodb.com"
     },
-    "summary": "SERVER-128070 Add CheckMultikeyConsistencyInBackground hook (#54645)"
+    "summary": "SERVER-129089 Update owner for document_source_sequential_document_cache (#56296)"
   },
   "unmerged_commits": [
     {
@@ -395,162 +395,9 @@
         "email": "nicholas.zolnierz@mongodb.com"
       },
       "summary": "SERVER-129089 Update owner for document_source_sequential_document_cache (#56296)"
-    },
-    {
-      "sha": "04bd171799dc7b4082f2c550feb69f4026ff417a",
-      "short_sha": "04bd171799d",
-      "date": "2026-06-18T11:00:22-04:00",
-      "author": {
-        "name": "Matt Olma",
-        "email": "67564577+mattsimply@users.noreply.github.com"
-      },
-      "summary": "SERVER-125083: Introduce a new jstest suite for testing the dependency graph (#55757)"
-    },
-    {
-      "sha": "ef9e6f71f0775ed11d63927da3ee3704cc72ac60",
-      "short_sha": "ef9e6f71f07",
-      "date": "2026-06-18T16:38:56+02:00",
-      "author": {
-        "name": "Jordi Olivares Provencio",
-        "email": "jordi.olivares-provencio@mongodb.com"
-      },
-      "summary": "SERVER-128661 Avoid testing legacy paths for depriorization if crud is authoritative (#55734)"
-    },
-    {
-      "sha": "0e37ef13236b21ef606310cdbcb560add3db00a0",
-      "short_sha": "0e37ef13236",
-      "date": "2026-06-18T16:29:57+02:00",
-      "author": {
-        "name": "Enrico Golfieri",
-        "email": "enrico.golfieri@mongodb.com"
-      },
-      "summary": "SERVER-128887 Observability for non-wildcard multikey path changes (#55823)"
-    },
-    {
-      "sha": "fde9d2312b973bfec22d2432a7f5bb99ebfc027b",
-      "short_sha": "fde9d2312b9",
-      "date": "2026-06-18T10:20:08-04:00",
-      "author": {
-        "name": "Daniel Segel",
-        "email": "71151509+dhsegel@users.noreply.github.com"
-      },
-      "summary": "SERVER-129255 Fix topology-dependent and non-deterministic sharded metric assertions in extension IFR-flag-retry $unionWith jstests (#56225)"
-    },
-    {
-      "sha": "f75b3d150c3163198a656ee82cc1098ca964fb38",
-      "short_sha": "f75b3d150c3",
-      "date": "2026-06-18T16:14:32+02:00",
-      "author": {
-        "name": "Pol Piñol Castuera",
-        "email": "pol.pinol@mongodb.com"
-      },
-      "summary": "SERVER-129314 Ban migrations_with_mixed_fcv.js during 8.x/9.0 FCV transitions (#56269)"
-    },
-    {
-      "sha": "7da5308045cf5d7d6d8de0153cf4f05059537703",
-      "short_sha": "7da5308045c",
-      "date": "2026-06-18T14:30:19+01:00",
-      "author": {
-        "name": "Projjal Chanda",
-        "email": "projjal.chanda@mongodb.com"
-      },
-      "summary": "SERVER-127228 Add internalQueryMaxMemoryUsageBytesPerOperation knob (#55106)"
-    },
-    {
-      "sha": "0bf82e94c5c4d7954dd42b54b94bafd3162e76b7",
-      "short_sha": "0bf82e94c5c",
-      "date": "2026-06-18T14:16:19+02:00",
-      "author": {
-        "name": "Pol Piñol Castuera",
-        "email": "pol.pinol@mongodb.com"
-      },
-      "summary": "SERVER-129328 Clear stale collection CSS when recreating a database on the primary shard (#56276)"
-    },
-    {
-      "sha": "821fe103e6122d33a6672fd4391fb9d30f856cb5",
-      "short_sha": "821fe103e61",
-      "date": "2026-06-18T13:02:31+01:00",
-      "author": {
-        "name": "Catalin Sumanaru",
-        "email": "catalin.sumanaru@mongodb.com"
-      },
-      "summary": "SERVER-123182 Add query knobs to the explain output (#56113)"
-    },
-    {
-      "sha": "8853b97053fc1b57b7b5624e043aef06e6162c77",
-      "short_sha": "8853b97053f",
-      "date": "2026-06-18T11:30:36+01:00",
-      "author": {
-        "name": "Daniele Alessandrelli",
-        "email": "daniele.alessandrelli@mongodb.com"
-      },
-      "summary": "SERVER-126826 Enable `featureFlagFixedBucketingCatalog` by default (#56187)"
-    },
-    {
-      "sha": "9ffc7b7f03a6daf9950b1d093e3b5429e15b0932",
-      "short_sha": "9ffc7b7f03a",
-      "date": "2026-06-18T12:26:44+02:00",
-      "author": {
-        "name": "Silvia Surroca",
-        "email": "silvia.surroca@mongodb.com"
-      },
-      "summary": "SERVER-129256 MergeAllChunks may retry forever (#56228)"
-    },
-    {
-      "sha": "77abf323035e97e22fc96cbb9b9d92992301091b",
-      "short_sha": "77abf323035",
-      "date": "2026-06-18T12:12:09+02:00",
-      "author": {
-        "name": "Silvia Surroca",
-        "email": "silvia.surroca@mongodb.com"
-      },
-      "summary": "SERVER-129190 Fix chunk_operations_honor_allow_chunk_operations.js (#56196)"
-    },
-    {
-      "sha": "66d67ec58e704e4440de20c5b54c45e3864dcd07",
-      "short_sha": "66d67ec58e7",
-      "date": "2026-06-18T10:11:46+01:00",
-      "author": {
-        "name": "Max Verbinnen",
-        "email": "64088654+Max-Verbinnen@users.noreply.github.com"
-      },
-      "summary": "SERVER-129084 Allow manually creating persistent samples for HJ/INLJ suite (#56051)"
-    },
-    {
-      "sha": "86c8c9f87a7295c515548225b47891f1ee61ded4",
-      "short_sha": "86c8c9f87a7",
-      "date": "2026-06-18T11:11:42+02:00",
-      "author": {
-        "name": "Yujin Kang Park",
-        "email": "36410031+ykangpark@users.noreply.github.com"
-      },
-      "summary": "SERVER-128070 Add CheckMultikeyConsistencyInBackground hook (#54645)"
     }
   ],
   "merge_picks": [
-    {
-      "commit": {
-        "sha": "04bd171799dc7b4082f2c550feb69f4026ff417a",
-        "short_sha": "04bd171799d",
-        "date": "2026-06-18T11:00:22-04:00",
-        "author": {
-          "name": "Matt Olma",
-          "email": "67564577+mattsimply@users.noreply.github.com"
-        },
-        "summary": "SERVER-125083: Introduce a new jstest suite for testing the dependency graph (#55757)"
-      },
-      "strategy_name": "huge_commit",
-      "result": {
-        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
-        "evaluated_vars": {
-          "num_of_files": 21,
-          "num_of_lines": 1300,
-          "lines_added": 1299,
-          "lines_deleted": 1,
-          "num_of_dirs": 13
-        }
-      }
-    },
     {
       "commit": {
         "sha": "f425bc38d6f5f9767bb2a2e59365cff4f032c256",
@@ -673,7 +520,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-19 08:17:12",
+  "generated_at": "2026-06-19 08:37:45",
   "branch_name": "master",
   "display_name": "master"
 }

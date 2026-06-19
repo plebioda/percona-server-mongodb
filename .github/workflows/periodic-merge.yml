@@ -1,0 +1,132 @@
+name: mergai periodic merge
+
+# Drive the merge-from-upstream loop: pick the next upstream commit to merge and,
+# unless a merge is already in progress, dispatch the `mergai bot` `trigger-merge`
+# job for it. This replaces a human watching the Fork Status page and dispatching
+# mergai.yml by hand.
+#
+# This workflow only *decides and triggers* - all merge/conflict/PR behavior lives
+# in mergai.yml's trigger-merge job, which is reused unchanged.
+on:
+  schedule:
+    # Weekdays at 05:00 UTC, ahead of the 06:00 update-fork-status run.
+    - cron: "0 5 * * 1-5"
+  # Manual entry point for testing. Runs the identical logic - no special-casing.
+  # (To force a merge regardless of state, dispatch mergai.yml directly instead.)
+  workflow_dispatch: {}
+  # Chain the next merge: when a mergai main PR (mergai/*/main -> master) is merged,
+  # the cycle is complete, so kick off the next pick immediately instead of waiting
+  # for the next cron tick. The job's `if` below restricts this to merged main PRs;
+  # the in-progress guard still applies (it just finds no open mergai PR by then).
+  pull_request:
+    types: [closed]
+    branches: [master]
+
+# Never let two ticks decide to dispatch at the same time.
+concurrency:
+  group: mergai-periodic-merge
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read # mergai pr list -> read PRs
+  actions: write # gh workflow run mergai.yml
+
+jobs:
+  periodic-merge:
+    runs-on: ubuntu-latest
+    # schedule / workflow_dispatch always run. A pull_request only runs when a
+    # mergai main PR (mergai/*/main -> master) was actually merged; other closed
+    # PRs to master fire the trigger but are skipped here.
+    if: >-
+      github.event_name != 'pull_request'
+      || (github.event.pull_request.merged == true
+          && startsWith(github.event.pull_request.head.ref, 'mergai/')
+          && endsWith(github.event.pull_request.head.ref, '/main'))
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Always operate on the target branch tip, not the triggering ref
+          # (e.g. a just-merged mergai/*/main head), so merge-pick sees the
+          # latest master including the merge that just landed.
+          ref: master
+          fetch-depth: 0
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        with:
+          app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          private-key: ${{ secrets.PSMDB_BOT_GH_APP_PRIVATE_KEY }}
+
+      - name: Setup mergai
+        uses: ./.github/actions/setup-mergai
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: master
+
+      # In-progress guard, run as early as possible: an open mergai PR means a
+      # merge cycle is already underway, so stop and let it finish before doing
+      # any expensive work (the upstream fetch in 'fork init', status, pick).
+      # This only needs the mergai CLI, the checked-out .mergai/config.yml, and a
+      # token - no upstream remote - so it precedes 'fork init'. The pre-PR window
+      # (a trigger-merge run dispatched but still awaiting privileged-ops approval)
+      # is covered by the early-fail guard in mergai.yml's trigger-merge job.
+      - name: Stop if a merge is already in progress
+        id: guard
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(mergai pr --repo "$GITHUB_REPOSITORY" list -q)" ]; then
+            echo "A merge is already in progress. Open mergai PR(s):"
+            mergai pr --repo "$GITHUB_REPOSITORY" list
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "No mergai PR open; clear to proceed."
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Initialize fork
+        if: steps.guard.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          mergai fork init
+
+      # Informational: show divergence from upstream, the unmerged commits, and
+      # the prioritized merge picks (same view as the Fork Status page).
+      - name: Show fork status
+        if: steps.guard.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          mergai fork status -lp
+
+      # Pick the next upstream commit to merge. Isolated on purpose: a later
+      # scope replaces this with a gated/threshold-aware selection. Empty output
+      # means the fork is up to date (or no strategy matched) -> nothing to do.
+      - name: Select next merge pick
+        id: pick
+        if: steps.guard.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          SHA=$(mergai fork merge-pick --next)
+          if [ -z "$SHA" ]; then
+            echo "Nothing to merge from upstream."
+            echo "sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Next merge pick: $SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # Dispatch the existing trigger-merge job with the chosen pick. We pass the
+      # SHA explicitly rather than letting trigger-merge recompute merge-pick.
+      - name: Trigger merge
+        if: steps.guard.outputs.proceed == 'true' && steps.pick.outputs.sha != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SHA: ${{ steps.pick.outputs.sha }}
+        run: |
+          set -euo pipefail
+          echo "Dispatching mergai.yml trigger-merge for $SHA"
+          gh workflow run mergai.yml -f merge-pick="$SHA"

@@ -52,7 +52,9 @@
 
 namespace mongo::crypto {
 
-JWKSFetcherImpl::JWKSFetcherImpl(ClockSource* clock, std::string_view issuer, std::string_view caFilePath)
+JWKSFetcherImpl::JWKSFetcherImpl(ClockSource* clock,
+                                 std::string_view issuer,
+                                 std::string_view caFilePath)
     : _issuer(issuer),
       _clock(clock),
       _lastAttemptedFetchTime(Date_t::min()),

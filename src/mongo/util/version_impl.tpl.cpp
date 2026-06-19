@@ -116,21 +116,21 @@ private:
     std::vector<std::string_view> modulesList{@buildinfo_modules@};
     std::vector<VersionInfoInterface::BuildInfoField> buildEnvironment{@buildinfo_environment_data@};
     std::vector<std::string_view> perconaFeatureList{
-        "MemoryEngine",
-        "HotBackup",
-        "BackupCursorAggregationStage",
-        "BackupCursorExtendAggregationStage",
-        "AWSIAM",
-        "Kerberos",
-        "LDAP",
-        "OIDC",
-        "TDE",
-        "FIPSMode",
-        "FCBIS",
-        "Auditing",
-        "ProfilingRateLimit",
-        "LogRedaction",
-        "ngram"
+        "MemoryEngine"sv,
+        "HotBackup"sv,
+        "BackupCursorAggregationStage"sv,
+        "BackupCursorExtendAggregationStage"sv,
+        "AWSIAM"sv,
+        "Kerberos"sv,
+        "LDAP"sv,
+        "OIDC"sv,
+        "TDE"sv,
+        "FIPSMode"sv,
+        "FCBIS"sv,
+        "Auditing"sv,
+        "ProfilingRateLimit"sv,
+        "LogRedaction"sv,
+        "ngram"sv
     };
     // clang-format on
 };

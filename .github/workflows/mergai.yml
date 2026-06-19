@@ -87,11 +87,27 @@ jobs:
           github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
           mergai-ref: ${{ inputs['mergai-ref'] }}
 
-      # Get next prioritized commit to merge from upstream based on configured strategies
+      # Get next commit to merge from upstream. Pick mode is controlled by the
+      # MERGAI_MERGE_PICK_MODE repository variable (not a secret):
+      #   * "ai"            -> the agent chooses the merge boundary in the
+      #                        candidate window (uses AI tokens, hence here in the
+      #                        privileged-ops job). --force skips the gate re-check
+      #                        since the caller (periodic-merge or a human) already
+      #                        decided to merge.
+      #   * anything else   -> deterministic pick (first prioritized strategy
+      #                        match), the default when the variable is unset.
       - name: mergai merge-pick
         if: ${{ !inputs['merge-pick'] }}
+        env:
+          MERGE_PICK_MODE: ${{ vars.MERGAI_MERGE_PICK_MODE }}
         run: |
-          MERGE_PICK=$(mergai fork merge-pick --next)
+          if [ "$MERGE_PICK_MODE" = "ai" ]; then
+            echo "Merge-pick mode: ai"
+            MERGE_PICK=$(mergai fork merge-pick --ai --next --force)
+          else
+            echo "Merge-pick mode: deterministic"
+            MERGE_PICK=$(mergai fork merge-pick --next)
+          fi
           echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
           echo "Next merge pick is: $MERGE_PICK"
           git show --stat $MERGE_PICK

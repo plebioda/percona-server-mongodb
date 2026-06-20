@@ -87,38 +87,48 @@ jobs:
           github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
           mergai-ref: ${{ inputs['mergai-ref'] || vars.MERGAI_REF || 'master' }}
 
-      # Get next commit to merge from upstream. Pick mode is controlled by the
-      # MERGAI_MERGE_PICK_MODE repository variable (not a secret):
-      #   * "ai"            -> the agent chooses the merge boundary in the
-      #                        candidate window (uses AI tokens, hence here in the
-      #                        privileged-ops job). --force skips the gate re-check
-      #                        since the caller (periodic-merge or a human) already
-      #                        decided to merge.
-      #   * anything else   -> deterministic pick (first prioritized strategy
-      #                        match), the default when the variable is unset.
-      - name: mergai merge-pick
-        if: ${{ !inputs['merge-pick'] }}
+      # Determine the commit to merge to. Precedence:
+      #   1. an explicit merge-pick input -> use it, bypassing the gate (the
+      #      manual "force this merge" path);
+      #   2. else MERGAI_MERGE_PICK_MODE repository variable (not a secret):
+      #        * "ai"          -> the agent chooses the boundary within the gate's
+      #                           candidate window (uses AI tokens, hence in this
+      #                           privileged-ops job).
+      #        * anything else -> "gate": gate-respecting deterministic pick (the
+      #                           default when the variable is unset).
+      # Both --ai and --gate honor the merge gate: when it is closed (or there is
+      # nothing to merge) they print nothing, so MERGE_PICK is empty and the merge
+      # steps below are skipped. To merge regardless of the gate, dispatch with an
+      # explicit merge-pick input.
+      - name: Determine merge pick
+        id: pick
         env:
           MERGE_PICK_MODE: ${{ vars.MERGAI_MERGE_PICK_MODE }}
+          INPUT_PICK: ${{ inputs['merge-pick'] }}
         run: |
-          if [ "$MERGE_PICK_MODE" = "ai" ]; then
-            echo "Merge-pick mode: ai"
-            MERGE_PICK=$(mergai fork merge-pick --ai --next --force)
+          if [ -n "$INPUT_PICK" ]; then
+            echo "Using explicit merge-pick input (gate bypassed): $INPUT_PICK"
+            MERGE_PICK="$INPUT_PICK"
+          elif [ "$MERGE_PICK_MODE" = "ai" ]; then
+            echo "Merge-pick mode: ai (gate-respecting)"
+            MERGE_PICK=$(mergai fork merge-pick --ai --next)
           else
-            echo "Merge-pick mode: deterministic"
-            MERGE_PICK=$(mergai fork merge-pick --next)
+            echo "Merge-pick mode: gate (gate-respecting deterministic)"
+            MERGE_PICK=$(mergai fork merge-pick --gate)
           fi
-          echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
-          echo "Next merge pick is: $MERGE_PICK"
-          git show --stat $MERGE_PICK
+          echo "MERGE_PICK=$MERGE_PICK" >> "$GITHUB_ENV"
+          echo "pick=$MERGE_PICK" >> "$GITHUB_OUTPUT"
+          if [ -z "$MERGE_PICK" ]; then
+            echo "No merge pick (merge gate closed or nothing to merge); skipping merge."
+          else
+            echo "Merge pick: $MERGE_PICK"
+            git show --stat "$MERGE_PICK"
+          fi
 
-      # Initialize merge context with commit SHA and target branch info
+      # Initialize merge context with commit SHA and target branch info.
       - name: mergai context init
-        env:
-          MERGE_PICK: ${{ inputs['merge-pick'] || env.MERGE_PICK }}
-        run: |
-          echo "MERGE_PICK=$MERGE_PICK" >> $GITHUB_ENV
-          mergai context init $MERGE_PICK
+        if: steps.pick.outputs.pick != ''
+        run: mergai context init "$MERGE_PICK"
 
       # Early-fail if a merge for this commit is already underway: any mergai
       # branch (main/conflict/solution/semantic) for $MERGE_PICK means another
@@ -126,6 +136,7 @@ jobs:
       # also covers the window the periodic-merge workflow can't see (a run
       # dispatched but still awaiting privileged-ops approval, with no PR yet).
       - name: Fail if a merge for this commit is already in progress
+        if: steps.pick.outputs.pick != ''
         run: |
           if [ -n "$(mergai branch list --sha "$MERGE_PICK" -q)" ]; then
             echo "::error::mergai branches already exist for $MERGE_PICK - merge already in progress"
@@ -134,6 +145,7 @@ jobs:
           fi
 
       - name: merge
+        if: steps.pick.outputs.pick != ''
         env:
           MERGAI_AGENT: ${{ inputs['mergai-agent'] }}
         run: |

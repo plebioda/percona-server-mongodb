@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 66,
+    "commits_behind": 67,
     "days_behind": 3,
-    "files_affected": 5243,
-    "total_additions": 42149,
-    "total_deletions": 30440,
+    "files_affected": 5239,
+    "total_additions": 41983,
+    "total_deletions": 30436,
     "date_range": {
       "first": "2026-06-18T07:27:21+00:00",
-      "last": "2026-06-21T05:26:13+00:00"
+      "last": "2026-06-21T12:22:09+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-119485 Add a persisted phase to setFCV after enabling target FCV features (#54422)"
   },
   "unmerged_commits": [
+    {
+      "sha": "72796315c3b00565b01516bbdc063848bc2c0faa",
+      "short_sha": "72796315c3b",
+      "date": "2026-06-21T12:22:09+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-128312 Ensure oplog truncation does not pass the latest persisted valid-as-of timestamp (#56255)\" (#56439)"
+    },
     {
       "sha": "bd2016f961c66296c4ebd7b4a0c88a5a8342dbbe",
       "short_sha": "bd2016f961c",
@@ -935,7 +945,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-21 10:48:23",
+  "generated_at": "2026-06-21 18:42:34",
   "branch_name": "master",
   "display_name": "master"
 }

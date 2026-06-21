@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 63,
-    "days_behind": 2,
-    "files_affected": 5232,
-    "total_additions": 40436,
-    "total_deletions": 34421,
+    "commits_behind": 66,
+    "days_behind": 3,
+    "files_affected": 5243,
+    "total_additions": 42149,
+    "total_deletions": 30440,
     "date_range": {
       "first": "2026-06-18T07:27:21+00:00",
-      "last": "2026-06-19T19:31:40+00:00"
+      "last": "2026-06-21T05:26:13+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,36 @@
     "summary": "SERVER-119485 Add a persisted phase to setFCV after enabling target FCV features (#54422)"
   },
   "unmerged_commits": [
+    {
+      "sha": "bd2016f961c66296c4ebd7b4a0c88a5a8342dbbe",
+      "short_sha": "bd2016f961c",
+      "date": "2026-06-21T05:26:13+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-119888 Enable feature flag for featureFlagSbeTransformStages (#55421)\" (#56438)"
+    },
+    {
+      "sha": "0e8cfea90a07365c5e3b52610472165d0f758eba",
+      "short_sha": "0e8cfea90a0",
+      "date": "2026-06-21T12:53:12+10:00",
+      "author": {
+        "name": "wt-vendoring-bot[bot]",
+        "email": "169275211+wt-vendoring-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "Import wiredtiger: 1040762253106688ab89c440603acbef12173fbb from branch mongodb-master (#56408)"
+    },
+    {
+      "sha": "1a906fab820c7679e9b42f958097b14d0512a33e",
+      "short_sha": "1a906fab820",
+      "date": "2026-06-20T08:23:51-04:00",
+      "author": {
+        "name": "Damian Wasilewicz",
+        "email": "33820523+DamianWasilewicz@users.noreply.github.com"
+      },
+      "summary": "SERVER-128312 Ensure oplog truncation does not pass the latest persisted valid-as-of timestamp (#56255)"
+    },
     {
       "sha": "8232a6c2f94dbd685cf6d700465da1b42510abdb",
       "short_sha": "8232a6c2f94",
@@ -856,10 +886,56 @@
           "num_of_dirs": 8
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "0e8cfea90a07365c5e3b52610472165d0f758eba",
+        "short_sha": "0e8cfea90a0",
+        "date": "2026-06-21T12:53:12+10:00",
+        "author": {
+          "name": "wt-vendoring-bot[bot]",
+          "email": "169275211+wt-vendoring-bot[bot]@users.noreply.github.com"
+        },
+        "summary": "Import wiredtiger: 1040762253106688ab89c440603acbef12173fbb from branch mongodb-master (#56408)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 24,
+          "num_of_lines": 3112,
+          "lines_added": 1760,
+          "lines_deleted": 1352,
+          "num_of_dirs": 13
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "bd2016f961c66296c4ebd7b4a0c88a5a8342dbbe",
+        "short_sha": "bd2016f961c",
+        "date": "2026-06-21T05:26:13+00:00",
+        "author": {
+          "name": "auto-revert-app[bot]",
+          "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+        },
+        "summary": "Revert \"SERVER-119888 Enable feature flag for featureFlagSbeTransformStages (#55421)\" (#56438)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 9,
+          "num_of_lines": 5532,
+          "lines_added": 5328,
+          "lines_deleted": 204,
+          "num_of_dirs": 8
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-20 09:36:07",
+  "generated_at": "2026-06-21 10:48:23",
   "branch_name": "master",
   "display_name": "master"
 }

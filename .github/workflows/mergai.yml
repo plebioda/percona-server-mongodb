@@ -90,16 +90,19 @@ jobs:
       # Determine the commit to merge to. Precedence:
       #   1. an explicit merge-pick input -> use it, bypassing the gate (the
       #      manual "force this merge" path);
-      #   2. else MERGAI_MERGE_PICK_MODE repository variable (not a secret):
-      #        * "ai"          -> the agent chooses the boundary within the gate's
-      #                           candidate window (uses AI tokens, hence in this
-      #                           privileged-ops job).
-      #        * anything else -> "gate": gate-respecting deterministic pick (the
-      #                           default when the variable is unset).
-      # Both --ai and --gate honor the merge gate: when it is closed (or there is
-      # nothing to merge) they print nothing, so MERGE_PICK is empty and the merge
-      # steps below are skipped. To merge regardless of the gate, dispatch with an
-      # explicit merge-pick input.
+      #   2. else the MERGAI_MERGE_PICK_MODE repository variable (not a secret),
+      #      one of three values:
+      #        * "ai"   -> the agent chooses the boundary within the gate's
+      #                    candidate window (uses AI tokens, hence in this
+      #                    privileged-ops job); honors the gate.
+      #        * "next" -> raw `merge-pick --next`: the first prioritized strategy
+      #                    match, with NO gate and NO window cap.
+      #        * "gate" -> gate-respecting deterministic pick (windowed). This is
+      #                    the default for an unset/any-other value.
+      # "ai" and "gate" honor the merge gate: when it is closed (or nothing to
+      # merge) they print nothing, so MERGE_PICK is empty and the merge steps
+      # below are skipped. "next" ignores the gate. To merge regardless of the
+      # gate, dispatch with an explicit merge-pick input.
       - name: Determine merge pick
         id: pick
         env:
@@ -109,12 +112,21 @@ jobs:
           if [ -n "$INPUT_PICK" ]; then
             echo "Using explicit merge-pick input (gate bypassed): $INPUT_PICK"
             MERGE_PICK="$INPUT_PICK"
-          elif [ "$MERGE_PICK_MODE" = "ai" ]; then
-            echo "Merge-pick mode: ai (gate-respecting)"
-            MERGE_PICK=$(mergai fork merge-pick --ai --next)
           else
-            echo "Merge-pick mode: gate (gate-respecting deterministic)"
-            MERGE_PICK=$(mergai fork merge-pick --gate)
+            case "$MERGE_PICK_MODE" in
+              ai)
+                echo "Merge-pick mode: ai (gate-respecting)"
+                MERGE_PICK=$(mergai fork merge-pick --ai --next)
+                ;;
+              next)
+                echo "Merge-pick mode: next (raw strategy pick; ignores the gate)"
+                MERGE_PICK=$(mergai fork merge-pick --next)
+                ;;
+              *)
+                echo "Merge-pick mode: gate (gate-respecting deterministic)"
+                MERGE_PICK=$(mergai fork merge-pick --gate)
+                ;;
+            esac
           fi
           echo "MERGE_PICK=$MERGE_PICK" >> "$GITHUB_ENV"
           echo "pick=$MERGE_PICK" >> "$GITHUB_OUTPUT"

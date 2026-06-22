@@ -174,23 +174,11 @@ bool ProfileCmdBase::run(OperationContext* opCtx,
         BSONObjBuilder oldState;
         BSONObjBuilder newState;
 
-<<<<<<< HEAD
-        oldState.append("level"_sd, oldSettings.level);
-        oldState.append("slowms"_sd, oldSlowMS);
-        oldState.append("slowinprogms"_sd, oldSettings.slowOpInProgressThreshold.count());
-        oldState.append("ratelimit"_sd, oldRateLimit);
-        oldState.append("sampleRate"_sd, oldSampleRate);
-||||||| 2eff375
-        oldState.append("level"_sd, oldSettings.level);
-        oldState.append("slowms"_sd, oldSlowMS);
-        oldState.append("slowinprogms"_sd, oldSettings.slowOpInProgressThreshold.count());
-        oldState.append("sampleRate"_sd, oldSampleRate);
-=======
         oldState.append("level"sv, oldSettings.level);
         oldState.append("slowms"sv, oldSlowMS);
         oldState.append("slowinprogms"sv, oldSettings.slowOpInProgressThreshold.count());
+        oldState.append("ratelimit"sv, oldRateLimit);
         oldState.append("sampleRate"sv, oldSampleRate);
->>>>>>> 72796315c3b00565b01516bbdc063848bc2c0faa
         if (oldSettings.filter) {
             oldState.append("filter"sv, oldSettings.filter->serialize());
         }
@@ -201,23 +189,11 @@ bool ProfileCmdBase::run(OperationContext* opCtx,
         // (0, 1, or 2).
         auto& dbProfileSettings = DatabaseProfileSettings::get(opCtx->getServiceContext());
         auto newSettings = dbProfileSettings.getDatabaseProfileSettings(dbName);
-<<<<<<< HEAD
-        newState.append("level"_sd, newSettings.level);
-        newState.append("slowms"_sd, serverGlobalParams.slowMS.load());
-        newState.append("slowinprogms"_sd, newSettings.slowOpInProgressThreshold.count());
-        newState.append("ratelimit"_sd, serverGlobalParams.rateLimit.load());
-        newState.append("sampleRate"_sd, serverGlobalParams.sampleRate.load());
-||||||| 2eff375
-        newState.append("level"_sd, newSettings.level);
-        newState.append("slowms"_sd, serverGlobalParams.slowMS.load());
-        newState.append("slowinprogms"_sd, newSettings.slowOpInProgressThreshold.count());
-        newState.append("sampleRate"_sd, serverGlobalParams.sampleRate.load());
-=======
         newState.append("level"sv, newSettings.level);
         newState.append("slowms"sv, serverGlobalParams.slowMS.load());
         newState.append("slowinprogms"sv, newSettings.slowOpInProgressThreshold.count());
+        newState.append("ratelimit"sv, serverGlobalParams.rateLimit.load());
         newState.append("sampleRate"sv, serverGlobalParams.sampleRate.load());
->>>>>>> 72796315c3b00565b01516bbdc063848bc2c0faa
         if (newSettings.filter) {
             newState.append("filter"sv, newSettings.filter->serialize());
         }

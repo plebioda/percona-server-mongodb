@@ -30,15 +30,10 @@
 #include "mongo/db/storage/wiredtiger/wiredtiger_customization_hooks.h"
 
 #include "mongo/base/init.h"  // IWYU pragma: keep
-<<<<<<< HEAD
 #include "mongo/base/string_data.h"
 #include "mongo/db/database_name_util.h"
 #include "mongo/db/encryption/encryption_options.h"
 #include "mongo/db/namespace_string_util.h"
-||||||| 2eff375
-#include "mongo/base/string_data.h"
-=======
->>>>>>> 72796315c3b00565b01516bbdc063848bc2c0faa
 #include "mongo/db/service_context.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/decorable.h"

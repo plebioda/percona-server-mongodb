@@ -76,43 +76,8 @@ struct {
     std::string_view name;   // - lower case string name
     std::string_view alias;  // - language alias (if nonempty)
 } static constexpr kLanguagesV2V3[] = {
-<<<<<<< HEAD
-    {"none"_sd, {}},
-    {"ngram"_sd, {}},
-    {"danish"_sd, "da"_sd},
-    {"dutch"_sd, "nl"_sd},
-    {"english"_sd, "en"_sd},
-    {"finnish"_sd, "fi"_sd},
-    {"french"_sd, "fr"_sd},
-    {"german"_sd, "de"_sd},
-    {"hungarian"_sd, "hu"_sd},
-    {"italian"_sd, "it"_sd},
-    {"norwegian"_sd, "nb"_sd},
-    {"portuguese"_sd, "pt"_sd},
-    {"romanian"_sd, "ro"_sd},
-    {"russian"_sd, "ru"_sd},
-    {"spanish"_sd, "es"_sd},
-    {"swedish"_sd, "sv"_sd},
-    {"turkish"_sd, "tr"_sd},
-||||||| 2eff375
-    {"none"_sd, {}},
-    {"danish"_sd, "da"_sd},
-    {"dutch"_sd, "nl"_sd},
-    {"english"_sd, "en"_sd},
-    {"finnish"_sd, "fi"_sd},
-    {"french"_sd, "fr"_sd},
-    {"german"_sd, "de"_sd},
-    {"hungarian"_sd, "hu"_sd},
-    {"italian"_sd, "it"_sd},
-    {"norwegian"_sd, "nb"_sd},
-    {"portuguese"_sd, "pt"_sd},
-    {"romanian"_sd, "ro"_sd},
-    {"russian"_sd, "ru"_sd},
-    {"spanish"_sd, "es"_sd},
-    {"swedish"_sd, "sv"_sd},
-    {"turkish"_sd, "tr"_sd},
-=======
     {"none"sv, {}},
+    {"ngram"sv, {}},
     {"danish"sv, "da"sv},
     {"dutch"sv, "nl"sv},
     {"english"sv, "en"sv},
@@ -128,7 +93,6 @@ struct {
     {"spanish"sv, "es"sv},
     {"swedish"sv, "sv"sv},
     {"turkish"sv, "tr"sv},
->>>>>>> 72796315c3b00565b01516bbdc063848bc2c0faa
 };
 
 //

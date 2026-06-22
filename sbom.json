@@ -2,16 +2,8 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-<<<<<<< HEAD
   "serialNumber": "urn:uuid:95a559f1-b091-4a92-b80d-e6d37c5e477c",
   "version": 6,
-||||||| 2eff375
-  "serialNumber": "urn:uuid:2d7fbf85-c8b6-4f90-9966-70da88224a36",
-  "version": 7,
-=======
-  "serialNumber": "urn:uuid:2d7fbf85-c8b6-4f90-9966-70da88224a36",
-  "version": 8,
->>>>>>> 72796315c3b00565b01516bbdc063848bc2c0faa
   "metadata": {
     "timestamp": "2026-06-18T08:11:58Z",
     "lifecycles": [

@@ -45,13 +45,7 @@ namespace crypto {
  */
 class MONGO_MOD_PUBLIC JWKSFetcherImpl : public JWKSFetcher {
 public:
-<<<<<<< HEAD
-    JWKSFetcherImpl(ClockSource* clock, StringData issuer, StringData caFilePath = {});
-||||||| 2eff375
-    JWKSFetcherImpl(ClockSource* clock, StringData issuer);
-=======
-    JWKSFetcherImpl(ClockSource* clock, std::string_view issuer);
->>>>>>> 72796315c3b00565b01516bbdc063848bc2c0faa
+    JWKSFetcherImpl(ClockSource* clock, std::string_view issuer, std::string_view caFilePath = {});
 
     JWKSet fetch() override;
 

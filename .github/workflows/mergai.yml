@@ -109,6 +109,7 @@ jobs:
           MERGE_PICK_MODE: ${{ vars.MERGAI_MERGE_PICK_MODE }}
           INPUT_PICK: ${{ inputs['merge-pick'] }}
         run: |
+          MERGE_PICK=""
           if [ -n "$INPUT_PICK" ]; then
             echo "Using explicit merge-pick input (gate bypassed): $INPUT_PICK"
             MERGE_PICK="$INPUT_PICK"
@@ -116,7 +117,26 @@ jobs:
             case "$MERGE_PICK_MODE" in
               ai)
                 echo "Merge-pick mode: ai (gate-respecting)"
-                MERGE_PICK=$(mergai fork merge-pick --ai --next)
+                # --json carries the agent's reasoning alongside the sha; --next
+                # would print only the bare sha and the reasoning would be lost.
+                PICK_JSON=$(mergai fork merge-pick --ai --json)
+                if [ -n "$PICK_JSON" ]; then
+                  MERGE_PICK=$(printf '%s' "$PICK_JSON" | jq -r '.sha // empty')
+                  AI_SOURCE=$(printf '%s' "$PICK_JSON" | jq -r '.source // empty')
+                  AI_REASONING=$(printf '%s' "$PICK_JSON" | jq -r '.reasoning // empty')
+                  echo "AI pick source: ${AI_SOURCE:-unknown}"
+                  if [ -n "$AI_REASONING" ]; then
+                    echo "AI pick reasoning: $AI_REASONING"
+                    {
+                      echo "### AI merge-pick"
+                      echo ""
+                      echo "- commit: \`${MERGE_PICK}\`"
+                      echo "- source: ${AI_SOURCE:-unknown}"
+                      echo ""
+                      echo "${AI_REASONING}"
+                    } >> "$GITHUB_STEP_SUMMARY"
+                  fi
+                fi
                 ;;
               next)
                 echo "Merge-pick mode: next (raw strategy pick; ignores the gate)"

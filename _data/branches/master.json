@@ -7,6 +7,7 @@
   "divergence": {
     "commits_behind": 68,
     "days_behind": 4,
+    "oldest_unmerged_age_days": 3.9976353568750005,
     "files_affected": 5239,
     "total_additions": 41986,
     "total_deletions": 30439,
@@ -34,6 +35,10 @@
       "email": "marco.bizzarri@mongodb.com"
     },
     "summary": "SERVER-119485 Add a persisted phase to setFCV after enabling target FCV features (#54422)"
+  },
+  "gate": {
+    "open": true,
+    "reason": "min_commits (68 >= 50)"
   },
   "unmerged_commits": [
     {
@@ -955,7 +960,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-22 07:16:44",
+  "generated_at": "2026-06-22 07:23:49",
   "branch_name": "master",
   "display_name": "master"
 }

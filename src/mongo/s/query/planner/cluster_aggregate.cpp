@@ -32,7 +32,6 @@
 
 #include "mongo/base/error_codes.h"
 #include "mongo/base/status_with.h"
-#include "mongo/base/string_data.h"
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonmisc.h"
 #include "mongo/bson/bsonobj.h"
@@ -113,6 +112,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -128,6 +128,7 @@
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kCommand
 
 namespace mongo {
+using namespace std::literals::string_view_literals;
 
 constexpr unsigned ClusterAggregate::kMaxViewRetries;
 using sharded_agg_helpers::PipelineDataSource;
@@ -299,7 +300,7 @@ void updateHostsTargetedMetrics(OperationContext* opCtx,
             std::set<ShardId> shardIdsForNs;
             // Note: It is fine to use 'getAllShardIds_UNSAFE_NotPointInTime' here because the
             // result is only used to update stats.
-            cri->getChunkManager().getAllShardIds_UNSAFE_NotPointInTime(&shardIdsForNs);
+            cri->getChunkManager().getAllShardIds_UNSAFE_NotPointInTime(opCtx, &shardIdsForNs);
             for (const auto& shardId : shardIdsForNs) {
                 shardsIds.insert(shardId);
             }
@@ -321,7 +322,7 @@ void updateHostsTargetedMetrics(OperationContext* opCtx,
                 // Note: It is fine to use 'getAllShardIds_UNSAFE_NotPointInTime' here because the
                 // result is only used to update stats.
                 resolvedNsCri.getChunkManager().getAllShardIds_UNSAFE_NotPointInTime(
-                    &shardIdsForNs);
+                    opCtx, &shardIdsForNs);
                 for (const auto& shardId : shardIdsForNs) {
                     shardsIds.insert(shardId);
                 }
@@ -930,6 +931,7 @@ Status runAggregateImpl(OperationContext* opCtx,
     if (request.getExplain()) {
         explain_common::generateServerInfo(&result);
         explain_common::generateServerParameters(expCtx, &result);
+        explain_common::generateQueryKnobs(expCtx, &result);
     }
 
     // Here we modify the original 'request' object by copying the query settings from 'expCtx' into
@@ -1116,7 +1118,7 @@ Status ClusterAggregate::runAggregate(
     const PrivilegeVector& privileges,
     boost::optional<ExplainOptions::Verbosity> verbosity,
     BSONObjBuilder* result,
-    StringData comment,
+    std::string_view comment,
     std::shared_ptr<IncrementalFeatureRolloutContext> ifrContext) {
     return runAggregate(
         opCtx, namespaces, request, {request}, privileges, verbosity, result, comment, ifrContext);
@@ -1172,6 +1174,7 @@ void makeEOFExplainResult(OperationContext* opCtx,
     explain_common::generateQueryShapeHash(opCtx, result);
     explain_common::generateServerInfo(result);
     explain_common::generateServerParameters(expCtx, result);
+    explain_common::generateQueryKnobs(expCtx, result);
     explain_common::appendIfRoom(
         serializeForPassthrough(expCtx, request, namespaces.requestedNss).toBson(),
         "command",
@@ -1371,7 +1374,7 @@ Status ClusterAggregate::runAggregate(
     const PrivilegeVector& privileges,
     boost::optional<ExplainOptions::Verbosity> verbosity,
     BSONObjBuilder* result,
-    StringData comment,
+    std::string_view comment,
     std::shared_ptr<IncrementalFeatureRolloutContext> ifrContext) {
     // Use the provided IFRContext if available, otherwise create a new one. This ensures consistent
     // flag values throughout the operation, including retries on view errors.
@@ -1692,7 +1695,7 @@ Status ClusterAggregate::retryOnViewOrIFRKickbackError(
                             privileges,
                             verbosity,
                             result,
-                            "ClusterAggregate::retryOnViewOrIFRKickbackError"_sd,
+                            "ClusterAggregate::retryOnViewOrIFRKickbackError"sv,
                             ifrContext);
     }
 
@@ -1712,7 +1715,7 @@ Status ClusterAggregate::retryOnViewOrIFRKickbackError(
                         privileges,
                         verbosity,
                         result,
-                        "ClusterAggregate::retryOnViewOrIFRKickbackError"_sd,
+                        "ClusterAggregate::retryOnViewOrIFRKickbackError"sv,
                         ifrContext);
 }
 

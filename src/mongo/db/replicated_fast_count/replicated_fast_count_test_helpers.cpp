@@ -54,6 +54,7 @@
 #include "mongo/unittest/unittest.h"
 
 namespace mongo::replicated_fast_count::test_helpers {
+using namespace std::literals::string_view_literals;
 
 namespace {
 bool findPersistedDocInCollection(OperationContext* opCtx, const UUID& uuid, BSONObj& outDoc) {
@@ -569,7 +570,7 @@ void assertFastCountApplyOpsMatches(const repl::OplogEntry& applyOpsEntry,
                                     const std::vector<ExpectedFastCountOp>& expectedOps) {
     EXPECT_EQ(repl::OpTypeEnum::kCommand, applyOpsEntry.getOpType());
     EXPECT_EQ(repl::OplogEntry::CommandType::kApplyOps, applyOpsEntry.getCommandType());
-    EXPECT_EQ("admin.$cmd"_sd, applyOpsEntry.getNss().ns_forTest());
+    EXPECT_EQ("admin.$cmd"sv, applyOpsEntry.getNss().ns_forTest());
 
     std::map<UUID, ExpectedFastCountOp> expectedByUuid;
     for (const auto& e : expectedOps) {
@@ -822,6 +823,7 @@ void insertSizeCountEntry(OperationContext* opCtx,
                           SizeCountStore& store,
                           UUID uuid,
                           const SizeCountStore::Entry& entry) {
+    Lock::GlobalLock writeLock(opCtx, MODE_IX);
     WriteUnitOfWork wuow(opCtx);
     store.write(opCtx, uuid, entry);
     wuow.commit();
@@ -830,6 +832,7 @@ void insertSizeCountEntry(OperationContext* opCtx,
 void insertSizeCountTimestamp(OperationContext* opCtx,
                               SizeCountTimestampStore& store,
                               Timestamp timestamp) {
+    Lock::GlobalLock writeLock(opCtx, MODE_IX);
     WriteUnitOfWork wuow(opCtx);
     store.write(opCtx, timestamp);
     wuow.commit();

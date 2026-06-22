@@ -29,7 +29,6 @@
 
 #pragma once
 
-#include "mongo/base/string_data.h"
 #include "mongo/crypto/jwks_fetcher.h"
 #include "mongo/crypto/jwt_types_gen.h"
 #include "mongo/util/modules.h"
@@ -37,6 +36,7 @@
 #include "mongo/util/time_support.h"
 
 #include <string>
+#include <string_view>
 
 namespace mongo {
 namespace crypto {
@@ -45,7 +45,13 @@ namespace crypto {
  */
 class MONGO_MOD_PUBLIC JWKSFetcherImpl : public JWKSFetcher {
 public:
+<<<<<<< HEAD
     JWKSFetcherImpl(ClockSource* clock, StringData issuer, StringData caFilePath = {});
+||||||| 2eff375
+    JWKSFetcherImpl(ClockSource* clock, StringData issuer);
+=======
+    JWKSFetcherImpl(ClockSource* clock, std::string_view issuer);
+>>>>>>> 72796315c3b00565b01516bbdc063848bc2c0faa
 
     JWKSet fetch() override;
 

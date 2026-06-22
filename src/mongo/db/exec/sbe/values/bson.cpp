@@ -42,6 +42,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string_view>
 
 namespace mongo {
 namespace sbe {
@@ -418,9 +419,9 @@ void appendValueToBsonArr(ArrayBuilder& builder, value::TypeTags tag, value::Val
 template <class ObjBuilder>
 void convertToBsonObj(ObjBuilder& builder, value::Object* obj) {
     for (size_t idx = 0; idx < obj->size(); ++idx) {
-        auto [tag, val] = obj->getAt(idx);
+        auto tagVal = obj->getAt(idx);
         const auto& name = obj->field(idx);
-        appendValueToBsonObj(builder, name, tag, val);
+        appendValueToBsonObj(builder, name, tagVal.tag, tagVal.value);
     }
 }
 
@@ -430,7 +431,7 @@ template void convertToBsonObj<UniqueBSONObjBuilder>(UniqueBSONObjBuilder& build
 
 template <class ObjBuilder>
 void appendValueToBsonObj(ObjBuilder& builder,
-                          StringData name,
+                          std::string_view name,
                           value::TypeTags tag,
                           value::Value val) {
     switch (tag) {
@@ -541,11 +542,11 @@ template void appendValueToBsonArr<UniqueBSONArrayBuilder>(UniqueBSONArrayBuilde
                                                            value::Value val);
 
 template void appendValueToBsonObj<BSONObjBuilder>(BSONObjBuilder& builder,
-                                                   StringData name,
+                                                   std::string_view name,
                                                    value::TypeTags tag,
                                                    value::Value val);
 template void appendValueToBsonObj<UniqueBSONObjBuilder>(UniqueBSONObjBuilder& builder,
-                                                         StringData name,
+                                                         std::string_view name,
                                                          value::TypeTags tag,
                                                          value::Value val);
 }  // namespace bson

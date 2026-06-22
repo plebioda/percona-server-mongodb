@@ -51,6 +51,7 @@
 #include "mongo/util/uuid.h"
 
 #include <mutex>
+#include <string_view>
 
 #include <boost/container/flat_map.hpp>
 #include <boost/optional/optional.hpp>
@@ -158,6 +159,8 @@ public:
      *
      * This returns an optional because it is possible that we try find the timestamp before the
      * first flush persists one to disk.
+     *
+     * The caller must hold a MODE_IS GlobalLock.
      */
     boost::optional<Timestamp> findPersistedTimestampStoreTs(OperationContext* opCtx) const;
 
@@ -167,6 +170,8 @@ public:
      *
      * This returns an optional because it is possible that we try to find a uuid that is present in
      * the catalog but doesn't have a persisted fast count entry because it hasn't been flushed yet.
+     *
+     * The caller must hold a MODE_IS GlobalLock.
      */
     boost::optional<std::pair<CollectionSizeCount, Timestamp>> findPersisted(
         OperationContext* opCtx, UUID uuid) const;
@@ -262,7 +267,7 @@ private:
     // one ReplicatedFastCountManager per mongod process.
     static inline ReplicatedFastCountMetrics _metrics;
 
-    StringData _threadName = "replicatedSizeCount"_sd;
+    std::string_view _threadName = "replicatedSizeCount"_sd;
     stdx::thread _backgroundThread;
     Atomic<bool> _isEnabled = false;
     stdx::condition_variable _backgroundThreadReadyForFlush;

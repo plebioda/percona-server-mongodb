@@ -42,6 +42,8 @@
 #include "mongo/db/exec/document_value/document_value_test_util.h"
 #include "mongo/db/exec/document_value/value.h"
 #include "mongo/db/exec/single_doc_lookup/aggregation_single_document_lookup_executor.h"
+#include "mongo/db/exec/single_doc_lookup/express_single_document_lookup_executor.h"
+#include "mongo/db/exec/single_doc_lookup/single_document_lookup_executor.h"
 #include "mongo/db/pipeline/aggregation_context_fixture.h"
 #include "mongo/db/pipeline/document_source_change_stream.h"
 #include "mongo/db/pipeline/expression_context_for_test.h"
@@ -49,6 +51,7 @@
 #include "mongo/db/pipeline/resume_token.h"
 #include "mongo/db/query/explain_options.h"
 #include "mongo/db/tenant_id.h"
+#include "mongo/unittest/server_parameter_guard.h"
 #include "mongo/unittest/unittest.h"
 #include "mongo/util/uuid.h"
 
@@ -61,6 +64,7 @@
 
 namespace mongo {
 namespace {
+using namespace std::literals::string_view_literals;
 
 using MockMongoInterface = StubLookupSingleDocumentProcessInterface;
 
@@ -128,8 +132,8 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldSerializeAsExpectedForE
         expCtx, getSpec(FullDocumentModeEnum::kUpdateLookup));
     const auto expectedOutput =
         Value(Document{{DocumentSourceChangeStream::kStageName,
-                        Document{{"stage"_sd, DocumentSourceChangeStreamAddPostImage::kStageName},
-                                 {"fullDocument"_sd, "updateLookup"_sd}}}});
+                        Document{{"stage"sv, DocumentSourceChangeStreamAddPostImage::kStageName},
+                                 {"fullDocument"sv, "updateLookup"sv}}}});
 
     ASSERT_VALUE_EQ(
         stage->serialize(query_shape::SerializationOptions{
@@ -142,7 +146,7 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldSerializeAsExpectedForD
     const auto stage = DocumentSourceChangeStreamAddPostImage::create(
         expCtx, getSpec(FullDocumentModeEnum::kUpdateLookup));
     const auto expectedOutput = Value(Document{{DocumentSourceChangeStreamAddPostImage::kStageName,
-                                                Document{{"fullDocument"_sd, "updateLookup"_sd}}}});
+                                                Document{{"fullDocument"sv, "updateLookup"sv}}}});
 
     ASSERT_VALUE_EQ(stage->serialize(), expectedOutput);
 }
@@ -157,7 +161,7 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldErrorIfMissingDocumentK
     auto mockLocalStage = exec::agg::MockStage::createForTest(
         {createDocumentWithIdAndResumeToken(
             0,
-            Document{{"operationType", "update"_sd},
+            Document{{"operationType", "update"sv},
                      {"fullDocument", Document{{"_id", 0}}},
                      {"ns",
                       Document{{"db", expCtx->getNamespaceString().db_forTest()},
@@ -216,7 +220,7 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldErrorIfMissingNamespace
         createDocumentWithIdAndResumeToken(0,
                                            Document{
                                                {"documentKey", Document{{"_id", 0}}},
-                                               {"operationType", "update"_sd},
+                                               {"operationType", "update"sv},
                                            }),
         expCtx);
 
@@ -245,7 +249,7 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldErrorIfNsFieldHasWrongT
     auto mockLocalStage = exec::agg::MockStage::createForTest(
         createDocumentWithIdAndResumeToken(0,
                                            Document{{"documentKey", Document{{"_id", 0}}},
-                                                    {"operationType", "update"_sd},
+                                                    {"operationType", "update"sv},
                                                     {"ns", 4}}),
         expCtx);
 
@@ -276,9 +280,9 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldErrorIfNsFieldDoesNotMa
             0,
             Document{
                 {"documentKey", Document{{"_id", 0}}},
-                {"operationType", "update"_sd},
+                {"operationType", "update"sv},
                 {"ns",
-                 Document{{"db", "DIFFERENT"_sd}, {"coll", expCtx->getNamespaceString().coll()}}}}),
+                 Document{{"db", "DIFFERENT"sv}, {"coll", expCtx->getNamespaceString().coll()}}}}),
         expCtx);
 
     auto lookupChangeStage = exec::agg::buildStageAndStitch(lookupChangeDS, mockLocalStage);
@@ -305,8 +309,8 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest,
         createDocumentWithIdAndResumeToken(
             0,
             Document{{"documentKey", Document{{"_id", 0}}},
-                     {"operationType", "update"_sd},
-                     {"ns", Document{{"db", "DIFFERENT"_sd}, {"coll", "irrelevant"_sd}}}}),
+                     {"operationType", "update"sv},
+                     {"ns", Document{{"db", "DIFFERENT"sv}, {"coll", "irrelevant"sv}}}}),
         expCtx);
 
     auto lookupChangeStage = exec::agg::buildStageAndStitch(lookupChangeDS, mockLocalStage);
@@ -335,10 +339,10 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldPassIfDatabaseMatchesOn
         createDocumentWithIdAndResumeToken(
             0,
             Document{{"documentKey", Document{{"_id", 0}}},
-                     {"operationType", "update"_sd},
+                     {"operationType", "update"sv},
                      {"ns",
                       Document{{"db", expCtx->getNamespaceString().db_forTest()},
-                               {"coll", "irrelevant"_sd}}}}),
+                               {"coll", "irrelevant"sv}}}}),
         expCtx);
 
     auto lookupChangeStage = exec::agg::buildStageAndStitch(lookupChangeDS, mockLocalStage);
@@ -349,10 +353,10 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldPassIfDatabaseMatchesOn
                        createDocumentWithIdAndResumeToken(
                            0,
                            Document{{"documentKey", Document{{"_id", 0}}},
-                                    {"operationType", "update"_sd},
+                                    {"operationType", "update"sv},
                                     {"ns",
                                      Document{{"db", expCtx->getNamespaceString().db_forTest()},
-                                              {"coll", "irrelevant"_sd}}},
+                                              {"coll", "irrelevant"sv}}},
                                     {"fullDocument", Document{{"_id", 0}}}}));
 }
 
@@ -367,7 +371,7 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldErrorIfDocumentKeyIsNot
         createDocumentWithIdAndResumeToken(
             0,
             Document{{"documentKey", Document{{"_id", 0}}},
-                     {"operationType", "update"_sd},
+                     {"operationType", "update"sv},
                      {"ns",
                       Document{{"db", expCtx->getNamespaceString().db_forTest()},
                                {"coll", expCtx->getNamespaceString().coll()}}}}),
@@ -396,7 +400,7 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldPropagatePauses) {
         {createDocumentWithIdAndResumeToken(
              0,
              Document{{"documentKey", Document{{"_id", 0}}},
-                      {"operationType", "insert"_sd},
+                      {"operationType", "insert"sv},
                       {"ns",
                        Document{{"db", expCtx->getNamespaceString().db_forTest()},
                                 {"coll", expCtx->getNamespaceString().coll()}}},
@@ -405,7 +409,7 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldPropagatePauses) {
          createDocumentWithIdAndResumeToken(
              1,
              Document{{"documentKey", Document{{"_id", 1}}},
-                      {"operationType", "update"_sd},
+                      {"operationType", "update"sv},
                       {"ns",
                        Document{{"db", expCtx->getNamespaceString().db_forTest()},
                                 {"coll", expCtx->getNamespaceString().coll()}}}}),
@@ -426,7 +430,7 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldPropagatePauses) {
                        createDocumentWithIdAndResumeToken(
                            0,
                            Document{{"documentKey", Document{{"_id", 0}}},
-                                    {"operationType", "insert"_sd},
+                                    {"operationType", "insert"sv},
                                     {"ns",
                                      Document{{"db", expCtx->getNamespaceString().db_forTest()},
                                               {"coll", expCtx->getNamespaceString().coll()}}},
@@ -440,7 +444,7 @@ TEST_F(DocumentSourceChangeStreamAddPostImageTest, ShouldPropagatePauses) {
                        createDocumentWithIdAndResumeToken(
                            1,
                            Document{{"documentKey", Document{{"_id", 1}}},
-                                    {"operationType", "update"_sd},
+                                    {"operationType", "update"sv},
                                     {"ns",
                                      Document{{"db", expCtx->getNamespaceString().db_forTest()},
                                               {"coll", expCtx->getNamespaceString().coll()}}},
@@ -471,8 +475,33 @@ TEST_F(ChangeStreamAddPostImageStageFnWiringTest, UpdateLookupModeBuildsUpdateLo
     auto* updateLookupStage = dynamic_cast<exec::agg::ChangeStreamUpdateLookupStage*>(stage.get());
     ASSERT(updateLookupStage);
     ASSERT_FALSE(dynamic_cast<exec::agg::ChangeStreamAddPostImageStage*>(stage.get()));
+}
+
+// Flag off (default): the updateLookup stage routes through the Aggregation fallback alone.
+TEST_F(ChangeStreamAddPostImageStageFnWiringTest, UpdateLookupFlagOffWiresAggregationOnly) {
+    unittest::ServerParameterGuard flag{"featureFlagChangeStreamOptimizedUpdateLookup", false};
+    auto stage = buildStageForMode(FullDocumentModeEnum::kUpdateLookup);
+    auto* updateLookupStage = dynamic_cast<exec::agg::ChangeStreamUpdateLookupStage*>(stage.get());
+    ASSERT(updateLookupStage);
     ASSERT(dynamic_cast<const exec::agg::AggregationSingleDocumentLookupExecutor*>(
         updateLookupStage->getLookupExecutor_forTest()));
+}
+
+// Flag on: the updateLookup stage routes through PrimaryWithFallback(Express, Aggregation).
+TEST_F(ChangeStreamAddPostImageStageFnWiringTest,
+       UpdateLookupFlagOnWiresExpressWithAggregationFallback) {
+    unittest::ServerParameterGuard flag{"featureFlagChangeStreamOptimizedUpdateLookup", true};
+    auto stage = buildStageForMode(FullDocumentModeEnum::kUpdateLookup);
+    auto* updateLookupStage = dynamic_cast<exec::agg::ChangeStreamUpdateLookupStage*>(stage.get());
+    ASSERT(updateLookupStage);
+
+    auto* chain = dynamic_cast<const exec::agg::PrimaryWithFallbackSingleDocumentLookupExecutor*>(
+        updateLookupStage->getLookupExecutor_forTest());
+    ASSERT(chain);
+    ASSERT(dynamic_cast<const exec::agg::ExpressSingleDocumentLookupExecutor*>(
+        chain->primary_forTest()));
+    ASSERT(dynamic_cast<const exec::agg::AggregationSingleDocumentLookupExecutor*>(
+        chain->fallback_forTest()));
 }
 
 TEST_F(ChangeStreamAddPostImageStageFnWiringTest, RequiredModeBuildsAddPostImageStage) {

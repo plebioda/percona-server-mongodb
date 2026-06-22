@@ -57,6 +57,7 @@
 #include "mongo/db/s/resharding/donor_document_gen.h"
 #include "mongo/db/s/resharding/donor_oplog_id_gen.h"
 #include "mongo/db/s/resharding/recipient_document_gen.h"
+#include "mongo/db/shard_role/shard_catalog/collection.h"
 #include "mongo/db/shard_role/shard_catalog/index_descriptor.h"
 #include "mongo/db/sharding_environment/shard_id.h"
 #include "mongo/db/timeseries/timeseries_index_schema_conversion_functions.h"
@@ -75,6 +76,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -392,7 +394,7 @@ NamespaceString getLocalOplogBufferNamespace(UUID existingUUID, ShardId donorSha
 
 NamespaceString getLocalConflictStashNamespace(UUID existingUUID, ShardId donorShardId);
 
-void doNoopWrite(OperationContext* opCtx, StringData opStr, const NamespaceString& nss);
+void doNoopWrite(OperationContext* opCtx, std::string_view opStr, const NamespaceString& nss);
 
 boost::optional<Milliseconds> estimateRemainingRecipientTime(bool applyingBegan,
                                                              int64_t bytesCopied,
@@ -663,6 +665,14 @@ CancelableOperationContext makeReshardingOperationContext(
  * setFCV.
  */
 VersionContext getVersionContextOrDefault(const boost::optional<ForwardableOperationMetadata>& fom);
+
+/**
+ * Chooses the index hint for the covered clone-count aggregation run against a donor's source
+ * collection.
+ */
+boost::optional<BSONObj> determineCloneCountHint(OperationContext* opCtx,
+                                                 const CollectionPtr& collection,
+                                                 const boost::optional<BSONObj>& shardKeyPattern);
 
 }  // namespace resharding
 }  // namespace mongo

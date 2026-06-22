@@ -42,6 +42,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
@@ -132,7 +133,7 @@ ProjectionStage::ProjectionStage(ExpressionContext* expCtx,
                                  const BSONObj& projObj,
                                  WorkingSet* ws,
                                  std::unique_ptr<PlanStage> child,
-                                 StringData stageType)
+                                 std::string_view stageType)
     : PlanStage{expCtx, std::move(child), stageType},
       _projObj{expCtx->getExplain() ? boost::make_optional(projObj.getOwned()) : boost::none},
       _ws{*ws} {}
@@ -258,7 +259,7 @@ ProjectionStageCovered::ProjectionStageCovered(ExpressionContext* expCtx,
         if (_includedFields.end() == fieldIt) {
             // Push an unused value on the back to keep _includeKey and _keyFieldNames
             // in sync.
-            _keyFieldNames.push_back(StringData());
+            _keyFieldNames.push_back(std::string_view());
             _includeKey.push_back(false);
         } else {
             // If we are including this key field store its field name.
@@ -306,40 +307,6 @@ ProjectionStageSimple::ProjectionStageSimple(ExpressionContext* expCtx,
         _fields = {projection->getExcludedPaths().begin(), projection->getExcludedPaths().end()};
     }
 }
-
-template <typename Container>
-BSONObj ProjectionStageSimple::transform(const BSONObj& doc,
-                                         const Container& projFields,
-                                         projection_ast::ProjectType projectType) {
-    BSONObjBuilder bob;
-    auto nFieldsLeft = projFields.size();
-
-    if (projectType == projection_ast::ProjectType::kInclusion) {
-
-        for (const auto& elt : doc) {
-            if (projFields.count(elt.fieldNameStringData()) > 0) {
-                bob.append(elt);
-                if (--nFieldsLeft == 0) {
-                    break;
-                }
-            }
-        }
-    } else {
-
-        for (const auto& elt : doc) {
-            if (nFieldsLeft == 0 || projFields.count(elt.fieldNameStringData()) == 0) {
-                bob.append(elt);
-            } else {
-                --nFieldsLeft;
-            }
-        }
-    }
-    return bob.obj();
-}
-template BSONObj ProjectionStageSimple::transform<StringSet>(
-    const BSONObj& doc, const StringSet& fields, projection_ast::ProjectType projectType);
-template BSONObj ProjectionStageSimple::transform<OrderedPathSet>(
-    const BSONObj& doc, const OrderedPathSet& fields, projection_ast::ProjectType projectType);
 
 void ProjectionStageSimple::transform(WorkingSetMember* member) const {
     // SIMPLE_DOC implies that we expect an object so it's kind of redundant.

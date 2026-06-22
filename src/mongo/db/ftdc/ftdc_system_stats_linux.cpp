@@ -376,32 +376,16 @@ public:
 
         // Skip the disks section if we could not find any disks.
         // This can happen when we do not have permission to /sys/block for instance.
-<<<<<<< HEAD
         if (gDiagnosticDataCollectionEnableSystemMetricsDisks.load() && !_disksStringData.empty()) {
-            BSONObjBuilder subObjBuilder(builder.subobjStart("disks"_sd));
-||||||| 2eff375
-        if (!_disksStringData.empty()) {
-            BSONObjBuilder subObjBuilder(builder.subobjStart("disks"_sd));
-=======
-        if (!_disksStringData.empty()) {
             BSONObjBuilder subObjBuilder(builder.subobjStart("disks"sv));
->>>>>>> 60c12ad8ecf45edba1b19cbb45f5d59be0538ca7
             processStatusErrors(procparser::parseProcDiskStatsFile(
                                     "/proc/diskstats"sv, _disksStringData, &subObjBuilder),
                                 &subObjBuilder);
             subObjBuilder.doneFast();
         }
 
-<<<<<<< HEAD
         if (gDiagnosticDataCollectionEnableSystemMetricsMounts.load()) {
-            BSONObjBuilder subObjBuilder(builder.subobjStart("mounts"_sd));
-||||||| 2eff375
-        {
-            BSONObjBuilder subObjBuilder(builder.subobjStart("mounts"_sd));
-=======
-        {
             BSONObjBuilder subObjBuilder(builder.subobjStart("mounts"sv));
->>>>>>> 60c12ad8ecf45edba1b19cbb45f5d59be0538ca7
             processStatusErrors(
                 procparser::parseProcSelfMountStatsFile("/proc/self/mountinfo"sv, &subObjBuilder),
                 &subObjBuilder);

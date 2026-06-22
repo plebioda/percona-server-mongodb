@@ -74,17 +74,11 @@ public:
         return modulesList;
     }
 
-<<<<<<< HEAD
     std::vector<StringData> perconaFeatures() const final {
         return perconaFeatureList;
     }
 
-    StringData allocator() const final {
-||||||| 2eff375
-    StringData allocator() const final {
-=======
     std::string_view allocator() const final {
->>>>>>> 60c12ad8ecf45edba1b19cbb45f5d59be0538ca7
         return kAllocator;
     }
 

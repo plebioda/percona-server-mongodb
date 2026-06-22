@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 79,
+    "commits_behind": 92,
     "days_behind": 4,
-    "files_affected": 5255,
-    "total_additions": 42991,
-    "total_deletions": 30502,
+    "files_affected": 5291,
+    "total_additions": 44390,
+    "total_deletions": 30793,
     "date_range": {
       "first": "2026-06-18T07:27:21+00:00",
-      "last": "2026-06-22T14:14:27+00:00"
+      "last": "2026-06-22T17:23:56+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,136 @@
     "summary": "SERVER-119485 Add a persisted phase to setFCV after enabling target FCV features (#54422)"
   },
   "unmerged_commits": [
+    {
+      "sha": "8b98a84d73558be5b22048060c00f685474e12b2",
+      "short_sha": "8b98a84d735",
+      "date": "2026-06-22T13:23:56-04:00",
+      "author": {
+        "name": "Sidarth Krishna",
+        "email": "57541039+SidarthK@users.noreply.github.com"
+      },
+      "summary": "SERVER-128328 Utilize EstimationSource::Sampling in makeScaledEstimate for persistent samples (#56011)"
+    },
+    {
+      "sha": "34cd319c8b75ab922361a68a459cff155d34f506",
+      "short_sha": "34cd319c8b7",
+      "date": "2026-06-22T13:18:27-04:00",
+      "author": {
+        "name": "Damian Wasilewicz",
+        "email": "33820523+DamianWasilewicz@users.noreply.github.com"
+      },
+      "summary": "SERVER-128312 Ensure oplog truncation does not pass the latest persisted valid-as-of timestamp (#56484)"
+    },
+    {
+      "sha": "fab22b97dce6b4890b7f41b77c4c664269c7f214",
+      "short_sha": "fab22b97dce",
+      "date": "2026-06-22T12:06:19-05:00",
+      "author": {
+        "name": "Trevor Guidry",
+        "email": "trevor.guidry@mongodb.com"
+      },
+      "summary": "SERVER-129459: make codeowners checks faster (#56383)"
+    },
+    {
+      "sha": "6a4b895d50a402fa513a12bb8f98d44d32b5af02",
+      "short_sha": "6a4b895d50a",
+      "date": "2026-06-22T12:30:12-04:00",
+      "author": {
+        "name": "Sergei B",
+        "email": "sergei.b@mongodb.com"
+      },
+      "summary": "SERVER-90077 Add OS errno context to FTDC file-open failures (#56074)"
+    },
+    {
+      "sha": "a385933fa736356d9f008df86dd68e59b2b2fe2e",
+      "short_sha": "a385933fa73",
+      "date": "2026-06-22T12:16:11-04:00",
+      "author": {
+        "name": "Cedric Sirianni",
+        "email": "cedric.sirianni@mongodb.com"
+      },
+      "summary": "SERVER-129126 Use accumulator in SizeCountCheckpointBuffer (#56089)"
+    },
+    {
+      "sha": "2adcd7ea8e51dd4291cf5890d705b9bfafd62c58",
+      "short_sha": "2adcd7ea8e5",
+      "date": "2026-06-22T11:57:58-04:00",
+      "author": {
+        "name": "Will Buerger",
+        "email": "59492746+wbuerger46@users.noreply.github.com"
+      },
+      "summary": "SERVER-129250 Allow for more $graphLookup pipeline creation retries in case of concurrent view remapping (#56298)"
+    },
+    {
+      "sha": "a8fb42ab3a4589761a4b09b4f284bd7f58ab574d",
+      "short_sha": "a8fb42ab3a4",
+      "date": "2026-06-22T11:46:57-04:00",
+      "author": {
+        "name": "Benjamin Pearce",
+        "email": "benjamin.pearce@mongodb.com"
+      },
+      "summary": "SERVER-129454: Trigger invariant if element extends past parent BSON buffer (#56215)"
+    },
+    {
+      "sha": "af95e49842e65a7595bdb3fd37ee1b1c02fcc227",
+      "short_sha": "af95e49842e",
+      "date": "2026-06-22T11:35:39-04:00",
+      "author": {
+        "name": "Daniel Segel",
+        "email": "71151509+dhsegel@users.noreply.github.com"
+      },
+      "summary": "SERVER-129588: Block $searchMeta-in-$unionWith test from running without featureFlagExtensionsInsideHybridSearch (#56497)"
+    },
+    {
+      "sha": "939f0ae3942d785d168f8d54f5a66002ba48121b",
+      "short_sha": "939f0ae3942",
+      "date": "2026-06-22T11:06:11-04:00",
+      "author": {
+        "name": "Matt Olma",
+        "email": "67564577+mattsimply@users.noreply.github.com"
+      },
+      "summary": "SERVER-128040: Add dependency graph validation jstest suite for product_limits (#56325)"
+    },
+    {
+      "sha": "b1d44238a3d62440304ef15fd5f7984f7b685379",
+      "short_sha": "b1d44238a3d",
+      "date": "2026-06-22T17:00:10+02:00",
+      "author": {
+        "name": "Jordi Olivares Provencio",
+        "email": "jordi.olivares-provencio@mongodb.com"
+      },
+      "summary": "SERVER-129228 Create framework for concurrency fuzz testing of sharding DDLs (#56486)"
+    },
+    {
+      "sha": "91385cef52b58fe50e6915b6d8c5473efedfed30",
+      "short_sha": "91385cef52b",
+      "date": "2026-06-22T16:45:54+02:00",
+      "author": {
+        "name": "mongodb-sage-bot[bot]",
+        "email": "247496174+mongodb-sage-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-128994: Add gauge for total admissions of queued execution control operations (#55954)"
+    },
+    {
+      "sha": "1f66841122d570fbdc02789d89ff15286a2819cb",
+      "short_sha": "1f66841122d",
+      "date": "2026-06-22T16:37:05+02:00",
+      "author": {
+        "name": "Peter Volk",
+        "email": "77723508+HCSPete@users.noreply.github.com"
+      },
+      "summary": "SERVER-125713 add the ranker method to the slow query log (#55597)"
+    },
+    {
+      "sha": "a9db73c34730b18e9751cab165dc54666717ca05",
+      "short_sha": "a9db73c3473",
+      "date": "2026-06-22T17:28:29+03:00",
+      "author": {
+        "name": "Lyublena Antova",
+        "email": "lyublena.antova@mongodb.com"
+      },
+      "summary": "SERVER-129505 Fix failures in engine_selection_deferred_executor.js due to disabled IFR (#56427)"
+    },
     {
       "sha": "1d79848cb890909996ba6added6c954ba353f754",
       "short_sha": "1d79848cb89",
@@ -1065,7 +1195,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-22 14:59:06",
+  "generated_at": "2026-06-22 18:10:19",
   "branch_name": "master",
   "display_name": "master"
 }

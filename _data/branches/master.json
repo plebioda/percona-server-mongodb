@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 69,
+    "commits_behind": 74,
     "days_behind": 4,
-    "files_affected": 5240,
-    "total_additions": 41989,
-    "total_deletions": 30439,
+    "files_affected": 5247,
+    "total_additions": 42494,
+    "total_deletions": 30493,
     "date_range": {
       "first": "2026-06-18T07:27:21+00:00",
-      "last": "2026-06-22T07:31:03+00:00"
+      "last": "2026-06-22T10:21:50+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,56 @@
     "summary": "SERVER-119485 Add a persisted phase to setFCV after enabling target FCV features (#54422)"
   },
   "unmerged_commits": [
+    {
+      "sha": "1405431c12406dbbc2bb0941a19b6de81f03019c",
+      "short_sha": "1405431c124",
+      "date": "2026-06-22T11:21:50+01:00",
+      "author": {
+        "name": "Alice Doherty",
+        "email": "66687032+alicedoherty@users.noreply.github.com"
+      },
+      "summary": "SERVER-129500 GenerateAndCheckPerfResults hook should support all Evergreen projects (#56429)"
+    },
+    {
+      "sha": "d70c40d42541e75fb3519a300cfcdf7da3325585",
+      "short_sha": "d70c40d4254",
+      "date": "2026-06-22T12:10:11+02:00",
+      "author": {
+        "name": "Enrico Golfieri",
+        "email": "enrico.golfieri@mongodb.com"
+      },
+      "summary": "SERVER-128888 Observability for wildcard multikey metadata path changes (#56331)"
+    },
+    {
+      "sha": "53cf75e623afbe43a17b04b5aa4b4938747fb41f",
+      "short_sha": "53cf75e623a",
+      "date": "2026-06-22T12:53:35+03:00",
+      "author": {
+        "name": "Daniel Tabacaru",
+        "email": "96778637+danieltabacaru@users.noreply.github.com"
+      },
+      "summary": "SERVER-128267 Wire query knob validators to setQuerySettings (#56281)"
+    },
+    {
+      "sha": "4147bf5f6fee05349c06014379d9febf98a399f8",
+      "short_sha": "4147bf5f6fe",
+      "date": "2026-06-22T11:35:29+02:00",
+      "author": {
+        "name": "romanskas",
+        "email": "30618745+romanskas@users.noreply.github.com"
+      },
+      "summary": "SERVER-115303 Create Feature Flag for Extend Change Stream Metrics Project (#56277)"
+    },
+    {
+      "sha": "284c7187dc0c2b1c0cafe25116b350049e569a5d",
+      "short_sha": "284c7187dc0",
+      "date": "2026-06-22T10:28:45+01:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#56435)"
+    },
     {
       "sha": "bace4412031495cb16d6360390ff7b2f22f9f848",
       "short_sha": "bace4412031",
@@ -965,7 +1015,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-22 09:21:22",
+  "generated_at": "2026-06-22 12:02:12",
   "branch_name": "master",
   "display_name": "master"
 }

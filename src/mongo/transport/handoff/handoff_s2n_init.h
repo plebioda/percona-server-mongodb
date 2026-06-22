@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2025-present MongoDB, Inc.
+ *    Copyright (C) 2026-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -26,23 +26,18 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
+
 #pragma once
 
-#include <clang-tidy/ClangTidy.h>
-#include <clang-tidy/ClangTidyCheck.h>
-
-namespace mongo::tidy {
+namespace mongo {
 
 /**
- * Find uses of `StringData` features that are not in the
- * union of `StringData` and `std::string_view` features.
- * E.g. suggest `sd.rawData()` be changed to `sd.data()`.
+ * Initializes the s2n-tls library via `s2n_init()`, but only if `s2n_init()` has not been called
+ * previously.
+ * Returns `nullptr` on success, or on failure returns a pointer to a C-string with static storage
+ * duration containing an error message.
+ * `s2nInitOnce` must be called from the process's main thread.
  */
-class MongoStringDataStringViewApi : public clang::tidy::ClangTidyCheck {
-public:
-    using clang::tidy::ClangTidyCheck::ClangTidyCheck;
-    void registerMatchers(clang::ast_matchers::MatchFinder* Finder) override;
-    void check(const clang::ast_matchers::MatchFinder::MatchResult& Result) override;
-};
+const char* s2nInitOnce();
 
-}  // namespace mongo::tidy
+}  // namespace mongo

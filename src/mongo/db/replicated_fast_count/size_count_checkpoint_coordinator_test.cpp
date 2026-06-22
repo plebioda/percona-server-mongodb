@@ -37,6 +37,7 @@
 #include "mongo/db/replicated_fast_count/size_count_checkpoint_oplog_tailer.h"
 #include "mongo/db/replicated_fast_count/size_count_store.h"
 #include "mongo/db/replicated_fast_count/size_count_timestamp_store.h"
+#include "mongo/db/shard_role/lock_manager/d_concurrency.h"
 #include "mongo/db/shard_role/shard_catalog/catalog_test_fixture.h"
 #include "mongo/db/storage/write_unit_of_work.h"
 #include "mongo/otel/metrics/metric_names.h"
@@ -73,6 +74,11 @@ protected:
             _coordinator->shutdown();
         }
         CatalogTestFixture::tearDown();
+    }
+
+    boost::optional<Timestamp> readTimestampStore() {
+        Lock::GlobalLock lk(_opCtx, MODE_IS);
+        return _timestampStore.read(_opCtx);
     }
 
     OperationContext* _opCtx = nullptr;
@@ -176,9 +182,9 @@ TEST_F(SizeCountCheckpointCoordinatorTest, MultipleRequestFlushCallsBeforeFlushA
 }
 
 TEST_F(SizeCountCheckpointCoordinatorTest, FlushSyncWithEmptyTimestampStoreIsNoOp) {
-    const auto initial = _timestampStore.read(_opCtx);
+    const auto initial = readTimestampStore();
     _coordinator->flushSync_ForTest(_opCtx);
-    ASSERT_EQ(_timestampStore.read(_opCtx), initial);
+    ASSERT_EQ(readTimestampStore(), initial);
 }
 
 class SizeCountCheckpointCoordinatorWithOplogTest : public SizeCountCheckpointCoordinatorTest {
@@ -206,6 +212,7 @@ TEST_F(SizeCountCheckpointCoordinatorWithOplogTest,
        FlushSyncWithNoNewDataPreservesPersistedTimestamp) {
     const Timestamp persistedTs(10, 5);
     {
+        Lock::GlobalLock writeLock(_opCtx, MODE_IX);
         WriteUnitOfWork wuow(_opCtx);
         _timestampStore.write(_opCtx, persistedTs);
         wuow.commit();
@@ -219,7 +226,7 @@ TEST_F(SizeCountCheckpointCoordinatorWithOplogTest,
         _sizeCountStore, _timestampStore, _metrics);
     coordinator->flushSync_ForTest(_opCtx);
 
-    ASSERT_EQ(_timestampStore.read(_opCtx), boost::optional<Timestamp>(persistedTs));
+    ASSERT_EQ(readTimestampStore(), boost::optional<Timestamp>(persistedTs));
 }
 
 TEST_F(SizeCountCheckpointCoordinatorWithOplogTest, FlushSyncAdvancesTimestampAfterTailCycle) {
@@ -228,7 +235,7 @@ TEST_F(SizeCountCheckpointCoordinatorWithOplogTest, FlushSyncAdvancesTimestampAf
 
     _coordinator->flushSync_ForTest(_opCtx);
 
-    ASSERT_EQ(_timestampStore.read(_opCtx), boost::optional<Timestamp>(ts));
+    ASSERT_EQ(readTimestampStore(), boost::optional<Timestamp>(ts));
 }
 
 TEST_F(SizeCountCheckpointCoordinatorTest, FlushFailureIncrementsFlushFailureCountMetric) {
@@ -237,65 +244,21 @@ TEST_F(SizeCountCheckpointCoordinatorTest, FlushFailureIncrementsFlushFailureCou
         GTEST_SKIP() << "Skipping test due to OTel metrics being unavailable in this build";
     }
 
+    // The failure metric is incremented by the flush thread's run() loop, which the synchronous
+    // flushSync_ForTest path does not exercise, so drive the real flush thread.
     FailPointEnableBlock failFp("failDuringFlush");
-    _coordinator->flushSync_ForTest(_opCtx);
+    _coordinator->startup(getServiceContext(), Timestamp::min());
+    _coordinator->requestFlush();
+
+    // Wait until the flush has reached the failpoint, so shutdown() cannot preempt the flush
+    // before run()'s catch classifies the failure and increments the metric.
+    failFp->waitForTimesEntered(failFp.initialTimesEntered() + 1);
+
+    // shutdown() joins the flush thread; the join cannot return until the thread has run run()'s
+    // catch (incrementing the metric) and exited, so the assertion needs no polling.
+    _coordinator->shutdown();
 
     ASSERT_EQ(capturer.readInt64Counter(MetricNames::kReplicatedFastCountFlushFailureCount), 1);
-}
-
-TEST_F(SizeCountCheckpointCoordinatorWithOplogTest,
-       ReplStateChangeExceptionDoesNotIncrementFlushFailureMetric) {
-    writeInsert(Timestamp(10, 1));
-
-    OtelMetricsCapturer capturer;
-    if (!capturer.canReadMetrics()) {
-        GTEST_SKIP() << "Skipping test due to OTel metrics being unavailable in this build";
-    }
-
-    OperationContext* bgOpCtx = nullptr;
-    std::mutex opCtxMutex;
-    stdx::condition_variable opCtxCv;
-    Status thrownStatus = Status::OK();
-
-    stdx::thread bgThread;
-    {
-        FailPointEnableBlock hangFp("hangAfterReplicatedFastCountSnapshot");
-
-        bgThread = stdx::thread([&] {
-            ThreadClient tc("D4FlushThread", getServiceContext()->getService());
-            auto opCtx = cc().makeOperationContext();
-            {
-                std::lock_guard lk(opCtxMutex);
-                bgOpCtx = opCtx.get();
-                opCtxCv.notify_one();
-            }
-            try {
-                _coordinator->flushSync_ForTest(opCtx.get());
-            } catch (const DBException& ex) {
-                thrownStatus = ex.toStatus();
-            }
-        });
-
-        // bgOpCtx is set before flushSync_ForTest is called, so it is available well before
-        // the failpoint fires (which is after _runOneTailCycle completes).
-        {
-            std::unique_lock lk(opCtxMutex);
-            opCtxCv.wait(lk, [&] { return bgOpCtx != nullptr; });
-        }
-        hangFp->waitForTimesEntered(hangFp.initialTimesEntered() + 1);
-
-        {
-            std::lock_guard<Client> clientLk(*bgOpCtx->getClient());
-            bgOpCtx->markKilled(ErrorCodes::InterruptedDueToReplStateChange);
-        }
-    }
-
-    bgThread.join();
-
-    ASSERT_OK(thrownStatus.code());
-
-    // InterruptedDueToReplStateChange must NOT increment the failure metric.
-    ASSERT_EQ(capturer.readInt64Counter(MetricNames::kReplicatedFastCountFlushFailureCount), 0);
 }
 
 TEST_F(SizeCountCheckpointCoordinatorTest, BufferHasNoPendingWorkBeforeAnyTailCycle) {
@@ -334,6 +297,7 @@ TEST_F(SizeCountCheckpointCoordinatorTest,
 }
 
 TEST_F(SizeCountCheckpointCoordinatorTest, ShutdownDuringFlushCycleInterruptsAndCompletes) {
+    OtelMetricsCapturer capturer;
     _coordinator->startup(getServiceContext(), Timestamp::min());
 
     stdx::thread stopper;
@@ -348,13 +312,18 @@ TEST_F(SizeCountCheckpointCoordinatorTest, ShutdownDuringFlushCycleInterruptsAnd
         // until the failpoint is disabled (pauseWhileSet does not check the opCtx).
         stopper = stdx::thread([&] { _coordinator->shutdown(); });
 
-        // Scope exit: disables failpoint. The flush thread's interrupted opCtx causes
-        // writeConflictRetry to throw InterruptedDueToReplStateChange, which the flush
-        // loop's inner catch handles by continuing; _shutdownRequested then exits the loop.
+        // Scope exit: disables failpoint. The flush thread then observes the interrupted opCtx
+        // and surfaces InterruptedDueToReplStateChange, which run() treats as a benign
+        // replication-state change (not a flush failure) before exiting the loop.
     }
 
     stopper.join();
     ASSERT_FALSE(_coordinator->isRunning_ForTest());
+
+    // The shutdown interrupt is a replication-state change, not a flush failure.
+    if (capturer.canReadMetrics()) {
+        ASSERT_EQ(capturer.readInt64Counter(MetricNames::kReplicatedFastCountFlushFailureCount), 0);
+    }
 }
 
 TEST_F(SizeCountCheckpointCoordinatorTest, RepeatedConcurrentStartupShutdownLeavesStoppedState) {

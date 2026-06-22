@@ -1,5 +1,5 @@
 /**
- *    Copyright (C) 2024-present MongoDB, Inc.
+ *    Copyright (C) 2026-present MongoDB, Inc.
  *
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the Server Side Public License, version 1,
@@ -27,32 +27,34 @@
  *    it in the license file.
  */
 
-#include "MongoStringDataConstRefCheck.h"
+#pragma once
 
-namespace mongo::tidy {
+#include "mongo/base/string_data.h"
+#include "mongo/db/exec/agg/stage.h"
+#include "mongo/db/pipeline/expression_context.h"
+#include "mongo/db/pipeline/field_path.h"
+#include "mongo/util/modules.h"
 
-using namespace clang;
-using namespace clang::ast_matchers;
+#include <set>
 
-void MongoStringDataConstRefCheck::registerMatchers(ast_matchers::MatchFinder* Finder) {
-    Finder->addMatcher(
-        traverse(
-            TK_IgnoreUnlessSpelledInSource,
-            parmVarDecl(hasType(qualType(references(cxxRecordDecl(hasName("mongo::StringData"))))),
-                        hasType(references(isConstQualified())))
-                .bind("constSDRef")),
-        this);
-}
+#include <boost/smart_ptr/intrusive_ptr.hpp>
 
-void MongoStringDataConstRefCheck::check(const ast_matchers::MatchFinder::MatchResult& Result) {
-    auto decl = Result.Nodes.getNodeAs<ParmVarDecl>("constSDRef");
-    if (!decl) {
-        return;
+namespace mongo::exec::agg {
+
+class InternalAssertDataAssumptionsStage final : public Stage {
+public:
+    InternalAssertDataAssumptionsStage(StringData stageName,
+                                       const boost::intrusive_ptr<ExpressionContext>& pExpCtx,
+                                       std::set<FieldPath> nonArrayPaths);
+
+    bool isEOF() const final {
+        return (pSource && pSource->isEOF());
     }
-    if (decl->getASTContext().getSourceManager().isMacroBodyExpansion(decl->getLocation())) {
-        return;
-    }
-    diag(decl->getBeginLoc(), "Prefer passing StringData by value.");
-}
 
-}  // namespace mongo::tidy
+private:
+    GetNextResult doGetNext() final;
+
+    std::set<FieldPath> _nonArrayPaths;
+};
+
+}  // namespace mongo::exec::agg

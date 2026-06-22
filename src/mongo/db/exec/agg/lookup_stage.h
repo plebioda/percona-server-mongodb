@@ -29,11 +29,11 @@
 
 #pragma once
 
-#include "mongo/base/string_data.h"
 #include "mongo/bson/bsonobj.h"
 #include "mongo/db/exec/agg/stage.h"
 #include "mongo/db/exec/document_value/document.h"
 #include "mongo/db/exec/plan_stats.h"
+#include "mongo/db/memory_tracking/memory_usage_tracker.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/pipeline/document_source_lookup.h"
@@ -47,6 +47,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -61,7 +62,7 @@ namespace mongo::exec::agg {
  */
 class MONGO_MOD_NEEDS_REPLACEMENT LookUpStage final : public Stage {
 public:
-    LookUpStage(StringData stageName,
+    LookUpStage(std::string_view stageName,
                 const boost::intrusive_ptr<ExpressionContext>& pExpCtx,
                 boost::intrusive_ptr<ExpressionContext> fromExpCtx,
                 NamespaceString fromNs,
@@ -203,6 +204,14 @@ private:
     boost::optional<Document> _nextValue;
 
     DocumentSourceLookupStats _stats;
+
+    // Tracks memory used while evaluating the 'let' variables. Reports to the operation-wide
+    // tracker so all stages contribute to the operation memory total.
+    SimpleMemoryUsageTracker _memoryTracker;
+
+    // Whether to charge expression evaluation against the memory tracker. Evaluated once at
+    // construction; feature flags must not change during stage execution.
+    bool _trackMemory{false};
 
     // Caches documents returned by the non-correlated prefix of the $lookup pipeline during the
     // first iteration, up to a specified size limit in bytes. If this limit is not exceeded by the

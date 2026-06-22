@@ -36,6 +36,7 @@
 #include "mongo/db/replicated_fast_count/replicated_fast_count_test_helpers.h"
 #include "mongo/db/replicated_fast_count/size_count_store.h"
 #include "mongo/db/replicated_fast_count/size_count_timestamp_store.h"
+#include "mongo/db/shard_role/lock_manager/d_concurrency.h"
 #include "mongo/db/shard_role/shard_catalog/catalog_test_fixture.h"
 #include "mongo/db/storage/ident.h"
 #include "mongo/db/storage/kv/kv_engine.h"
@@ -49,6 +50,8 @@
 #include "mongo/util/fail_point.h"
 #include "mongo/util/observable_mutex_registry.h"
 #include "mongo/util/time_support.h"
+
+#include <string_view>
 
 namespace mongo::replicated_fast_count {
 namespace {
@@ -186,7 +189,7 @@ TEST_F(ReplicatedFastCountManagerLegacyMetricsTest,
     _fastCountManager->flushSync_ForTest(operationContext());
 
     const BSONObj report = ObservableMutexRegistry::get().report(false);
-    const StringData name = "ReplicatedFastCountManager::_lifecycleMutex";
+    const std::string_view name = "ReplicatedFastCountManager::_lifecycleMutex";
     EXPECT_TRUE(report.hasField(name)) << "Missing " << name << " in " << report;
     const BSONObj exclusive =
         report.getObjectField(name).getObjectField(ObservableMutexRegistry::kExclusiveFieldName);
@@ -195,16 +198,6 @@ TEST_F(ReplicatedFastCountManagerLegacyMetricsTest,
 
 TEST_F(ReplicatedFastCountManagerMetricsTest, IsRunningGaugeSetByStartup) {
     EXPECT_EQ(_capturer.readInt64Gauge(MetricNames::kReplicatedFastCountIsRunning), 1);
-}
-
-TEST_F(ReplicatedFastCountManagerMetricsTest, FlushFailureCounterIncrementsDuringFailure) {
-    auto& failDuringFlushFp = *globalFailPointRegistry().find("failDuringFlush");
-
-    failDuringFlushFp.setMode(FailPoint::alwaysOn);
-    _fastCountManager->flushSync_ForTest(operationContext());
-    failDuringFlushFp.setMode(FailPoint::off);
-
-    EXPECT_EQ(_capturer.readInt64Counter(MetricNames::kReplicatedFastCountFlushFailureCount), 1);
 }
 
 // TODO SERVER-122992: Re-enable once the number of entries inserted versus updated are
@@ -591,6 +584,7 @@ TEST_P(TimestampStoreMetricsTest, WriteAdvancesOplogLagSecsOnCommit) {
     recordAppliedOpTime(Timestamp(1000, 1));
 
     {
+        Lock::GlobalLock writeLock(opCtx, MODE_IX);
         WriteUnitOfWork wuow(opCtx);
         store->write(opCtx, Timestamp(400, 1));
         // Pre-commit the gauge must remain at its prior value; the on-commit hook hasn't fired.
@@ -605,6 +599,7 @@ TEST_P(TimestampStoreMetricsTest, RolledBackWriteDoesNotAdvanceOplogLagSecs) {
     recordAppliedOpTime(Timestamp(1000, 1));
 
     {
+        Lock::GlobalLock writeLock(opCtx, MODE_IX);
         WriteUnitOfWork wuow(opCtx);
         store->write(opCtx, Timestamp(400, 1));
         // No commit; WUOW destructor rolls back.
@@ -617,6 +612,7 @@ TEST_P(TimestampStoreMetricsTest, RepeatedWritesAdvanceOplogLagSecs) {
     recordAppliedOpTime(Timestamp(1000, 1));
 
     {
+        Lock::GlobalLock writeLock(opCtx, MODE_IX);
         WriteUnitOfWork wuow(opCtx);
         store->write(opCtx, Timestamp(200, 1));
         wuow.commit();
@@ -625,6 +621,7 @@ TEST_P(TimestampStoreMetricsTest, RepeatedWritesAdvanceOplogLagSecs) {
 
     // Second write should overwrite the existing record (update path) and update the gauge.
     {
+        Lock::GlobalLock writeLock(opCtx, MODE_IX);
         WriteUnitOfWork wuow(opCtx);
         store->write(opCtx, Timestamp(900, 1));
         wuow.commit();
@@ -654,7 +651,7 @@ protected:
         recordAppliedOpTime(Timestamp{1000, 1});
     }
 
-    void scheduleAndCommit(StringData identArg, std::span<const char> valueBytes) {
+    void scheduleAndCommit(std::string_view identArg, std::span<const char> valueBytes) {
         WriteUnitOfWork wuow(opCtx);
         recordContainerWriteForFastCountTimestamp(opCtx, identArg, valueBytes);
         wuow.commit();

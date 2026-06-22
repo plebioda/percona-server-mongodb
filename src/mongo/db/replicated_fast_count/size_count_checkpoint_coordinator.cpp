@@ -33,6 +33,7 @@
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/client.h"
 #include "mongo/db/replicated_fast_count/size_count_timestamp_store.h"
+#include "mongo/db/shard_role/lock_manager/d_concurrency.h"
 #include "mongo/logv2/log.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/fail_point.h"
@@ -122,7 +123,12 @@ void SizeCountCheckpointCoordinator::requestFlush() {
 
 void SizeCountCheckpointCoordinator::flushSync_ForTest(OperationContext* opCtx) {
     if (!_tailerState_ForTest) {
-        const auto startAfterTS = _timestampStore.read(opCtx).value_or(Timestamp{});
+        // The timestamp store requires the caller to hold the global lock for the read; see
+        // SizeCountTimestampStore.
+        const auto startAfterTS = [&] {
+            Lock::GlobalLock readLock(opCtx, MODE_IS);
+            return _timestampStore.read(opCtx).value_or(Timestamp{});
+        }();
         _tailerState_ForTest = _oplogTailer->bootstrap_ForTest(opCtx, startAfterTS, *_buffer);
     }
     _oplogTailer->runOneIteration_ForTest(opCtx, _tailerState_ForTest, *_buffer);
@@ -162,11 +168,8 @@ void SizeCountCheckpointCoordinator::_runTailerThread(ServiceContext* service,
     ScopedAdmissionPriority<ExecutionAdmissionContext> skipTicketAcquisition(
         opCtxHolder->opCtx(), AdmissionContext::Priority::kExempt);
 
-    try {
-        _oplogTailer->run(opCtxHolder->opCtx(), startCheckpointingAfterTS, *_buffer);
-    } catch (const DBException& ex) {
-        _handleWorkerFailure(ex.toStatus(), "SizeCountCheckpointCoordinator tailer thread failure");
-    }
+    // Run until no longer a primary.
+    _oplogTailer->run(opCtxHolder->opCtx(), startCheckpointingAfterTS, *_buffer);
 }
 
 void SizeCountCheckpointCoordinator::_runFlushThread(ServiceContext* service) {
@@ -187,21 +190,8 @@ void SizeCountCheckpointCoordinator::_runFlushThread(ServiceContext* service) {
     ScopedAdmissionPriority<ExecutionAdmissionContext> skipTicketAcquisition(
         opCtxHolder->opCtx(), AdmissionContext::Priority::kExempt);
 
-    try {
-        _flusher->run(opCtxHolder->opCtx(), *_buffer);
-    } catch (const DBException& ex) {
-        _handleWorkerFailure(ex.toStatus(), "SizeCountCheckpointCoordinator flush thread failure");
-    }
-}
-
-void SizeCountCheckpointCoordinator::_handleWorkerFailure(Status status, StringData message) {
-    LOGV2_WARNING(12101804,
-                  "SizeCountCheckpointCoordinator worker failure",
-                  "reason"_attr = message,
-                  "error"_attr = status);
-    // If one worker fails, the others should not attempt to make further progress.
-    std::lock_guard lk(_mutex);
-    _opCtxGroup.interrupt(status.code());
+    // Run until no longer a primary.
+    _flusher->run(opCtxHolder->opCtx(), *_buffer);
 }
 
 }  // namespace mongo::replicated_fast_count

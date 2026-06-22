@@ -40,6 +40,7 @@
 
 #include <ostream>
 #include <span>
+#include <string_view>
 
 #include <boost/optional/optional.hpp>
 
@@ -47,10 +48,10 @@ namespace mongo::replicated_fast_count {
 
 // BSON field names used as the on-disk encoding of fast count records. These are shared between
 // the `SizeCountStore`, `SizeCountTimestampStore`, and `ReplicatedFastCountManager`.
-inline constexpr StringData kMetadataKey = "meta"_sd;
-inline constexpr StringData kSizeKey = "sz"_sd;
-inline constexpr StringData kCountKey = "ct"_sd;
-inline constexpr StringData kValidAsOfKey = "valid-as-of"_sd;
+inline constexpr std::string_view kMetadataKey = "meta"_sd;
+inline constexpr std::string_view kSizeKey = "sz"_sd;
+inline constexpr std::string_view kCountKey = "ct"_sd;
+inline constexpr std::string_view kValidAsOfKey = "valid-as-of"_sd;
 
 /**
  * Acquires the replicated fast count collection for read access.
@@ -70,6 +71,15 @@ boost::optional<CollectionOrViewAcquisition> acquireFastCountCollectionForWrite(
  * Abstract interface for read/write access to the persisted size and count metadata. Two
  * implementations exist: `CollectionSizeCountStore` (collection-backed) and
  * `ContainerSizeCountStore` (container-backed).
+ *
+ * Locking: the container-backed implementation reads and writes the underlying container and does
+ * not acquire any locks of its own. Callers must therefore hold the global lock for the duration
+ * of the call:
+ *   MODE_IS - read(), readAndIncrementSizeCounts()
+ *   MODE_IX - write(), insert(), remove()
+ *
+ * The collection-backed implementation acquires the collection (and its locks) internally, but
+ * callers should hold the same locks so the two implementations are interchangeable.
  */
 class SizeCountStore {
 public:

@@ -5,15 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 67,
-    "days_behind": 3,
-    "oldest_unmerged_age_days": 3.6095665211342594,
+    "commits_behind": 68,
+    "days_behind": 4,
     "files_affected": 5239,
-    "total_additions": 41983,
-    "total_deletions": 30436,
+    "total_additions": 41986,
+    "total_deletions": 30439,
     "date_range": {
       "first": "2026-06-18T07:27:21+00:00",
-      "last": "2026-06-21T12:22:09+00:00"
+      "last": "2026-06-22T05:51:53+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,11 +35,17 @@
     },
     "summary": "SERVER-119485 Add a persisted phase to setFCV after enabling target FCV features (#54422)"
   },
-  "gate": {
-    "open": true,
-    "reason": "min_commits (67 >= 50)"
-  },
   "unmerged_commits": [
+    {
+      "sha": "4982002c2791a94be20d667f6c563a4c9450d4a2",
+      "short_sha": "4982002c279",
+      "date": "2026-06-22T07:51:53+02:00",
+      "author": {
+        "name": "Silvia Surroca",
+        "email": "silvia.surroca@mongodb.com"
+      },
+      "summary": "SERVER-129499 setAllowChunkOperations non-auth path and legacy migration recovery race on updating CSR metadata (#56426)"
+    },
     {
       "sha": "72796315c3b00565b01516bbdc063848bc2c0faa",
       "short_sha": "72796315c3b",
@@ -950,7 +955,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-21 22:05:01",
+  "generated_at": "2026-06-22 07:16:44",
   "branch_name": "master",
   "display_name": "master"
 }

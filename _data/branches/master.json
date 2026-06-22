@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 74,
+    "commits_behind": 79,
     "days_behind": 4,
-    "files_affected": 5247,
-    "total_additions": 42494,
-    "total_deletions": 30493,
+    "files_affected": 5255,
+    "total_additions": 42991,
+    "total_deletions": 30502,
     "date_range": {
       "first": "2026-06-18T07:27:21+00:00",
-      "last": "2026-06-22T10:21:50+00:00"
+      "last": "2026-06-22T14:14:27+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,56 @@
     "summary": "SERVER-119485 Add a persisted phase to setFCV after enabling target FCV features (#54422)"
   },
   "unmerged_commits": [
+    {
+      "sha": "1d79848cb890909996ba6added6c954ba353f754",
+      "short_sha": "1d79848cb89",
+      "date": "2026-06-22T16:14:27+02:00",
+      "author": {
+        "name": "Yujin Kang Park",
+        "email": "36410031+ykangpark@users.noreply.github.com"
+      },
+      "summary": "SERVER-129510 Make multikey consistency hook resilient to transient InvalidViewDefinition (#56432)"
+    },
+    {
+      "sha": "3c4322419259a26a2ca0224e220d8bdc9939a70f",
+      "short_sha": "3c432241925",
+      "date": "2026-06-22T15:11:06+01:00",
+      "author": {
+        "name": "Catalin Sumanaru",
+        "email": "catalin.sumanaru@mongodb.com"
+      },
+      "summary": "SERVER-128743 Remove requires_fcv_83 exclusion from query_settings_upgrade_downgrade.js (#56431)"
+    },
+    {
+      "sha": "47892066fc6a71f7f8b97152c8af697e42313f3e",
+      "short_sha": "47892066fc6",
+      "date": "2026-06-22T09:32:29-04:00",
+      "author": {
+        "name": "Elise Zhu",
+        "email": "89541745+elise-yz@users.noreply.github.com"
+      },
+      "summary": "SERVER-129269: Support using SHA-256 with HashContext (#56238)"
+    },
+    {
+      "sha": "9a9232450d9e5f58c77fe69bb8adc7389df3e950",
+      "short_sha": "9a9232450d9",
+      "date": "2026-06-22T09:09:16-04:00",
+      "author": {
+        "name": "Erin Liang",
+        "email": "59406045+erl-ang@users.noreply.github.com"
+      },
+      "summary": "SERVER-128010 Test chunk migration writes are collected in query stats (#56311)"
+    },
+    {
+      "sha": "9a9aff8a69390987d6b901315d32154a359619c8",
+      "short_sha": "9a9aff8a693",
+      "date": "2026-06-22T13:42:01+02:00",
+      "author": {
+        "name": "karlbozdogan",
+        "email": "karl.bozdogan@mongodb.com"
+      },
+      "summary": "SERVER-129569: Gate the new wildcard $ne: null index to FCV >= 9.0 (#56425)"
+    },
     {
       "sha": "1405431c12406dbbc2bb0941a19b6de81f03019c",
       "short_sha": "1405431c124",
@@ -1015,7 +1065,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-22 12:13:28",
+  "generated_at": "2026-06-22 14:59:06",
   "branch_name": "master",
   "display_name": "master"
 }

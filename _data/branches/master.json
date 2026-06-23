@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 121,
+    "commits_behind": 123,
     "days_behind": 5,
-    "files_affected": 5356,
-    "total_additions": 47662,
-    "total_deletions": 31785,
+    "files_affected": 5368,
+    "total_additions": 49178,
+    "total_deletions": 31793,
     "date_range": {
       "first": "2026-06-18T07:27:21+00:00",
-      "last": "2026-06-23T09:11:51+00:00"
+      "last": "2026-06-23T10:31:05+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,26 @@
     "summary": "SERVER-119485 Add a persisted phase to setFCV after enabling target FCV features (#54422)"
   },
   "unmerged_commits": [
+    {
+      "sha": "83de54ef0baac54fa2bc74493a20df6efc9004fe",
+      "short_sha": "83de54ef0ba",
+      "date": "2026-06-23T11:31:05+01:00",
+      "author": {
+        "name": "fotiniAlvanaki",
+        "email": "78495594+fotiniAlvanaki@users.noreply.github.com"
+      },
+      "summary": "SERVER-129566 Add memory limits to stages that evaluate expressions (#56483)"
+    },
+    {
+      "sha": "59b40c9e148b11097e81da9e5feee5202ed8bfb0",
+      "short_sha": "59b40c9e148",
+      "date": "2026-06-23T11:21:41+02:00",
+      "author": {
+        "name": "ppolato",
+        "email": "82828243+ppolato@users.noreply.github.com"
+      },
+      "summary": "SERVER-128886 Genarate shardRef field values in global catalog docs upon FCV upgrade (#55964)"
+    },
     {
       "sha": "fb93591b695fc913a3168716248f4e0afc9c74ce",
       "short_sha": "fb93591b695",
@@ -1508,7 +1528,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-23 09:51:25",
+  "generated_at": "2026-06-23 11:08:09",
   "branch_name": "master",
   "display_name": "master"
 }

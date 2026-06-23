@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 114,
-    "days_behind": 4,
-    "files_affected": 5326,
-    "total_additions": 45921,
-    "total_deletions": 31177,
+    "commits_behind": 115,
+    "days_behind": 5,
+    "files_affected": 5328,
+    "total_additions": 45964,
+    "total_deletions": 31184,
     "date_range": {
       "first": "2026-06-18T07:27:21+00:00",
-      "last": "2026-06-22T21:41:20+00:00"
+      "last": "2026-06-22T22:55:51+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,16 @@
     "summary": "SERVER-119485 Add a persisted phase to setFCV after enabling target FCV features (#54422)"
   },
   "unmerged_commits": [
+    {
+      "sha": "22bcefc81f786edfe543ec095c4865471d05d5c6",
+      "short_sha": "22bcefc81f7",
+      "date": "2026-06-22T18:55:51-04:00",
+      "author": {
+        "name": "Ruchitha Rajaghatta",
+        "email": "77162985+ruchitharajaghatta@users.noreply.github.com"
+      },
+      "summary": "SERVER-123365: Add logging to stashing/unstashing in transaction metrics observer (#56035)"
+    },
     {
       "sha": "18530d64479b8910192f268c54abc692fa32d880",
       "short_sha": "18530d64479",
@@ -1415,7 +1425,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-22 22:44:36",
+  "generated_at": "2026-06-23 07:27:15",
   "branch_name": "master",
   "display_name": "master"
 }

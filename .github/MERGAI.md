@@ -2,6 +2,8 @@
 
 The `mergai.yml` workflow automates the process of merging upstream MongoDB commits into Percona Server for MongoDB, including AI-assisted conflict resolution and AI-assisted summary of merged commits.
 
+A companion `periodic-merge.yml` workflow runs the merge loop unattended: on a daily schedule (and, optionally, right after each merge lands) it decides *whether* to merge and, if so, dispatches `mergai.yml` to do the work — replacing a human watching the Fork Status page and triggering merges by hand. Both workflows are tuned through GitHub Actions [repository variables](#repository-variables) and the merge-gate settings in `.mergai/config.yml`.
+
 ## Quick Start
 
 1. **Check available commits**: Visit the [Fork Status page](https://percona.github.io/percona-server-mongodb/)
@@ -17,12 +19,71 @@ The `mergai.yml` workflow automates the process of merging upstream MongoDB comm
 4. **Build and test**: Check out the branch locally, build, and run tests
 5. **Merge**: Post `/fast-forward` comment to merge without double commits
 
-## Workflow Jobs
+## Workflows
+
+### `mergai.yml` ("mergai bot")
 
 | Job               | Trigger                          | Purpose                                              |
 | ----------------- | -------------------------------- | ---------------------------------------------------- |
-| `trigger-merge`   | Manual dispatch                  | Performs merge, handles conflicts with AI resolution |
+| `trigger-merge`   | Manual dispatch                  | Picks a commit, performs the merge, handles conflicts with AI resolution |
 | `solution-merged` | PR merged to `mergai/*/conflict` | Finalizes after solution PR is merged                |
+
+`trigger-merge` no longer always merges the bare "next" commit. When dispatched **without** a `merge-pick` SHA it chooses the commit to merge according to the `MERGAI_MERGE_PICK_MODE` variable, and (in the `gate`/`ai` modes) only merges when the [merge gate](#merge-gate) is open — otherwise it logs "no merge pick" and exits without creating a PR. Passing an explicit `merge-pick` SHA bypasses both the mode and the gate (the manual "force this merge" path).
+
+It also early-fails if any mergai branch (`main`/`conflict`/`solution`/`semantic`) already exists for the chosen commit, so two runs can't race on the same merge.
+
+### `periodic-merge.yml` ("mergai periodic merge")
+
+Drives the merge loop without a human. It only *decides and triggers* — all merge/conflict/PR behavior stays in `mergai.yml`'s `trigger-merge` job, which it dispatches unchanged.
+
+| Trigger             | When it runs                                                                 |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `schedule` (cron)   | Daily at 05:00 UTC, **only if** `MERGAI_PERIODIC_MERGE_ENABLED == 'true'`     |
+| `workflow_dispatch` | Always (manual test); **not** gated by the enable toggles                    |
+| `pull_request` closed on `master` | Only if `MERGAI_FOLLOWUP_MERGE_ENABLED == 'true'` and a merged `mergai/*/main` PR — chains the next merge immediately |
+
+The pick happens in two phases so AI tokens are only ever spent in the privileged job:
+
+1. **Gate (here, token-free):** `mergai fork merge-pick --plan` decides *whether* to merge (go/no-go over fork status). If the gate is closed, the workflow stops. It also stops early if a mergai PR is already open (a merge cycle is already underway).
+2. **Pick + merge (in `trigger-merge`):** the workflow dispatches `mergai.yml` with **no** SHA; `trigger-merge` then picks the actual commit (deterministic or AI, per `MERGAI_MERGE_PICK_MODE`) and merges it.
+
+> The cron *cadence* is a literal in the workflow file — GitHub does not allow a variable there. `MERGAI_PERIODIC_MERGE_ENABLED` only turns scheduled runs on/off; to change the frequency, edit the `cron:` expression in `periodic-merge.yml`.
+
+## Repository Variables
+
+These are GitHub Actions **repository variables** (Settings → Secrets and variables → Actions → **Variables** tab), *not* secrets. All are optional; unset variables fall back to the defaults below.
+
+| Variable                        | Used by          | Default    | Purpose                                                                                  |
+| ------------------------------- | ---------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| `MERGAI_REF`                    | both workflows   | `master`   | Git ref (branch/tag/commit) of the mergai CLI to install. A `mergai-ref` dispatch input to `mergai.yml` overrides it. |
+| `MERGAI_MERGE_PICK_MODE`        | `trigger-merge`  | `gate`     | How `trigger-merge` chooses which commit to merge when no SHA is given (see table below). |
+| `MERGAI_PERIODIC_MERGE_ENABLED` | `periodic-merge` | off (unset) | `true` enables the scheduled (cron) periodic merge. Manual dispatch ignores this toggle.  |
+| `MERGAI_FOLLOWUP_MERGE_ENABLED` | `periodic-merge` | off (unset) | `true` chains the next merge automatically when a `mergai/*/main` PR is merged.           |
+
+### Merge pick mode (`MERGAI_MERGE_PICK_MODE`)
+
+Controls how `trigger-merge` selects the commit to merge **when dispatched without an explicit `merge-pick` SHA**. An explicit SHA always bypasses the mode and the gate.
+
+| Value             | Honors gate? | Window cap? | How it picks the commit                                                                 |
+| ----------------- | ------------ | ----------- | --------------------------------------------------------------------------------------- |
+| `gate` *(default; also any unset or unrecognized value)* | yes | yes | Deterministic: first prioritized strategy match within the candidate window, else the window tip (`merge-pick --gate`). |
+| `ai`              | yes          | yes         | An AI agent chooses the best merge boundary within the candidate window (`merge-pick --ai`; spends AI tokens, hence runs only in the privileged job). |
+| `next`            | **no**       | **no**      | Raw `merge-pick --next`: the first prioritized strategy match, with no gate and no window cap. |
+
+In `gate` and `ai` modes, a closed gate (or nothing to merge) yields an empty pick and the merge steps are skipped — no PR is created. `next` ignores the gate entirely.
+
+## Merge Gate
+
+The merge gate decides *when* to merge (the pick decides *which* commit). It is a pure go/no-go decision over already-computed fork status — no AI tokens — and is configured in `.mergai/config.yml` under `fork.merge_gate`:
+
+- `min_commits` — merge once at least this many unmerged commits have accumulated (default 50).
+- `max_age_days` — …or sooner if the oldest unmerged commit is older than this (default 2).
+- `max_commits` — batch ceiling and candidate-window size; a single merge never advances more than this many commits (default 150).
+- `force_strategies` — strategy names that open the gate immediately regardless of count or age (default `conflict`, `important_files`).
+
+The AI pick is configured alongside it under `fork.ai_pick` (`enabled`, `agent`, `rules_file`, `fallback`); the project rules it follows live in `.mergai/merge_pick_rules.md`.
+
+> **In CI, `MERGAI_MERGE_PICK_MODE` is the authority, not `ai_pick.enabled`.** The workflow calls `merge-pick --gate` / `--ai` explicitly, and those flags are independent of `ai_pick.enabled`. The `enabled` flag only sets the default mode for a flagless `mergai fork merge-pick` (e.g. local CLI use). To enable AI picking in CI, set `MERGAI_MERGE_PICK_MODE=ai` — flipping `ai_pick.enabled` alone has no effect on the workflow.
 
 ## Understanding PRs
 

@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 137,
+    "commits_behind": 142,
     "days_behind": 2,
-    "files_affected": 749,
-    "total_additions": 30054,
-    "total_deletions": 7116,
+    "files_affected": 765,
+    "total_additions": 32163,
+    "total_deletions": 7346,
     "date_range": {
       "first": "2026-06-22T17:57:20+00:00",
-      "last": "2026-06-25T08:15:02+00:00"
+      "last": "2026-06-25T10:45:14+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,56 @@
     "summary": "SERVER-128506: Create a new optional top-level oplog entry field h (document hash) (#55874)"
   },
   "unmerged_commits": [
+    {
+      "sha": "41c58b6cf3c2ff6e014a1c4d763df951845b1c20",
+      "short_sha": "41c58b6cf3c",
+      "date": "2026-06-25T11:45:14+01:00",
+      "author": {
+        "name": "Vesko Karaganev",
+        "email": "vesko.karaganev@mongodb.com"
+      },
+      "summary": "SERVER-112772 Allowlist certain $expr shapes for pushdown on _id past $group (#48766)"
+    },
+    {
+      "sha": "64b3ed77d2dcb82b24d9811c293f6d2b5d4c4972",
+      "short_sha": "64b3ed77d2d",
+      "date": "2026-06-25T11:02:08+01:00",
+      "author": {
+        "name": "Catalin Sumanaru",
+        "email": "catalin.sumanaru@mongodb.com"
+      },
+      "summary": "SERVER-129775 Add $listQueryKnobs test-only agg stage to expose the query knob registry (#56592)"
+    },
+    {
+      "sha": "a92385da11eeffd5768c7c72e6b7d52deccf476a",
+      "short_sha": "a92385da11e",
+      "date": "2026-06-25T11:01:27+01:00",
+      "author": {
+        "name": "Vesko Karaganev",
+        "email": "vesko.karaganev@mongodb.com"
+      },
+      "summary": "SERVER-112772 Disable $match pushdown past $group in presence of $expr (#46351)"
+    },
+    {
+      "sha": "8a5b5b2693c10181d3fb0561330ba1914f1babe1",
+      "short_sha": "8a5b5b2693c",
+      "date": "2026-06-25T09:49:27+00:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#56771)"
+    },
+    {
+      "sha": "b17a585f344c6bcf0402ee46c96ed364224afe16",
+      "short_sha": "b17a585f344",
+      "date": "2026-06-25T11:41:03+02:00",
+      "author": {
+        "name": "Enrico Golfieri",
+        "email": "enrico.golfieri@mongodb.com"
+      },
+      "summary": "SERVER-129674 Mixed transaction batches can set secondary multikey metadata too early (#56591)"
+    },
     {
       "sha": "3389c14e2ea4f5513f0055a199779e5ec15d0958",
       "short_sha": "3389c14e2ea",
@@ -1612,7 +1662,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-25 09:30:29",
+  "generated_at": "2026-06-25 13:12:39",
   "branch_name": "master",
   "display_name": "master"
 }

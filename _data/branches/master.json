@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 146,
+    "commits_behind": 152,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.666275057013889,
-    "files_affected": 1344,
-    "total_additions": 35185,
-    "total_deletions": 11001,
+    "unmerged_oldest_age_days": 2.792255032337963,
+    "files_affected": 1465,
+    "total_additions": 37842,
+    "total_deletions": 11741,
     "date_range": {
       "first": "2026-06-23T18:56:25+00:00",
-      "last": "2026-06-26T09:30:15+00:00"
+      "last": "2026-06-26T12:11:58+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,66 @@
     "reason": "force:important_files"
   },
   "unmerged_commits": [
+    {
+      "sha": "fc6f3953fb5b1418a507c42570a18e986c0e5d32",
+      "short_sha": "fc6f3953fb5",
+      "date": "2026-06-26T13:11:58+01:00",
+      "author": {
+        "name": "Vishesh Ruparelia",
+        "email": "vishesh.ruparelia@mongodb.com"
+      },
+      "summary": "SERVER-128554 Migrate CommitParticipant and AdditionalParticipantInfo to use ShardRef (#56502)"
+    },
+    {
+      "sha": "c24ee73ad17ad269e75071a1040463f525fcb6df",
+      "short_sha": "c24ee73ad17",
+      "date": "2026-06-26T13:11:51+01:00",
+      "author": {
+        "name": "Vishesh Ruparelia",
+        "email": "vishesh.ruparelia@mongodb.com"
+      },
+      "summary": "SERVER-128569 Migrate DDL coordinator documents (MovePrimary, RemoveShardCommit, Migration, Resharding) to use ShardRef (#56177)"
+    },
+    {
+      "sha": "f9779d753e7aafef23a9fc891bfcc2de0e379462",
+      "short_sha": "f9779d753e7",
+      "date": "2026-06-26T07:43:24-04:00",
+      "author": {
+        "name": "Gregory Noma",
+        "email": "gregory.noma@gmail.com"
+      },
+      "summary": "SERVER-129967 Add API to delete all index entries for PDIB (#56844)"
+    },
+    {
+      "sha": "1f2dbffee21c365625147ee9faafeb0555ce9ceb",
+      "short_sha": "1f2dbffee21",
+      "date": "2026-06-26T13:33:22+02:00",
+      "author": {
+        "name": "Jordi Olivares Provencio",
+        "email": "jordi.olivares-provencio@mongodb.com"
+      },
+      "summary": "SERVER-129229 Implement create, drop, and rename in the DDL fuzzer (#56599)"
+    },
+    {
+      "sha": "0e032095341b516f13b11d3e0cfb4fef4bf4e085",
+      "short_sha": "0e032095341",
+      "date": "2026-06-26T11:03:15+00:00",
+      "author": {
+        "name": "Joan Bruguera Micó (at MongoDB)",
+        "email": "joan.bruguera-mico@mongodb.com"
+      },
+      "summary": "SERVER-129374 Remove jstests usages of _flushRoutingTableCacheUpdates with Authoritative Shards (part 1) (#56893)"
+    },
+    {
+      "sha": "bd2605bf20abbf9d5a685c28a288556842f5d435",
+      "short_sha": "bd2605bf20a",
+      "date": "2026-06-26T12:22:36+02:00",
+      "author": {
+        "name": "Silvia Surroca",
+        "email": "silvia.surroca@mongodb.com"
+      },
+      "summary": "SERVER-127953 MoveRangeCoordinator commits authoritatively (#56461)"
+    },
     {
       "sha": "fcc11f1a880ff95eb6db9e56fcc73413987cbb73",
       "short_sha": "fcc11f1a880",
@@ -1611,6 +1671,7 @@
         "branches": [
           "master",
           "mergai/master-dba3c8d92c4/main",
+          "mergai/master-fbbe2a017a4/semantic",
           "mongodb"
         ]
       }
@@ -1811,10 +1872,56 @@
           "num_of_dirs": 11
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "bd2605bf20abbf9d5a685c28a288556842f5d435",
+        "short_sha": "bd2605bf20a",
+        "date": "2026-06-26T12:22:36+02:00",
+        "author": {
+          "name": "Silvia Surroca",
+          "email": "silvia.surroca@mongodb.com"
+        },
+        "summary": "SERVER-127953 MoveRangeCoordinator commits authoritatively (#56461)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 61,
+          "num_of_lines": 2071,
+          "lines_added": 1626,
+          "lines_deleted": 445,
+          "num_of_dirs": 17
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "0e032095341b516f13b11d3e0cfb4fef4bf4e085",
+        "short_sha": "0e032095341",
+        "date": "2026-06-26T11:03:15+00:00",
+        "author": {
+          "name": "Joan Bruguera Micó (at MongoDB)",
+          "email": "joan.bruguera-mico@mongodb.com"
+        },
+        "summary": "SERVER-129374 Remove jstests usages of _flushRoutingTableCacheUpdates with Authoritative Shards (part 1) (#56893)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 50,
+          "num_of_lines": 563,
+          "lines_added": 357,
+          "lines_deleted": 206,
+          "num_of_dirs": 12
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-26 10:55:41",
+  "generated_at": "2026-06-26 13:57:05",
   "branch_name": "master",
   "display_name": "master"
 }

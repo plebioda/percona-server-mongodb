@@ -15,15 +15,23 @@ on:
     # routed to a separate concurrency lane (see `concurrency` below), so a
     # label change re-runs only jstests and never interrupts an in-flight
     # build/unittests run.
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    #
+    # 'ready_for_review' is the trigger that runs the heavy code jobs (build/
+    # unittests/dbtests/jstests) for a PR opened as a draft: those jobs are
+    # gated on `draft == false` (see their `if:` below) so they skip while the
+    # PR is a draft and run once. This lets a producer (e.g. mergai) open a
+    # draft, push all commits, and apply labels -- all without triggering or
+    # cancelling a heavy run -- then flip to ready for a single clean run. See
+    # the build job for the full rationale.
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
     branches:
       - master
       - "mergai/**"
 
 # Two independent concurrency lanes per PR so code pushes and label changes
 # don't cancel each other:
-#   - code events (opened/synchronize/reopened) -> '<PR>-main'
-#   - label events (labeled/unlabeled)          -> '<PR>-relabel'
+#   - code events (opened/synchronize/reopened/ready_for_review) -> '<PR>-main'
+#   - label events (labeled/unlabeled)                           -> '<PR>-relabel'
 # cancel-in-progress is true within each lane (a newer push supersedes an older
 # build; a newer label change supersedes an older relabel run) but never across
 # lanes, so adding/removing a label leaves a running build/unittests untouched.
@@ -135,8 +143,22 @@ jobs:
     needs: gate
     # Skipped on label events: a ci-skip-jstests / ci-run-jstests change only
     # re-evaluates jstests and must not rebuild. Code events (opened/
-    # synchronize/reopened) run build normally.
-    if: ${{ github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    # synchronize/reopened/ready_for_review) run build normally.
+    #
+    # Also skipped while the PR is a DRAFT (draft == false guard). A producer
+    # like mergai opens the PR as a draft, pushes all its commits, and applies
+    # labels -- each fires a code/label event, but build stays skipped so no
+    # heavy run starts (and none is left to be cancelled by the next push).
+    # Flipping the PR to ready fires `ready_for_review` (draft == false), which
+    # is the single event that runs build. Without this, the rapid
+    # open->push->label churn cancels the in-flight code run via
+    # cancel-in-progress, and build/unittests/dbtests never complete. unittests
+    # and dbtests chain off `needs.build.result == 'success'`, so they inherit
+    # this skip automatically; jstests carries its own draft guard below.
+    if: >-
+      ${{ github.event.action != 'labeled'
+      && github.event.action != 'unlabeled'
+      && github.event.pull_request.draft == false }}
     # Pinned to ubuntu-24.04 (not ubuntu-latest) because this workflow
     # depends on runner specifics that change silently when GH rolls the
     # alias forward: the /mnt ephemeral-disk layout assumed by
@@ -625,11 +647,16 @@ jobs:
     # success, so a unittest failure does not block jstests -- both run whenever
     # build passed. `build` is in needs so the `if` can read needs.build.result.
     needs: [gate, build, unittests, jstests_gate]
+    # `draft == false` so jstests never runs on a draft -- including the label
+    # events mergai fires while assembling a draft PR (the label-event branch
+    # below would otherwise run it). Once the PR is ready, jstests runs after a
+    # successful build and still re-evaluates on later label changes.
     if: >-
       ${{ !cancelled()
       && needs.gate.result == 'success'
       && needs.jstests_gate.result == 'success'
       && needs.jstests_gate.outputs.should_run == 'true'
+      && github.event.pull_request.draft == false
       && (github.event.action == 'labeled'
           || github.event.action == 'unlabeled'
           || needs.build.result == 'success') }}

@@ -4,7 +4,7 @@ var adminDB = db.getSiblingDB("admin");
 {
     var c = adminDB.runCommand({getParameter: 1, cursorTimeoutMillis: 1});
     assert.commandWorked(c);
-    assert.eq(c.cursorTimeoutMillis, 9);
+    assert.eq(c.cursorTimeoutMillis, 999);
 }
 // test internalQueryPlannerEnableIndexIntersection
 {

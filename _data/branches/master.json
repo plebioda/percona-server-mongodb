@@ -5,14 +5,14 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 187,
+    "commits_behind": 198,
     "days_behind": 3,
-    "files_affected": 1465,
-    "total_additions": 39242,
-    "total_deletions": 11471,
+    "files_affected": 1541,
+    "total_additions": 42495,
+    "total_deletions": 12674,
     "date_range": {
       "first": "2026-06-22T17:57:20+00:00",
-      "last": "2026-06-26T04:26:51+00:00"
+      "last": "2026-06-26T08:41:39+00:00"
     }
   },
   "last_merged_commit": {
@@ -36,6 +36,116 @@
     "summary": "SERVER-128506: Create a new optional top-level oplog entry field h (document hash) (#55874)"
   },
   "unmerged_commits": [
+    {
+      "sha": "9e5644e8f7a89ce5fac9c632a8302b3e29eaae7d",
+      "short_sha": "9e5644e8f7a",
+      "date": "2026-06-26T10:41:39+02:00",
+      "author": {
+        "name": "Anna Maria Nestorov",
+        "email": "annamaria.nestorov@gmail.com"
+      },
+      "summary": "SERVER-125988 Handle upgrade/downgrade while we have stopped writes in a shard (#56422)"
+    },
+    {
+      "sha": "743ff97570ac9ed097ae62ed4bc39f372e602d86",
+      "short_sha": "743ff97570a",
+      "date": "2026-06-26T10:20:13+02:00",
+      "author": {
+        "name": "Anna Maria Nestorov",
+        "email": "annamaria.nestorov@gmail.com"
+      },
+      "summary": "SERVER-129668 Serialize replica set write block command (#56585)"
+    },
+    {
+      "sha": "39a209bf2cd791ec0a358d9b4f7c401d530d9787",
+      "short_sha": "39a209bf2cd",
+      "date": "2026-06-26T09:19:42+01:00",
+      "author": {
+        "name": "Daniele Alessandrelli",
+        "email": "daniele.alessandrelli@mongodb.com"
+      },
+      "summary": "SERVER-128741 Migrate sharded fixed bucketing tests to `jstests/core_sharding/` (#56758)"
+    },
+    {
+      "sha": "cf61cdff15f5e6261a11e17ed2664cec5d9008b5",
+      "short_sha": "cf61cdff15f",
+      "date": "2026-06-26T10:04:59+02:00",
+      "author": {
+        "name": "Anna Maria Nestorov",
+        "email": "annamaria.nestorov@gmail.com"
+      },
+      "summary": "SERVER-128191 Block and abort move primary operations (actually moving data) when replica set write block is enabled (#56191)"
+    },
+    {
+      "sha": "cc32c31257fd77c3232281829b005ae636307141",
+      "short_sha": "cc32c31257f",
+      "date": "2026-06-26T09:58:11+02:00",
+      "author": {
+        "name": "Anna Maria Nestorov",
+        "email": "annamaria.nestorov@gmail.com"
+      },
+      "summary": "SERVER-128193 Abort index builds when replica set write block is enabled (#56284)"
+    },
+    {
+      "sha": "a7d1959bb4377981047239a18d01b95bd0eede9f",
+      "short_sha": "a7d1959bb43",
+      "date": "2026-06-26T09:53:23+02:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-128153 Handle config server UUID in shard registry initialization (#56594)"
+    },
+    {
+      "sha": "5382b444f2223741a9411b6ea171cf28af968364",
+      "short_sha": "5382b444f22",
+      "date": "2026-06-26T08:38:46+01:00",
+      "author": {
+        "name": "Marco Bizzarri",
+        "email": "marco.bizzarri@mongodb.com"
+      },
+      "summary": "SERVER-123632 Re-enables disabled test (#56582)"
+    },
+    {
+      "sha": "bb5e6e1e1ba64f5c5bd5d49c6e379a39a95759f0",
+      "short_sha": "bb5e6e1e1ba",
+      "date": "2026-06-26T10:07:42+03:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#56882)"
+    },
+    {
+      "sha": "8f63de60cc362e12ebd5c25d5f1d9002e0e1856c",
+      "short_sha": "8f63de60cc3",
+      "date": "2026-06-26T08:56:36+02:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-129482 Use ShardHandle in CollectionMetadata (#56415)"
+    },
+    {
+      "sha": "44e67edc86dc9bc16e1802d7de8887d8d529e078",
+      "short_sha": "44e67edc86d",
+      "date": "2026-06-26T08:10:31+02:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-129481 Create shard handle resolver for use in the chunk manager (#56411)"
+    },
+    {
+      "sha": "b3746e454c5792c6b054e2ebfca44cae39339868",
+      "short_sha": "b3746e454c5",
+      "date": "2026-06-26T07:44:49+02:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-129486 Remove opCtx from invalidateRangePreserversOlderThanShardVersion (#56416)"
+    },
     {
       "sha": "fda4c303320ce20801295f52228136699640caf5",
       "short_sha": "fda4c303320",
@@ -2196,10 +2306,56 @@
           "num_of_dirs": 13
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "8f63de60cc362e12ebd5c25d5f1d9002e0e1856c",
+        "short_sha": "8f63de60cc3",
+        "date": "2026-06-26T08:56:36+02:00",
+        "author": {
+          "name": "Allison Easton",
+          "email": "allison.easton@mongodb.com"
+        },
+        "summary": "SERVER-129482 Use ShardHandle in CollectionMetadata (#56415)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 37,
+          "num_of_lines": 1398,
+          "lines_added": 801,
+          "lines_deleted": 597,
+          "num_of_dirs": 14
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "a7d1959bb4377981047239a18d01b95bd0eede9f",
+        "short_sha": "a7d1959bb43",
+        "date": "2026-06-26T09:53:23+02:00",
+        "author": {
+          "name": "Allison Easton",
+          "email": "allison.easton@mongodb.com"
+        },
+        "summary": "SERVER-128153 Handle config server UUID in shard registry initialization (#56594)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 17,
+          "num_of_lines": 145,
+          "lines_added": 117,
+          "lines_deleted": 28,
+          "num_of_dirs": 11
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-26 05:53:48",
+  "generated_at": "2026-06-26 09:35:57",
   "branch_name": "master",
   "display_name": "master"
 }

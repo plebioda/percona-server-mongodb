@@ -9,20 +9,26 @@ name: build-and-test
 # whose required reviewers must approve every push.
 on:
   pull_request_target:
-    # 'unlabeled' is included so removing a skip/run label re-triggers the
-    # workflow (the jstests_gate job re-reads fresh labels). 'labeled' is
-    # intentionally excluded to avoid a race when automation (e.g. mergai)
-    # creates a PR and immediately adds labels -- same rationale as
-    # format.yml / clang-tidy.yml. A force-run label therefore takes effect on
-    # the next push/synchronize rather than on the label event itself.
-    types: [opened, synchronize, reopened, unlabeled]
+    # 'labeled'/'unlabeled' let adding or removing the ci-skip-jstests /
+    # ci-run-jstests labels re-evaluate the jstests job. On those events the
+    # build + unittests jobs are skipped (see their `if:` below) and the run is
+    # routed to a separate concurrency lane (see `concurrency` below), so a
+    # label change re-runs only jstests and never interrupts an in-flight
+    # build/unittests run.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - master
       - "mergai/**"
 
-# Cancel in-flight jobs of this workflow when a new commit lands on the same PR.
+# Two independent concurrency lanes per PR so code pushes and label changes
+# don't cancel each other:
+#   - code events (opened/synchronize/reopened) -> '<PR>-main'
+#   - label events (labeled/unlabeled)          -> '<PR>-relabel'
+# cancel-in-progress is true within each lane (a newer push supersedes an older
+# build; a newer label change supersedes an older relabel run) but never across
+# lanes, so adding/removing a label leaves a running build/unittests untouched.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') && 'relabel' || 'main' }}
   cancel-in-progress: true
 
 permissions:
@@ -99,8 +105,22 @@ jobs:
   # access, including the `unittests` job that doesn't run until ~30
   # minutes later. The maintainer reviewing the PR is implicitly
   # approving every job that transitively depends on `gate`.
+  #
+  # The label-event branch (labeled/unlabeled) exists ONLY to re-evaluate
+  # jstests when the jstests-control labels change. Gate `gate` (which the
+  # whole graph needs) on those label names so any OTHER label event is a clean
+  # no-op: gate skips, nothing downstream runs, no rbe-external approval is
+  # requested. In particular mergai stamps every main PR with
+  # `ci-skip-clang-tidy` / `ci-skip-format` (for the format/clang-tidy
+  # workflows); without this guard each fires a build-and-test label run that
+  # skips build/unittests and spins up jstests. Code events
+  # (opened/synchronize/reopened) are unaffected.
   gate:
     name: gate
+    if: >-
+      ${{ (github.event.action != 'labeled' && github.event.action != 'unlabeled')
+      || github.event.label.name == 'ci-skip-jstests'
+      || github.event.label.name == 'ci-run-jstests' }}
     runs-on: ubuntu-24.04
     environment: rbe-external
     steps:
@@ -113,6 +133,10 @@ jobs:
   build:
     name: build
     needs: gate
+    # Skipped on label events: a ci-skip-jstests / ci-run-jstests change only
+    # re-evaluates jstests and must not rebuild. Code events (opened/
+    # synchronize/reopened) run build normally.
+    if: ${{ github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
     # Pinned to ubuntu-24.04 (not ubuntu-latest) because this workflow
     # depends on runner specifics that change silently when GH rolls the
     # alias forward: the /mnt ephemeral-disk layout assumed by
@@ -213,6 +237,10 @@ jobs:
   unittests:
     name: unittests
     needs: build
+    # Skipped on label events for the same reason as `build` above (build is
+    # also skipped, which would skip this via `needs` anyway; stated explicitly
+    # for clarity).
+    if: ${{ github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
     # See `build.runs-on` above for why this is pinned, not `ubuntu-latest`.
     runs-on: ubuntu-24.04
     # Same unattended `rbe` environment as `build` — see `build.environment`
@@ -319,11 +347,16 @@ jobs:
           if-no-files-found: ignore
 
   # Decides whether the jstests job runs, from PR labels and a repo/org
-  # variable. Runs on a plain runner with no `environment:` and does NOT depend
-  # on `gate`, so it resolves immediately and never triggers an RBE approval
-  # prompt. Labels are read fresh via `gh api` (not github.event.*.labels) so
-  # the decision reflects the current label set even on a re-run -- same
-  # freshness trick as format.yml / clang-tidy.yml.
+  # variable. Labels are read fresh via `gh api` (not github.event.*.labels) so
+  # the decision reflects the current label set -- same freshness trick as
+  # format.yml / clang-tidy.yml.
+  #
+  # `needs: unittests` (with `if: !cancelled()` so it still runs when unittests
+  # is skipped or failed) makes this resolve LATE -- after build/unittests on a
+  # code event, and immediately on a label event (where both are skipped). The
+  # late read is deliberate: it catches a ci-skip-jstests / ci-run-jstests label
+  # applied *while the build was running*, so that label takes effect on the
+  # same run instead of only the next push.
   #
   # Precedence: ci-skip-jstests > ci-run-jstests > vars.RUN_JSTESTS (default run).
   #   - ci-skip-jstests label : force skip.
@@ -332,6 +365,8 @@ jobs:
   #                             'false' => skip unless ci-run-jstests is set.
   jstests_gate:
     name: jstests gate
+    needs: unittests
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.decide.outputs.should_run }}
@@ -369,6 +404,16 @@ jobs:
   # Gated on jstests_gate: skipped when ci-skip-jstests is set, or when
   # vars.RUN_JSTESTS=false and ci-run-jstests is absent.
   #
+  # The `if` uses !cancelled() + explicit result checks (not a bare `needs`)
+  # because build/unittests are SKIPPED on label events. `needs.gate.result ==
+  # 'success'` keeps the security gate: jstests only runs after the rbe-external
+  # approval, even on a label-triggered run where build/unittests didn't run.
+  # The last clause branches on the event: a label event allows jstests (build/
+  # unittests intentionally skipped), while a code event requires
+  # unittests.result == 'success' -- which also implies build succeeded, so a
+  # failed build (-> unittests skipped) still blocks jstests rather than slipping
+  # through on a 'skipped' result.
+  #
   # All jstest-running config lives in `--config=psmdb_remote_jstest`
   # (.bazelrc.psmdb): the remote test-execution strategies, minimal output
   # download WITHOUT remote_test's core/mdmp/gz force-download regex, the
@@ -385,8 +430,15 @@ jobs:
   #                     2-core pool) -- re-enable once PSMDB-2100 §1 lands.
   jstests:
     name: jstests
-    needs: [unittests, jstests_gate]
-    if: ${{ needs.jstests_gate.outputs.should_run == 'true' }}
+    needs: [gate, unittests, jstests_gate]
+    if: >-
+      ${{ !cancelled()
+      && needs.gate.result == 'success'
+      && needs.jstests_gate.result == 'success'
+      && needs.jstests_gate.outputs.should_run == 'true'
+      && (github.event.action == 'labeled'
+          || github.event.action == 'unlabeled'
+          || needs.unittests.result == 'success') }}
     # See `build.runs-on` above for why this is pinned, not `ubuntu-latest`.
     runs-on: ubuntu-24.04
     # Same unattended `rbe` environment as `build` / `unittests`.

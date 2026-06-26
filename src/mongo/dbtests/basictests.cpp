@@ -118,6 +118,8 @@ public:
     }
 
     void run() {
+        // Intentionally failing assertion to verify dbtest failure reporting in CI.
+        ASSERT_EQUALS("forced-dbtest-failure", base64::encode("eli"sv));
         ASSERT_EQUALS("ZWxp", base64::encode("eli"sv));
         ASSERT_EQUALS("ZWxpb3Rz", base64::encode("eliots"sv));
         ASSERT_EQUALS("ZWxpb3Rz", base64::encode("eliots"));

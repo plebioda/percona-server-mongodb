@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 164,
+    "commits_behind": 165,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.8658863715625,
-    "files_affected": 1488,
-    "total_additions": 40478,
-    "total_deletions": 11746,
+    "unmerged_oldest_age_days": 2.8708572137037036,
+    "files_affected": 1490,
+    "total_additions": 40629,
+    "total_deletions": 11747,
     "date_range": {
       "first": "2026-06-23T18:56:25+00:00",
-      "last": "2026-06-26T14:51:40+00:00"
+      "last": "2026-06-26T14:58:24+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,16 @@
     "reason": "force:important_files"
   },
   "unmerged_commits": [
+    {
+      "sha": "0a94ed6efce9580fa1444d28b3dfe295fbce611b",
+      "short_sha": "0a94ed6efce",
+      "date": "2026-06-26T10:58:24-04:00",
+      "author": {
+        "name": "Matt Olma",
+        "email": "67564577+mattsimply@users.noreply.github.com"
+      },
+      "summary": "SERVER-129748: CheckMultikeyConsistencyInBackground hook reports false multikey divergence on the legacy (non-replicated-multikeyness) path (#56657)"
+    },
     {
       "sha": "887d19f07cebfa51612abf317928474662bab1f2",
       "short_sha": "887d19f07ce",
@@ -2040,7 +2050,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-26 15:43:07",
+  "generated_at": "2026-06-26 15:50:16",
   "branch_name": "master",
   "display_name": "master"
 }

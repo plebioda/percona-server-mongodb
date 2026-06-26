@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 152,
+    "commits_behind": 164,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.792255032337963,
-    "files_affected": 1465,
-    "total_additions": 37842,
-    "total_deletions": 11741,
+    "unmerged_oldest_age_days": 2.8658863715625,
+    "files_affected": 1488,
+    "total_additions": 40478,
+    "total_deletions": 11746,
     "date_range": {
       "first": "2026-06-23T18:56:25+00:00",
-      "last": "2026-06-26T12:11:58+00:00"
+      "last": "2026-06-26T14:51:40+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,126 @@
     "reason": "force:important_files"
   },
   "unmerged_commits": [
+    {
+      "sha": "887d19f07cebfa51612abf317928474662bab1f2",
+      "short_sha": "887d19f07ce",
+      "date": "2026-06-26T15:51:40+01:00",
+      "author": {
+        "name": "cian-mdb",
+        "email": "cian.nugentmcgealy@mongodb.com"
+      },
+      "summary": "SERVER-128190 Add change stream option and scope usage metrics for MongoD (#55042)"
+    },
+    {
+      "sha": "8be30019e3f4094e4b0ddadc63a1199ff7454d95",
+      "short_sha": "8be30019e3f",
+      "date": "2026-06-26T16:45:37+02:00",
+      "author": {
+        "name": "Denis Grebennicov",
+        "email": "denis.grebennicov@mongodb.com"
+      },
+      "summary": "SERVER-129058 Add ShardedClusterLocalLookupEligibility (route-based) (#56005)"
+    },
+    {
+      "sha": "497ab77e9529d02b1a75419383604d4253bea7c8",
+      "short_sha": "497ab77e952",
+      "date": "2026-06-26T09:45:06-05:00",
+      "author": {
+        "name": "Steve Tarzia",
+        "email": "steve.tarzia@mongodb.com"
+      },
+      "summary": "Revert \"SERVER-129906 Eliminate projection before a $count (#56843)\" (#56919)"
+    },
+    {
+      "sha": "6b5756061e326e484348fd143c3441272cf8e1d4",
+      "short_sha": "6b5756061e3",
+      "date": "2026-06-26T10:16:48-04:00",
+      "author": {
+        "name": "mongodb-sage-bot[bot]",
+        "email": "247496174+mongodb-sage-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-128599: Fulfill _changeStreamsMonitorStarted under exclusive lock (#56543)"
+    },
+    {
+      "sha": "260b508b95004278e831f0fc4c2aef423e3be9af",
+      "short_sha": "260b508b950",
+      "date": "2026-06-26T10:16:24-04:00",
+      "author": {
+        "name": "Kruti Shah",
+        "email": "70412403+krutishah139@users.noreply.github.com"
+      },
+      "summary": "SERVER-101249 Re-enable resharding verification in timeseries_reshard_with_inserts.js (#56589)"
+    },
+    {
+      "sha": "35450b7923c5cc7a7bce114c5f1915028bb8da1b",
+      "short_sha": "35450b7923c",
+      "date": "2026-06-26T10:13:34-04:00",
+      "author": {
+        "name": "Mike Nugent",
+        "email": "mike.nugent@mongodb.com"
+      },
+      "summary": "SERVER-129687: Add utility to read spans in tests (#56717)"
+    },
+    {
+      "sha": "f77e459be7e1fe15389b5db5a4b4ae23d98b795b",
+      "short_sha": "f77e459be7e",
+      "date": "2026-06-26T14:11:12+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-129481 Create shard handle resolver for use in the chunk manager (#56411)\" (#56913)"
+    },
+    {
+      "sha": "cebd87d9b8c2f1828344e068f0c4271276c0d23f",
+      "short_sha": "cebd87d9b8c",
+      "date": "2026-06-26T09:55:28-04:00",
+      "author": {
+        "name": "madelinezec",
+        "email": "15312869+madelinezec@users.noreply.github.com"
+      },
+      "summary": "SERVER-112232  Push down eligible suffixes to SBE (join re-ordering pipelines) (#56862)"
+    },
+    {
+      "sha": "d9e16afd0e938b3ba4853c26c1b7a741a2ccef16",
+      "short_sha": "d9e16afd0e9",
+      "date": "2026-06-26T09:39:20-04:00",
+      "author": {
+        "name": "Gil Alon",
+        "email": "47804748+galon1@users.noreply.github.com"
+      },
+      "summary": "SERVER-128278 Remove TODO in `update_delete_include_query_stats_metrics` (#56848)"
+    },
+    {
+      "sha": "023391a4e763c202e0ce9a861ecd5fe6ff7f2c62",
+      "short_sha": "023391a4e76",
+      "date": "2026-06-26T08:34:36-05:00",
+      "author": {
+        "name": "Steve Tarzia",
+        "email": "steve.tarzia@mongodb.com"
+      },
+      "summary": "SERVER-129906 Eliminate projection before a $count (#56843)"
+    },
+    {
+      "sha": "5e7bd1f39543bf5dd2249af3906a87a8c5375e8e",
+      "short_sha": "5e7bd1f3954",
+      "date": "2026-06-26T09:29:39-04:00",
+      "author": {
+        "name": "Matt Olma",
+        "email": "67564577+mattsimply@users.noreply.github.com"
+      },
+      "summary": "SERVER-129836: javascript_heap_limit.js fails on classic engine: JS allocation no longer OOMs under the per-query heap limit (#56738)"
+    },
+    {
+      "sha": "e6714d1706cf6f844a5a57096f732d821c357a83",
+      "short_sha": "e6714d1706c",
+      "date": "2026-06-26T14:28:17+01:00",
+      "author": {
+        "name": "Daniele Alessandrelli",
+        "email": "daniele.alessandrelli@mongodb.com"
+      },
+      "summary": "SERVER-128020 Filter internal namespaces from collectionless `$listCatalog` for external callers (#56590)"
+    },
     {
       "sha": "fc6f3953fb5b1418a507c42570a18e986c0e5d32",
       "short_sha": "fc6f3953fb5",
@@ -1670,7 +1790,6 @@
       "result": {
         "branches": [
           "master",
-          "mergai/master-dba3c8d92c4/main",
           "mergai/master-fbbe2a017a4/semantic",
           "mongodb"
         ]
@@ -1921,7 +2040,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-26 13:57:05",
+  "generated_at": "2026-06-26 15:43:07",
   "branch_name": "master",
   "display_name": "master"
 }

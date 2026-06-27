@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 178,
-    "days_behind": 2,
-    "unmerged_oldest_age_days": 2.931163747337963,
-    "files_affected": 1574,
-    "total_additions": 45523,
-    "total_deletions": 12719,
+    "commits_behind": 203,
+    "days_behind": 4,
+    "unmerged_oldest_age_days": 4.009337890949074,
+    "files_affected": 1607,
+    "total_additions": 44898,
+    "total_deletions": 13683,
     "date_range": {
       "first": "2026-06-23T18:56:25+00:00",
-      "last": "2026-06-26T16:40:12+00:00"
+      "last": "2026-06-27T18:10:04+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,256 @@
     "reason": "force:important_files"
   },
   "unmerged_commits": [
+    {
+      "sha": "cf67bfdb8b6e76dfc7d5329633ce033006e4b9a0",
+      "short_sha": "cf67bfdb8b6",
+      "date": "2026-06-27T14:10:04-04:00",
+      "author": {
+        "name": "Finley Lau",
+        "email": "finley.lau@mongodb.com"
+      },
+      "summary": "SERVER-129249 Assorted hybrid search bug fixes (#56368)"
+    },
+    {
+      "sha": "b9de2d02c10552ef7b4655ab6047719c90e0fd4f",
+      "short_sha": "b9de2d02c10",
+      "date": "2026-06-27T00:11:07+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-123418 Limit pool-flush suppression in finishRefresh to confirmed rate-limiter signals (#52989)\" (#56971)"
+    },
+    {
+      "sha": "ba8299276790688720c4fcd55bd2512b90ec727a",
+      "short_sha": "ba829927679",
+      "date": "2026-06-26T15:42:19-06:00",
+      "author": {
+        "name": "Saman Memaripour",
+        "email": "amirsaman.memaripour@mongodb.com"
+      },
+      "summary": "SERVER-121133 Track replication-specific network utilization (#56672)"
+    },
+    {
+      "sha": "c61f02457d19852e27d6743a1760716d82d41deb",
+      "short_sha": "c61f02457d1",
+      "date": "2026-06-26T16:56:09-04:00",
+      "author": {
+        "name": "Sean Lyons",
+        "email": "sean.lyons@mongodb.com"
+      },
+      "summary": "SERVER-122831 Make `ss` available to tests in remote execution (#56735)"
+    },
+    {
+      "sha": "d5ab78d3bf864dc5f5da9251756b2059ada85cc2",
+      "short_sha": "d5ab78d3bf8",
+      "date": "2026-06-26T16:55:02-04:00",
+      "author": {
+        "name": "Parker Felix",
+        "email": "68665637+parker-felix@users.noreply.github.com"
+      },
+      "summary": "SERVER-128724 Revert generic cross-db $lookup/$unionWith (#56139)"
+    },
+    {
+      "sha": "42415a6371e9abd19442a2910ed4d397b0bddec7",
+      "short_sha": "42415a6371e",
+      "date": "2026-06-26T16:11:17-04:00",
+      "author": {
+        "name": "Evan Bergeron",
+        "email": "evanbergeron@users.noreply.github.com"
+      },
+      "summary": "SERVER-129719 Replace ValueGuard with RAII types in vm.cpp and vm_block.cpp (#56611)"
+    },
+    {
+      "sha": "db08d2f845583c4c72ba0d87acc103888c326118",
+      "short_sha": "db08d2f8455",
+      "date": "2026-06-26T16:10:15-04:00",
+      "author": {
+        "name": "Erin Liang",
+        "email": "59406045+erl-ang@users.noreply.github.com"
+      },
+      "summary": "SERVER-87492 Enable feature flag featureFlagQueryStatsInsert (#56715)"
+    },
+    {
+      "sha": "2a612d7c5405f097a061df71bdf7a8f06a23ccb1",
+      "short_sha": "2a612d7c540",
+      "date": "2026-06-26T21:04:38+01:00",
+      "author": {
+        "name": "Projjal Chanda",
+        "email": "projjal.chanda@mongodb.com"
+      },
+      "summary": "SERVER-129324 Report per-stage memory usage for SingleDocumentTransformationStage (#56911)"
+    },
+    {
+      "sha": "2254fd6a35d43b46f5b2f2c7e2dd4a388e8509a6",
+      "short_sha": "2254fd6a35d",
+      "date": "2026-06-26T21:04:06+01:00",
+      "author": {
+        "name": "Projjal Chanda",
+        "email": "projjal.chanda@mongodb.com"
+      },
+      "summary": "SERVER-129325 Report per-stage memory usage for Classic MatchStage (#56901)"
+    },
+    {
+      "sha": "1b3eb82e472ca9d207eed80d5e080326b19d85e3",
+      "short_sha": "1b3eb82e472",
+      "date": "2026-06-26T20:58:30+01:00",
+      "author": {
+        "name": "Projjal Chanda",
+        "email": "projjal.chanda@mongodb.com"
+      },
+      "summary": "SERVER-129567 Report per-stage memory usage for Classic LookupStage (#56909)"
+    },
+    {
+      "sha": "9b676657b8f501cfb27cba2daf24698697a341ed",
+      "short_sha": "9b676657b8f",
+      "date": "2026-06-26T15:46:46-04:00",
+      "author": {
+        "name": "Gil Alon",
+        "email": "47804748+galon1@users.noreply.github.com"
+      },
+      "summary": "SERVER-129733 Always collect delete query stats metrics on shards when requested by the router (#56702)"
+    },
+    {
+      "sha": "f76694d3a4d9ad4ec135926577378a00ce775342",
+      "short_sha": "f76694d3a4d",
+      "date": "2026-06-26T15:23:59-04:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-111072 Auto-generated SBOM files [master] (#56579)"
+    },
+    {
+      "sha": "6dc03d2d9c9c54f703c8fa8d1d9643c8804ce19b",
+      "short_sha": "6dc03d2d9c9",
+      "date": "2026-06-26T21:10:16+02:00",
+      "author": {
+        "name": "Denis Grebennicov",
+        "email": "denis.grebennicov@mongodb.com"
+      },
+      "summary": "SERVER-129168 Introduce BatchedEnrichmentStage, a generic buffering enrichment stage primitive (#56192)"
+    },
+    {
+      "sha": "bae07aa5891e4cc963a0841aa4823e2c94d85435",
+      "short_sha": "bae07aa5891",
+      "date": "2026-06-26T15:02:12-04:00",
+      "author": {
+        "name": "Mike Nugent",
+        "email": "mike.nugent@mongodb.com"
+      },
+      "summary": "SERVER-129100: Add Googletest matchers for matching on spans (#56793)"
+    },
+    {
+      "sha": "fce1259964d44c3cc091c06ed10c669152101a6c",
+      "short_sha": "fce1259964d",
+      "date": "2026-06-26T20:58:09+02:00",
+      "author": {
+        "name": "Daniel Gómez Ferro",
+        "email": "daniel.gomezferro@mongodb.com"
+      },
+      "summary": "SERVER-129390 Add ticket-admission recorder and index build ticket metrics (#56320)"
+    },
+    {
+      "sha": "cc95e4a3040bb8e1dc676b801c302680cefd2385",
+      "short_sha": "cc95e4a3040",
+      "date": "2026-06-26T21:57:09+03:00",
+      "author": {
+        "name": "Daniel Tabacaru",
+        "email": "96778637+danieltabacaru@users.noreply.github.com"
+      },
+      "summary": "SERVER-129321 Promote SBE pushdown knobs to query settings (#56778)"
+    },
+    {
+      "sha": "386c0402ab23247a2efac11cd657249163f94dfe",
+      "short_sha": "386c0402ab2",
+      "date": "2026-06-26T14:41:04-04:00",
+      "author": {
+        "name": "Stephanie",
+        "email": "53684987+seristof@users.noreply.github.com"
+      },
+      "summary": "SERVER-126415 Expand unit-test coverage of write-conflict injection using enableWriteConflictForWrites (#56536)"
+    },
+    {
+      "sha": "c4c41958302329e66661fcf40bce5c809d516ea9",
+      "short_sha": "c4c41958302",
+      "date": "2026-06-26T14:38:09-04:00",
+      "author": {
+        "name": "Sarah Kelley",
+        "email": "sarah.kelley@mongodb.com"
+      },
+      "summary": "Revert \"SERVER-112772 (2 commits)\" (#56936)"
+    },
+    {
+      "sha": "5aba2726938a4d97424c3adf0ec479fdb6e791ec",
+      "short_sha": "5aba2726938",
+      "date": "2026-06-26T14:36:33-04:00",
+      "author": {
+        "name": "Lee Maguire",
+        "email": "lee.maguire@mongodb.com"
+      },
+      "summary": "SERVER-130000: Serialize WASM engine/store lifecycle ops to fix concurrent-scope ASAN segfaults (#56924)"
+    },
+    {
+      "sha": "231e4b72197e8c3f293ce6353ed7a4bd3400bf74",
+      "short_sha": "231e4b72197",
+      "date": "2026-06-26T13:28:25-04:00",
+      "author": {
+        "name": "Cheahuychou Mao",
+        "email": "cheahuychou.mao@mongodb.com"
+      },
+      "summary": "SERVER-129956 Revert HandoffSessionManager and HandoffSessionTranportLayer (#56868)"
+    },
+    {
+      "sha": "fa53cd61577c683400b250883c0b820f605b35c9",
+      "short_sha": "fa53cd61577",
+      "date": "2026-06-26T13:03:31-04:00",
+      "author": {
+        "name": "Cedric Sirianni",
+        "email": "cedric.sirianni@mongodb.com"
+      },
+      "summary": "SERVER-127825 Refactor checkUncommittedFastCountChanges() (#56703)"
+    },
+    {
+      "sha": "3a82b8a217caaa97441aff6089661662f5c25a87",
+      "short_sha": "3a82b8a217c",
+      "date": "2026-06-26T13:03:02-04:00",
+      "author": {
+        "name": "Benjamin Pearce",
+        "email": "benjamin.pearce@mongodb.com"
+      },
+      "summary": "SERVER-128800 Add merge function and fix copy constructors for KeyStringIndexConsistency (#55536)"
+    },
+    {
+      "sha": "ef9acb5edd33bceb6861a238d98760982673814c",
+      "short_sha": "ef9acb5edd3",
+      "date": "2026-06-26T13:02:24-04:00",
+      "author": {
+        "name": "Cedric Sirianni",
+        "email": "cedric.sirianni@mongodb.com"
+      },
+      "summary": "SERVER-128712 Improve SizeCountCheckpointFlusher failpoint usage (#56856)"
+    },
+    {
+      "sha": "f2db2f8a55663881edc0f3839b71500b30f7baf9",
+      "short_sha": "f2db2f8a556",
+      "date": "2026-06-26T19:00:19+02:00",
+      "author": {
+        "name": "Ivan Fefer",
+        "email": "ivan.fefer@mongodb.com"
+      },
+      "summary": "SERVER-127100 Relax write_conflicts.js checks for for sharded clusters to avoid flaky tests (#56704)"
+    },
+    {
+      "sha": "998e54c4119af63d7951f7c95855d0117542c7ee",
+      "short_sha": "998e54c4119",
+      "date": "2026-06-26T18:49:08+02:00",
+      "author": {
+        "name": "Mathias Stearn",
+        "email": "mathias@mongodb.com"
+      },
+      "summary": "SERVER-129979 Restructure mfp plugin into a multi-crate Cargo workspace (#56906)"
+    },
     {
       "sha": "f312e902b04d83e16cb0af81e45c1fbdac7bce15",
       "short_sha": "f312e902b04",
@@ -1930,6 +2180,7 @@
       "result": {
         "branches": [
           "master",
+          "mergai/master-d112ecef6d5/main",
           "mergai/master-fbbe2a017a4/semantic",
           "mongodb"
         ]
@@ -2223,10 +2474,56 @@
           "num_of_dirs": 11
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "b9de2d02c10552ef7b4655ab6047719c90e0fd4f",
+        "short_sha": "b9de2d02c10",
+        "date": "2026-06-27T00:11:07+00:00",
+        "author": {
+          "name": "auto-revert-app[bot]",
+          "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+        },
+        "summary": "Revert \"SERVER-123418 Limit pool-flush suppression in finishRefresh to confirmed rate-limiter signals (#52989)\" (#56971)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 19,
+          "num_of_lines": 781,
+          "lines_added": 116,
+          "lines_deleted": 665,
+          "num_of_dirs": 11
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "cf67bfdb8b6e76dfc7d5329633ce033006e4b9a0",
+        "short_sha": "cf67bfdb8b6",
+        "date": "2026-06-27T14:10:04-04:00",
+        "author": {
+          "name": "Finley Lau",
+          "email": "finley.lau@mongodb.com"
+        },
+        "summary": "SERVER-129249 Assorted hybrid search bug fixes (#56368)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 20,
+          "num_of_lines": 1039,
+          "lines_added": 860,
+          "lines_deleted": 179,
+          "num_of_dirs": 12
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-26 17:17:06",
+  "generated_at": "2026-06-27 19:09:42",
   "branch_name": "master",
   "display_name": "master"
 }

@@ -919,7 +919,9 @@ public:
         _auditEvent(client, "enableSharding", BSON("ns" << nsname));
     }
 
-    void logAddShard(Client* client, std::string_view name, const std::string& servers) const override {
+    void logAddShard(Client* client,
+                     std::string_view name,
+                     const std::string& servers) const override {
         if (!_auditLog) {
             return;
         }

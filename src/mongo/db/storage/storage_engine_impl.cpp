@@ -992,7 +992,8 @@ bool StorageEngineImpl::hasDataBeenCheckpointed(
     return _engine->hasDataBeenCheckpointed(checkpointIteration);
 }
 
-void StorageEngineImpl::cleanupOrphanedEncryptionKeys(OperationContext* opCtx, std::string_view trigger) {
+void StorageEngineImpl::cleanupOrphanedEncryptionKeys(OperationContext* opCtx,
+                                                      std::string_view trigger) {
     Timer timer;
 
     // Skip cleanup during backup. Deleting a key while a backup cursor is

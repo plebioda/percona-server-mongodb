@@ -132,8 +132,10 @@ StatusWith<std::tuple<bool, std::string>> ServerMechanism::_secondStep(std::stri
     headers.emplace_back("Content-Type: application/x-www-form-urlencoded");
     headers.emplace_back("Authorization: " + std::string(clientSecond.getAuthHeader()));
     headers.emplace_back("X-Amz-Date: " + std::string(clientSecond.getXAmzDate()));
-    headers.emplace_back(fmt::format(
-        "{}: {}", kMongoGS2CBHeader, std::string_view{reinterpret_cast<const char*>(&_gs2_cb_flag), 1}));
+    headers.emplace_back(
+        fmt::format("{}: {}",
+                    kMongoGS2CBHeader,
+                    std::string_view{reinterpret_cast<const char*>(&_gs2_cb_flag), 1}));
     headers.emplace_back(fmt::format("{}: {}",
                                      kMongoServerNonceHeader,
                                      base64::encode(_serverNonce.data(), _serverNonce.size())));

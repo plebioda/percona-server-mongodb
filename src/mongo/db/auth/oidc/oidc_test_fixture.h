@@ -261,8 +261,8 @@ struct JWKSFetcherFactoryMock : public JWKSFetcherFactory {
     };
 
 public:
-    std::unique_ptr<crypto::JWKSFetcher> makeJWKSFetcher(std::string_view issuer,
-                                                         std::string_view caFilePath) const override {
+    std::unique_ptr<crypto::JWKSFetcher> makeJWKSFetcher(
+        std::string_view issuer, std::string_view caFilePath) const override {
         (void)caFilePath;
         _issuers.emplace_back(issuer);
         return std::make_unique<JWKSFetcherMock>(*this, std::string{issuer});

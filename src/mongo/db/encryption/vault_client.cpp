@@ -161,14 +161,16 @@ T bsonObjectGetNestedValue(const BSONObj& object, std::string_view path) {
 }
 
 template <>
-std::uint64_t bsonObjectGetNestedValue<std::uint64_t>(const BSONObj& object, std::string_view path) {
+std::uint64_t bsonObjectGetNestedValue<std::uint64_t>(const BSONObj& object,
+                                                      std::string_view path) {
     long long value = bsonObjectGetNestedValue<long long>(object, path);
     return value < 0 ? throw InvalidVaultResponse(path, "is negative")
                      : static_cast<std::uint64_t>(value);
 }
 
 template <>
-PositiveUint64 bsonObjectGetNestedValue<PositiveUint64>(const BSONObj& object, std::string_view path) {
+PositiveUint64 bsonObjectGetNestedValue<PositiveUint64>(const BSONObj& object,
+                                                        std::string_view path) {
     long long value = bsonObjectGetNestedValue<long long>(object, path);
     return value <= 0 ? throw InvalidVaultResponse(path, "is not positive") : PositiveUint64(value);
 }
@@ -286,7 +288,8 @@ std::uint64_t VaultClient::Impl::requestEngineMaxVersions(std::string_view url) 
     return bsonObjectGetNestedValue<std::uint64_t>(fromjson(replyBody), "data.max_versions");
 }
 
-boost::optional<SecretMetadata> VaultClient::Impl::requestSecretMetadata(std::string_view url) const {
+boost::optional<SecretMetadata> VaultClient::Impl::requestSecretMetadata(
+    std::string_view url) const {
     HttpClient::HttpReply reply = _httpClient->request(HttpClient::HttpMethod::kGET, url);
 
     ConstDataRangeCursor cur = reply.body.getCursor();

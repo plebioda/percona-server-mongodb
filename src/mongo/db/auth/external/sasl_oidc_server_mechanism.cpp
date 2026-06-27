@@ -67,8 +67,8 @@ boost::optional<Date_t> tokenGetPastDate(const crypto::JWSValidatedToken& token,
 }
 }  // namespace
 
-StatusWith<std::tuple<bool, std::string>> SaslOidcServerMechanism::stepImpl(OperationContext* opCtx,
-                                                                            std::string_view input) {
+StatusWith<std::tuple<bool, std::string>> SaslOidcServerMechanism::stepImpl(
+    OperationContext* opCtx, std::string_view input) {
     if (Status s{validateBSON(input.data(), input.size())}; !s.isOK()) {
         return s;
     }

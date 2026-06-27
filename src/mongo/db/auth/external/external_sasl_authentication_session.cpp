@@ -146,8 +146,8 @@ std::string_view SaslExternalLDAPServerMechanism::getPrincipalName() const {
     return "";
 }
 
-StatusWith<std::tuple<bool, std::string>> OpenLDAPServerMechanism::stepImpl(OperationContext* opCtx,
-                                                                            std::string_view inputData) {
+StatusWith<std::tuple<bool, std::string>> OpenLDAPServerMechanism::stepImpl(
+    OperationContext* opCtx, std::string_view inputData) {
     if (_step++ == 0) {
         // [authz-id]\0authn-id\0pwd
         const char* authz_id = inputData.data();

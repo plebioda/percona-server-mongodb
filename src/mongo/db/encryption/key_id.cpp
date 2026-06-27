@@ -54,7 +54,8 @@ using FactoryFn = std::unique_ptr<KeyId> (*)(const BSONObj&);
 
 std::unique_ptr<KeyId> KeyId::fromStorageEngineEncryptionOptions(const BSONObj& options) {
     static const std::array<std::pair<std::string_view, FactoryFn>, 2u> factories = {
-        {{std::string_view(VaultSecretId::_kSeeoFieldName), KeyIdFactoryWrapper<VaultSecretId>::create},
+        {{std::string_view(VaultSecretId::_kSeeoFieldName),
+          KeyIdFactoryWrapper<VaultSecretId>::create},
          {std::string_view(KmipKeyId::_kSeeoFieldName), KeyIdFactoryWrapper<KmipKeyId>::create}}};
 
     std::unique_ptr<KeyId> result;

@@ -412,7 +412,7 @@ static void copy_keydb_files(const boost::filesystem::path& from,
         } else {
             static std::regex rex{"/(collection|index)[-/][^/]+\\.wt$"};
             std::smatch sm;
-            if (std::regex_search(p.path().string(), sm, rex)) {
+            if (std::regex_search(p.path().string(), sm, rex)) {  //  NOLINT
                 empty = false;
                 if (parent_empty)
                     *parent_empty = false;

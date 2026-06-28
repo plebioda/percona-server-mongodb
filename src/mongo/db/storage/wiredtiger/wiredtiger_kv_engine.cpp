@@ -149,6 +149,8 @@
 
 namespace mongo {
 
+using namespace std::literals::string_view_literals;
+
 namespace {
 
 MONGO_FAIL_POINT_DEFINE(WTDropEBUSY);
@@ -2387,7 +2389,7 @@ Status WiredTigerKVEngine::_hotBackupPopulateLists(OperationContext* opCtx,
 static void setupHotBackupProgressMeter(OperationContext* opCtx,
                                         ProgressMeterHolder& progressMeter,
                                         boost::uintmax_t totalfsize) {
-    constexpr auto curopMessage = "Hot Backup: copying data bytes"_sd;
+    constexpr auto curopMessage = "Hot Backup: copying data bytes"sv;
     std::unique_lock<Client> lk(*opCtx->getClient());
     progressMeter.set(lk, CurOp::get(opCtx)->setProgress(lk, curopMessage), opCtx);
     progressMeter.get(lk)->reset(totalfsize, 10, 512);

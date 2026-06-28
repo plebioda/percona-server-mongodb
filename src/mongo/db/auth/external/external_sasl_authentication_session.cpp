@@ -36,7 +36,6 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 
 #include "mongo/base/init.h"
 #include "mongo/base/status.h"
-#include "mongo/base/string_data.h"
 #include "mongo/client/sasl_client_authenticate.h"
 #include "mongo/db/auth/sasl_command_constants.h"
 #include "mongo/db/auth/sasl_mechanism_registry.h"
@@ -48,6 +47,8 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/util/net/socket_utils.h"
 #include "mongo/util/scopeguard.h"
 #include "mongo/util/str.h"
+
+#include <string_view>
 
 #include <ldap.h>
 

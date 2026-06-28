@@ -40,9 +40,9 @@ Copyright (C) 2018-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/storage/engine_extension.h"
 #include "mongo/db/storage/storage_options.h"
 
-#include <boost/filesystem.hpp>
-
 #include <string_view>
+
+#include <boost/filesystem.hpp>
 
 namespace mongo {
 extern StorageGlobalParams storageGlobalParams;

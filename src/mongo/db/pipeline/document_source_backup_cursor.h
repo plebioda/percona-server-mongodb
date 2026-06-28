@@ -36,9 +36,9 @@ Copyright (C) 2021-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/repl/read_concern_level.h"
 #include "mongo/db/storage/storage_engine.h"
 
-#include <boost/none.hpp>
-
 #include <string_view>
+
+#include <boost/none.hpp>
 
 namespace mongo {
 

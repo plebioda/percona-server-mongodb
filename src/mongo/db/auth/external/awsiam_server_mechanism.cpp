@@ -171,8 +171,8 @@ void ServerMechanism::_parseStsResponse(std::string_view body) {
 
     // Convert assumed-role to role
     static const std::regex assumedRoleRegex(R"(^arn:aws:sts::(\d+):assumed-role/([^/]+)/)");
-    if (std::smatch matches;
-        std::regex_search(ServerMechanismBase::_principalName, matches, assumedRoleRegex)) {  //  NOLINT
+    if (std::smatch matches; std::regex_search(
+            ServerMechanismBase::_principalName, matches, assumedRoleRegex)) {  //  NOLINT
         ServerMechanismBase::_principalName =
             fmt::format("arn:aws:iam::{}:role/{}", matches[1].str(), matches[2].str());
         LOGV2_DEBUG(29115,

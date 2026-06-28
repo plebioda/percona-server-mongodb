@@ -34,9 +34,9 @@ Copyright (C) 2021-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/auth/resource_pattern.h"
 #include "mongo/db/pipeline/document_source.h"
 
-#include <boost/none.hpp>
-
 #include <string_view>
+
+#include <boost/none.hpp>
 
 namespace mongo {
 

@@ -99,12 +99,13 @@ Status SaslExternalLDAPServerMechanism::initializeConnection() {
 StatusWith<std::tuple<bool, std::string>>
 SaslExternalLDAPServerMechanism::processInitialClientPayload(std::string_view payload) {
     _results.initialize_results();
-    _results.result = sasl_server_start(_saslConnection,
-                                        mechanismName().data(),  // NOLINT(bugprone-suspicious-stringview-data-usage)
-                                        payload.data(),
-                                        static_cast<unsigned>(payload.size()),
-                                        &_results.output,
-                                        &_results.length);
+    _results.result = sasl_server_start(
+        _saslConnection,
+        mechanismName().data(),  // NOLINT(bugprone-suspicious-stringview-data-usage)
+        payload.data(),
+        static_cast<unsigned>(payload.size()),
+        &_results.output,
+        &_results.length);
     return getStepResult();
 }
 

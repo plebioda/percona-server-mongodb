@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 94,
+    "commits_behind": 97,
     "days_behind": 3,
-    "unmerged_oldest_age_days": 3.4848616118518514,
-    "files_affected": 1226,
-    "total_additions": 29057,
-    "total_deletions": 13511,
+    "unmerged_oldest_age_days": 3.531137518321759,
+    "files_affected": 1240,
+    "total_additions": 29604,
+    "total_deletions": 13518,
     "date_range": {
       "first": "2026-06-25T20:13:07+00:00",
-      "last": "2026-06-29T04:09:35+00:00"
+      "last": "2026-06-29T08:19:52+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,36 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "deee985b6727edf24dfbfd15df926f13405f7cd6",
+      "short_sha": "deee985b672",
+      "date": "2026-06-29T11:19:52+03:00",
+      "author": {
+        "name": "Lyublena Antova",
+        "email": "lyublena.antova@mongodb.com"
+      },
+      "summary": "SERVER-129986 Exclude subtype.js test from multiversion tests (#56900)"
+    },
+    {
+      "sha": "4ec40b019e8c1d70fc5477bb9d3a4d99da2907e9",
+      "short_sha": "4ec40b019e8",
+      "date": "2026-06-29T09:17:17+01:00",
+      "author": {
+        "name": "Catalin Sumanaru",
+        "email": "catalin.sumanaru@mongodb.com"
+      },
+      "summary": "SERVER-129775 Add $listQueryKnobs test-only agg stage to expose the query knob registry (#56815)"
+    },
+    {
+      "sha": "a6729b23de513f749f6ac95cb7fc623b9cbc724b",
+      "short_sha": "a6729b23de5",
+      "date": "2026-06-29T09:47:38+02:00",
+      "author": {
+        "name": "Daniel Gómez Ferro",
+        "email": "daniel.gomezferro@mongodb.com"
+      },
+      "summary": "SERVER-129391 Add TTL ticket metrics  (#56321)"
+    },
     {
       "sha": "c9d508f0277e4dadf46289de4d2ab1bc4a11e37a",
       "short_sha": "c9d508f0277",
@@ -1256,7 +1286,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-29 07:51:13",
+  "generated_at": "2026-06-29 08:57:51",
   "branch_name": "master",
   "display_name": "master"
 }

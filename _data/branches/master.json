@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 59,
+    "commits_behind": 61,
     "days_behind": 1,
-    "unmerged_oldest_age_days": 0.9973031058680556,
-    "files_affected": 269,
-    "total_additions": 10702,
-    "total_deletions": 4839,
+    "unmerged_oldest_age_days": 1.0614344206597222,
+    "files_affected": 271,
+    "total_additions": 10703,
+    "total_deletions": 4843,
     "date_range": {
       "first": "2026-06-29T07:47:38+00:00",
-      "last": "2026-06-30T06:58:09+00:00"
+      "last": "2026-06-30T07:26:00+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,26 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "b0d33a6afd7eeb00383b775fe81710a81a8dd6e8",
+      "short_sha": "b0d33a6afd7",
+      "date": "2026-06-30T03:26:00-04:00",
+      "author": {
+        "name": "Andrew Wang",
+        "email": "andrew.wang@mongodb.com"
+      },
+      "summary": "SERVER-128578 Exempt markMaterialized from admission control (#56931)"
+    },
+    {
+      "sha": "5b477f0cf18a09d4e02bf2abc01ddcf9bdb40c20",
+      "short_sha": "5b477f0cf18",
+      "date": "2026-06-30T09:11:32+02:00",
+      "author": {
+        "name": "Jan",
+        "email": "jsteemann@users.noreply.github.com"
+      },
+      "summary": "SERVER-130127 Remove an unused member from ExpressionContext (#57037)"
+    },
     {
       "sha": "d6ae129a6922f634e3c8db7921cc5b55da652a0a",
       "short_sha": "d6ae129a692",
@@ -653,7 +673,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-06-30 07:43:42",
+  "generated_at": "2026-06-30 09:16:02",
   "branch_name": "master",
   "display_name": "master"
 }

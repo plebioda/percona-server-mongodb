@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 56,
+    "commits_behind": 59,
     "days_behind": 1,
-    "unmerged_oldest_age_days": 1.091488208611111,
-    "files_affected": 353,
-    "total_additions": 10822,
-    "total_deletions": 3636,
+    "unmerged_oldest_age_days": 1.1153702798263887,
+    "files_affected": 357,
+    "total_additions": 11042,
+    "total_deletions": 3644,
     "date_range": {
       "first": "2026-06-30T07:11:32+00:00",
-      "last": "2026-07-01T08:33:55+00:00"
+      "last": "2026-07-01T09:22:05+00:00"
     }
   },
   "last_merged_commit": {
@@ -38,9 +38,39 @@
   },
   "gate": {
     "open": true,
-    "reason": "min_commits (56 >= 50)"
+    "reason": "min_commits (59 >= 50)"
   },
   "unmerged_commits": [
+    {
+      "sha": "fbd91ebc93a3d203eddf39cc33d0c9299f65c4d7",
+      "short_sha": "fbd91ebc93a",
+      "date": "2026-07-01T10:22:05+01:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#57245)"
+    },
+    {
+      "sha": "d8f1cee41898004efb3d41898824047f29c7b1a5",
+      "short_sha": "d8f1cee4189",
+      "date": "2026-07-01T09:59:36+01:00",
+      "author": {
+        "name": "fotiniAlvanaki",
+        "email": "78495594+fotiniAlvanaki@users.noreply.github.com"
+      },
+      "summary": "SERVER-129825 Wire memory tracker into ExpressionNary::optimize() constant folding (#57061)"
+    },
+    {
+      "sha": "b4f4a80a0198ddbdaaf70576769806a22e6d8c2a",
+      "short_sha": "b4f4a80a019",
+      "date": "2026-07-01T08:56:07+00:00",
+      "author": {
+        "name": "Joan Bruguera Micó (at MongoDB)",
+        "email": "joan.bruguera-mico@mongodb.com"
+      },
+      "summary": "SERVER-130089 Re-enable transaction_crud_ddl_isolation.js with Authoritative Shards (#57148)"
+    },
     {
       "sha": "60605261ef08044dd18fc4d9df8d5a0ee2e272a2",
       "short_sha": "60605261ef0",
@@ -651,7 +681,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-01 09:23:12",
+  "generated_at": "2026-07-01 09:57:35",
   "branch_name": "master",
   "display_name": "master"
 }

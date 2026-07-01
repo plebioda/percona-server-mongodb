@@ -927,6 +927,7 @@ mongo_cc_library(
         "//src/mongo/db/exec/classic:multi_plan.cpp",
         "//src/mongo/db/exec/classic:multi_plan_admission_context.cpp",
         "//src/mongo/db/exec/classic:multi_plan_rate_limiter.cpp",
+        "//src/mongo/db/exec/classic:multi_range_clustered_scan.cpp",
         "//src/mongo/db/exec/classic:near.cpp",
         "//src/mongo/db/exec/classic:or.cpp",
         "//src/mongo/db/exec/classic:orphan_chunk_skipper.cpp",
@@ -1139,6 +1140,16 @@ mongo_cc_library(
 idl_generator(
     name = "read_concern_mongod_gen",
     src = "read_concern_mongod.idl",
+)
+
+mongo_cc_library(
+    name = "read_concern_mongod_idl",
+    srcs = [
+        ":read_concern_mongod_gen",
+    ],
+    deps = [
+        ":server_base",
+    ],
 )
 
 mongo_cc_library(
@@ -2349,9 +2360,9 @@ mongo_cc_library(
     name = "read_concern_d_impl",
     srcs = [
         "read_concern_mongod.cpp",
-        ":read_concern_mongod_gen",
     ],
     deps = [
+        ":read_concern_mongod_idl",
         ":server_base",
         "//src/mongo/db/repl:repl_coordinator_interface",
         "//src/mongo/db/repl:speculative_majority_read_info",

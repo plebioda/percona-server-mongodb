@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 52,
+    "commits_behind": 56,
     "days_behind": 1,
-    "unmerged_oldest_age_days": 1.0469982894444445,
-    "files_affected": 273,
-    "total_additions": 10177,
-    "total_deletions": 2912,
+    "unmerged_oldest_age_days": 1.091488208611111,
+    "files_affected": 353,
+    "total_additions": 10822,
+    "total_deletions": 3636,
     "date_range": {
       "first": "2026-06-30T07:11:32+00:00",
-      "last": "2026-07-01T05:30:06+00:00"
+      "last": "2026-07-01T08:33:55+00:00"
     }
   },
   "last_merged_commit": {
@@ -38,9 +38,49 @@
   },
   "gate": {
     "open": true,
-    "reason": "min_commits (52 >= 50)"
+    "reason": "min_commits (56 >= 50)"
   },
   "unmerged_commits": [
+    {
+      "sha": "60605261ef08044dd18fc4d9df8d5a0ee2e272a2",
+      "short_sha": "60605261ef0",
+      "date": "2026-07-01T10:33:55+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-124366 Delete _internalClearCollectionShardingMetadata command (#57147)"
+    },
+    {
+      "sha": "8a0f4f44bfb1c2a70dff5e5f2e115c7d8c8371fe",
+      "short_sha": "8a0f4f44bfb",
+      "date": "2026-07-01T10:16:08+02:00",
+      "author": {
+        "name": "Alya Carina Berciu",
+        "email": "alya.berciu@mongodb.com"
+      },
+      "summary": "SERVER-128361 Refactor agg_join_model to extract all join predicates then apply them (#55590)"
+    },
+    {
+      "sha": "690a0c792639753094708b32a4d68827527baaef",
+      "short_sha": "690a0c79263",
+      "date": "2026-07-01T09:59:58+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-97985 Enable authoritative shards feature flag (#56993)"
+    },
+    {
+      "sha": "5cd47701b4d44cd2348b30144a05a84d0235476f",
+      "short_sha": "5cd47701b4d",
+      "date": "2026-07-01T09:56:16+02:00",
+      "author": {
+        "name": "Anna Maria Nestorov",
+        "email": "annamaria.nestorov@gmail.com"
+      },
+      "summary": "SERVER-129313 Add FSM testing for aborting index builds when replica set write block is enabled (#56910)"
+    },
     {
       "sha": "6b0a7c8de3379e91b2aaca32ee4ed8d375298a65",
       "short_sha": "6b0a7c8de33",
@@ -585,10 +625,33 @@
           "num_of_dirs": 11
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "690a0c792639753094708b32a4d68827527baaef",
+        "short_sha": "690a0c79263",
+        "date": "2026-07-01T09:59:58+02:00",
+        "author": {
+          "name": "Pol Piñol Castuera",
+          "email": "pol.pinol@mongodb.com"
+        },
+        "summary": "SERVER-97985 Enable authoritative shards feature flag (#56993)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 56,
+          "num_of_lines": 440,
+          "lines_added": 187,
+          "lines_deleted": 253,
+          "num_of_dirs": 21
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-01 08:19:09",
+  "generated_at": "2026-07-01 09:23:12",
   "branch_name": "master",
   "display_name": "master"
 }

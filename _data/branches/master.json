@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 59,
+    "commits_behind": 63,
     "days_behind": 1,
-    "unmerged_oldest_age_days": 1.1153702798263887,
-    "files_affected": 357,
-    "total_additions": 11042,
-    "total_deletions": 3644,
+    "unmerged_oldest_age_days": 1.1821031802893518,
+    "files_affected": 378,
+    "total_additions": 12429,
+    "total_deletions": 3703,
     "date_range": {
       "first": "2026-06-30T07:11:32+00:00",
-      "last": "2026-07-01T09:22:05+00:00"
+      "last": "2026-07-01T10:46:00+00:00"
     }
   },
   "last_merged_commit": {
@@ -38,9 +38,49 @@
   },
   "gate": {
     "open": true,
-    "reason": "min_commits (59 >= 50)"
+    "reason": "min_commits (63 >= 50)"
   },
   "unmerged_commits": [
+    {
+      "sha": "e7cd3d4346c1604ac7ee4ee6a5f6c127448dc560",
+      "short_sha": "e7cd3d4346c",
+      "date": "2026-07-01T12:46:00+02:00",
+      "author": {
+        "name": "karlbozdogan",
+        "email": "karl.bozdogan@mongodb.com"
+      },
+      "summary": "SERVER-125911 Classic collscan: support non-contiguous RecordId ranges (#50948)"
+    },
+    {
+      "sha": "d410daf8dca57e28fe473ef87d8d990227adc9b4",
+      "short_sha": "d410daf8dca",
+      "date": "2026-07-01T12:25:59+02:00",
+      "author": {
+        "name": "Jan",
+        "email": "jsteemann@users.noreply.github.com"
+      },
+      "summary": "SERVER-126100 Test user-Triggerable tassert for endOfTransaction (#57003)"
+    },
+    {
+      "sha": "cad190314aca67502c8ab44b367ac0fa16f5e8a6",
+      "short_sha": "cad190314ac",
+      "date": "2026-07-01T11:24:07+01:00",
+      "author": {
+        "name": "Projjal Chanda",
+        "email": "projjal.chanda@mongodb.com"
+      },
+      "summary": "SERVER-129007 Limit memory usage of $concat in classic engine (#57012)"
+    },
+    {
+      "sha": "218a15ae71ef0fd1d8734d825be43fb08cd1a097",
+      "short_sha": "218a15ae71e",
+      "date": "2026-07-01T11:42:42+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-129322 SERVER-123313 CreateCollectionCoordinator should not run legacy refresh under authoritative path (#56287)"
+    },
     {
       "sha": "fbd91ebc93a3d203eddf39cc33d0c9299f65c4d7",
       "short_sha": "fbd91ebc93a",
@@ -681,7 +721,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-01 09:57:35",
+  "generated_at": "2026-07-01 11:33:41",
   "branch_name": "master",
   "display_name": "master"
 }

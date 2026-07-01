@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 63,
+    "commits_behind": 78,
     "days_behind": 1,
-    "unmerged_oldest_age_days": 1.1821031802893518,
-    "files_affected": 378,
-    "total_additions": 12429,
-    "total_deletions": 3703,
+    "unmerged_oldest_age_days": 1.3433456591550925,
+    "files_affected": 486,
+    "total_additions": 18933,
+    "total_deletions": 5643,
     "date_range": {
       "first": "2026-06-30T07:11:32+00:00",
-      "last": "2026-07-01T10:46:00+00:00"
+      "last": "2026-07-01T14:06:29+00:00"
     }
   },
   "last_merged_commit": {
@@ -38,9 +38,159 @@
   },
   "gate": {
     "open": true,
-    "reason": "min_commits (63 >= 50)"
+    "reason": "min_commits (78 >= 50)"
   },
   "unmerged_commits": [
+    {
+      "sha": "1eb0fbf57ed65cdba19f308605138fe88344dc15",
+      "short_sha": "1eb0fbf57ed",
+      "date": "2026-07-01T10:06:29-04:00",
+      "author": {
+        "name": "Wenqin",
+        "email": "wenqinYe@users.noreply.github.com"
+      },
+      "summary": "SERVER-129833 Use Resharding::isEnabledWithPinnedVersion in data replication components (#56723)"
+    },
+    {
+      "sha": "edfa346257bd48ab1da2cfca803bd953b6be55e5",
+      "short_sha": "edfa346257b",
+      "date": "2026-07-01T15:51:22+02:00",
+      "author": {
+        "name": "Jordi Olivares Provencio",
+        "email": "jordi.olivares-provencio@mongodb.com"
+      },
+      "summary": "SERVER-129233 Add invariant checks for DDL fuzzer (#56905)"
+    },
+    {
+      "sha": "239ff9a2e56d5551b1e463c470192701f8dd45d8",
+      "short_sha": "239ff9a2e56",
+      "date": "2026-07-01T14:44:22+01:00",
+      "author": {
+        "name": "mongodb-sage-bot[bot]",
+        "email": "247496174+mongodb-sage-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-106235: Enable feature flag gFeatureFlagExpressionMemoryTracking (#57055)"
+    },
+    {
+      "sha": "ee37c3ea99bff952f2cc93b7512d7c99edf0a87f",
+      "short_sha": "ee37c3ea99b",
+      "date": "2026-07-01T15:38:49+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-130272 Complete TODO listed in SERVER-127444 (#57262)"
+    },
+    {
+      "sha": "51357376dac8b45f5950d9e14a71feb84793d593",
+      "short_sha": "51357376dac",
+      "date": "2026-07-01T13:34:15+00:00",
+      "author": {
+        "name": "Joan Bruguera Micó (at MongoDB)",
+        "email": "joan.bruguera-mico@mongodb.com"
+      },
+      "summary": "SERVER-127979 Drop legacy shard catalog collections when upgrading (#57232)"
+    },
+    {
+      "sha": "48753c03ada5a3fbb32b442b13b404d0af781f88",
+      "short_sha": "48753c03ada",
+      "date": "2026-07-01T09:31:11-04:00",
+      "author": {
+        "name": "Nick Zolnierz",
+        "email": "nicholas.zolnierz@mongodb.com"
+      },
+      "summary": "Revert \"SERVER-115714 Consider collection sizes before switching to CBR (#57226)"
+    },
+    {
+      "sha": "9a683f32de0ce84fe46eac199b38ea735bdf55ac",
+      "short_sha": "9a683f32de0",
+      "date": "2026-07-01T14:29:16+01:00",
+      "author": {
+        "name": "Alice Doherty",
+        "email": "66687032+alicedoherty@users.noreply.github.com"
+      },
+      "summary": "SERVER-105418 Support on-CPU profiling for performance microbenchmarks (#56182)"
+    },
+    {
+      "sha": "d7a93ce7c70f4d2baf9134ca925e6a5eb46f309d",
+      "short_sha": "d7a93ce7c70",
+      "date": "2026-07-01T15:26:11+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-129194 Playbook and internal commands to resolve collection metadata inconsistency (#57002)"
+    },
+    {
+      "sha": "e7a246e4326beb4d79066f6ccaeddb0e31fe68bb",
+      "short_sha": "e7a246e4326",
+      "date": "2026-07-01T15:04:11+02:00",
+      "author": {
+        "name": "Silvia Surroca",
+        "email": "silvia.surroca@mongodb.com"
+      },
+      "summary": "SERVER-130304 Fix move_primary_with_crud.js on causal consistency suites (#57264)"
+    },
+    {
+      "sha": "f5ad55806dbabaadc1a9970f17e02b7f54c5a760",
+      "short_sha": "f5ad55806db",
+      "date": "2026-07-01T13:57:16+01:00",
+      "author": {
+        "name": "Rustam Gusein-zade",
+        "email": "rustam.guseinzade@mongodb.com"
+      },
+      "summary": "SERVER-122427 SERVER-124110 add unit tests ensuring a single refresh occurs for convoy problem fetching database or collection metadata (#56637)"
+    },
+    {
+      "sha": "80a9b69092564b0eb0c2befc60a449265065e790",
+      "short_sha": "80a9b690925",
+      "date": "2026-07-01T14:47:28+02:00",
+      "author": {
+        "name": "wt-vendoring-bot[bot]",
+        "email": "169275211+wt-vendoring-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "Import wiredtiger: 87ac286e1493c1c9894e8d9092c04c9eefdf6e7e from branch mongodb-master (#57161)"
+    },
+    {
+      "sha": "eb31e4fb15ca2cc8e84efab99c1b4bf2d488b321",
+      "short_sha": "eb31e4fb15c",
+      "date": "2026-07-01T14:12:29+02:00",
+      "author": {
+        "name": "Silvia Surroca",
+        "email": "silvia.surroca@mongodb.com"
+      },
+      "summary": "SERVER-127213 New command for committing a moveRange in the global catalog (#57004)"
+    },
+    {
+      "sha": "1a599bd3dc6b1a4b422676be63cc3509d3442780",
+      "short_sha": "1a599bd3dc6",
+      "date": "2026-07-01T13:28:25+02:00",
+      "author": {
+        "name": "wolfee",
+        "email": "adam.farkas@mongodb.com"
+      },
+      "summary": "SERVER-129192 - Add percentile wait-time metrics for Execution Control queues (#56785)"
+    },
+    {
+      "sha": "12d6146a2bf4893baa9c3814300dfa9f747f9fbc",
+      "short_sha": "12d6146a2bf",
+      "date": "2026-07-01T12:24:00+01:00",
+      "author": {
+        "name": "Daniele Alessandrelli",
+        "email": "daniele.alessandrelli@mongodb.com"
+      },
+      "summary": "SERVER-128739 Add tests for `fixedBucketing` during failed FCV transitions (#57143)"
+    },
+    {
+      "sha": "2898316bb2cd27c91dbd19cead902c49a7817284",
+      "short_sha": "2898316bb2c",
+      "date": "2026-07-01T12:12:08+01:00",
+      "author": {
+        "name": "Projjal Chanda",
+        "email": "projjal.chanda@mongodb.com"
+      },
+      "summary": "SERVER-129017 Limit memory usage of ExpressionArray in classic engine (#57041)"
+    },
     {
       "sha": "e7cd3d4346c1604ac7ee4ee6a5f6c127448dc560",
       "short_sha": "e7cd3d4346c",
@@ -698,6 +848,26 @@
     },
     {
       "commit": {
+        "sha": "5cd47701b4d44cd2348b30144a05a84d0235476f",
+        "short_sha": "5cd47701b4d",
+        "date": "2026-07-01T09:56:16+02:00",
+        "author": {
+          "name": "Anna Maria Nestorov",
+          "email": "annamaria.nestorov@gmail.com"
+        },
+        "summary": "SERVER-129313 Add FSM testing for aborting index builds when replica set write block is enabled (#56910)"
+      },
+      "strategy_name": "branching_point",
+      "result": {
+        "branches": [
+          "master",
+          "mergai/master-5cd47701b4d/main",
+          "mongodb"
+        ]
+      }
+    },
+    {
+      "commit": {
         "sha": "690a0c792639753094708b32a4d68827527baaef",
         "short_sha": "690a0c79263",
         "date": "2026-07-01T09:59:58+02:00",
@@ -718,10 +888,33 @@
           "num_of_dirs": 21
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "80a9b69092564b0eb0c2befc60a449265065e790",
+        "short_sha": "80a9b690925",
+        "date": "2026-07-01T14:47:28+02:00",
+        "author": {
+          "name": "wt-vendoring-bot[bot]",
+          "email": "169275211+wt-vendoring-bot[bot]@users.noreply.github.com"
+        },
+        "summary": "Import wiredtiger: 87ac286e1493c1c9894e8d9092c04c9eefdf6e7e from branch mongodb-master (#57161)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 44,
+          "num_of_lines": 3498,
+          "lines_added": 2308,
+          "lines_deleted": 1190,
+          "num_of_dirs": 20
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-01 11:33:41",
+  "generated_at": "2026-07-01 15:25:51",
   "branch_name": "master",
   "display_name": "master"
 }

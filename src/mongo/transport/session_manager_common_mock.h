@@ -44,6 +44,8 @@ namespace mongo::transport {
 
 class MockSessionManagerCommon : public SessionManagerCommon {
 public:
+    using SessionManagerCommon::onClientConnect;
+    using SessionManagerCommon::onClientDisconnect;
     using SessionManagerCommon::SessionManagerCommon;
 
 protected:
@@ -51,12 +53,12 @@ protected:
         return fmt::format("mock{}", session.id());
     }
 
-    void configureServiceExecutorContext(Client* client, bool isPrivilegedSession) const override {
+    void configureServiceExecutorContext(Client& client, bool isPrivilegedSession) const override {
         auto seCtx = std::make_unique<ServiceExecutorContext>();
         seCtx->setThreadModel(ServiceExecutorContext::kSynchronous);
         seCtx->setCanUseReserved(isPrivilegedSession);
-        std::lock_guard lk(*client);
-        ServiceExecutorContext::set(client, std::move(seCtx));
+        std::lock_guard lk(client);
+        ServiceExecutorContext::set(&client, std::move(seCtx));
     }
 };
 

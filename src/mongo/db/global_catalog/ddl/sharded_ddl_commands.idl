@@ -528,7 +528,7 @@ structs:
                 description: "The expected collection timestamp."
 
     SetAllowChunkOperationsFields:
-        description: "Fields of _shardsvrSetAllowChunkOperations and _configsvrsvrSetAllowChunkOperations."
+        description: "Fields of _shardsvrSetAllowChunkOperations and _configsvrSetAllowChunkOperations."
         strict: false
         fields:
             allowChunkOperations:
@@ -1249,15 +1249,6 @@ commands:
         reply_type: OkReply
         chained_structs:
             SetAllowChunkOperationsFields: SetAllowChunkOperationsFields
-        fields:
-            # TODO (SERVER-127444): remove this field. We need to know the primary shard ID when
-            # _shardsvrSetAllowChunkOperations runs on a shard with non-authoritative metadata installed
-            # and it needs to install authorative metadata, but after SERVER-127444 this won't be
-            # necessary anymore.
-            primaryShardId:
-                type: shard_id
-                description: Primary shard identifier, used to determine whether the shard needs to durably persist collection metadata or not.
-                optional: false
 
     _configsvrSetAllowChunkOperations:
         command_name: _configsvrSetAllowChunkOperations
@@ -1270,3 +1261,20 @@ commands:
         reply_type: OkReply
         chained_structs:
             SetAllowChunkOperationsFields: SetAllowChunkOperationsFields
+
+    _shardsvrCommitChunkOperationsMetadata:
+        command_name: _shardsvrCommitChunkOperationsMetadata
+        cpp_name: ShardsvrCommitChunkOperationsMetadata
+        description: "Internal command to commit chunk operations metadata into the shard catalog."
+        strict: false
+        namespace: type
+        type: namespacestring
+        api_version: ""
+        fields:
+            newChunks:
+                type: array<object_owned>
+                description:
+                    "Chunk documents to insert into the shard catalog. The shard reconciles overlaps
+                    with pre-existing chunks locally, splitting or removing them so the durable
+                    catalog stays contiguous and non-overlapping."
+        reply_type: OkReply

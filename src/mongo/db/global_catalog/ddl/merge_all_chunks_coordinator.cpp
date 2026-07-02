@@ -148,40 +148,7 @@ ConfigsvrMergeAllPrecomputedChunksOnShardResponse commitToGlobalCatalog(
                                                                     kIdlParserCtx);
 }
 
-MergeAllChunksOnShardResponse commitToGlobalCatalogFallback(OperationContext* opCtx,
-                                                            const NamespaceString& nss,
-                                                            const ShardId& shard,
-                                                            std::int32_t maxNumberOfChunksToMerge,
-                                                            std::int32_t maxTimeProcessingChunksMS,
-                                                            OperationSessionInfo session) {
-    ConfigSvrCommitMergeAllChunksOnShard configRequest(nss);
-    configRequest.setDbName(DatabaseName::kAdmin);
-    configRequest.setShard(shard);
-    configRequest.setMaxNumberOfChunksToMerge(maxNumberOfChunksToMerge);
-    configRequest.setMaxTimeProcessingChunksMS(maxTimeProcessingChunksMS);
-    generic_argument_util::setMajorityWriteConcern(configRequest);
-    generic_argument_util::setOperationSessionInfo(configRequest, session);
-
-    auto cmdResponse =
-        uassertStatusOK(Grid::get(opCtx)->shardRegistry()->getConfigShard()->runCommand(
-            opCtx,
-            ReadPreferenceSetting{ReadPreference::PrimaryOnly},
-            DatabaseName::kAdmin,
-            configRequest.toBSON(),
-            Shard::RetryPolicy::kIdempotent));
-
-    uassertStatusOK(Shard::CommandResponse::getEffectiveStatus(cmdResponse));
-    return MergeAllChunksOnShardResponse::parse(cmdResponse.response, kIdlParserCtx);
-}
-
-// TODO (SERVER-127444): return `CollectionType` (non-optional).
 boost::optional<CollectionType> getCollection(OperationContext* opCtx, const NamespaceString& nss) {
-    const auto csr = CollectionShardingRuntime::acquireShared(opCtx, nss);
-    if (csr->getAuthoritativeState() !=
-        CollectionShardingRuntime::AuthoritativeState::kAuthoritative) {
-        return boost::none;
-    }
-
     PersistentTaskStore<CollectionType> collStore{
         NamespaceString::kConfigShardCatalogCollectionsNamespace};
     boost::optional<CollectionType> coll;
@@ -191,10 +158,6 @@ boost::optional<CollectionType> getCollection(OperationContext* opCtx, const Nam
                           coll = parsedColl;
                           return false;
                       });
-    uassert(ErrorCodes::NamespaceNotFound,
-            fmt::format("Collection '{}' not found in local cluster catalog",
-                        nss.toStringForErrorMsg()),
-            coll);
     return coll;
 }
 
@@ -255,9 +218,7 @@ bool MergeAllChunksCoordinator::_mustAlwaysMakeProgress() {
 }
 
 bool MergeAllChunksCoordinator::_allowedToInvalidateOSI() const noexcept {
-    // TODO (SERVER-127444): remove !_doc.getNewChunks().has_value() from the condition.
-    return _cleaningUp || !_doc.getNewChunks().has_value() ||
-        _doc.getPhase() != Phase::kGlobalCatalogCommit;
+    return _cleaningUp || _doc.getPhase() != Phase::kGlobalCatalogCommit;
 }
 
 void MergeAllChunksCoordinator::_onCleanup(OperationContext* opCtx) {
@@ -344,16 +305,15 @@ ExecutorFuture<void> MergeAllChunksCoordinator::_runImpl(
                       logAttrs(nss()),
                       "shard"_attr = _request.getShard());
 
-                auto const coll = getCollection(opCtx, nss());
-
-                if (!coll.has_value()) {
-                    // boost::none means that the catalog is non-authoritative. In that case, return
-                    // early (without updating the coordinator document) and fallback later to the
-                    // legacy global catalog commit.
-                    LOGV2(12834401,
-                          "The catalog is non-authoritative, falling back to legacy commit",
+                const auto coll = getCollection(opCtx, nss());
+                if (!coll) {
+                    LOGV2(12744401,
+                          "Collection not found in local shard catalog, nothing to merge",
                           logAttrs(nss()),
                           "shard"_attr = _request.getShard());
+                    _doc.setNumMergedChunks(0);
+                    _doc.setShardVersion(ChunkVersion{});
+                    _enterPhase(Phase::kReleaseCriticalSection);
                     return;
                 }
 
@@ -431,40 +391,24 @@ ExecutorFuture<void> MergeAllChunksCoordinator::_runImpl(
                       logAttrs(nss()),
                       "shard"_attr = _request.getShard());
 
-                // TODO (SERVER-127444): remove the "else" branch and add tassert on
-                // _doc.getNewChunks().has_value()
-                if (_doc.getNewChunks().has_value()) {
-                    // _configSvrCommitMergeAllPrecomputedChunksOnShard is idempotent throught
-                    // retryable writes, so we need to use the same session (i.e. same
-                    // lsid/txnNumber) on every retry. For this reason, we don't generate a new
-                    // OSI but rather resuse the current one. This OSI was generated at the end of
-                    // the previous phase.
-                    const auto session = getCurrentSession(opCtx);
-                    tassert(12834402, "There must be a persisted session", session.has_value());
+                tassert(12744402,
+                        "Expected precomputed chunk list to be set before committing to the global "
+                        "catalog",
+                        _doc.getNewChunks().has_value());
 
-                    auto response = commitToGlobalCatalog(
-                        opCtx, nss(), _request.getShard(), *_doc.getNewChunks(), *session);
+                // _configSvrCommitMergeAllPrecomputedChunksOnShard is idempotent through
+                // retryable writes, so we need to use the same session (i.e. same lsid/txnNumber)
+                // on every retry. For this reason, we don't generate a new OSI but rather reuse
+                // the current one. This OSI was generated at the end of the previous phase.
+                const auto session = getCurrentSession(opCtx);
+                tassert(12834402, "There must be a persisted session", session.has_value());
 
-                    auto newDoc = _doc;
-                    newDoc.setShardVersion(response.getShardVersion());
-                    _updateStateDocument(opCtx, std::move(newDoc));
-                } else {
-                    // This is the legacy commit, which calls
-                    // `_configSvrCommitMergeAllChunksOnShardCommand` instead of
-                    // `_configSvrCommitMergeAllPrecomputedChunksOnShard`. This branch is reached
-                    // only when the catalog is non-authoritative when this command runs.
-                    auto response =
-                        commitToGlobalCatalogFallback(opCtx,
-                                                      nss(),
-                                                      _request.getShard(),
-                                                      _request.getMaxNumberOfChunksToMerge(),
-                                                      _request.getMaxTimeProcessingChunksMS(),
-                                                      getNewSession(opCtx));
-                    auto newDoc = _doc;
-                    newDoc.setShardVersion(response.getShardVersion());
-                    newDoc.setNumMergedChunks(response.getNumMergedChunks());
-                    _updateStateDocument(opCtx, std::move(newDoc));
-                }
+                auto response = commitToGlobalCatalog(
+                    opCtx, nss(), _request.getShard(), *_doc.getNewChunks(), *session);
+
+                auto newDoc = _doc;
+                newDoc.setShardVersion(response.getShardVersion());
+                _updateStateDocument(opCtx, std::move(newDoc));
 
                 // Checkpoint the configTime to ensure that, in the case of a stepdown, the new
                 // primary will start-up from a configTime that is inclusive of the metadata update

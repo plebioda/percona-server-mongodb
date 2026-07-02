@@ -76,13 +76,13 @@ std::string AsioSessionManager::getClientThreadName(const Session& session) cons
     return fmt::format("conn{}", session.id());
 }
 
-void AsioSessionManager::configureServiceExecutorContext(Client* client,
+void AsioSessionManager::configureServiceExecutorContext(Client& client,
                                                          bool isPrivilegedSession) const {
     auto seCtx = std::make_unique<ServiceExecutorContext>();
     seCtx->setThreadModel(ServiceExecutorContext::kSynchronous);
     seCtx->setCanUseReserved(isPrivilegedSession);
-    std::lock_guard lk(*client);
-    ServiceExecutorContext::set(client, std::move(seCtx));
+    std::lock_guard lk(client);
+    ServiceExecutorContext::set(&client, std::move(seCtx));
 }
 
 void AsioSessionManager::appendStats(BSONObjBuilder* bob) const {
@@ -119,9 +119,9 @@ void AsioSessionManager::appendStats(BSONObjBuilder* bob) const {
         adminExec->appendStats(&section);
     }
 
-    bob->append("loadBalanced", _loadBalancedConnections.get());
+    bob->append("loadBalanced", _loadBalancedSessions.get());
     if (gFeatureFlagDedicatedPortForPriorityOperations.isEnabled()) {
-        bob->append("priority", _priorityPortConnections.get());
+        bob->append("priority", _prioritySessions.get());
     }
 }
 
@@ -162,56 +162,6 @@ ConnectionsStatsSnapshot collectConnectionsStatsSnapshot(ServiceContext* svcCtx)
         }
     });
     return snap;
-}
-
-void AsioSessionManager::incrementLBConnections() {
-    _loadBalancedConnections.increment();
-}
-
-void AsioSessionManager::decrementLBConnections() {
-    _loadBalancedConnections.decrement();
-}
-
-void AsioSessionManager::incrementPriorityConnections() {
-    _priorityPortConnections.increment();
-}
-
-void AsioSessionManager::decrementPriorityConnections() {
-    _priorityPortConnections.decrement();
-}
-
-/**
- * In practice, we will never pass "isLoadBalancerPeer" on connect,
- * because the client hasn't performed a "hello: {loadBalancer: true} yet.
- *
- * This increment does happen in CommonAsioSession::setIsLoadBalancerPeer()
- * in response to a hello command with a truthful loadBalancer option.
- * This increment will then be balanced in the destructor further below.
- *
- * load_balancer_support::handleHello bridges the mongos hello with the
- * setIsLoadBalancerPeer() function.
- *
- * Keep this phantom increment here as a natural bookend to the decrement
- * in the destructor.
- */
-void AsioSessionManager::onClientConnect(Client* client) {
-    auto session = client->session();
-    if (session && session->isLoadBalancerPeer()) {
-        incrementLBConnections();
-    }
-    if (session && session->isConnectedToPriorityPort()) {
-        incrementPriorityConnections();
-    }
-}
-
-void AsioSessionManager::onClientDisconnect(Client* client) {
-    auto session = client->session();
-    if (session && session->isLoadBalancerPeer()) {
-        decrementLBConnections();
-    }
-    if (session && session->isConnectedToPriorityPort()) {
-        decrementPriorityConnections();
-    }
 }
 
 }  // namespace mongo::transport

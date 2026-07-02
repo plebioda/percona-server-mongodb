@@ -287,4 +287,156 @@ assert.commandWorked(bulk.execute());
     setParam(chunkSizeKnob, chunkOriginalVal);
 })();
 
+(function testConvertExpressionMemoryLimit() {
+    // featureFlagExpressionMemoryTracking turns on the expression evaluation tracking.
+    if (!FeatureFlagUtil.isEnabled(db, "ExpressionMemoryTracking")) {
+        return;
+    }
+
+    const knob = "internalQueryMaxMemoryUsageBytesPerOperation";
+    const chunkSizeKnob = "internalQueryMaxWriteToCurOpMemoryUsageBytes";
+
+    // BinData -> array has by far the largest blow-up of any $convert conversion (one array element
+    // per vector entry, so the output can be many times the input size), so it is the only tracked
+    // case. It requires the vector conversion feature flag.
+    if (!FeatureFlagUtil.isEnabled(db, "ConvertBinDataVectors")) {
+        return;
+    }
+
+    // Build a vector-subtype BinData from an array field, then convert it back to an array.
+    const memColl = db.agg_convert_memory_limit;
+    memColl.drop();
+    const bigArray = Array.from({length: 2000}, (_, i) => i % 100);
+    assert.commandWorked(memColl.insert({_id: 0, arr: bigArray}));
+    const pipeline = [
+        {$limit: 1},
+        {
+            $project: {
+                a: {
+                    $convert: {
+                        input: {
+                            $convert: {
+                                input: "$arr",
+                                to: {type: "binData", subtype: 9},
+                                format: "base64",
+                            },
+                        },
+                        to: "array",
+                        format: "base64",
+                    },
+                },
+            },
+        },
+    ];
+
+    assert.doesNotThrow(() => memColl.aggregate(pipeline).toArray());
+
+    const originalVal = setParam(knob, 1024);
+    // TODO SERVER-129201: Remove this explicit knob set.
+    const chunkOriginalVal = setParam(chunkSizeKnob, 256);
+
+    const err = assert.throwsWithCode(
+        () => memColl.aggregate(pipeline).toArray(),
+        ErrorCodes.ExceededMemoryLimit,
+    );
+    assert(
+        err.message.includes("$convert needs too much memory"),
+        "Expected error message to mention $convert, but got: " + err.message,
+        {err},
+    );
+
+    setParam(knob, originalVal);
+    setParam(chunkSizeKnob, chunkOriginalVal);
+})();
+
+(function testConcatExpressionMemoryLimit() {
+    // featureFlagExpressionMemoryTracking turns on the expression evaluation tracking.
+    if (!FeatureFlagUtil.isEnabled(db, "ExpressionMemoryTracking")) {
+        jsTest.log.info("Skipping test because ExpressionMemoryTracking is not enabled");
+        return;
+    }
+
+    // TODO SERVER-129995: remove once SBE tracks $concat.
+    if (sbeFullyEnabled) {
+        jsTest.log.info(
+            "Skipping test because $concat memory tracking is not yet implemented in SBE",
+        );
+        return;
+    }
+    const knob = "internalQueryMaxMemoryUsageBytesPerOperation";
+    const chunkSizeKnob = "internalQueryMaxWriteToCurOpMemoryUsageBytes";
+
+    const big = "x".repeat(2000);
+    const pipeline = [{$limit: 1}, {$project: {a: {$concat: ["$y", big]}}}];
+
+    assert.doesNotThrow(() => coll.aggregate(pipeline).toArray());
+
+    const originalVal = setParam(knob, 1024);
+    // TODO SERVER-129201: Remove this explicit knob set.
+    const chunkOriginalVal = setParam(chunkSizeKnob, 256);
+
+    const err = assert.throwsWithCode(
+        () => coll.aggregate(pipeline).toArray(),
+        ErrorCodes.ExceededMemoryLimit,
+    );
+    assert(
+        err.message.includes("$concat needs too much memory"),
+        "Expected error message to mention $concat, but got: " + err.message,
+        {err},
+    );
+
+    setParam(knob, originalVal);
+    setParam(chunkSizeKnob, chunkOriginalVal);
+})();
+
+(function testArrayExpressionMemoryLimit() {
+    // featureFlagExpressionMemoryTracking turns on the expression evaluation tracking.
+    if (!FeatureFlagUtil.isEnabled(db, "ExpressionMemoryTracking")) {
+        jsTest.log.info("Skipping test because ExpressionMemoryTracking is not enabled");
+        return;
+    }
+
+    // TODO SERVER-130093: remove once SBE tracks $array (ExpressionArray).
+    if (sbeFullyEnabled) {
+        jsTest.log.info(
+            "Skipping test because $array memory tracking is not yet implemented in SBE",
+        );
+        return;
+    }
+    const knob = "internalQueryMaxMemoryUsageBytesPerOperation";
+    const chunkSizeKnob = "internalQueryMaxWriteToCurOpMemoryUsageBytes";
+
+    const pipeline = [
+        {$limit: 1},
+        {
+            $project: {
+                a: [
+                    {$range: [0, {$add: ["$_id", 50]}]},
+                    {$range: [{$add: ["$_id", 50]}, {$add: ["$_id", 100]}]},
+                ],
+            },
+        },
+    ];
+
+    assert.doesNotThrow(() => coll.aggregate(pipeline).toArray());
+
+    // Lower the operation-wide limit so the $array result exceeds it.
+    const originalVal = setParam(knob, 1024);
+    // TODO SERVER-129201: Remove this explicit knob set.
+    const chunkOriginalVal = setParam(chunkSizeKnob, 256);
+
+    const err = assert.throwsWithCode(
+        () => coll.aggregate(pipeline).toArray(),
+        ErrorCodes.ExceededMemoryLimit,
+    );
+    assert(
+        err.message.includes("$array needs too much memory"),
+        "Expected error message to mention $array, but got: " + err.message,
+        {err},
+    );
+
+    setParam(knob, originalVal);
+    setParam(chunkSizeKnob, chunkOriginalVal);
+})();
+
 MongoRunner.stopMongod(conn);

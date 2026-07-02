@@ -258,8 +258,7 @@ void setAllowChunkOperations(OperationContext* opCtx,
                              const NamespaceString& nss,
                              const boost::optional<UUID>& expectedCollectionUUID,
                              std::function<OperationSessionInfo()> osiGenerator,
-                             bool allowChunkOperations,
-                             boost::optional<ShardId> primaryShardId) {
+                             bool allowChunkOperations) {
     {
         ConfigsvrSetAllowChunkOperations configsvrSetAllowChunkOperationsCmd(nss);
         configsvrSetAllowChunkOperationsCmd.setDbName(nss.dbName());
@@ -301,8 +300,6 @@ void setAllowChunkOperations(OperationContext* opCtx,
     shardsvrSetAllowChunkOperationsCmd.setDbName(nss.dbName());
     shardsvrSetAllowChunkOperationsCmd.setAllowChunkOperations(allowChunkOperations);
     shardsvrSetAllowChunkOperationsCmd.setCollectionUUID(expectedCollectionUUID);
-    shardsvrSetAllowChunkOperationsCmd.setPrimaryShardId(
-        primaryShardId.get_value_or(ShardingState::get(opCtx)->shardId()));
     generic_argument_util::setMajorityWriteConcern(shardsvrSetAllowChunkOperationsCmd);
     generic_argument_util::setOperationSessionInfo(shardsvrSetAllowChunkOperationsCmd,
                                                    osiGenerator());
@@ -567,11 +564,9 @@ void stopMigrations(OperationContext* opCtx,
                     const NamespaceString& nss,
                     const boost::optional<UUID>& expectedCollectionUUID,
                     std::function<OperationSessionInfo()> osiGenerator,
-                    AuthoritativeMetadataAccessLevelEnum authoritativeState,
-                    boost::optional<ShardId> primaryShardId) {
+                    AuthoritativeMetadataAccessLevelEnum authoritativeState) {
     if (authoritativeState != AuthoritativeMetadataAccessLevelEnum::kNone) {
-        setAllowChunkOperations(
-            opCtx, nss, expectedCollectionUUID, osiGenerator, false, primaryShardId);
+        setAllowChunkOperations(opCtx, nss, expectedCollectionUUID, osiGenerator, false);
     } else {
         setAllowMigrationsOnConfigServer(opCtx, nss, expectedCollectionUUID, osiGenerator(), false);
     }
@@ -581,11 +576,9 @@ void resumeMigrations(OperationContext* opCtx,
                       const NamespaceString& nss,
                       const boost::optional<UUID>& expectedCollectionUUID,
                       std::function<OperationSessionInfo()> osiGenerator,
-                      AuthoritativeMetadataAccessLevelEnum authoritativeState,
-                      boost::optional<ShardId> primaryShardId) {
+                      AuthoritativeMetadataAccessLevelEnum authoritativeState) {
     if (authoritativeState != AuthoritativeMetadataAccessLevelEnum::kNone) {
-        setAllowChunkOperations(
-            opCtx, nss, expectedCollectionUUID, osiGenerator, true, primaryShardId);
+        setAllowChunkOperations(opCtx, nss, expectedCollectionUUID, osiGenerator, true);
     } else {
         setAllowMigrationsOnConfigServer(opCtx, nss, expectedCollectionUUID, osiGenerator(), true);
     }
@@ -1165,6 +1158,39 @@ void commitCreateCollectionChunklessMetadataToShardCatalog(
     sendAuthenticatedCommandToShards(opCtx, opts, shardRefs);
 }
 
+void commitChunkOperationsMetadataToShardCatalog(
+    OperationContext* opCtx,
+    const NamespaceString& nss,
+    const std::vector<ChunkType>& newChunks,
+    const std::vector<ShardRef>& shardRefs,
+    const OperationSessionInfo& osi,
+    const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
+    const CancellationToken& token) {
+    ShardsvrCommitChunkOperationsMetadata request(nss);
+    request.setDbName(DatabaseName::kAdmin);
+
+    std::vector<BSONObj> newChunkDocs;
+    newChunkDocs.reserve(newChunks.size());
+    for (const auto& chunk : newChunks) {
+        newChunkDocs.push_back(chunk.toConfigBSON());
+    }
+    request.setNewChunks(std::move(newChunkDocs));
+
+    generic_argument_util::setMajorityWriteConcern(request);
+    generic_argument_util::setOperationSessionInfo(request, osi);
+
+    const auto requestSize = request.toBSON().objsize();
+    tassert(12698804,
+            str::stream() << "Commit chunk operations request size " << requestSize
+                          << " exceeds maximum BSON object size " << BSONObjMaxUserSize,
+            requestSize <= BSONObjMaxUserSize);
+
+    auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrCommitChunkOperationsMetadata>>(
+        **executor, token, std::move(request));
+
+    sendAuthenticatedCommandToShards(opCtx, opts, shardRefs);
+}
+
 AuthoritativeMetadataAccessLevelEnum getGrantedAuthoritativeMetadataAccessLevel(
     const VersionContext& vCtx, const ServerGlobalParams::FCVSnapshot& snapshot) {
     const bool isAuthoritativeDDLEnabled =
@@ -1256,12 +1282,12 @@ void upsertPlacementHistoryDocInTransaction(const txn_api::TransactionClient& tx
                                             const NamespaceString& nss,
                                             const boost::optional<UUID>& uuid,
                                             const Timestamp& timestamp,
-                                            std::vector<ShardRef>&& shards,
+                                            const std::vector<ShardRef>& shards,
                                             int stmtId) {
     write_ops::UpdateCommandRequest upsertPlacementChangeRequest(
         NamespaceString::kConfigsvrPlacementHistoryNamespace);
     upsertPlacementChangeRequest.setUpdates({[&] {
-        NamespacePlacementType placementInfo(nss, timestamp, std::move(shards));
+        NamespacePlacementType placementInfo(nss, timestamp, shards);
         placementInfo.setUuid(uuid);
 
         write_ops::UpdateOpEntry entry;

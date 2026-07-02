@@ -317,6 +317,54 @@ TEST(WasmtimeScope, Security_CrossRequest_FrozenBackdoorProperty) {
     ASSERT_TRUE(s2->getBoolean("__returnValue"));
 }
 
+// A non-configurable global installed during one invocation must not survive reset() on the
+// same scope. reset() must detect the failed deletion and fall back to resetRealm().
+TEST(WasmtimeScope, Security_Reset_NonConfigurableGlobalFallsBackToRealmReset) {
+    GlobalEngineGuard engineGuard;
+    std::unique_ptr<Scope> scope(engineGuard.engine().createScopeForCurrentThread(boost::none));
+
+    ScriptingFunction install = scope->createFunction(
+        "try {"
+        "  Object.defineProperty(globalThis, '__frozen__', {"
+        "    value: 'LEAK', writable: false, configurable: false, enumerable: true"
+        "  });"
+        "} catch(e) {}"
+        "return 1;");
+    ASSERT_EQ(0, scope->invoke(install, nullptr, nullptr, 0));
+
+    // reset() must erase the non-configurable property via a realm reset fallback.
+    scope->reset();
+
+    ScriptingFunction check =
+        scope->createFunction("return typeof globalThis.__frozen__ === 'undefined';");
+    ASSERT_EQ(0, scope->invoke(check, nullptr, nullptr, 0));
+    ASSERT_TRUE(scope->getBoolean("__returnValue"));
+}
+
+// A non-configurable property pinned onto a compiled slot function via arguments.callee must
+// not survive reset(). reset() must detect the failed deletion and fall back to resetRealm().
+TEST(WasmtimeScope, Security_Reset_NonConfigurableSlotFnPropertyFallsBackToRealmReset) {
+    GlobalEngineGuard engineGuard;
+    std::unique_ptr<Scope> scope(engineGuard.engine().createScopeForCurrentThread(boost::none));
+
+    ScriptingFunction install = scope->createFunction(
+        "try {"
+        "  Object.defineProperty(arguments.callee, '__frozen__', {"
+        "    value: 'LEAK', writable: false, configurable: false, enumerable: true"
+        "  });"
+        "} catch(e) {}"
+        "return 1;");
+    ASSERT_EQ(0, scope->invoke(install, nullptr, nullptr, 0));
+
+    scope->reset();
+
+    // The property must be gone — either deleted or the function replaced by resetRealm().
+    ScriptingFunction check =
+        scope->createFunction("return typeof arguments.callee.__frozen__ === 'undefined';");
+    ASSERT_EQ(0, scope->invoke(check, nullptr, nullptr, 0));
+    ASSERT_TRUE(scope->getBoolean("__returnValue"));
+}
+
 // Attacker captures sensitive data in a closure installed as a global function.
 // The next request must not be able to call the closure or observe its data.
 TEST(WasmtimeScope, Security_CrossRequest_ClosureCapturedInGlobal) {
@@ -433,6 +481,43 @@ TEST(WasmtimeScope, Security_CrossRequest_DeepGlobalStateDoesNotLeak) {
         "       typeof globalThis.__fn === 'undefined';");
     ASSERT_EQ(0, s2->invoke(check, nullptr, nullptr, 0));
     ASSERT_TRUE(s2->getBoolean("__returnValue"));
+}
+
+// Attacker mutates the Array constructor directly. Array is a fresh, non-shared object
+// per child realm (_setupChildRealm() skips copyMissingProps() whenever pObj == cObj), so
+// this must not be visible from a sibling realm reusing the same parked bridge.
+TEST(WasmtimeScope, Security_CrossRequest_ArrayConstructorMutationDoesNotLeak) {
+    GlobalEngineGuard engineGuard;
+    {
+        std::unique_ptr<Scope> s(engineGuard.engine().createScopeForCurrentThread(boost::none));
+        ScriptingFunction fn = s->createFunction("Array.injected = 'poison'; return 1;");
+        ASSERT_EQ(0, s->invoke(fn, nullptr, nullptr, 0));
+    }
+    std::unique_ptr<Scope> s2(engineGuard.engine().createScopeForCurrentThread(boost::none));
+    ScriptingFunction check = s2->createFunction("return typeof Array.injected;");
+    ASSERT_EQ(0, s2->invoke(check, nullptr, nullptr, 0));
+    ASSERT_EQ("undefined", s2->getString("__returnValue"));
+}
+
+// Attacker mutates a types.js extension function (Array.tojson) instead of the constructor
+// itself. copyMissingProps() in _setupChildRealm() copies these extensions onto every child
+// realm *by reference* — the same JS object is shared with _parentGlobal and with every
+// other child on the thread — and kFreezeBuiltinsScript only Object.freeze()s the standard
+// constructors/prototypes, never the extension function objects hanging off them. A mutation
+// to Array.tojson therefore lands on the literal object every future realm on this thread
+// will inherit from the parent, leaking across the realm boundary that's supposed to
+// separate unrelated requests.
+TEST(WasmtimeScope, Security_CrossRequest_SharedExtensionFunctionMutationLeaks) {
+    GlobalEngineGuard engineGuard;
+    {
+        std::unique_ptr<Scope> s(engineGuard.engine().createScopeForCurrentThread(boost::none));
+        ScriptingFunction fn = s->createFunction("Array.tojson.injected = 'poison'; return 1;");
+        ASSERT_EQ(0, s->invoke(fn, nullptr, nullptr, 0));
+    }
+    std::unique_ptr<Scope> s2(engineGuard.engine().createScopeForCurrentThread(boost::none));
+    ScriptingFunction check = s2->createFunction("return typeof Array.tojson.injected;");
+    ASSERT_EQ(0, s2->invoke(check, nullptr, nullptr, 0));
+    ASSERT_EQ("undefined", s2->getString("__returnValue"));
 }
 
 // A bridge parked more than kMaxBridgeIdleTime ago is evicted; the next

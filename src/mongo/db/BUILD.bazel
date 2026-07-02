@@ -440,6 +440,8 @@ mongo_cc_library(
     name = "mongod_options",
     srcs = [
         "mongod_options.cpp",
+        # Percona-specific server parameters: the rate limiter and the
+        # data-at-rest encryption options are not present upstream.
         "ratelimit_parameter.cpp",
         ":mongod_options_encryption_gen",
         ":mongod_options_general_gen",

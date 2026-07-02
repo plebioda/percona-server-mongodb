@@ -96,6 +96,17 @@ runs:
         git config user.email "${{ inputs.github-app-id }}+psmdb-bot[bot]@users.noreply.github.com"
         git config merge.conflictstyle diff3
         git config notes.displayRef refs/notes/mergai-marker
+        # Authenticate git pushes from the *process environment* (GH_TOKEN) via a
+        # no-fallback credential helper. A push succeeds only for a process that
+        # carries the write token in its environment. Combined with
+        # `persist-credentials: false` on the agent-running checkouts (no token
+        # on disk) and the agent subprocess having its token stripped by mergai,
+        # this guarantees the AI agent can never push: its empty GH_TOKEN yields
+        # an empty password. The parent mergai process keeps the write token, so
+        # its deterministic pushes still authenticate. The empty first helper
+        # resets any inherited helper so there is no fallback to a stored login.
+        git config --global credential.https://github.com.helper ""
+        git config --global --add credential.https://github.com.helper '!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GH_TOKEN:-$GITHUB_TOKEN}"; }; f'
 
     # Install the mergai CLI tool using the dedicated setup action.
     # Supports checking out a specific ref (branch/tag/commit) for testing.

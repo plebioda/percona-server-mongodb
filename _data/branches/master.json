@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 125,
+    "commits_behind": 126,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.0896979952314814,
-    "files_affected": 619,
-    "total_additions": 27443,
-    "total_deletions": 6845,
+    "unmerged_oldest_age_days": 2.0967091282291666,
+    "files_affected": 620,
+    "total_additions": 27644,
+    "total_deletions": 6905,
     "date_range": {
       "first": "2026-06-30T07:11:32+00:00",
-      "last": "2026-07-02T08:40:09+00:00"
+      "last": "2026-07-02T08:47:34+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,16 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "285e07d58703bbc5f9aa02889d4a7712b44c0650",
+      "short_sha": "285e07d5870",
+      "date": "2026-07-02T10:47:34+02:00",
+      "author": {
+        "name": "Alberto Massari",
+        "email": "alberto.massari@mongodb.com"
+      },
+      "summary": "SERVER-130302 Don't use anti-materialization when joining secondary collections (#57303)"
+    },
     {
       "sha": "9e5aaaf1dc3d0746e4f6450eb436885ffce4166f",
       "short_sha": "9e5aaaf1dc3",
@@ -1428,7 +1438,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-02 09:20:32",
+  "generated_at": "2026-07-02 09:30:37",
   "branch_name": "master",
   "display_name": "master"
 }

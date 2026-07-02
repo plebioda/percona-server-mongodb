@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 116,
+    "commits_behind": 122,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 1.9159878149421294,
-    "files_affected": 617,
-    "total_additions": 26733,
-    "total_deletions": 6278,
+    "unmerged_oldest_age_days": 1.9723905184027777,
+    "files_affected": 643,
+    "total_additions": 27889,
+    "total_deletions": 6822,
     "date_range": {
       "first": "2026-07-01T00:07:31+00:00",
-      "last": "2026-07-02T21:07:40+00:00"
+      "last": "2026-07-02T22:19:07+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,66 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "fc1a00d375e5660f13d4f97fe47fee7bb3734231",
+      "short_sha": "fc1a00d375e",
+      "date": "2026-07-03T08:19:07+10:00",
+      "author": {
+        "name": "Gregory Wlodarek",
+        "email": "gregory.wlodarek@mongodb.com"
+      },
+      "summary": "SERVER-130253 Pin oldest timestamp to stable when a standby installs a checkpoint (#57242)"
+    },
+    {
+      "sha": "0a405b556371a69a52e35b25320e04ac0a9dd9e1",
+      "short_sha": "0a405b55637",
+      "date": "2026-07-02T15:03:39-07:00",
+      "author": {
+        "name": "Adithi Raghavan",
+        "email": "adithi.raghavan@mongodb.com"
+      },
+      "summary": "SERVER-122003 Test new limit optimization path for vectorSearch (#54872)"
+    },
+    {
+      "sha": "c0f0de7823d6fb131f653bd54c0ae3e350ce6e58",
+      "short_sha": "c0f0de7823d",
+      "date": "2026-07-02T17:41:30-04:00",
+      "author": {
+        "name": "Cheahuychou Mao",
+        "email": "cheahuychou.mao@mongodb.com"
+      },
+      "summary": "SERVER-129864 Make HanoffSession mirror the behavior for setIsLoadBalancerPeer in AsioSession (#57408)"
+    },
+    {
+      "sha": "828ea9baf835257384da1cd6ec99a3f4c7ef5da3",
+      "short_sha": "828ea9baf83",
+      "date": "2026-07-02T17:19:08-04:00",
+      "author": {
+        "name": "seanzimm",
+        "email": "102551488+seanzimm@users.noreply.github.com"
+      },
+      "summary": "SERVER-129812: Call waitUntilOpTimeForRead before setting read source for validate (#57432)"
+    },
+    {
+      "sha": "668d75fc38f05142b0dbe2e3f25418aa52ffcc26",
+      "short_sha": "668d75fc38f",
+      "date": "2026-07-02T17:19:07-04:00",
+      "author": {
+        "name": "Evan Bergeron",
+        "email": "evanbergeron@users.noreply.github.com"
+      },
+      "summary": "SERVER-130341 Use SBE RAII factory methods in block_expr tests (#57284)"
+    },
+    {
+      "sha": "5b730fb154573c131346a50c18e7c19f5459462c",
+      "short_sha": "5b730fb1545",
+      "date": "2026-07-02T23:11:43+02:00",
+      "author": {
+        "name": "romanskas",
+        "email": "30618745+romanskas@users.noreply.github.com"
+      },
+      "summary": "SERVER-130077 Remove usage of setRequestQueryStatsFromRemotes() (#56997)"
+    },
     {
       "sha": "c1e4fa8a3319180ba6225d6d1a65ae13eb85918d",
       "short_sha": "c1e4fa8a331",
@@ -1361,7 +1421,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-02 22:06:25",
+  "generated_at": "2026-07-02 23:27:38",
   "branch_name": "master",
   "display_name": "master"
 }

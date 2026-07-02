@@ -424,20 +424,43 @@ idl_generator(
 )
 
 mongo_cc_library(
+    name = "server_options_storage",
+    srcs = [
+        "mongod_options_storage.cpp",
+        ":mongod_options_storage_gen",
+    ],
+    deps = [
+        ":server_base",
+        "//src/mongo/db/storage:storage_options",
+        "//src/mongo/util/options_parser",
+    ],
+)
+
+mongo_cc_library(
     name = "mongod_options",
     srcs = [
         "mongod_options.cpp",
+<<<<<<< HEAD
         "mongod_options_storage.cpp",
         "ratelimit_parameter.cpp",
         ":mongod_options_encryption_gen",
+||||||| dbeb63549f4
+        "mongod_options_storage.cpp",
+=======
+>>>>>>> 368ee5f5fd1205d840d401ff850fe04d88ef8d77
         ":mongod_options_general_gen",
         ":mongod_options_ldapauthz_gen",
         ":mongod_options_legacy_gen",
         ":mongod_options_removed_gen",
         ":mongod_options_replication_gen",
         ":mongod_options_sharding_gen",
+<<<<<<< HEAD
         ":mongod_options_storage_gen",
         ":ratelimit_parameter_gen",
+||||||| dbeb63549f4
+        ":mongod_options_storage_gen",
+=======
+>>>>>>> 368ee5f5fd1205d840d401ff850fe04d88ef8d77
     ],
     deps = [
         ":global_settings",
@@ -446,6 +469,7 @@ mongo_cc_library(
         ":server_feature_flags",
         ":server_options_base",
         ":server_options_servers",
+        ":server_options_storage",
         "//src/mongo/db/auth:cluster_auth_mode",
         "//src/mongo/db/repl:repl_server_parameters",
         "//src/mongo/db/repl:repl_settings",
@@ -927,6 +951,7 @@ mongo_cc_library(
         "//src/mongo/db/exec/classic:multi_plan.cpp",
         "//src/mongo/db/exec/classic:multi_plan_admission_context.cpp",
         "//src/mongo/db/exec/classic:multi_plan_rate_limiter.cpp",
+        "//src/mongo/db/exec/classic:multi_range_clustered_scan.cpp",
         "//src/mongo/db/exec/classic:near.cpp",
         "//src/mongo/db/exec/classic:or.cpp",
         "//src/mongo/db/exec/classic:orphan_chunk_skipper.cpp",
@@ -1041,6 +1066,7 @@ mongo_cc_library(
         "//src/mongo/db/pipeline:change_stream_pipeline",
         "//src/mongo/db/pipeline:document_source_internal_apply_oplog_update",
         "//src/mongo/db/pipeline:pipeline_visitor",
+        "//src/mongo/db/pipeline:search_id_lookup_stage",
         "//src/mongo/db/pipeline/optimization:pipeline_optimization",
         "//src/mongo/db/query:collection_query_info",
         "//src/mongo/db/query:engine_selection",
@@ -3265,6 +3291,7 @@ mongo_cc_unit_test(
         "startup_warnings_mongod",
         "//src/mongo/db/pipeline:aggregation_request_helper",
         "//src/mongo/db/pipeline:change_stream_pipeline",
+        "//src/mongo/db/pipeline:search_id_lookup_stage",
         "//src/mongo/db/sharding_environment:shard_handle",
         "//src/mongo/db/sharding_environment:sharding_feature_flags",
         "//src/mongo/db/storage/wiredtiger:storage_wiredtiger",

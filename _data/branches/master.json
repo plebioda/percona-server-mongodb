@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 113,
-    "days_behind": 1,
-    "unmerged_oldest_age_days": 1.8546281725925924,
-    "files_affected": 602,
-    "total_additions": 25976,
-    "total_deletions": 6122,
+    "commits_behind": 116,
+    "days_behind": 2,
+    "unmerged_oldest_age_days": 1.9159878149421294,
+    "files_affected": 617,
+    "total_additions": 26733,
+    "total_deletions": 6278,
     "date_range": {
       "first": "2026-07-01T00:07:31+00:00",
-      "last": "2026-07-02T19:51:15+00:00"
+      "last": "2026-07-02T21:07:40+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,36 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "c1e4fa8a3319180ba6225d6d1a65ae13eb85918d",
+      "short_sha": "c1e4fa8a331",
+      "date": "2026-07-02T17:07:40-04:00",
+      "author": {
+        "name": "Santiago Roche",
+        "email": "69868136+sroches@users.noreply.github.com"
+      },
+      "summary": "SERVER-129855 Ensure extension loading and signature validation use same pinned inode path (#57159)"
+    },
+    {
+      "sha": "0f3922a36968ac8ad00f5898f83f02c0a3c6466d",
+      "short_sha": "0f3922a3696",
+      "date": "2026-07-02T16:51:44-04:00",
+      "author": {
+        "name": "Lee Maguire",
+        "email": "lee.maguire@mongodb.com"
+      },
+      "summary": "SERVER-129747 Freeze MongoDB custom-type prototypes at install time (#57370)"
+    },
+    {
+      "sha": "a0bfb99b68dc8575e54ce618bf237afb0ac94b51",
+      "short_sha": "a0bfb99b68d",
+      "date": "2026-07-02T20:51:10+00:00",
+      "author": {
+        "name": "Joan Bruguera Micó (at MongoDB)",
+        "email": "joan.bruguera-mico@mongodb.com"
+      },
+      "summary": "SERVER-127968 Fix edge cases for draining of chunk operations on setFCV for Authoritative Shards (#57283)"
+    },
     {
       "sha": "7bc650ec9d11896a85a83b8eba66deb1f74636e7",
       "short_sha": "7bc650ec9d1",
@@ -1331,7 +1361,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-02 20:38:04",
+  "generated_at": "2026-07-02 22:06:25",
   "branch_name": "master",
   "display_name": "master"
 }

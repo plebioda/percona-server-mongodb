@@ -93,6 +93,10 @@ jobs:
           github-app-token: ${{ steps.app-token.outputs.token }}
           github-app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
           mergai-ref: ${{ inputs['mergai-ref'] || vars.MERGAI_REF || 'master' }}
+          # Do not put the write token in the job environment: this job runs the
+          # AI agent (describe/resolve). The token is scoped to the "publish"
+          # step instead, so it is never reachable while the agent runs.
+          export-github-token: "false"
 
       # Determine the commit to merge to. Precedence:
       #   1. an explicit merge-pick input -> use it, bypassing the gate (the
@@ -183,12 +187,20 @@ jobs:
             exit 1
           fi
 
+      # Agent phase: runs the AI agent (describe via `mergai merge`, and
+      # `mergai resolve` on conflicts) and prepares branches locally. This step
+      # has NO GitHub write token in its environment (setup was called with
+      # export-github-token: false), so a misbehaving or prompt-injected agent
+      # has no reachable credential to push with. All remote writes happen in
+      # the separate "publish" step below. The merge outcome is recorded as an
+      # output so publish knows which branches to push.
       - name: merge
+        id: merge
         if: steps.pick.outputs.pick != ''
         env:
           MERGAI_AGENT: ${{ inputs['mergai-agent'] }}
         run: |
-          # Fetch and merge notes from remote
+          # Fetch and merge notes from remote (read-only; public repo)
           mergai notes update
 
           # Build merge command with optional agent
@@ -199,21 +211,37 @@ jobs:
             RESOLVE_CMD="$RESOLVE_CMD --agent \"$MERGAI_AGENT\""
           fi
 
-          # Attempt merge; exit code 0 = success, 1 = conflicts
+          # Attempt merge; exit code 0 = success, 1 = conflicts. Only local
+          # commits/branch-creates happen here -- pushing is deferred to publish.
           if eval $MERGE_CMD; then
             echo "Merge successful. Committing merge."
             mergai commit merge              # Create merge commit with note attached
             mergai branch create main        # Create and checkout main working branch
-            mergai branch push main          # Push main branch to origin
-            mergai notes push                # Push mergai notes to remote
-            mergai pr --repo "$GITHUB_REPOSITORY" create main --skip-commit-list-on-failure
+            echo "result=success" >> "$GITHUB_OUTPUT"
           else
             echo "Merge conflict detected. Processing with resolution."
             mergai commit conflict           # Commit conflict state with markers
             mergai branch create conflict    # Create branch with conflict markers
             mergai branch create solution    # Create branch for AI solution
-            eval $RESOLVE_CMD                # Run AI conflict resolution (yolo mode)
+            eval $RESOLVE_CMD                # Run AI conflict resolution
             mergai commit solution           # Commit resolved files with note
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Publish phase: the ONLY step given the write token. The agent has run
+      # and exited in the previous step, so the token is never reachable by it.
+      # Pushes authenticate via the setup credential helper (GH_TOKEN in this
+      # step's environment); PR creation uses gh (also GH_TOKEN).
+      - name: publish
+        if: steps.merge.outputs.result != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          if [ "${{ steps.merge.outputs.result }}" = "success" ]; then
+            mergai branch push main          # Push main branch to origin
+            mergai notes push                # Push mergai notes to remote
+            mergai pr --repo "$GITHUB_REPOSITORY" create main --skip-commit-list-on-failure
+          else
             mergai branch push solution      # Push solution branch
             mergai branch push conflict      # Push conflict branch
             mergai notes push                # Push mergai notes to remote

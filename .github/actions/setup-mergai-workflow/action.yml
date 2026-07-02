@@ -34,6 +34,14 @@ inputs:
   github-app-id:
     description: "GitHub App ID for constructing bot email"
     required: true
+  export-github-token:
+    description: >-
+      Export GH_TOKEN/GITHUB_TOKEN to the job environment (GITHUB_ENV). Set to
+      "false" for jobs that run the AI agent so no write token is reachable (via
+      the environment) during agent execution; those jobs scope the token to
+      their push steps instead.
+    required: false
+    default: "true"
   mergai-ref:
     description: "MergAI git ref to checkout"
     required: false
@@ -90,8 +98,13 @@ runs:
     - name: Setup git credentials
       shell: bash
       run: |
-        echo "GITHUB_TOKEN=${{ inputs.github-app-token }}" >> $GITHUB_ENV
-        echo "GH_TOKEN=${{ inputs.github-app-token }}" >> $GITHUB_ENV
+        # Export the token job-wide unless the caller opts out (agent jobs do,
+        # so the write token is not reachable while the agent runs; they scope
+        # it to their push steps instead).
+        if [ "${{ inputs.export-github-token }}" = "true" ]; then
+          echo "GITHUB_TOKEN=${{ inputs.github-app-token }}" >> $GITHUB_ENV
+          echo "GH_TOKEN=${{ inputs.github-app-token }}" >> $GITHUB_ENV
+        fi
         git config user.name "psmdb-bot[bot]"
         git config user.email "${{ inputs.github-app-id }}+psmdb-bot[bot]@users.noreply.github.com"
         git config merge.conflictstyle diff3

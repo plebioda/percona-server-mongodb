@@ -1,0 +1,28 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "b804fcbfff173384459a5c8a9826d8ff1568985f",
+    "merge_commit": "368ee5f5fd1205d840d401ff850fe04d88ef8d77"
+  },
+  "mergai_version": "0.1.dev1+g423f5815c",
+  "solutions": [
+    {
+      "type": "conflict_resolution",
+      "response": {
+        "summary": "Dummy commit",
+        "resolved": {},
+        "unresolved": {},
+        "modified": {
+          "src/mongo/db/auth/oidc/oidc_commands.cpp": "Modified by human"
+        },
+        "review_notes": null
+      },
+      "author": {
+        "name": "Pawel Lebioda",
+        "email": "pawel.lebioda@percona.com",
+        "type": "human"
+      },
+      "commit_sha": "b469a002340156ae9fe9c06ada531310bc1d4314"
+    }
+  ]
+}

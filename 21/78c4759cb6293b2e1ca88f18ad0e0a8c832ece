@@ -1,0 +1,173 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "3315b0f5b210125986e0602fe3a354d385e5030b",
+    "merge_commit": "368ee5f5fd1205d840d401ff850fe04d88ef8d77"
+  },
+  "mergai_version": "0.1.dev1+gc058a0892",
+  "solutions": [
+    {
+      "type": "ci_fix",
+      "request": {
+        "workflow": "build-and-test",
+        "run_id": "28661667142",
+        "pr_number": 327,
+        "attempt_number": 1,
+        "context_summary": "build-and-test failed in 1 job(s): build",
+        "timestamp": "2026-07-03T13:09:33.899723+00:00"
+      },
+      "status": "success",
+      "is_error": false,
+      "duration_ms": 49463,
+      "num_turns": 8,
+      "stop_reason": "end_turn",
+      "total_cost_usd": 0.64672425,
+      "modelUsage": {
+        "claude-haiku-4-5-20251001": {
+          "inputTokens": 603,
+          "outputTokens": 18,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "webSearchRequests": 0,
+          "costUSD": 0.000693,
+          "contextWindow": 200000,
+          "maxOutputTokens": 32000
+        },
+        "claude-opus-4-8": {
+          "inputTokens": 18828,
+          "outputTokens": 2643,
+          "cacheReadInputTokens": 306395,
+          "cacheCreationInputTokens": 53219,
+          "webSearchRequests": 0,
+          "costUSD": 0.64603125,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 64000
+        }
+      },
+      "stats": {
+        "models": {
+          "claude-haiku-4-5-20251001": {
+            "tokens": {
+              "input": 603,
+              "output": 18,
+              "cache_read": 0,
+              "cache_creation": 0
+            },
+            "cost_usd": 0.000693
+          },
+          "claude-opus-4-8": {
+            "tokens": {
+              "input": 18828,
+              "output": 2643,
+              "cache_read": 306395,
+              "cache_creation": 53219
+            },
+            "cost_usd": 0.64603125
+          }
+        }
+      },
+      "text_result": "Fixed the build failure.\n\n**Root cause:** The `build` job failed compiling `src/mongo/db/auth/oidc/oidc_commands.cpp`. Commit `573464fa366` (\"Failure injection\") had corrupted the third parameter of `OidcListKeys::run` from `const BSONObj&,` to `const BSONObj& a = 0,`, producing two errors:\n- `could not convert '0' from 'int' to 'const mongo::BSONObj&'`\n- `default argument missing for parameter 4` (a defaulted param 3 can't precede a non-defaulted param 4)\n\n**Fix:** Reverted the parameter back to `const BSONObj&,`, matching the base `Command::run` signature. This is bucket (b) \u2014 a Percona-side (intentionally injected) defect, isolated to this single line, mirroring the earlier injected failure in the same file. Response JSON written.",
+      "response": {
+        "status": "fixed",
+        "summary": "Root-cause bucket (b): a Percona-side commit (573464fa366 \"Failure injection\") deliberately corrupted the third parameter of OidcListKeys::run from `const BSONObj&,` to `const BSONObj& a = 0,`, producing two compile errors (could not convert '0' from int to const BSONObj&, and a defaulted parameter 3 followed by a non-defaulted parameter 4). Restored the original parameter declaration.",
+        "resolved": {
+          "src/mongo/db/auth/oidc/oidc_commands.cpp": "Reverted line 107 of OidcListKeys::run back to `const BSONObj&,` (from the injected `const BSONObj& a = 0,`). The base class Command::run signature is `run(OperationContext*, const DatabaseName&, const BSONObj&, BSONObjBuilder&)`; the injected default argument (`= 0`) both failed to convert int to const BSONObj& and left parameter 4 without a default following a defaulted parameter 3. The parameter is unused in the body, so no name is needed."
+        },
+        "unresolved": {},
+        "modified": {},
+        "review_notes": "Confirmed via `git log -p -S 'const BSONObj& a = 0' -- src/mongo/db/auth/oidc/oidc_commands.cpp` that commit 573464fa366 (\"Failure injection\") is the sole change introducing this line, matching the earlier injected-failure pattern in the same file (commit c914e5e709f). This is an isolated, single-line defect; the build error class is confined to this one signature and there are no other affected call sites. The parameter remains unnamed as in the pre-injection source since it is not referenced in the function body."
+      },
+      "session": {
+        "messages": [
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Bash"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Bash"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Bash"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Read"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Bash"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [
+              "Confirmed. Commit `573464fa366` (\"Failure injection\") changed the original `const BSONObj&,` parameter to a bogus `const BSONObj& a = 0,`, which produces both errors (int\u2192BSONObj& conversion, and a defaulted param followed by a non-defaulted one). Reverting to the original."
+            ],
+            "tools_used": []
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Edit"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [
+              "Now let me write the response JSON."
+            ],
+            "tools_used": []
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Write"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [
+              "Fixed the build failure.\n\n**Root cause:** The `build` job failed compiling `src/mongo/db/auth/oidc/oidc_commands.cpp`. Commit `573464fa366` (\"Failure injection\") had corrupted the third parameter of `OidcListKeys::run` from `const BSONObj&,` to `const BSONObj& a = 0,`, producing two errors:\n- `could not convert '0' from 'int' to 'const mongo::BSONObj&'`\n- `default argument missing for parameter 4` (a defaulted param 3 can't precede a non-defaulted param 4)\n\n**Fix:** Reverted the parameter back to `const BSONObj&,`, matching the base `Command::run` signature. This is bucket (b) \u2014 a Percona-side (intentionally injected) defect, isolated to this single line, mirroring the earlier injected failure in the same file. Response JSON written."
+            ],
+            "tools_used": []
+          }
+        ],
+        "metadata": {
+          "lastPrompt": "Read @/home/runner/work/percona-server-mongodb/percona-server-mongodb/.cache/mergai/prompt_20260703_130842_687578.md and write your JSON response to @/home/runner/work/percona-server-mongodb/percona-s\u2026"
+        }
+      },
+      "agent_info": {
+        "agent_type": "claude_cli",
+        "version": "2.1.199 (Claude Code)"
+      }
+    }
+  ]
+}

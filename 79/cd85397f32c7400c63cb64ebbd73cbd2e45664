@@ -1,0 +1,28 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "3315b0f5b210125986e0602fe3a354d385e5030b",
+    "merge_commit": "368ee5f5fd1205d840d401ff850fe04d88ef8d77"
+  },
+  "mergai_version": "0.1.dev1+gc058a0892",
+  "solutions": [
+    {
+      "type": "conflict_resolution",
+      "response": {
+        "summary": "Merge pull request #328 from plebioda/mergai/master-368ee5f5fd1/semantic",
+        "resolved": {},
+        "unresolved": {},
+        "modified": {
+          "src/mongo/db/auth/oidc/oidc_commands.cpp": "Modified by human"
+        },
+        "review_notes": "Resolve semantic conflicts for merge '368ee5f5fd1' into 'master'"
+      },
+      "author": {
+        "name": "Pawel Lebioda",
+        "email": "pawel.lebioda89@gmail.com",
+        "type": "human"
+      },
+      "commit_sha": "79cd85397f32c7400c63cb64ebbd73cbd2e45664"
+    }
+  ]
+}

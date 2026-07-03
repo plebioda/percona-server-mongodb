@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 122,
+    "commits_behind": 126,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 1.9723905184027777,
-    "files_affected": 643,
-    "total_additions": 27889,
-    "total_deletions": 6822,
+    "unmerged_oldest_age_days": 2.294185705798611,
+    "files_affected": 671,
+    "total_additions": 29607,
+    "total_deletions": 7035,
     "date_range": {
       "first": "2026-07-01T00:07:31+00:00",
-      "last": "2026-07-02T22:19:07+00:00"
+      "last": "2026-07-03T00:17:30+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,46 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "ac1ec4236bf87f60afbc08d5b0481e15f1f852aa",
+      "short_sha": "ac1ec4236bf",
+      "date": "2026-07-03T02:17:30+02:00",
+      "author": {
+        "name": "Denis Grebennicov",
+        "email": "denis.grebennicov@mongodb.com"
+      },
+      "summary": "SERVER-130061 Validate user-facing query settings and enable featureFlagAllowUserFacingQuerySettings (#57006)"
+    },
+    {
+      "sha": "cb758df9fe90f2e6a5bb9b39f7396db44590bbff",
+      "short_sha": "cb758df9fe9",
+      "date": "2026-07-03T02:15:35+02:00",
+      "author": {
+        "name": "Denis Grebennicov",
+        "email": "denis.grebennicov@mongodb.com"
+      },
+      "summary": "SERVER-129512 Add SingleDocumentLookupStats metrics infrastructure and recorder for change stream lookups (#57035)"
+    },
+    {
+      "sha": "96c2ba2f65bfb891ac9ed71d1ac7b7401326b589",
+      "short_sha": "96c2ba2f65b",
+      "date": "2026-07-02T16:21:16-07:00",
+      "author": {
+        "name": "Abdul Qadeer",
+        "email": "abdul.qadeer@mongodb.com"
+      },
+      "summary": "SERVER-127996 Add more targeted tests for max key orphan and zone scans (#57361)"
+    },
+    {
+      "sha": "ccd2a622b033edcb382476ecaf364cca78c769ee",
+      "short_sha": "ccd2a622b03",
+      "date": "2026-07-02T16:07:53-07:00",
+      "author": {
+        "name": "Thomas Goyne",
+        "email": "thomas.goyne@mongodb.com"
+      },
+      "summary": "SERVER-128654 Don't wait for the table or schema locks when performing a replicated drop (#57374)"
+    },
     {
       "sha": "fc1a00d375e5660f13d4f97fe47fee7bb3734231",
       "short_sha": "fc1a00d375e",
@@ -1418,10 +1458,29 @@
           "num_of_dirs": 22
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "ccd2a622b033edcb382476ecaf364cca78c769ee",
+        "short_sha": "ccd2a622b03",
+        "date": "2026-07-02T16:07:53-07:00",
+        "author": {
+          "name": "Thomas Goyne",
+          "email": "thomas.goyne@mongodb.com"
+        },
+        "summary": "SERVER-128654 Don't wait for the table or schema locks when performing a replicated drop (#57374)"
+      },
+      "strategy_name": "important_files",
+      "result": {
+        "matched_files": [
+          "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp",
+          "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine_test.cpp"
+        ]
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-02 23:27:38",
+  "generated_at": "2026-07-03 07:11:01",
   "branch_name": "master",
   "display_name": "master"
 }

@@ -58,11 +58,6 @@ class DSInternalSearchIdLookUpCatalogResourceHandle;
 class DocumentSourceInternalSearchIdLookUp final : public DocumentSource {
 public:
     static constexpr std::string_view kStageName = "$_internalSearchIdLookup"sv;
-    /**
-     * Creates an $_internalSearchIdLookup stage. "elem" must be an empty object.
-     */
-    static boost::intrusive_ptr<DocumentSource> createFromBson(
-        BSONElement elem, const boost::intrusive_ptr<ExpressionContext>& expCtx);
 
     DocumentSourceInternalSearchIdLookUp(DocumentSourceIdLookupSpec spec,
                                          const boost::intrusive_ptr<ExpressionContext>& expCtx);
@@ -162,6 +157,14 @@ public:
         tassert(11140101,
                 "catalogResourceHandle must be acquired to access the collection",
                 isAcquired());
+        return _collection;
+    }
+
+    /**
+     * Returns the upfront acquisition for building a PreAcquiredCollectionAcquirer. Unlike
+     * getCollection(), this does not require the handle to be acquired onto the opCtx.
+     */
+    CollectionAcquisition getCollectionForLookupExecutor() const {
         return _collection;
     }
 

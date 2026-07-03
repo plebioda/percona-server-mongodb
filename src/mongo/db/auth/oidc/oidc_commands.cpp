@@ -61,7 +61,6 @@ private:
     Status checkAuthForOperation(OperationContext* opCtx,
                                  const DatabaseName& dbName,
                                  const BSONObj& cmdObj) const override {
-
         auto authzSess = AuthorizationSession::get(opCtx->getClient());
 
         if (!authzSess->isAuthorizedForActionsOnResource(
@@ -69,7 +68,7 @@ private:
             return Status(ErrorCodes::Unauthorized,
                           fmt::format("not authorized to execute command {}", cmdObj.toString()));
         }
-
+	
         return Status::OK();
     }
 

@@ -440,7 +440,6 @@ mongo_cc_library(
     name = "mongod_options",
     srcs = [
         "mongod_options.cpp",
-        "ratelimit_parameter.cpp",
         ":mongod_options_encryption_gen",
         ":mongod_options_general_gen",
         ":mongod_options_ldapauthz_gen",

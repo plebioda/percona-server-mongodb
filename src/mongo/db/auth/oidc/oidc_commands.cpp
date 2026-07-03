@@ -60,7 +60,7 @@ private:
 
     Status checkAuthForOperation(OperationContext* opCtx,
                                  const DatabaseName& dbName,
-                                 const BSONObj& cmdObj) const override {
+                                 const BSONObj& cmdObj = 0) const override {
 
         auto authzSess = AuthorizationSession::get(opCtx->getClient());
 
@@ -178,6 +178,7 @@ private:
              BSONObjBuilder& bob) override {
 
         const auto& registry = OidcIdentityProvidersRegistry::get(opCtx->getServiceContext());
+	auto f = opCt;
 
         // Load keys for all JWK managers even if some of them fail.
         // At the end, combine all failures into a single object in order to

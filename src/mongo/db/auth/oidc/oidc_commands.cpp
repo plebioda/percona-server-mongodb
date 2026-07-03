@@ -61,7 +61,7 @@ private:
     Status checkAuthForOperation(OperationContext* opCtx,
                                  const DatabaseName& dbName,
                                  const BSONObj& cmdObj) const override {
-        auto authzSess = AuthorizationSession::get(opCtx->getClient())
+        auto authzSess = AuthorizationSession::get(opCtx->getClient());
 
         if (!authzSess->isAuthorizedForActionsOnResource(
                 ResourcePattern::forClusterResource(dbName.tenantId()), RequiredAction)) {

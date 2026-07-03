@@ -1,0 +1,149 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "3315b0f5b210125986e0602fe3a354d385e5030b",
+    "merge_commit": "368ee5f5fd1205d840d401ff850fe04d88ef8d77"
+  },
+  "mergai_version": "0.1.dev1+gc058a0892",
+  "solutions": [
+    {
+      "type": "ci_fix",
+      "request": {
+        "workflow": "clang-tidy",
+        "run_id": "28653100087",
+        "pr_number": 326,
+        "attempt_number": 1,
+        "context_summary": "clang-tidy reported 1 finding in 1 file",
+        "timestamp": "2026-07-03T10:26:27.028620+00:00"
+      },
+      "status": "success",
+      "is_error": false,
+      "duration_ms": 27070,
+      "num_turns": 6,
+      "stop_reason": "end_turn",
+      "total_cost_usd": 0.31592075000000003,
+      "modelUsage": {
+        "claude-haiku-4-5-20251001": {
+          "inputTokens": 603,
+          "outputTokens": 14,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "webSearchRequests": 0,
+          "costUSD": 0.000673,
+          "contextWindow": 200000,
+          "maxOutputTokens": 32000
+        },
+        "claude-opus-4-8": {
+          "inputTokens": 15950,
+          "outputTokens": 1660,
+          "cacheReadInputTokens": 111458,
+          "cacheCreationInputTokens": 22123,
+          "webSearchRequests": 0,
+          "costUSD": 0.31524775000000005,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 64000
+        }
+      },
+      "stats": {
+        "models": {
+          "claude-haiku-4-5-20251001": {
+            "tokens": {
+              "input": 603,
+              "output": 14,
+              "cache_read": 0,
+              "cache_creation": 0
+            },
+            "cost_usd": 0.000673
+          },
+          "claude-opus-4-8": {
+            "tokens": {
+              "input": 15950,
+              "output": 1660,
+              "cache_read": 111458,
+              "cache_creation": 22123
+            },
+            "cost_usd": 0.31524775000000005
+          }
+        }
+      },
+      "text_result": "Fixed. The clang-tidy failure was caused by a deliberately-injected line `cmdObj = 0;` (from commit `c914e5e709f` \"Test build failure\") that assigns an integer to the `const BSONObj& cmdObj` parameter \u2014 `BSONObj` has no such assignment operator, hence \"no viable overloaded '='\". I removed the line, and the JSON response is written.",
+      "response": {
+        "status": "fixed",
+        "summary": "Root-cause bucket (b): a Percona-side commit (c914e5e709f \"Test build failure\") injected a bogus statement `cmdObj = 0;` that assigns an integer to the `const BSONObj& cmdObj` parameter, producing the clang-diagnostic-error \"no viable overloaded '='\". Removed the line.",
+        "resolved": {
+          "src/mongo/db/auth/oidc/oidc_commands.cpp": "Removed the stray `cmdObj = 0;` statement at line 66 of OidcKeysCommand::checkAuthForOperation. `cmdObj` is a `const BSONObj&` parameter and BSONObj has no assignment operator taking an int, hence the compile error. The line was added by commit c914e5e709f (\"Test build failure\") and served no purpose; deleting it restores the original correct logic where cmdObj is only read (via cmdObj.toString())."
+        },
+        "unresolved": {},
+        "modified": {},
+        "review_notes": "The offending line was clearly an intentional test-failure injection (commit message literally \"Test build failure\"), not part of any upstream merge or legitimate Percona feature. Confirmed via `git show c914e5e709f` that this single-line addition is the sole change. No other call sites are affected; the error class is isolated to this one line. cmdObj remains used later in the function for the fmt::format error message, so no further edits are needed."
+      },
+      "session": {
+        "messages": [
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Read"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Bash"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Bash"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [
+              "The failure is a deliberately-injected bogus statement `cmdObj = 0;` (added by commit `c914e5e709f \"Test build failure\"`) assigning to a `const BSONObj&` parameter. Removing it."
+            ],
+            "tools_used": []
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Edit"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [],
+            "tools_used": [
+              "Write"
+            ]
+          },
+          {
+            "role": "assistant",
+            "model": "claude-opus-4-8",
+            "thoughts": [
+              "Fixed. The clang-tidy failure was caused by a deliberately-injected line `cmdObj = 0;` (from commit `c914e5e709f` \"Test build failure\") that assigns an integer to the `const BSONObj& cmdObj` parameter \u2014 `BSONObj` has no such assignment operator, hence \"no viable overloaded '='\". I removed the line, and the JSON response is written."
+            ],
+            "tools_used": []
+          }
+        ],
+        "metadata": {
+          "lastPrompt": "Read @/home/runner/work/percona-server-mongodb/percona-server-mongodb/.cache/mergai/prompt_20260703_102558_655606.md and write your JSON response to @/home/runner/work/percona-server-mongodb/percona-s\u2026"
+        }
+      },
+      "agent_info": {
+        "agent_type": "claude_cli",
+        "version": "2.1.199 (Claude Code)"
+      }
+    }
+  ]
+}

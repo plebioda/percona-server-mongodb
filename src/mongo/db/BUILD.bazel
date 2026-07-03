@@ -448,7 +448,6 @@ mongo_cc_library(
         ":mongod_options_removed_gen",
         ":mongod_options_replication_gen",
         ":mongod_options_sharding_gen",
-        ":ratelimit_parameter_gen",
     ],
     deps = [
         ":global_settings",

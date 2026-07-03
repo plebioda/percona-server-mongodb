@@ -104,7 +104,7 @@ private:
     // }
     bool run(OperationContext* opCtx,
              const DatabaseName&,
-             const BSONObj& a = 0,
+             const BSONObj&,
              BSONObjBuilder& result) override {
 
         const auto& registry = OidcIdentityProvidersRegistry::get(opCtx->getServiceContext());

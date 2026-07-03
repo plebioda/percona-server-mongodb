@@ -63,7 +63,6 @@ private:
                                  const BSONObj& cmdObj) const override {
 
         auto authzSess = AuthorizationSession::get(opCtx->getClient());
-        cmdObj = 0;
 
         if (!authzSess->isAuthorizedForActionsOnResource(
                 ResourcePattern::forClusterResource(dbName.tenantId()), RequiredAction)) {

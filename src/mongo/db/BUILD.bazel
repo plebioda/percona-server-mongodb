@@ -447,11 +447,11 @@ mongo_cc_library(
         ":mongod_options_removed_gen",
         ":mongod_options_replication_gen",
         ":mongod_options_sharding_gen",
-        ":ratelimit_parameter_gen",
     ],
     deps = [
         ":global_settings",
         ":ldap_options",
+        ":ratelimit_parameter",
         ":server_base",
         ":server_feature_flags",
         ":server_options_base",
@@ -487,6 +487,17 @@ mongo_cc_library(
 idl_generator(
     name = "ratelimit_parameter_gen",
     src = "ratelimit_parameter.idl",
+)
+
+mongo_cc_library(
+    name = "ratelimit_parameter",
+    srcs = [
+        "ratelimit_parameter.cpp",
+        ":ratelimit_parameter_gen",
+    ],
+    deps = [
+        ":server_base",
+    ],
 )
 
 idl_generator(

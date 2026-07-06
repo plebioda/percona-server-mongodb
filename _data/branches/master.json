@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 148,
-    "days_behind": 2,
-    "unmerged_oldest_age_days": 2.6746407982060183,
-    "files_affected": 786,
-    "total_additions": 34055,
-    "total_deletions": 9587,
+    "commits_behind": 169,
+    "days_behind": 5,
+    "unmerged_oldest_age_days": 5.443493059224537,
+    "files_affected": 852,
+    "total_additions": 36364,
+    "total_deletions": 10168,
     "date_range": {
       "first": "2026-07-01T00:07:31+00:00",
-      "last": "2026-07-03T15:04:27+00:00"
+      "last": "2026-07-06T09:49:52+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,216 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "bc41092a512fabdb634af0870d1dc7d14d481c61",
+      "short_sha": "bc41092a512",
+      "date": "2026-07-06T09:49:52+00:00",
+      "author": {
+        "name": "Joan Bruguera Micó (at MongoDB)",
+        "email": "joan.bruguera-mico@mongodb.com"
+      },
+      "summary": "SERVER-130566 Re-enable most of random_ddl_setFCV_operations_with_metadata_check.js (#57612)"
+    },
+    {
+      "sha": "65e3d46b3e972414878cb446f609e62f94dfcf36",
+      "short_sha": "65e3d46b3e9",
+      "date": "2026-07-06T10:12:13+01:00",
+      "author": {
+        "name": "Max Verbinnen",
+        "email": "64088654+Max-Verbinnen@users.noreply.github.com"
+      },
+      "summary": "SERVER-130079 Refine costs for HJ spilling and sorted-sparse IO (#57019)"
+    },
+    {
+      "sha": "cc0224010e4c429ba5e298d7f7af6e2ca0af3e6f",
+      "short_sha": "cc0224010e4",
+      "date": "2026-07-06T10:26:51+02:00",
+      "author": {
+        "name": "Jordi Olivares Provencio",
+        "email": "jordi.olivares-provencio@mongodb.com"
+      },
+      "summary": "SERVER-129224 Recover filtering information in checkMetadataConsistency randomly during testing (#57383)"
+    },
+    {
+      "sha": "733222cd1276f822065fd753f5bd2db06f0b64ac",
+      "short_sha": "733222cd127",
+      "date": "2026-07-06T10:08:17+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-130550 Complete TODO listed in SERVER-97985 (#57602)"
+    },
+    {
+      "sha": "5110ac50e12353f0e534cf0ab2bfad76c59c0660",
+      "short_sha": "5110ac50e12",
+      "date": "2026-07-06T09:07:07+01:00",
+      "author": {
+        "name": "Catalin Sumanaru",
+        "email": "catalin.sumanaru@mongodb.com"
+      },
+      "summary": "SERVER-129316 Promote plan evaluation knobs to query settings (#56492)"
+    },
+    {
+      "sha": "7c27c7218e2c325aa30c2af80fd897fc85984611",
+      "short_sha": "7c27c7218e2",
+      "date": "2026-07-06T08:05:06+00:00",
+      "author": {
+        "name": "Joan Bruguera Micó (at MongoDB)",
+        "email": "joan.bruguera-mico@mongodb.com"
+      },
+      "summary": "SERVER-130534 Authoritative shard catalog collections should be dropped in the configsvr on FCV downgrade (#57563)"
+    },
+    {
+      "sha": "2d442b7b707c72b399761caea2230cb94ea0d85a",
+      "short_sha": "2d442b7b707",
+      "date": "2026-07-06T08:47:16+02:00",
+      "author": {
+        "name": "Pol Piñol Castuera",
+        "email": "pol.pinol@mongodb.com"
+      },
+      "summary": "SERVER-130523 Metadata consistency check reports spurious inconsistency when interrupted by stepdown (#57538)"
+    },
+    {
+      "sha": "3b50194903e2b4327bcf3d32e8bcaac116e24647",
+      "short_sha": "3b50194903e",
+      "date": "2026-07-06T03:47:08+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-119888 Enable feature flag for featureFlagSbeTransformStages (#56783)\" (#57596)"
+    },
+    {
+      "sha": "87128969df87ef4a16ab9ee2fc8feec5e4b1adcc",
+      "short_sha": "87128969df8",
+      "date": "2026-07-05T21:28:31+02:00",
+      "author": {
+        "name": "Denis Grebennicov",
+        "email": "denis.grebennicov@mongodb.com"
+      },
+      "summary": "SERVER-130156: Revert SERVER-128247 to retain IET-based index bound generation (#57050)"
+    },
+    {
+      "sha": "e1c37480c503826fc663b2ba6552bc6d2f20f7a9",
+      "short_sha": "e1c37480c50",
+      "date": "2026-07-05T18:51:05+01:00",
+      "author": {
+        "name": "Catalin Sumanaru",
+        "email": "catalin.sumanaru@mongodb.com"
+      },
+      "summary": "SERVER-129571 Scope down query knob downgrades only to knobs below the minimum FCV. (#57581)"
+    },
+    {
+      "sha": "625553cad71b810b8c4e174c92b940c1022cd2cb",
+      "short_sha": "625553cad71",
+      "date": "2026-07-05T17:12:21+01:00",
+      "author": {
+        "name": "Rui Liu",
+        "email": "33423526+lriuui0x0@users.noreply.github.com"
+      },
+      "summary": "SERVER-119888 Enable feature flag for featureFlagSbeTransformStages (#56783)"
+    },
+    {
+      "sha": "2268b63515e59a64a632198740c637b7143e7d92",
+      "short_sha": "2268b63515e",
+      "date": "2026-07-04T20:55:41+01:00",
+      "author": {
+        "name": "Catalin Sumanaru",
+        "email": "catalin.sumanaru@mongodb.com"
+      },
+      "summary": "SERVER-130208 Add opCtx-scoped accessor and PQS gate to QueryKnobConfiguration (#57157)"
+    },
+    {
+      "sha": "70a91f92b3748815d44a462033e013a6a8881d74",
+      "short_sha": "70a91f92b37",
+      "date": "2026-07-04T20:00:53+01:00",
+      "author": {
+        "name": "Catalin Sumanaru",
+        "email": "catalin.sumanaru@mongodb.com"
+      },
+      "summary": "SERVER-130207 Introduce  per-operation query settings state (#57156)"
+    },
+    {
+      "sha": "1c57c1f7e5f629b362b15f120747cc072f0f037b",
+      "short_sha": "1c57c1f7e5f",
+      "date": "2026-07-04T16:47:24+01:00",
+      "author": {
+        "name": "Catalin Sumanaru",
+        "email": "catalin.sumanaru@mongodb.com"
+      },
+      "summary": "SERVER-130164 Fix static initialisation for --setParameter provided knobs (#57140)"
+    },
+    {
+      "sha": "e00674467f943dee3593ffb7658099c967f8695c",
+      "short_sha": "e00674467f9",
+      "date": "2026-07-03T15:03:05-07:00",
+      "author": {
+        "name": "Denis Trailin",
+        "email": "denis.trailin@gmail.com"
+      },
+      "summary": "SERVER-127389: Read _clonerAttemptExec under the lock to silence Coverity MISSING_LOCK (#55907)"
+    },
+    {
+      "sha": "eefe5fdb7bc80bfd58954eaa593b2ed1a630e601",
+      "short_sha": "eefe5fdb7bc",
+      "date": "2026-07-03T16:22:35-04:00",
+      "author": {
+        "name": "Kruti Shah",
+        "email": "70412403+krutishah139@users.noreply.github.com"
+      },
+      "summary": "SERVER-130239 Perform targeted update in random_moveChunk_with_maxkey_docs.js (#57551)"
+    },
+    {
+      "sha": "2092a417d1dda6a4008f9906a9930738aa503598",
+      "short_sha": "2092a417d1d",
+      "date": "2026-07-03T21:56:09+02:00",
+      "author": {
+        "name": "Jan",
+        "email": "jsteemann@users.noreply.github.com"
+      },
+      "summary": "SERVER-130532: Improve wording for 9.0 query knob (#57550)"
+    },
+    {
+      "sha": "86b5acb1afa547091e0d603e0184d7821d166907",
+      "short_sha": "86b5acb1afa",
+      "date": "2026-07-03T21:50:38+02:00",
+      "author": {
+        "name": "Jan",
+        "email": "jsteemann@users.noreply.github.com"
+      },
+      "summary": "SERVER-130454 Remove unused includeToken param from test (#57474)"
+    },
+    {
+      "sha": "9bfea873c6836f544f17f8b1caf1f8e4a331f1e0",
+      "short_sha": "9bfea873c68",
+      "date": "2026-07-03T10:21:08-07:00",
+      "author": {
+        "name": "Chunbin-lin",
+        "email": "chunbin.lin@mongodb.com"
+      },
+      "summary": "SERVER-130062 Wire Express fast-path executor into $_internalSearchIdLookup behind a feature flag (#56981)"
+    },
+    {
+      "sha": "7b98b3156660b5a0149a4d6a72dd41fe83b12fe7",
+      "short_sha": "7b98b315666",
+      "date": "2026-07-03T18:49:11+02:00",
+      "author": {
+        "name": "romanskas",
+        "email": "30618745+romanskas@users.noreply.github.com"
+      },
+      "summary": "SERVER-130374 Remove 'includeMetrics' option from count, distinct, and find commands (#57369)"
+    },
+    {
+      "sha": "4bc801e4cae290408fd1cb6259f4936d680ad48c",
+      "short_sha": "4bc801e4cae",
+      "date": "2026-07-03T18:36:18+02:00",
+      "author": {
+        "name": "Denis Grebennicov",
+        "email": "denis.grebennicov@mongodb.com"
+      },
+      "summary": "SERVER-129513 Record updateLookup metrics from the Aggregation lookup executor (#57036)"
+    },
     {
       "sha": "de2e04612fd341f56656878cf93209725540809a",
       "short_sha": "de2e04612fd",
@@ -1585,7 +1795,6 @@
         "branches": [
           "master",
           "mergai/master-66da8344e9f/main",
-          "mergai/master-66da8344e9f/semantic",
           "mongodb"
         ]
       }
@@ -1764,10 +1973,74 @@
           "num_of_dirs": 11
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "e00674467f943dee3593ffb7658099c967f8695c",
+        "short_sha": "e00674467f9",
+        "date": "2026-07-03T15:03:05-07:00",
+        "author": {
+          "name": "Denis Trailin",
+          "email": "denis.trailin@gmail.com"
+        },
+        "summary": "SERVER-127389: Read _clonerAttemptExec under the lock to silence Coverity MISSING_LOCK (#55907)"
+      },
+      "strategy_name": "important_files",
+      "result": {
+        "matched_files": [
+          "src/mongo/db/repl/initial_sync/initial_syncer.cpp"
+        ]
+      }
+    },
+    {
+      "commit": {
+        "sha": "625553cad71b810b8c4e174c92b940c1022cd2cb",
+        "short_sha": "625553cad71",
+        "date": "2026-07-05T17:12:21+01:00",
+        "author": {
+          "name": "Rui Liu",
+          "email": "33423526+lriuui0x0@users.noreply.github.com"
+        },
+        "summary": "SERVER-119888 Enable feature flag for featureFlagSbeTransformStages (#56783)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 11,
+          "num_of_lines": 5560,
+          "lines_added": 212,
+          "lines_deleted": 5348,
+          "num_of_dirs": 10
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "3b50194903e2b4327bcf3d32e8bcaac116e24647",
+        "short_sha": "3b50194903e",
+        "date": "2026-07-06T03:47:08+00:00",
+        "author": {
+          "name": "auto-revert-app[bot]",
+          "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+        },
+        "summary": "Revert \"SERVER-119888 Enable feature flag for featureFlagSbeTransformStages (#56783)\" (#57596)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 11,
+          "num_of_lines": 5560,
+          "lines_added": 5348,
+          "lines_deleted": 212,
+          "num_of_dirs": 10
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-03 16:18:52",
+  "generated_at": "2026-07-06 10:46:01",
   "branch_name": "master",
   "display_name": "master"
 }

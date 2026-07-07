@@ -1,0 +1,498 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "2441dd21393b2afb50e3e87faaec2619ad9ce6ed",
+    "merge_commit": "1b51af3418d8ff468b50e5ddcb1b472e0e7aebdf"
+  },
+  "mergai_version": "0.1.dev1+gf8d4273a0",
+  "conflict_context": {
+    "ours_commit": "2441dd21393b2afb50e3e87faaec2619ad9ce6ed",
+    "theirs_commit": "1b51af3418d8ff468b50e5ddcb1b472e0e7aebdf",
+    "base_commit": "dbeb63549f486de03bcc4a060bf24dd49bb06f01",
+    "files": [
+      "jstests/suites/backup-restore/BUILD.bazel",
+      "src/mongo/db/BUILD.bazel"
+    ],
+    "conflict_types": {
+      "jstests/suites/backup-restore/BUILD.bazel": "deleted by us",
+      "src/mongo/db/BUILD.bazel": "both modified"
+    },
+    "diffs": {
+      "src/mongo/db/BUILD.bazel": "diff --cc src/mongo/db/BUILD.bazel\nindex 0fccde3b99d,3da9e06cfd3..00000000000\n--- a/src/mongo/db/BUILD.bazel\n+++ b/src/mongo/db/BUILD.bazel\n@@@ -430,3 -388,0 +443,8 @@@ mongo_cc_library\n++<<<<<<< HEAD\n +        \"mongod_options_storage.cpp\",\n +        \"ratelimit_parameter.cpp\",\n +        \":mongod_options_encryption_gen\",\n++||||||| dbeb63549f4\n++        \"mongod_options_storage.cpp\",\n++=======\n++>>>>>>> 1b51af3418d8ff468b50e5ddcb1b472e0e7aebdf\n@@@ -439,2 -392,0 +457,7 @@@\n++<<<<<<< HEAD\n +        \":mongod_options_storage_gen\",\n +        \":ratelimit_parameter_gen\",\n++||||||| dbeb63549f4\n++        \":mongod_options_storage_gen\",\n++=======\n++>>>>>>> 1b51af3418d8ff468b50e5ddcb1b472e0e7aebdf"
+    },
+    "their_commits": {
+      "jstests/suites/backup-restore/BUILD.bazel": [
+        "846b9ed25d524613bc9d9f2fc5e6e5816c5b6825"
+      ],
+      "src/mongo/db/BUILD.bazel": [
+        "0dc609f1bd6b1877361161d1dfe45309f721b3fb",
+        "aeae961d5b061c6185d27531097b5b96efe1a55a",
+        "d61b70cc243a1b36272e952862103b541bdbcf19",
+        "368ee5f5fd1205d840d401ff850fe04d88ef8d77",
+        "c2574027fd1de2eb6bfbe930d2f50650c1ab8068",
+        "e7cd3d4346c1604ac7ee4ee6a5f6c127448dc560"
+      ]
+    }
+  },
+  "merge_context": {
+    "merge_commit": "1b51af3418d8ff468b50e5ddcb1b472e0e7aebdf",
+    "merged_commits": [
+      "1b51af3418d8ff468b50e5ddcb1b472e0e7aebdf",
+      "c29f5b863b28ce5c089ce9f53914462b9e2c05fe",
+      "f6c4f02e9dc4e5f795d0005b1468e16bab303282",
+      "55efa661b7d64ef9f1870cd5af4eb4ab98272cdc",
+      "b38f96725a6cbc2734a0c8492edd333d5fa25089",
+      "46230ade73b96e36ee556bf077e54c49d49c8394",
+      "a3d2b85001b012fc3bae7bbb5608cef5b83ccda5",
+      "61296cb3b7312e3521f1299ec4d95dad57478251",
+      "9b4c786c0913c01639179a2c0434a38319866136",
+      "ac4b289b1f9c2cf972078fae41f619a10f8d4e94",
+      "f54844b86df25da9d5b71f86df9199e7e7144687",
+      "0dd7f7fe764e18c137a47b31b0f2c78f87ef57c5",
+      "7387b18a26ff03ca05f129a51670bd4f875e646a",
+      "ae9b0973a3e67e83c1111f6a91a30153a66e8e98",
+      "0589b409006e0636c92651817008cd761e6d2fe9",
+      "10b88e3686dcf482da1560b455e8d69fef81403b",
+      "f58a73a4777a59c65259e2c5ad6ec6baec49ba27",
+      "c360d2ba8f06755d700ff3bbcf2b7dc231d72cbb",
+      "bf2689d462129b47a64cae487cb419fd63985360",
+      "b7f63d433f83d9e60afd438db6a35eace843e90f",
+      "a86b0b455de3944f6253e139d400eb403eb34f7e",
+      "0b2819549532083bbacbf362f0d6f4b1734b79c8",
+      "2f3ad2538fb6bb2602d0d8ca4c4b35e3726b9bff",
+      "1842e1df4f1302184415dcb9fe51aed7bbaf6523",
+      "37b2a5c7b40ee3a2e17fe9ffbfd76f2d466be40f",
+      "b3b3312726bf1221d6a791fa9e8f1cef910ce2bd",
+      "871e826b364497de2498ebfe35134e31cd7337d4",
+      "d4d3eb7bc12d6fac50f5462f2b6e8c594c71d922",
+      "a1efb2c00a7620b06115f8c77f724d580ffde02c",
+      "b3c7d6e3cfd7b85230665f24ff6678ffdad74c54",
+      "846b9ed25d524613bc9d9f2fc5e6e5816c5b6825",
+      "6424aa1837356bfc8cf09bfce3ea8d630cecefc2",
+      "f21a362faac50c9309f6034d6a6a528b8f3f5116",
+      "9581f01428727e7f49a5984162ba8b9ecbbd79b2",
+      "e65320441837ce1000c5c07894847b9656b513ef",
+      "f439dee9c3b8b7b2431adee010b5f2a5b0b21ddf",
+      "48e6d11c12868c95b9f7c71dae5f492d252145e3",
+      "2975e98c0c2875ffd3a8b157f1a33f9111b5e327",
+      "a62565dffac6c279eddd38cd90e1ec7aaa22abbf",
+      "bc41092a512fabdb634af0870d1dc7d14d481c61",
+      "65e3d46b3e972414878cb446f609e62f94dfcf36",
+      "cc0224010e4c429ba5e298d7f7af6e2ca0af3e6f",
+      "733222cd1276f822065fd753f5bd2db06f0b64ac",
+      "5110ac50e12353f0e534cf0ab2bfad76c59c0660",
+      "7c27c7218e2c325aa30c2af80fd897fc85984611",
+      "2d442b7b707c72b399761caea2230cb94ea0d85a",
+      "3b50194903e2b4327bcf3d32e8bcaac116e24647",
+      "87128969df87ef4a16ab9ee2fc8feec5e4b1adcc",
+      "e1c37480c503826fc663b2ba6552bc6d2f20f7a9",
+      "625553cad71b810b8c4e174c92b940c1022cd2cb",
+      "2268b63515e59a64a632198740c637b7143e7d92",
+      "70a91f92b3748815d44a462033e013a6a8881d74",
+      "1c57c1f7e5f629b362b15f120747cc072f0f037b",
+      "e00674467f943dee3593ffb7658099c967f8695c",
+      "eefe5fdb7bc80bfd58954eaa593b2ed1a630e601",
+      "2092a417d1dda6a4008f9906a9930738aa503598",
+      "86b5acb1afa547091e0d603e0184d7821d166907",
+      "9bfea873c6836f544f17f8b1caf1f8e4a331f1e0",
+      "7b98b3156660b5a0149a4d6a72dd41fe83b12fe7",
+      "4bc801e4cae290408fd1cb6259f4936d680ad48c",
+      "de2e04612fd341f56656878cf93209725540809a",
+      "dd0061342802ee6eaa41d834e2c769f5b5df6d00",
+      "c7204d8824a37faf7cae5a1874a3e6920088f82d",
+      "0dc609f1bd6b1877361161d1dfe45309f721b3fb",
+      "5371c695f6e5d1f33abd16af065ab18bf7c3991e",
+      "7a69128ffefcb38c4fe6d9d38492f45e12cc73ec",
+      "b4a08ce0af96d70540ada0a8d410dd86929479b1",
+      "aa05b3f9d6f8b25d90386dbaa830a7707cef0bc4",
+      "1ed3d4430120ea4a91fd7e2cfc005e120b54b045",
+      "208a2876fadb1964831fde7bd8c74d92999722d1",
+      "1005e095e98741e2b14b01a40acd6dd0f162f7eb",
+      "4835c157a9f4c3e20e0d67d72819f3d02fb83503",
+      "9ca304d1e34561d8471b6cbc71991c5c4676cec0",
+      "6cec6682a5183a33ecb0f5f617a2f80b67a844fc",
+      "0e31148b649cbde401c6f5d4fcfe6919e1939fa3",
+      "652c294935de5ba3d8fb422f0f0f2cf1bfb73d81",
+      "2720b69d9f8dd2c426148599cffff22820ad5807",
+      "90efaf40e74f20acc996a1f488c902d175130c4f",
+      "309c6ee37f073b80fb46854bd08b245c8039ff4f",
+      "aeae961d5b061c6185d27531097b5b96efe1a55a",
+      "c4dae2350c579f64c36c3c9b953e29620145cc75",
+      "0c6f4fe86ba9dfae931c1701a7f75511ec6cf562",
+      "ac1ec4236bf87f60afbc08d5b0481e15f1f852aa",
+      "cb758df9fe90f2e6a5bb9b39f7396db44590bbff",
+      "96c2ba2f65bfb891ac9ed71d1ac7b7401326b589",
+      "ccd2a622b033edcb382476ecaf364cca78c769ee",
+      "fc1a00d375e5660f13d4f97fe47fee7bb3734231",
+      "0a405b556371a69a52e35b25320e04ac0a9dd9e1",
+      "c0f0de7823d6fb131f653bd54c0ae3e350ce6e58",
+      "828ea9baf835257384da1cd6ec99a3f4c7ef5da3",
+      "668d75fc38f05142b0dbe2e3f25418aa52ffcc26",
+      "5b730fb154573c131346a50c18e7c19f5459462c",
+      "c1e4fa8a3319180ba6225d6d1a65ae13eb85918d",
+      "0f3922a36968ac8ad00f5898f83f02c0a3c6466d",
+      "a0bfb99b68dc8575e54ce618bf237afb0ac94b51",
+      "7bc650ec9d11896a85a83b8eba66deb1f74636e7",
+      "d5572bd6400cfa2e616f8f635a7af76c9fb00abc",
+      "d61b70cc243a1b36272e952862103b541bdbcf19",
+      "010750095b2b9f1cd03af73c9dc8f4c92a1d6a13",
+      "55b34ae9259c51ded15aaca10aed85ea9ac189af",
+      "39dd1dc26eddc28d87e6b4cb8e097d6301790d28",
+      "255a35c3894dae6d783fd27b95aca9478079f63c",
+      "ae10f5cedc7856ed87f0da87d5ace7de99098544",
+      "00bcc5c38a83ceeacda1c0f92241c66beb89d2cc",
+      "4cbbaa6dd63f8360a63dfcc0f6551958a658bd38",
+      "260bd99968ac8ea41c06884428a69017e81f0702",
+      "8db0ec34d5bd6a8fa654466e5818982f4640b8dc",
+      "30c2bc5f5d80067a555fcb3927de950aee6a1317",
+      "c9bb29d69df23127c2ba0100c60d1ac3ae2f42f8",
+      "2a01971903a9a957bf62de576cffa77be8535971",
+      "811a9f4a77939d28fd5cbb1fb3829ad9521dadd4",
+      "612b7f953155396dc0a5916917ce60bca3772dc1",
+      "4c25e0a51f0b176ba030b9dfcfb909abe03f37b6",
+      "3a19160ba4357165a4d132289b81464da73b872e",
+      "796025cef45f8def8495913cdcd66e63d2cb6a19",
+      "3deff306a356d5e91ee60e5964c137eedd5f1251",
+      "d831117a60a810cc6eb1e5a8c1225348cfbaf028",
+      "61c990fc1f2798bc63759e33df71de50bb243e87",
+      "b679e5b652fc18ba3b0a4c78e44caebfbe80af92",
+      "5e61f03b350dee40b9bc84a02264d59b4e302da9",
+      "1154c85ef8704135032289928758baec38759653",
+      "7c44f0965d76454410ce3f4221fb24e45a08f232",
+      "a609938662414fafe64c846fc58d74354f090fb1",
+      "27217276cc5544e8969717189371ab304d3f8f54",
+      "3300359207da94135012fefed75204ac835f0684",
+      "0a4737586e1660edec52adb32be204beb79659eb",
+      "74d534ef1d860445d5e4198da79ffd8f516d71a4",
+      "7940caf5dc4cc8daa40e08f89da0e6525fb46be9",
+      "285e07d58703bbc5f9aa02889d4a7712b44c0650",
+      "9e5aaaf1dc3d0746e4f6450eb436885ffce4166f",
+      "6cab8d7430a0ebc5c4dad1b131f72ecf761e454f",
+      "097ffb27b0d82cac8044679c5cf5d0b07760e9d9",
+      "368ee5f5fd1205d840d401ff850fe04d88ef8d77",
+      "8cdea01f18f9971d1f63db3e5286ef225acdf1d7",
+      "1b116435ef43c31529d8e461c66e5cfa3efbf543",
+      "07f398a8ba0e44df85b5626855acada47757b0e8",
+      "d1ded34d231437180582267743a624a324926f2e",
+      "e668efc3b9d4f211b4f44b3e297881c7782ddbfb",
+      "a5f22271639f7c62452b27fca33a73a43d6ec770",
+      "02a58088e735479e48f409cde74b2179832d7ab0",
+      "31d4b2b87360c384a4fb2d711c4c3e3f042e1376",
+      "cd462e263ce80d13cf37be8e01cef164ea90b4b6",
+      "c2e5c766055aa0dca090f751a1484e4e8bb19297",
+      "42870469f8c1b0e6597c579edf384a38b2836574",
+      "f60ee1200d588aab9fb91e28e9dc87308b9d3a29",
+      "9a09364d52167250f35e3b0d7b558a1a1dae886d",
+      "c6a7782db48ffadf2a7d697dc7459d30791e938c",
+      "12df3882f935a1b3950ead85b355eae6c9b78546",
+      "d0842b22d78734307f59eada4cadc6efbfe2a9a2",
+      "e7c14ac7b3b831de4d6f9ad5f5c0048d35bb4465",
+      "f8696e8cfd53340cb9fc0e25d2eb9af7926fcd1a",
+      "a8c9da6285742b619a1263787995b3d6b6b39582",
+      "777ca8c425e0c803962b800af7c5535044babea1",
+      "106529893bd28084a1bfc7533bbfca41efd5cbec",
+      "5d7087930a530954c6a7584aa527b078566f0bea",
+      "c27107bea1a0bccee4721565cf55c3d0891c4f2a",
+      "d1c7f233cce9d8d7f581e5a7fefbc59970a713ae",
+      "c2574027fd1de2eb6bfbe930d2f50650c1ab8068",
+      "e204c648682f23e15c2a44218615fc2074f04fd2",
+      "1c2cea54127d64f5f655159c657f77d456a3b2c6",
+      "6fea2a6ad350c279eae6e62c95e97807da92fca8",
+      "6a9eff2ee1c2898674424f9c6040ecebb46cb9fa",
+      "4a2038799bccb597c7a9dfac9bda5d9dfaedacaa",
+      "1b0d076f6418a0f23e8fad8de585a7fd076d26bd",
+      "d6b84c14b68763024b6c0f98631638d9bf39fd1d",
+      "66da8344e9facf4ae5b9e617b008ab43b8fac9d2",
+      "62bc7ac2916cf32b8d94d3433316a22af9d1fa7c",
+      "43c06114f681cf01a2bee27902076b990b8d7509",
+      "e3582d072fdc6d4980eead30e4b86b5164d0a05d",
+      "02fecf0688bdc7a26340d53def774fb5c198be9e",
+      "88cf578c340d8c5a37ab3e739ba82f8a37608fbd",
+      "de850c23e66329ea62ef314ddeb2b56b4ae8e97b",
+      "5981a12e9cab74bba72fa0983411c1d236c07133",
+      "dc528659be3d7d6c004af78dadfdda07b1e956f5",
+      "c7bbff159f82b6190a2c196c83b7027289bde799",
+      "14cec85c0d440094999831764a715538c2560fe9",
+      "1eb0fbf57ed65cdba19f308605138fe88344dc15",
+      "edfa346257bd48ab1da2cfca803bd953b6be55e5",
+      "239ff9a2e56d5551b1e463c470192701f8dd45d8",
+      "ee37c3ea99bff952f2cc93b7512d7c99edf0a87f",
+      "51357376dac8b45f5950d9e14a71feb84793d593",
+      "48753c03ada5a3fbb32b442b13b404d0af781f88",
+      "9a683f32de0ce84fe46eac199b38ea735bdf55ac",
+      "d7a93ce7c70f4d2baf9134ca925e6a5eb46f309d",
+      "e7a246e4326beb4d79066f6ccaeddb0e31fe68bb",
+      "f5ad55806dbabaadc1a9970f17e02b7f54c5a760",
+      "80a9b69092564b0eb0c2befc60a449265065e790",
+      "eb31e4fb15ca2cc8e84efab99c1b4bf2d488b321",
+      "1a599bd3dc6b1a4b422676be63cc3509d3442780",
+      "12d6146a2bf4893baa9c3814300dfa9f747f9fbc",
+      "2898316bb2cd27c91dbd19cead902c49a7817284",
+      "e7cd3d4346c1604ac7ee4ee6a5f6c127448dc560",
+      "d410daf8dca57e28fe473ef87d8d990227adc9b4",
+      "cad190314aca67502c8ab44b367ac0fa16f5e8a6",
+      "218a15ae71ef0fd1d8734d825be43fb08cd1a097",
+      "fbd91ebc93a3d203eddf39cc33d0c9299f65c4d7",
+      "d8f1cee41898004efb3d41898824047f29c7b1a5",
+      "b4f4a80a0198ddbdaaf70576769806a22e6d8c2a",
+      "60605261ef08044dd18fc4d9df8d5a0ee2e272a2",
+      "8a0f4f44bfb1c2a70dff5e5f2e115c7d8c8371fe",
+      "690a0c792639753094708b32a4d68827527baaef",
+      "5cd47701b4d44cd2348b30144a05a84d0235476f",
+      "6b0a7c8de3379e91b2aaca32ee4ed8d375298a65",
+      "75c66a58b0fcc92be8c80b4f5461c0c7ab25633f",
+      "b655d2fbd09caf0842d20c979003f6241c892776",
+      "b76aec07ba468d219d4a6b250048eddde70185e3",
+      "81d91f614cd4199d4bd4b3b5364d041653aa299a",
+      "414f08ee3e8156ffbc57218f601bdc9bb72809b4"
+    ],
+    "important_files_modified": [
+      "src/mongo/db/repl/initial_sync/initial_syncer.cpp",
+      "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp",
+      "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine_test.cpp"
+    ],
+    "auto_merged": {
+      "strategy": "ort",
+      "files": [
+        "BUILD.bazel",
+        "MODULE.bazel.lock",
+        "bazel/resmoke/resmoke.bzl",
+        "buildscripts/resmokeconfig/BUILD.bazel",
+        "jstests/core/catalog/views/views_all_commands.js",
+        "jstests/libs/write_concern_all_commands.js",
+        "jstests/replsets/all_commands_downgrading_to_upgraded.js",
+        "jstests/replsets/db_reads_while_recovering_all_commands.js",
+        "jstests/sharding/all_commands_direct_shard_connection_auth.js",
+        "jstests/sharding/database_versioning_all_commands.js",
+        "jstests/sharding/read_write_concern_defaults_application.js",
+        "jstests/sharding/safe_secondary_reads_drop_recreate.js",
+        "jstests/sharding/safe_secondary_reads_single_migration_suspend_range_deletion.js",
+        "jstests/sharding/safe_secondary_reads_single_migration_waitForDelete.js",
+        "src/mongo/db/BUILD.bazel",
+        "src/mongo/db/commands/BUILD.bazel",
+        "src/mongo/db/pipeline/BUILD.bazel",
+        "src/mongo/db/pipeline/process_interface/common_mongod_process_interface.cpp",
+        "src/mongo/db/repl/replication_coordinator_impl.cpp",
+        "src/mongo/db/server_options.h",
+        "src/mongo/db/server_options_general.idl",
+        "src/mongo/db/server_options_helpers.cpp",
+        "src/mongo/db/startup_recovery.cpp",
+        "src/mongo/db/storage/BUILD.bazel",
+        "src/mongo/db/storage/kv/kv_engine.h",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.h",
+        "src/mongo/dbtests/BUILD.bazel",
+        "src/mongo/rpc/BUILD.bazel",
+        "src/mongo/s/BUILD.bazel",
+        "src/mongo/transport/BUILD.bazel",
+        "src/third_party/wiredtiger/src/include/wiredtiger.h.in"
+      ]
+    }
+  },
+  "merge_description": {
+    "status": "success",
+    "is_error": false,
+    "duration_ms": 122454,
+    "num_turns": 10,
+    "stop_reason": "end_turn",
+    "total_cost_usd": 0.6433755,
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 603,
+        "outputTokens": 18,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.000693,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      },
+      "claude-opus-4-8": {
+        "inputTokens": 12347,
+        "outputTokens": 8370,
+        "cacheReadInputTokens": 226395,
+        "cacheCreationInputTokens": 41360,
+        "webSearchRequests": 0,
+        "costUSD": 0.6426824999999999,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000
+      }
+    },
+    "stats": {
+      "models": {
+        "claude-haiku-4-5-20251001": {
+          "tokens": {
+            "input": 603,
+            "output": 18,
+            "cache_read": 0,
+            "cache_creation": 0
+          },
+          "cost_usd": 0.000693
+        },
+        "claude-opus-4-8": {
+          "tokens": {
+            "input": 12347,
+            "output": 8370,
+            "cache_read": 226395,
+            "cache_creation": 41360
+          },
+          "cost_usd": 0.6426824999999999
+        }
+      }
+    },
+    "text_result": "I've read the actual `diff base \u2192 merge commit` diffs for every auto-merged file and written the JSON response describing only what this merge pulls in from upstream.\n\nKey changes I verified in the diffs:\n- **New `extensionsConfigPath` server option** \u2014 IDL entry, `ServerGlobalParams` field, and validation in `server_options_helpers.cpp`.\n- **WiredTiger `dropIdent` `waitForLocks` parameter** \u2014 threaded through `kv_engine.h`, `wiredtiger_kv_engine.{h,cpp}`; `_drop()` now returns `LockBusy` on table/schema lock conflicts instead of asserting.\n- **Offline validation** skips a collection that didn't exist at `atClusterTime` (`NamespaceNotFound`).\n- **`getShardRef`/`ShardRef` \u2192 `getShardId`/`ShardId`** and `fixedBucketing` stripping in the mongod process interface.\n- Numerous **bazel build changes** (new `telemetry_context_section`, `connections_server_status_section`, `search_id_lookup_stage`, `server_options_storage` libraries; removal of the experimental jstestfuzz targets) and **all-commands jstest list** updates.\n\nI flagged the two conflict files for reviewers: `src/mongo/db/BUILD.bazel` (must keep Percona's ratelimit/encryption entries alongside upstream's `server_options_storage` extraction) and the \"deleted by us\" `jstests/suites/backup-restore/BUILD.bazel`, plus the generated `MODULE.bazel.lock`/`wiredtiger.h.in`.",
+    "response": {
+      "summary": "Merge of upstream MongoDB changes into the Percona fork. The main functional changes are: a new 'processManagement.extensionsConfigPath' server option (directory validation and a new ServerGlobalParams::extensionsConfigPath field); a WiredTiger ident-drop change that adds a 'waitForLocks' parameter to dropIdent() so a drop can return LockBusy instead of blocking on table/schema locks; offline collection validation now skips (rather than fails) a collection that did not exist at the requested atClusterTime (NamespaceNotFound); the aggregation $out/timeseries create-error handling now strips the 'fixedBucketing' option before comparing timeseries options; and the mongod process interface replaces getShardRef()/ShardRef with getShardId()/ShardId. The rest are build-system changes (new bazel libraries/targets such as rpc telemetry_context_section, transport connections_server_status_section, pipeline search_id_lookup_stage, and a refactor extracting server_options_storage in src/mongo/db/BUILD.bazel), removal of the experimental jstestfuzz bazel test targets, resmoke support for directory (glob) test artifacts, updates to the 'all commands' jstest coverage lists (adding _configsvrCommitMergeChunks/_configsvrCommitMoveRange/_configsvrCommitSplitChunk/_shardsvrCommitChunkOperationsMetadata and removing _internalClearCollectionShardingMetadata), and a large regeneration of the generated WiredTiger public header.",
+      "auto_merged": {
+        "BUILD.bazel": "Removes the 'jstestfuzz_generated_tests' filegroup that globbed jstestfuzz/out/*.js.",
+        "MODULE.bazel.lock": "Generated bazel lock file; regenerated as part of the merge (lock entries added). No manual content to review.",
+        "bazel/resmoke/resmoke.bzl": "In _resmoke_config_impl, the test list now handles directory artifacts: for a directory input (test.is_directory) it records 'short_path + \"/*.js\"' (a glob) instead of the plain short_path, since directory artifacts (e.g. from jstestfuzz_generate) can't be enumerated.",
+        "buildscripts/resmokeconfig/BUILD.bazel": "Removes the experimental 'jstestfuzz' resmoke_suite_test target (the one sourcing //:jstestfuzz_generated_tests).",
+        "jstests/core/catalog/views/views_all_commands.js": "Updates the command coverage map: removes _internalClearCollectionShardingMetadata and adds skip entries for _configsvrCommitMergeChunks, _configsvrCommitMoveRange, _configsvrCommitSplitChunk, and _shardsvrCommitChunkOperationsMetadata (all marked as internal commands).",
+        "jstests/libs/write_concern_all_commands.js": "Same command-list update applied to both wcCommandsTests and wcTimeseriesCommandsTests: removes _internalClearCollectionShardingMetadata and adds _configsvrCommitMergeChunks, _configsvrCommitMoveRange, _configsvrCommitSplitChunk, and _shardsvrCommitChunkOperationsMetadata as skipped internal commands.",
+        "jstests/replsets/all_commands_downgrading_to_upgraded.js": "Command coverage list update consistent with the other all_commands test files (adds/removes the same _configsvr*/_shardsvr* and _internalClearCollectionShardingMetadata entries).",
+        "jstests/replsets/db_reads_while_recovering_all_commands.js": "Command coverage list update consistent with the other all_commands test files.",
+        "jstests/sharding/all_commands_direct_shard_connection_auth.js": "Command coverage list update consistent with the other all_commands test files.",
+        "jstests/sharding/database_versioning_all_commands.js": "Command coverage list update consistent with the other all_commands test files.",
+        "jstests/sharding/read_write_concern_defaults_application.js": "Command coverage list update consistent with the other all_commands test files.",
+        "jstests/sharding/safe_secondary_reads_drop_recreate.js": "testCases map update: removes _internalClearCollectionShardingMetadata and adds _configsvrCommitMergeChunks, _configsvrCommitMoveRange, and _configsvrCommitSplitChunk as 'primary only'.",
+        "jstests/sharding/safe_secondary_reads_single_migration_suspend_range_deletion.js": "Same testCases map update as safe_secondary_reads_drop_recreate.js.",
+        "jstests/sharding/safe_secondary_reads_single_migration_waitForDelete.js": "Same testCases map update as safe_secondary_reads_drop_recreate.js.",
+        "src/mongo/db/BUILD.bazel": "Adds a new 'server_options_storage' mongo_cc_library (mongod_options_storage.cpp + :mongod_options_storage_gen) and moves those sources out of the 'mongod_options' library, which now depends on ':server_options_storage'. Also adds multi_range_clustered_scan.cpp to the query exec sources, adds deps //src/mongo/db/pipeline:search_id_lookup_stage and //src/mongo/db/query/query_stats:plan_shape_counters, and in a unit test replaces the sharding_environment:shard_handle/sharding_feature_flags deps with pipeline:search_id_lookup_stage. This file was a merge conflict; Percona-specific entries (ratelimit_parameter.cpp, :ratelimit_parameter_gen, :mongod_options_encryption_gen) are retained alongside the upstream refactor.",
+        "src/mongo/db/commands/BUILD.bazel": "Adds dep //src/mongo/db/pipeline:search_id_lookup_stage to a mongo_cc_library.",
+        "src/mongo/db/pipeline/BUILD.bazel": "Introduces a new 'search_id_lookup_stage' library (internal_search_id_lookup_local_read_executor.cpp + internal_search_id_lookup_stage.cpp, with single_doc_lookup deps) and removes internal_search_id_lookup_stage.cpp from the aggregation exec sources. Adds single_document_lookup_stats and search_id_lookup_stage deps to other targets, adds memory_tracking/server_parameter_guard test deps, and expands the pipeline_optimization_bm benchmark with pipeline_dependencies_bm.cpp, pipeline_dependency_graph_bm.cpp, pipeline_hoisting_bm.cpp and a private header.",
+        "src/mongo/db/pipeline/process_interface/common_mongod_process_interface.cpp": "getShardName() now uses getShardId()->toString(); getShardRef()/ShardRef is renamed to getShardId() returning boost::optional<ShardId> via ShardingState::shardId(). In _handleTimeseriesCreateError, when the existing timeseries options are present it now clears the 'fixedBucketing' option (OptionalBool{}) before comparing with userOpts, so a concurrent viewless upgrade adding the system-managed fixedBucketing no longer causes a spurious mismatch (TODO SERVER-128579).",
+        "src/mongo/db/repl/replication_coordinator_impl.cpp": "Renames the ObservableMutexRegistry registration label for _mutex from \"ReplicationCoordinatorImpl::_mutex\" to \"replicationCoordinatorImplMutex\".",
+        "src/mongo/db/server_options.h": "Adds a std::string extensionsConfigPath field to ServerGlobalParams (path to a directory of extension configuration files; empty means not provided).",
+        "src/mongo/db/server_options_general.idl": "Adds the 'processManagement.extensionsConfigPath' config option (short_name extensionsConfigPath, String) described as the path to a directory containing extension configuration files.",
+        "src/mongo/db/server_options_helpers.cpp": "Adds setExtensionsConfigPath(): if the option is set it validates the path is non-empty, exists, and is a directory (returning BadValue otherwise) and stores it in serverGlobalParams.extensionsConfigPath; this is called from storeBaseOptions(). Adds <system_error> include.",
+        "src/mongo/db/startup_recovery.cpp": "offlineValidateCollection() is restructured so the result reporting/return happens after the try/catch. The catch block now special-cases DBException with ErrorCodes::NamespaceNotFound when a read timestamp (atClusterTime) is set: it logs and returns true (skips the collection) rather than treating it as corruption, since the collection may not have existed at that timestamp.",
+        "src/mongo/db/storage/BUILD.bazel": "Adds checkpointer_test.cpp source and the ':checkpointer' dep to the db_storage_test unit test.",
+        "src/mongo/db/storage/kv/kv_engine.h": "KVEngine::dropIdent() gains a 'bool waitForLocks = true' parameter; documents that when waitForLocks is false dropIdent() returns LockBusy if acquiring locks would require waiting.",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp": "dropIdent() gains the waitForLocks parameter: it appends ',lock_wait=false' to the WT drop config when waitForLocks is false, and now returns on ObjectIsBusy or LockBusy (with an invariant that LockBusy only occurs when waitForLocks is false). _drop() now returns ErrorCodes::LockBusy on WT_CONFLICT_TABLE_LOCK/WT_CONFLICT_SCHEMA_LOCK instead of asserting; the WT_UNCOMMITTED_DATA invariant is left commented out (TODO SERVER-100890). _rebuildIdent and dropIdentForImport add invariants that their drops never return LockBusy; dropIdentForImport also switches its config from std::string to a const char*.",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.h": "Updates the dropIdent() override signature to match the base class, adding the 'bool waitForLocks' parameter (default arguments removed on the override).",
+        "src/mongo/dbtests/BUILD.bazel": "Adds query_stage_multi_range_clustered_scan.cpp to the dbtests binary sources.",
+        "src/mongo/rpc/BUILD.bazel": "Adds a new idl_generator 'telemetry_context_section_gen', a 'telemetry_context_section' mongo_cc_library (deps on otel traces traceparent/tracing_feature_flags), and a 'telemetry_context_section_test' unit test; the message library now depends on ':telemetry_context_section'.",
+        "src/mongo/s/BUILD.bazel": "Removes the //src/mongo/db/sharding_environment:shard_handle dep from a mongo_cc_library, and adds the tags misc_js, non_live_record, and non_read_maj to the mongos_test resmoke_suite_test.",
+        "src/mongo/transport/BUILD.bazel": "Adds a new 'connections_server_status_section' mongo_cc_library (connections_server_status_section.cpp/.h) and makes transport_layer_manager depend on it.",
+        "src/third_party/wiredtiger/src/include/wiredtiger.h.in": "Large regeneration of the generated WiredTiger public API header template; changes are mechanical/generated. No manual review of individual lines expected."
+      },
+      "review_notes": "Verified against the diff base dbeb63549f486de03bcc4a060bf24dd49bb06f01 -> merge commit 1b51af3418d8ff468b50e5ddcb1b472e0e7aebdf. Conflict resolution to double-check: (1) src/mongo/db/BUILD.bazel ('both modified') \u2014 upstream extracted a new server_options_storage library and moved mongod_options_storage.cpp/:mongod_options_storage_gen into it; the merge must keep Percona-specific entries (ratelimit_parameter.cpp, :ratelimit_parameter_gen, :mongod_options_encryption_gen) that appear in the fork side of the conflict. Confirm no conflict markers remain and those Percona lines are preserved. (2) jstests/suites/backup-restore/BUILD.bazel was 'deleted by us' (Percona-specific path); confirm it stays deleted/handled per fork intent. The dropIdent LockBusy change spans kv_engine.h and wiredtiger_kv_engine.cpp/.h \u2014 verify all overrides/callers of dropIdent compile with the new waitForLocks parameter. wiredtiger.h.in and MODULE.bazel.lock are generated; per project guidance regenerate MODULE.bazel.lock via bazel after all conflicts are resolved."
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I'll read the actual diffs for each auto-merged file using the authoritative diff base and merge commit."
+          ],
+          "tools_used": []
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "Let me read the actual diffs for the code files (non-generated ones first)."
+          ],
+          "tools_used": []
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I now have enough to describe the merge accurately. Let me write the response."
+          ],
+          "tools_used": []
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Write"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I've read the actual `diff base \u2192 merge commit` diffs for every auto-merged file and written the JSON response describing only what this merge pulls in from upstream.\n\nKey changes I verified in the diffs:\n- **New `extensionsConfigPath` server option** \u2014 IDL entry, `ServerGlobalParams` field, and validation in `server_options_helpers.cpp`.\n- **WiredTiger `dropIdent` `waitForLocks` parameter** \u2014 threaded through `kv_engine.h`, `wiredtiger_kv_engine.{h,cpp}`; `_drop()` now returns `LockBusy` on table/schema lock conflicts instead of asserting.\n- **Offline validation** skips a collection that didn't exist at `atClusterTime` (`NamespaceNotFound`).\n- **`getShardRef`/`ShardRef` \u2192 `getShardId`/`ShardId`** and `fixedBucketing` stripping in the mongod process interface.\n- Numerous **bazel build changes** (new `telemetry_context_section`, `connections_server_status_section`, `search_id_lookup_stage`, `server_options_storage` libraries; removal of the experimental jstestfuzz targets) and **all-commands jstest list** updates.\n\nI flagged the two conflict files for reviewers: `src/mongo/db/BUILD.bazel` (must keep Percona's ratelimit/encryption entries alongside upstream's `server_options_storage` extraction) and the \"deleted by us\" `jstests/suites/backup-restore/BUILD.bazel`, plus the generated `MODULE.bazel.lock`/`wiredtiger.h.in`."
+          ],
+          "tools_used": []
+        }
+      ],
+      "metadata": {
+        "lastPrompt": "Read @/home/runner/work/percona-server-mongodb/percona-server-mongodb/.cache/mergai/prompt_20260707_094815_144820.md and write your JSON response to @/home/runner/work/percona-server-mongodb/percona-s\u2026"
+      }
+    },
+    "agent_info": {
+      "agent_type": "claude_cli",
+      "version": "2.1.202 (Claude Code)"
+    }
+  }
+}

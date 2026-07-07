@@ -62,7 +62,7 @@ include:
   - filename: etc/evergreen_yml_components/tasks/compile_tasks.yml
   - filename: etc/evergreen_yml_components/tasks/compile_tasks_shared.yml
   - filename: etc/evergreen_yml_components/tasks/misc_tasks.yml
-  - filename: etc/evergreen_yml_components/tasks/release_tasks.yml
+  - filename: etc/evergreen_yml_components/tasks/security_tasks.yml
   - filename: etc/evergreen_yml_components/tasks/devcontainer_tasks.yml
 
   - filename: etc/evergreen_yml_components/variants/misc/task_generation.yml
@@ -108,6 +108,8 @@ parameters:
     description: "path to this file"
   - key: test_selection_strategies_array
     description: "Array of test selection strategies"
+  - key: runtime_params_json
+    description: 'JSON of runtime params (e.g. {"enable_linux_perf":true}) to enable on-CPU profiling on benchmark tasks.'
   - key: message_filter_plugin_release_version
     description: "Dev release version string of the message filter plugin artifact to promote to GA. Used by promote_message_filter_plugin to locate the existing dev tarball in origin-message-filter-plugin-dev and re-import it via URP at the GA artifact name. No rebuild is performed."
   # Note: the `urp_input_bucket_override` parameter is already declared by the merged
@@ -126,10 +128,11 @@ commit_queue_aliases:
     task: ".*"
     variant_tags: []
     task_tags: []
-  - variant: "^(commit-queue-atlas)$"
-    task: ".*"
-    variant_tags: []
-    task_tags: []
+  # TODO(SERVER-130513): re-enable disagg_smoke in the commit queue.
+  # - variant: "^(commit-queue-atlas)$"
+  #   task: ".*"
+  #   variant_tags: []
+  #   task_tags: []
   # Monguard
   - variant: "^(amazon-linux2023-arm|Lint)$"
     task: "^(.*)$"
@@ -152,10 +155,11 @@ github_pr_aliases:
     task: ".*"
     variant_tags: []
     task_tags: []
-  - variant: "^(commit-queue-atlas)$"
-    task: ".*"
-    variant_tags: []
-    task_tags: []
+  # TODO(SERVER-130513): re-enable disagg_smoke on PR patches.
+  # - variant: "^(commit-queue-atlas)$"
+  #   task: ".*"
+  #   variant_tags: []
+  #   task_tags: []
   # Monguard
   - variant: "^(amazon-linux2023-arm|Lint)$"
     task: "^(.*)$"

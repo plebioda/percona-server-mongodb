@@ -726,8 +726,8 @@ Status runAggregateImpl(OperationContext* opCtx,
         // acquired a routing context and all shards need to be targeted (like $changeStream), in
         // order to immediately return an empty cursor just as other aggregations do when the
         // database does not exist.
-        const auto shardRefs = Grid::get(opCtx)->shardRegistry()->getAllShardRefs(opCtx);
-        if (shardRefs.empty()) {
+        const auto shardIds = Grid::get(opCtx)->shardRegistry()->getAllShardIds(opCtx);
+        if (shardIds.empty()) {
             // Return an empty cursor if there are no shards and we need to target all the shards.
             return _parseQueryStatsAndReturnEmptyResult(
                 opCtx,
@@ -902,8 +902,6 @@ Status runAggregateImpl(OperationContext* opCtx,
                            pipelineCtx->getNamespaceString().isCollectionlessAggregateNS());
         }
 
-        // TODO SERVER-89546: Ideally extractDocsNeededBounds should be called internally within
-        // DocumentSourceSearch.
         if (search_helpers::isSearchPipeline(pipeline.get())) {
             // We won't reach this if the whole pipeline passes through with the "specific shard"
             // policy. That's okay since the shard will have access to the entire pipeline to

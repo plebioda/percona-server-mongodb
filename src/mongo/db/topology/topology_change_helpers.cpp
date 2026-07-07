@@ -362,7 +362,12 @@ long long getChunkForShardCount(OperationContext* opCtx, Shard* shard, const Sha
 
 void joinOngoingShardingDDLCoordinatorsOnShards(OperationContext* opCtx) {
     const auto shardRegistry = Grid::get(opCtx)->shardRegistry();
-    auto allShards = shardRegistry->getAllShardRefsIncludingConfigServer(opCtx);
+    auto allShards = shardRegistry->getAllShardIds(opCtx);
+    if (std::find(allShards.begin(), allShards.end(), ShardId::kConfigServerId) ==
+        allShards.end()) {
+        // The config server may be a shard, so only add if it isn't already in participants.
+        allShards.emplace_back(shardRegistry->getConfigShard()->getId());
+    }
     auto executor = Grid::get(opCtx)->getExecutorPool()->getFixedExecutor();
 
     ShardsvrJoinDDLCoordinators cmd;
@@ -420,7 +425,12 @@ void waitUntilReadyToBlockNewDDLCoordinators(OperationContext* opCtx) {
     const auto wouldJoinCoordinatorsBlock = [](OperationContext* opCtx) -> bool {
         // Check that all shards will be able to join ongoing DDLs quickly.
         const auto shardRegistry = Grid::get(opCtx)->shardRegistry();
-        auto allShards = shardRegistry->getAllShardRefsIncludingConfigServer(opCtx);
+        auto allShards = shardRegistry->getAllShardIds(opCtx);
+        if (std::find(allShards.begin(), allShards.end(), ShardId::kConfigServerId) ==
+            allShards.end()) {
+            // The config server may be a shard, so only add if it isn't already in participants.
+            allShards.emplace_back(shardRegistry->getConfigShard()->getId());
+        }
         auto executor = Grid::get(opCtx)->getExecutorPool()->getFixedExecutor();
 
         ShardsvrJoinDDLCoordinators cmd;
@@ -748,8 +758,7 @@ boost::optional<ShardType> getExistingShard(
     // Check whether any host in the connection is already part of the cluster.
     const auto existingShards = [&] {
         try {
-            return localCatalogClient.getAllShards(opCtx,
-                                                   repl::ReadConcernLevel::kLocalReadConcern);
+            return localCatalogClient.getAllShards(opCtx, repl::ReadConcernArgs::kLocal);
         } catch (DBException& ex) {
             ex.addContext("Failed to load existing shards during addShard");
             throw;
@@ -1523,7 +1532,7 @@ TenantIdMap<std::vector<BSONObj>> getClusterParametersLocally(OperationContext* 
         auto findResponse = uassertStatusOK(localConfigShard->exhaustiveFindOnConfig(
             opCtx,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
-            repl::ReadConcernLevel::kLocalReadConcern,
+            repl::ReadConcernArgs::kLocal,
             NamespaceString::makeClusterParametersNSS(tenantId),
             BSONObj(),
             BSONObj(),
@@ -1711,7 +1720,7 @@ void commitRemoveShard(const Lock::ExclusiveLock&,
     auto controlShardQueryStatus =
         localConfigShard->exhaustiveFindOnConfig(opCtx,
                                                  ReadPreferenceSetting{ReadPreference::PrimaryOnly},
-                                                 repl::ReadConcernLevel::kLocalReadConcern,
+                                                 repl::ReadConcernArgs::kLocal,
                                                  NamespaceString::kConfigsvrShardsNamespace,
                                                  BSON(ShardType::name.ne(shardName)),
                                                  {},
@@ -1854,7 +1863,7 @@ boost::optional<ShardType> getShardIfExists(OperationContext* opCtx,
     auto findShardResponse = uassertStatusOK(
         localConfigShard->exhaustiveFindOnConfig(opCtx,
                                                  kConfigReadSelector,
-                                                 repl::ReadConcernLevel::kLocalReadConcern,
+                                                 repl::ReadConcernArgs::kLocal,
                                                  NamespaceString::kConfigsvrShardsNamespace,
                                                  BSON(ShardType::name() << shardId.toString()),
                                                  BSONObj(),

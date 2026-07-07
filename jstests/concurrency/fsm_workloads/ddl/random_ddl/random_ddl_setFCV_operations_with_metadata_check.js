@@ -18,16 +18,13 @@
  *   # TODO (SERVER-104789): config shards cause setFCV to hang because resharding is not aborted.
  *   config_shard_incompatible,
  *   runs_set_fcv,
- *   # TODO (SERVER-104789): when featureFlagSymmetricFCV is enabled, this test fails
- *   # with "Authoritative shards requires no shard refreshes to be executed" error, which is
- *   # exactly the same error being investigated in SERVER-104789.
- *   featureFlagSymmetricFCV_incompatible,
  * ]
  */
 
 import {extendWorkload} from "jstests/concurrency/fsm_libs/extend_workload.js";
 import {uniformDistTransitions} from "jstests/concurrency/fsm_workload_helpers/state_transition_utils.js";
 import {$config as $baseConfig} from "jstests/concurrency/fsm_workloads/ddl/random_ddl/random_ddl_setFCV_operations.js";
+import {FeatureFlagUtil} from "jstests/libs/feature_flag_util.js";
 
 export const $config = extendWorkload($baseConfig, function ($config, $super) {
     // Counts the number of time the setFeatureCompatibility command succeeds.
@@ -128,6 +125,13 @@ export const $config = extendWorkload($baseConfig, function ($config, $super) {
 
     // Move a random collection to a random shard, effectively tracking it.
     $config.states.moveCollection = function (db, collName, connCache) {
+        // TODO (SERVER-104789): when featureFlagSymmetricFCV is enabled, this test fails
+        // with "Authoritative shards requires no shard refreshes to be executed" error. This
+        // issue is being investigated in the mentioned ticket. Once that is resolved,
+        // we can run this state
+        if (FeatureFlagUtil.isEnabled(db.getSiblingDB("admin"), "SymmetricFCV")) {
+            return;
+        }
         db = $config.data.getRandomDb(db);
         const coll = $config.data.getRandomCollection(db);
         const fullNs = coll.getFullName();

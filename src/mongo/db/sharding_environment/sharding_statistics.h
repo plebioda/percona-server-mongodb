@@ -32,9 +32,9 @@
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/admission/execution_control/in_progress_time_accumulator.h"
 #include "mongo/db/namespace_string.h"
-#include "mongo/db/shard_role/shard_catalog/authoritative_collection_metadata_statistics.h"
-#include "mongo/db/shard_role/shard_catalog/authoritative_database_statistics.h"
+#include "mongo/db/shard_role/shard_catalog/collection_sharding_metadata_statistics.h"
 #include "mongo/db/shard_role/shard_catalog/critical_section_statistics.h"
+#include "mongo/db/shard_role/shard_catalog/database_sharding_metadata_statistics.h"
 #include "mongo/platform/atomic_word.h"
 #include "mongo/util/modules.h"
 
@@ -185,11 +185,28 @@ struct MONGO_MOD_NEEDS_REPLACEMENT ShardingStatistics {
     // reclaimed prepared transactions from precise checkpoint recovery to resolve.
     AtomicWord<long long> chunkMigrationWaitForReclaimedPreparedTxnsMillis{0};
 
+    // FTDC metrics for the MaxKey orphan detection sweep run on shard primaries.
+    // The *Complete/*FoundMaxKey/*AlertEmitted fields are 0/1 flags describing the last published
+    // sweep outcome on this process. *Errors counts non-fatal per-collection errors encountered
+    // while running the sweep.
+    AtomicWord<long long> maxKeyOrphanScanComplete{0};
+    AtomicWord<long long> maxKeyOrphanScanFoundMaxKey{0};
+    AtomicWord<long long> maxKeyOrphanScanAlertEmitted{0};
+    AtomicWord<long long> maxKeyOrphanScanErrors{0};
+
+    // FTDC metrics for the MaxKey zone inventory scan run by the balancer on config primaries.
+    // The *Complete/*FoundBuggyZone/*AlertEmitted fields are 0/1 flags describing the last
+    // published scan outcome on this process. *Errors counts non-fatal scan errors.
+    AtomicWord<long long> maxKeyZoneScanComplete{0};
+    AtomicWord<long long> maxKeyZoneScanFoundBuggyZone{0};
+    AtomicWord<long long> maxKeyZoneScanAlertEmitted{0};
+    AtomicWord<long long> maxKeyZoneScanErrors{0};
+
     CriticalSectionStatistics<DatabaseName> databaseCriticalSectionStatistics;
     CriticalSectionStatistics<NamespaceString> collectionCriticalSectionStatistics;
 
-    AuthoritativeDatabaseVersionUpdates authoritativeShardDatabaseStatistics;
-    AuthoritativeCollectionMetadataStatistics authoritativeCollectionMetadataStatistics;
+    DatabaseShardingMetadataStatistics databaseShardingMetadataStatistics;
+    CollectionShardingMetadataStatistics collectionShardingMetadataStatistics;
 
     /**
      * Obtains the per-process instance of the sharding statistics object.

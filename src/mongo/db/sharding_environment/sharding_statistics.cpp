@@ -113,6 +113,14 @@ void ShardingStatistics::report(BSONObjBuilder* builder) const {
                     chunkMigrationWaitedOnReclaimedPreparedTxns.loadRelaxed());
     builder->append("chunkMigrationWaitForReclaimedPreparedTxnsMillis",
                     chunkMigrationWaitForReclaimedPreparedTxnsMillis.loadRelaxed());
+    builder->append("maxKeyOrphanScanComplete", maxKeyOrphanScanComplete.loadRelaxed());
+    builder->append("maxKeyOrphanScanFoundMaxKey", maxKeyOrphanScanFoundMaxKey.loadRelaxed());
+    builder->append("maxKeyOrphanScanAlertEmitted", maxKeyOrphanScanAlertEmitted.loadRelaxed());
+    builder->append("maxKeyOrphanScanErrors", maxKeyOrphanScanErrors.loadRelaxed());
+    builder->append("maxKeyZoneScanComplete", maxKeyZoneScanComplete.loadRelaxed());
+    builder->append("maxKeyZoneScanFoundBuggyZone", maxKeyZoneScanFoundBuggyZone.loadRelaxed());
+    builder->append("maxKeyZoneScanAlertEmitted", maxKeyZoneScanAlertEmitted.loadRelaxed());
+    builder->append("maxKeyZoneScanErrors", maxKeyZoneScanErrors.loadRelaxed());
 
     {
         BSONObjBuilder databaseCriticalSectionBuilder{
@@ -127,14 +135,13 @@ void ShardingStatistics::report(BSONObjBuilder* builder) const {
         collectionCriticalSectionBuilder.doneFast();
     }
     {
-        BSONObjBuilder databaseVersionUpdateCountersBuilder{
-            builder->subobjStart("databaseVersionUpdateCounters")};
-        authoritativeShardDatabaseStatistics.report(databaseVersionUpdateCountersBuilder);
-        databaseVersionUpdateCountersBuilder.doneFast();
+        BSONObjBuilder subobj{builder->subobjStart("databaseShardingMetadataStatistics")};
+        databaseShardingMetadataStatistics.report(subobj);
+        subobj.doneFast();
     }
     {
-        BSONObjBuilder subobj{builder->subobjStart("collectionShardingMetadataRecoveryStatistics")};
-        authoritativeCollectionMetadataStatistics.report(subobj);
+        BSONObjBuilder subobj{builder->subobjStart("collectionShardingMetadataStatistics")};
+        collectionShardingMetadataStatistics.report(subobj);
         subobj.doneFast();
     }
 }

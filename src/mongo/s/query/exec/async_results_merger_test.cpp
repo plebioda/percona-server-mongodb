@@ -51,6 +51,7 @@
 #include "mongo/executor/remote_command_request.h"
 #include "mongo/executor/task_executor.h"
 #include "mongo/platform/atomic.h"
+#include "mongo/s/query/exec/cluster_client_cursor_params.h"
 #include "mongo/s/query/exec/next_high_watermark_determining_strategy.h"
 #include "mongo/s/query/exec/results_merger_test_fixture.h"
 #include "mongo/s/query/exec/shard_tag.h"
@@ -3636,7 +3637,9 @@ TEST_F(AsyncResultsMergerTest, IncludeMetricsQueryStatsIncludedInGetMoreWithFeat
             kTestShardIds[0], kTestShardHosts[0], CursorResponse(kTestNss, 5, {})));
 
         auto params = makeARMParamsFromExistingCursors(std::move(cursors), findCmd);
-        params.setRequestQueryStatsFromRemotes(requestParams);
+        IncludeMetrics im;
+        im.setQueryStats(requestParams);
+        setRequestRemoteMetrics(im, params, operationContext());
 
         auto arm = buildARM(std::move(params), false /* recognizeControlEvents */);
 
@@ -5220,9 +5223,10 @@ TEST_F(AsyncResultsMergerTest, RetryableErrorWhileDetachedDoesNotDeadlockAndRetr
     // No results and no error: the ARM is not ready, but the remote is still open.
     ASSERT_FALSE(arm->ready());
 
-    // Reattach to get a fresh SubBaton. _scheduleGetMores (called via nextEvent) will re-send the
-    // getMore for the remote that has no outstanding request and no buffered results.
+    // Reattach to get a fresh SubBaton, then call nextEvent() to trigger _scheduleGetMores, which
+    // re-sends the getMore for the remote that has no outstanding request and no buffered results.
     arm->reattachToOperationContext(operationContext());
+    readyEvent = unittest::assertGet(arm->nextEvent());
 
     // The retry getMore is now scheduled on the executor. Respond with success.
     std::vector<CursorResponse> responses;
@@ -5237,6 +5241,178 @@ TEST_F(AsyncResultsMergerTest, RetryableErrorWhileDetachedDoesNotDeadlockAndRetr
 
     ASSERT_BSONOBJ_EQ(fromjson("{_id: 1}"), *unittest::assertGet(arm->nextReady()).getResult());
     ASSERT_TRUE(arm->ready());
+    ASSERT_BSONOBJ_EQ(fromjson("{_id: 2}"), *unittest::assertGet(arm->nextReady()).getResult());
+}
+
+// Regression test for AF-18251: if the ARM is detached while a rate-limited retry is pending on
+// its SubBaton, the retry callback must not re-dispatch the captured (now-stale) request.
+TEST_F(AsyncResultsMergerTest, DetachWhileRetryPendingDoesNotReissueStaleRequest) {
+    const auto backOffDelayMs = 1000;
+    FailPointEnableBlock fp{"setBackoffDelayForTesting", BSON("backoffDelayMs" << backOffDelayMs)};
+
+    // SystemOverloadedError triggers a delayed backoff retry scheduled on the SubBaton.
+    const BSONObj retryableErrorResponse = makeResponseObjWithErrorLabels(
+        ErrorCodes::HostUnreachable,
+        "dummy msg",
+        {ErrorLabel::kRetryableError, ErrorLabel::kSystemOverloadedError});
+
+    std::vector<RemoteCursor> cursors;
+    cursors.push_back(
+        makeRemoteCursor(kTestShardIds[0], kTestShardHosts[0], CursorResponse(kTestNss, 1, {})));
+    auto arm = makeARMFromExistingCursors(std::move(cursors));
+
+    ASSERT_FALSE(arm->ready());
+    unittest::assertGet(arm->nextEvent());
+    // Deliver the error while attached; the retry is now pending on the SubBaton.
+    scheduleNetworkResponseObjs({retryableErrorResponse});
+    runScheduledTasks(operationContext());
+    ASSERT_FALSE(networkHasReadyRequests());
+
+    // Detach while the retry delay is still outstanding.
+    arm->detachFromOperationContext();
+
+    // Advance past the backoff and pump callbacks; the retry fires while the ARM is detached.
+    advanceTime(Milliseconds(backOffDelayMs + 1));
+    runScheduledTasks(operationContext());
+    runReadyCallbacks();
+
+    // The stale request must not have been re-issued.
+    const bool reissued = networkHasReadyRequests();
+
+    arm->reattachToOperationContext(operationContext());
+    auto killFuture = arm->kill(operationContext());
+    while (!killFuture.isReady()) {
+        runReadyCallbacks();
+    }
+    killFuture.wait();
+
+    ASSERT_FALSE(reissued);
+}
+
+TEST_F(AsyncResultsMergerTest, RetryAttemptCountIsResetPerGetMore) {
+    const int maxAttempts = 2;
+    unittest::ServerParameterGuard maxAttemptsGuard("defaultClientMaxRetryAttempts", maxAttempts);
+
+    const BSONObj retryableError = makeResponseObjWithErrorLabels(
+        ErrorCodes::HostUnreachable, "dummy msg", {ErrorLabel::kRetryableError});
+
+    std::vector<RemoteCursor> cursors;
+    cursors.push_back(
+        makeRemoteCursor(kTestShardIds[0], kTestShardHosts[0], CursorResponse(kTestNss, 1, {})));
+    auto arm = makeARMFromExistingCursors(std::move(cursors));
+
+    // Delivers a retryable error to the in-flight getMore and lets the scheduled retry reach the
+    // network. The responses are processed synchronously, so no event wait is needed here.
+    auto failOnceAndScheduleRetry = [&] {
+        scheduleNetworkResponseObjs({retryableError});
+        runScheduledTasks(operationContext());  // Fire the (zero) backoff timer.
+        runScheduledTasks(operationContext());  // Execute the retry onto the network.
+    };
+
+    // getMore #1: exhaust its retry attempts, then succeed with the cursor still open. nextEvent()
+    // schedules the getMore onto the network; we don't wait on the event because the mock network
+    // has no background thread and everything below is driven synchronously.
+    ASSERT_FALSE(arm->ready());
+    unittest::assertGet(arm->nextEvent());
+    for (auto i = 0; i < maxAttempts; ++i) {
+        failOnceAndScheduleRetry();
+        ASSERT_TRUE(networkHasReadyRequests());
+    }
+    {
+        std::vector<CursorResponse> responses;
+        responses.emplace_back(kTestNss, CursorId(1), std::vector<BSONObj>{fromjson("{_id: 1}")});
+        scheduleNetworkResponses(std::move(responses));
+    }
+    runScheduledTasks(operationContext());  // Run the response callback on the baton.
+    ASSERT_TRUE(arm->ready());
+    ASSERT_BSONOBJ_EQ(fromjson("{_id: 1}"), *unittest::assertGet(arm->nextReady()).getResult());
+    ASSERT_FALSE(arm->ready());
+
+    // getMore #2 runs on a strategy that was rebuilt after getMore #1 succeeded (see
+    // '_handleBatchResponse'), so its per-operation retry-attempt count starts over and a retryable
+    // error here still schedules a retry.
+    unittest::assertGet(arm->nextEvent());
+    failOnceAndScheduleRetry();
+    ASSERT_TRUE(networkHasReadyRequests());
+
+    // Complete getMore #2 successfully and exhaust the cursor.
+    {
+        std::vector<CursorResponse> responses;
+        responses.emplace_back(kTestNss, CursorId(0), std::vector<BSONObj>{fromjson("{_id: 2}")});
+        scheduleNetworkResponses(std::move(responses));
+    }
+    runScheduledTasks(operationContext());  // Run the response callback on the baton.
+    ASSERT_TRUE(arm->ready());
+    ASSERT_TRUE(arm->remotesExhausted());
+    ASSERT_BSONOBJ_EQ(fromjson("{_id: 2}"), *unittest::assertGet(arm->nextReady()).getResult());
+
+    // Resetting per-operation state on success also re-scopes the retry metrics: each getMore is
+    // counted as its own operation against the shard, rather than the whole cursor counting as one.
+    auto shardState = getShardState(kTestShardIds[0]);
+    auto& [_, stats] = *shardState;
+    ASSERT_EQ(2, stats.numOperationsAttempted.load());
+}
+
+// Rebuilding the retry strategy per getMore must NOT give each getMore a fresh adaptive retry
+// budget: the per-shard token budget is intentionally shared across all of a cursor's getMores.
+TEST_F(AsyncResultsMergerTest, RetryBudgetIsSharedAcrossGetMores) {
+    const auto backOffDelayMs = 1000;
+    FailPointEnableBlock fp{"setBackoffDelayForTesting", BSON("backoffDelayMs" << backOffDelayMs)};
+    unittest::ServerParameterGuard maxAttemptsGuard("defaultClientMaxRetryAttempts", 3);
+
+    // Retryable so the underlying strategy permits a retry, and system-overloaded so the adaptive
+    // strategy consumes a token from the shared per-shard retry budget.
+    const BSONObj overloadedError = makeResponseObjWithErrorLabels(
+        ErrorCodes::HostUnreachable,
+        "dummy msg",
+        {ErrorLabel::kRetryableError, ErrorLabel::kSystemOverloadedError});
+
+    std::vector<RemoteCursor> cursors;
+    cursors.push_back(
+        makeRemoteCursor(kTestShardIds[0], kTestShardHosts[0], CursorResponse(kTestNss, 1, {})));
+    auto arm = makeARMFromExistingCursors(std::move(cursors));
+
+    auto shardState = getShardState(kTestShardIds[0]);
+    auto& budget = shardState->retryBudget;
+
+    // getMore #1: a plain success with the cursor still open. This drives the strategy rebuild in
+    // '_handleBatchResponse', so getMore #2 runs on a freshly rebuilt strategy.
+    ASSERT_FALSE(arm->ready());
+    unittest::assertGet(arm->nextEvent());
+    {
+        std::vector<CursorResponse> responses;
+        responses.emplace_back(kTestNss, CursorId(1), std::vector<BSONObj>{fromjson("{_id: 1}")});
+        scheduleNetworkResponses(std::move(responses));
+    }
+    runScheduledTasks(operationContext());  // Run the response callback on the baton.
+    ASSERT_TRUE(arm->ready());
+    ASSERT_BSONOBJ_EQ(fromjson("{_id: 1}"), *unittest::assertGet(arm->nextReady()).getResult());
+    ASSERT_FALSE(arm->ready());
+
+    // getMore #2 runs on the rebuilt strategy. If the rebuild preserved the shared per-shard budget
+    // (rather than handing the getMore a fresh one), an overloaded error must consume a token from
+    // the very budget that 'getShardState' exposes.
+    const double balanceBeforeGetMore2 = budget.getBalance_forTest();
+    unittest::assertGet(arm->nextEvent());
+    scheduleNetworkResponseObjs({overloadedError});
+    // Run '_handleBatchResponse', which records the overloaded failure and consumes a budget token.
+    runScheduledTasks(operationContext());
+    ASSERT_LT(budget.getBalance_forTest(), balanceBeforeGetMore2);
+
+    // Advance past the (deterministic) backoff to put the retry on the network, then complete
+    // getMore #2 and exhaust the cursor.
+    ASSERT_FALSE(networkHasReadyRequests());  // Still backing off.
+    advanceTime(Milliseconds(backOffDelayMs));
+    runScheduledTasks(operationContext());
+    ASSERT_TRUE(networkHasReadyRequests());
+    {
+        std::vector<CursorResponse> responses;
+        responses.emplace_back(kTestNss, CursorId(0), std::vector<BSONObj>{fromjson("{_id: 2}")});
+        scheduleNetworkResponses(std::move(responses));
+    }
+    runScheduledTasks(operationContext());  // Run the response callback on the baton.
+    ASSERT_TRUE(arm->ready());
+    ASSERT_TRUE(arm->remotesExhausted());
     ASSERT_BSONOBJ_EQ(fromjson("{_id: 2}"), *unittest::assertGet(arm->nextReady()).getResult());
 }
 

@@ -41,12 +41,12 @@
 #include "mongo/logv2/log_severity_suppressor.h"
 #include "mongo/otel/metrics/metrics_histogram.h"
 #include "mongo/otel/metrics/metrics_service.h"
-#include "mongo/transport/asio/asio_session_manager.h"
 #include "mongo/transport/asio/asio_utils.h"
 #include "mongo/transport/ingress_handshake_metrics.h"
 #include "mongo/transport/message_filter_hooks.h"
 #include "mongo/transport/proxy_protocol_header_parser.h"
 #include "mongo/transport/proxy_protocol_tlv_extraction.h"
+#include "mongo/transport/session_manager_common.h"
 #include "mongo/transport/session_util.h"
 #include "mongo/transport/transport_options_gen.h"
 #include "mongo/util/active_exception_witness.h"
@@ -310,25 +310,6 @@ Status CommonAsioSession::validateProxyUnixSocketPeerPermissions() {
     MONGO_UNREACHABLE;
 }
 
-void CommonAsioSession::setIsLoadBalancerPeer(bool helloHasLoadBalancedOption) {
-    tassert(ErrorCodes::BadValue,
-            "Client claimed to be from a loadBalancer, but is not on load balancer port",
-            isConnectedToLoadBalancerPort() || !helloHasLoadBalancedOption);
-
-    if (_isLoadBalancerPeer == helloHasLoadBalancedOption) {
-        return;
-    }
-    _isLoadBalancerPeer = helloHasLoadBalancedOption;
-
-    auto sessionManager = _tl->getSharedSessionManager();
-    if (auto asioSessionManager = checked_pointer_cast<AsioSessionManager>(sessionManager)) {
-        if (helloHasLoadBalancedOption) {
-            asioSessionManager->incrementLBConnections();
-        } else {
-            asioSessionManager->decrementLBConnections();
-        }
-    }
-}
 
 void CommonAsioSession::end() {
     std::error_code ec;

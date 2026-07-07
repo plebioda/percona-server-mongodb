@@ -104,7 +104,6 @@
 #include "mongo/db/shard_role/shard_catalog/drop_database.h"
 #include "mongo/db/sharding_environment/client/shard.h"
 #include "mongo/db/sharding_environment/grid.h"
-#include "mongo/db/sharding_environment/shard_handle.h"
 #include "mongo/db/sharding_environment/shard_id.h"
 #include "mongo/db/sharding_environment/sharding_config_server_parameters_gen.h"
 #include "mongo/db/sharding_environment/sharding_logging.h"
@@ -338,7 +337,7 @@ void ShardingCatalogManager::installConfigShardIdentityDocument(OperationContext
     auto identity = topology_change_helpers::createShardIdentity(
         opCtx,
         ShardId::kConfigServerId,
-        uniqueShardIdsEnabled ? ShardHandle::kConfigServerHandle.uuid() : boost::none);
+        uniqueShardIdsEnabled ? boost::make_optional(UUID::gen()) : boost::none);
     if (deferShardingInitialization) {
         identity.setDeferShardingInitialization(true);
     }
@@ -494,8 +493,8 @@ StatusWith<std::string> ShardingCatalogManager::addShard(
 
     for (const auto& dbName : dbNamesStatus.getValue()) {
         try {
-            auto dbt = _localCatalogClient->getDatabase(
-                opCtx, dbName, repl::ReadConcernLevel::kLocalReadConcern);
+            auto dbt =
+                _localCatalogClient->getDatabase(opCtx, dbName, repl::ReadConcernArgs::kLocal);
             return Status(ErrorCodes::OperationFailed,
                           str::stream()
                               << "can't add shard "
@@ -970,8 +969,7 @@ RemoveShardProgress ShardingCatalogManager::removeShard(OperationContext* opCtx,
         FixedFCVRegion fcvRegion(opCtx);
 
         if (shardId == ShardId::kConfigServerId) {
-            auto trackedDBs =
-                _localCatalogClient->getAllDBs(opCtx, repl::ReadConcernLevel::kLocalReadConcern);
+            auto trackedDBs = _localCatalogClient->getAllDBs(opCtx, repl::ReadConcernArgs::kLocal);
 
             if (auto pendingCleanupState =
                     topology_change_helpers::dropLocalCollectionsAndDatabases(
@@ -1165,7 +1163,7 @@ void ShardingCatalogManager::_standardizeClusterParameters(OperationContext* opC
     auto shardsDocs = uassertStatusOK(_localConfigShard->exhaustiveFindOnConfig(
         opCtx,
         ReadPreferenceSetting(ReadPreference::PrimaryOnly),
-        repl::ReadConcernLevel::kLocalReadConcern,
+        repl::ReadConcernArgs::kLocal,
         NamespaceString::kConfigsvrShardsNamespace,
         BSONObj(),
         BSONObj(),

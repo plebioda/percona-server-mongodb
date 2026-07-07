@@ -461,6 +461,19 @@ py_binary(
 )
 
 py_binary(
+    name = "lint_resmoke_suite_tests",
+    srcs = ["lint_resmoke_suite_tests.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//buildscripts/util",
+        dependency(
+            "pyyaml",
+            group = "core",
+        ),
+    ],
+)
+
+py_binary(
     name = "large_file_check",
     srcs = ["large_file_check.py"],
     deps = [
@@ -639,6 +652,12 @@ py_binary(
             group = "aws",
         ),
     ],
+)
+
+py_library(
+    name = "benchmark_profiler",
+    srcs = ["benchmark_profiler.py"],
+    visibility = ["//visibility:public"],
 )
 
 py_library(

@@ -98,6 +98,7 @@
 #include "mongo/rpc/get_status_from_command_result.h"
 #include "mongo/s/query/cluster_query_knobs_gen.h"
 #include "mongo/s/query/exec/async_results_merger_params_gen.h"
+#include "mongo/s/query/exec/cluster_client_cursor_params.h"
 #include "mongo/s/query/exec/document_source_merge_cursors.h"
 #include "mongo/s/query/exec/establish_cursors.h"
 #include "mongo/s/query/shard_targeting_helpers.h"
@@ -359,7 +360,7 @@ std::string mapToString(const StringMap<std::string>& map) {
     return sb.str();
 }
 
-BSONObj buildNewKeyPattern(const ShardKeyPattern& shardKey, StringMap<std::string> renames) {
+BSONObj buildNewKeyPattern(const ShardKeyPattern& shardKey, const StringMap<std::string>& renames) {
     BSONObjBuilder newPattern;
     for (auto&& elem : shardKey.getKeyPattern().toBSON()) {
         auto it = renames.find(elem.fieldNameStringData());
@@ -543,20 +544,19 @@ bool isRequiredToReadLocalData(const ShardTargetingPolicy& shardTargetingPolicy,
 }
 
 /**
- * Given a pipeline's TargetingResults and this process' ShardRef, return true if we can use a local
+ * Given a pipeline's TargetingResults and this process' ShardId, return true if we can use a local
  * read as the cursor source for the pipeline. Also considers the readConcern of the pipeline
  * (passed as argument), vs. the readConcern of the operation the pipeline is running under
  * (obtained from the provided opCtx).
  */
 bool canUseLocalReadAsCursorSource(OperationContext* opCtx,
                                    const TargetingResults& targeting,
-                                   const ShardRef& localShardRef,
+                                   const ShardId& localShardId,
                                    boost::optional<BSONObj> readConcern) {
     // If there is no targetingCri, we can't enter the shard role correctly, so we need to
     // fallback to remote read.
-    // TODO (SERVER-128349): Remove getShardId() once shard targeting methods use ShardRef.
     bool useLocalRead = !targeting.needsSplit && targeting.shardIds.size() == 1 &&
-        *targeting.shardIds.begin() == localShardRef.getShardId();
+        *targeting.shardIds.begin() == localShardId;
 
     // If subpipeline has a different read concern, we need to perform remote read to
     // satisfy it.
@@ -584,7 +584,7 @@ std::unique_ptr<Pipeline> tryAttachCursorSourceForLocalRead(
     std::unique_ptr<Pipeline>& pipelineToTarget,
     const AggregateCommandRequest& aggRequest,
     bool useCollectionDefaultCollator,
-    const ShardRef& localShardRef,
+    const ShardId& localShardId,
     std::function<void(Pipeline* pipeline)> optimizePipeline = nullptr,
     std::unique_ptr<Pipeline> preFinalizedPipeline = nullptr) {
     const auto& nss = expCtx->getNamespaceString();
@@ -603,9 +603,8 @@ std::unique_ptr<Pipeline> tryAttachCursorSourceForLocalRead(
             optOriginalPlacementConflictTime = txnRouter.getPlacementConflictTime();
         }
 
-        // TODO (SERVER-128786): Remove getShardId once getShardVersion uses ShardRef.
         std::tie(shardVersion, dbVersion) = resolveShardRoleVersions(
-            opCtx, targetingCri, localShardRef.getShardId(), optOriginalPlacementConflictTime);
+            opCtx, targetingCri, localShardId, optOriginalPlacementConflictTime);
         ScopedSetShardRole shardRole{opCtx, nss, shardVersion, dbVersion};
 
         // Mark routing table as validated as we have "sent" the versioned command to a shard by
@@ -766,6 +765,7 @@ std::unique_ptr<Pipeline> runPipelineDirectlyOnSingleShard(
 
             // Convert remote cursors into a vector of "owned" cursors.
             std::vector<OwnedRemoteCursor> ownedCursors;
+            ownedCursors.reserve(cursors.size());
             for (auto&& cursor : cursors) {
                 auto cursorNss = cursor.getCursorResponse().getNSS();
                 ownedCursors.emplace_back(opCtx, std::move(cursor), std::move(cursorNss));
@@ -1288,6 +1288,7 @@ DispatchShardPipelineResults dispatchTargetedShardPipeline(
 
     // Convert remote cursors into a vector of "owned" cursors.
     std::vector<OwnedRemoteCursor> ownedCursors;
+    ownedCursors.reserve(cursors.size());
     for (auto&& cursor : cursors) {
         auto cursorNss = cursor.getCursorResponse().getNSS();
         ownedCursors.emplace_back(opCtx, std::move(cursor), std::move(cursorNss));
@@ -1371,11 +1372,7 @@ AsyncResultsMergerParams buildArmParams(boost::intrusive_ptr<ExpressionContext> 
     armParams.setSort(std::move(shardCursorsSortSpec));
     armParams.setTailableMode(expCtx->getTailableMode());
     armParams.setNss(expCtx->getNamespaceString());
-    armParams.setRequestQueryStatsFromRemotes(remoteMetricsToInclude.getQueryStats());
-    if (hasAnyMetricsRequested(remoteMetricsToInclude)) {
-        // Set 'remoteMetricsToInclude' conditionally only when at least one of the flags is set.
-        armParams.setRequestRemoteMetrics(remoteMetricsToInclude);
-    }
+    setRequestRemoteMetrics(remoteMetricsToInclude, armParams, expCtx->getOperationContext());
 
     if (auto lsid = expCtx->getOperationContext()->getLogicalSessionId()) {
         OperationSessionInfoFromClient sessionInfo(*lsid,
@@ -1809,11 +1806,11 @@ std::unique_ptr<Pipeline> targetShardsAndAddMergeCursorsWithRoutingCtx(
                        shardTargetingPolicy,
                        routingCtx.getCollectionRoutingInfo(expCtx->getNamespaceString()));
 
-    const boost::optional<ShardRef> localShardRef =
-        expCtx->getMongoProcessInterface()->getShardRef(expCtx->getOperationContext());
-    if (localShardRef &&
+    const boost::optional<ShardId> localShardId =
+        expCtx->getMongoProcessInterface()->getShardId(expCtx->getOperationContext());
+    if (localShardId &&
         canUseLocalReadAsCursorSource(
-            expCtx->getOperationContext(), pipelineTargetingInfo, *localShardRef, readConcern)) {
+            expCtx->getOperationContext(), pipelineTargetingInfo, *localShardId, readConcern)) {
         if (auto pipelineWithCursor =
                 tryAttachCursorSourceForLocalRead(expCtx->getOperationContext(),
                                                   expCtx,
@@ -1821,7 +1818,7 @@ std::unique_ptr<Pipeline> targetShardsAndAddMergeCursorsWithRoutingCtx(
                                                   pipelineToTarget,
                                                   aggRequest,
                                                   useCollectionDefaultCollator,
-                                                  *localShardRef,
+                                                  *localShardId,
                                                   optimizePipeline,
                                                   std::move(preFinalizedPipeline))) {
             return pipelineWithCursor;
@@ -1840,7 +1837,7 @@ std::unique_ptr<Pipeline> targetShardsAndAddMergeCursorsWithRoutingCtx(
 
     return dispatchTargetedPipelineAndAddMergeCursors(expCtx,
                                                       routingCtx,
-                                                      aggRequest,
+                                                      std::move(aggRequest),
                                                       std::move(pipelineToTarget),
                                                       std::move(pipelineTargetingInfo),
                                                       pipelineDataSource,
@@ -2060,6 +2057,8 @@ boost::optional<RemoteCursor> openChangeStreamCursorOnConfigsvrIfNeeded(
     aggregation_request_helper::setFromRouter(
         VersionContext::getDecoration(expCtx->getOperationContext()), aggReq, true);
     aggReq.setNeedsMerge(true);
+
+    aggregation_request_helper::addQuerySettingsToRequest(aggReq, expCtx);
 
     SimpleCursorOptions cursor;
     cursor.setBatchSize(0);

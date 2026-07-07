@@ -10,6 +10,20 @@ exports_files(
 )
 
 mongo_cc_library(
+    name = "query_lifespan",
+    srcs = [
+        "query_lifespan.cpp",
+    ],
+    hdrs = [
+        "query_lifespan.h",
+    ],
+    deps = [
+        "//src/mongo/db:server_base",
+        "//src/mongo/db:service_context",
+    ],
+)
+
+mongo_cc_library(
     name = "write_conflict_storm",
     srcs = [
         "write_conflict_storm.cpp",
@@ -328,6 +342,7 @@ mongo_cc_library(
     deps = [
         ":on_parameter_change_updaters",
         "//src/mongo/db:server_base",
+        "//src/mongo/db:server_options_storage",
         "//src/mongo/db/commands:test_commands_enabled",
         "//src/mongo/db/query/query_knobs:query_knob",
         "//src/mongo/db/topology/cluster_parameters:cluster_server_parameter",
@@ -340,7 +355,6 @@ idl_generator(
     deps = [
         ":hint_gen",
         "//src/mongo/db:basic_types_gen",
-        "//src/mongo/db/query/client_cursor:cursor_response_gen",
         "//src/mongo/db/query/query_settings:query_settings_gen",
         "//src/mongo/idl:generic_argument_gen",
     ],
@@ -350,6 +364,18 @@ mongo_cc_library(
     name = "index_multikey_helpers",
     deps = [
         "//src/mongo/db/index:index_access_method",
+    ],
+)
+
+mongo_cc_library(
+    name = "record_id_range",
+    srcs = [
+        "record_id_range.cpp",
+        "record_id_range_list.cpp",
+    ],
+    deps = [
+        "//src/mongo:base",
+        "//src/mongo/db:record_id_helpers",
     ],
 )
 
@@ -365,14 +391,13 @@ mongo_cc_library(
         "query_planner.cpp",
         "query_planner_common.cpp",
         "query_settings.cpp",
-        "record_id_range.cpp",
-        "record_id_range_list.cpp",
         "//src/mongo/db/query/plan_cache:plan_cache_indexability.cpp",
         "//src/mongo/db/query/plan_enumerator:enumerator_memo.cpp",
         "//src/mongo/db/query/plan_enumerator:memo_prune.cpp",
         "//src/mongo/db/query/plan_enumerator:plan_enumerator.cpp",
     ],
     deps = [
+        ":record_id_range",
         "//src/mongo/db:query_expressions",
         "//src/mongo/db/commands/server_status:server_status_core",
         "//src/mongo/db/query:plan_yield_policy_sbe",
@@ -440,7 +465,6 @@ idl_generator(
         "//src/mongo/db:basic_types_gen",
         "//src/mongo/db/auth:access_checks_gen",
         "//src/mongo/db/auth:action_type_gen",
-        "//src/mongo/db/query/client_cursor:cursor_response_gen",
         "//src/mongo/db/query/query_shape:query_shape_hash_gen",
         "//src/mongo/idl:generic_argument_gen",
     ],
@@ -657,7 +681,6 @@ mongo_cc_unit_test(
         "query_planner_tree_test.cpp",
         "query_planner_wildcard_index_test.cpp",
         "//src/mongo/db/query/plan_ranking:cbr_for_no_mp_results_test.cpp",
-        "//src/mongo/db/query/plan_ranking:cost_based_plan_ranking_test.cpp",
         "//src/mongo/db/query/plan_ranking:plan_ranker_short_circuit_test.cpp",
     ],
     data = [
@@ -670,6 +693,7 @@ mongo_cc_unit_test(
         ":parsed_distinct_command",
         ":query_planner_test_fixture",
         "//src/mongo/db:service_context_d",
+        "//src/mongo/db/pipeline",
         "//src/mongo/db/query/compiler/optimizer/index_bounds_builder:index_bounds_builder_test_fixture",
         "//src/mongo/db/query/plan_ranking:plan_ranking_test_fixture",
         "//src/mongo/db/shard_role/shard_catalog:collection_mock",
@@ -716,6 +740,7 @@ mongo_cc_unit_test(
         "plan_ranker_index_prefix_test.cpp",
         "plan_ranker_test.cpp",
         "query_feature_flag_test.cpp",
+        "query_lifespan_test.cpp",
         "query_request_test.cpp",
         "query_settings_test.cpp",
         "query_utils_test.cpp",
@@ -727,6 +752,7 @@ mongo_cc_unit_test(
     ],
     deps = [
         ":map_reduce_output_format",
+        ":query_lifespan",
         ":query_planner",
         ":query_test_service_context",
         "//src/mongo/db/exec/document_value:document_value_test_util",

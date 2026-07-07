@@ -123,6 +123,7 @@ MONGO_FAIL_POINT_DEFINE(forceWaitForVersionOnly);
 MONGO_FAIL_POINT_DEFINE(avoidTassertForInconsistentMetadata);
 MONGO_FAIL_POINT_DEFINE(hangBeforeAuthoritativeDbVersionMismatchWait);
 MONGO_FAIL_POINT_DEFINE(hangInRecoverRefreshDbVersionThread);
+MONGO_FAIL_POINT_DEFINE(hangAfterCancelingIncompatibleRefreshes);
 
 const auto getDecoration = ServiceContext::declareDecoration<FilteringMetadataCache>();
 
@@ -310,6 +311,22 @@ FilteringMetadataCache* FilteringMetadataCache::get(OperationContext* opCtx) {
 void FilteringMetadataCache::shutDown() {
     if (_cache)
         _cache->shutDownAndJoin();
+}
+
+void FilteringMetadataCache::interruptLoaderAfterAuthoritativeShardsTransition() {
+    tassert(10727901,
+            "FilteringMetadataCache has not yet been initialized with a CatalogCacheLoader",
+            _loader);
+
+    _loader->interruptAfterAuthoritativeShardsTransition();
+}
+
+void FilteringMetadataCache::waitForAllLoaderFlushes(OperationContext* opCtx) {
+    tassert(10727900,
+            "FilteringMetadataCache has not yet been initialized with a CatalogCacheLoader",
+            _loader);
+
+    _loader->waitForAllFlushes(opCtx);
 }
 
 void FilteringMetadataCache::onStepDown() {
@@ -654,6 +671,13 @@ void FilteringMetadataCache::_recoverMigrationCoordinations(OperationContext* op
                         2,
                         "Recovering migration",
                         "migrationCoordinatorDocument"_attr = redact(doc.toBSON()));
+
+            tassert(12796804,
+                    "Legacy migration recovery must not run when shards are authoritative",
+                    sharding_ddl_util::getGrantedAuthoritativeMetadataAccessLevel(
+                        VersionContext::getDecoration(opCtx),
+                        serverGlobalParams.featureCompatibility.acquireFCVSnapshot()) ==
+                        AuthoritativeMetadataAccessLevelEnum::kNone);
 
             // Ensure there is only one migrationCoordinator document to be recovered for this
             // namespace.
@@ -1000,9 +1024,12 @@ void FilteringMetadataCache::_onDbVersionMismatchAuthoritative(
     const auto targetOpTime =
         repl::OpTime(receivedDbVersion.getTimestamp(), repl::OpTime::kUninitializedTerm);
 
+    Timer dbVersionWaitTimer;
     repl::ReplicationCoordinator::get(opCtx)
         ->registerWaiterForMajorityReadOpTime(opCtx, targetOpTime)
         .get(opCtx);
+    ShardingStatistics::get(opCtx).databaseShardingMetadataStatistics.registerDbVersionMismatchWait(
+        dbVersionWaitTimer.millis());
 
     while (true) {
         opCtx->checkForInterrupt();
@@ -1064,6 +1091,13 @@ void FilteringMetadataCache::_onDbVersionMismatchAuthoritative(
 
         break;
     }
+
+    LOGV2_DEBUG(12920514,
+                2,
+                "Authoritative database version mismatch handled",
+                "db"_attr = dbName,
+                "receivedDbVersion"_attr = receivedDbVersion,
+                "waitMillis"_attr = dbVersionWaitTimer.millis());
 }
 
 void FilteringMetadataCache::_recoverCollectionMetadataFromDisk(
@@ -1102,6 +1136,7 @@ void FilteringMetadataCache::_recoverCollectionMetadataFromDisk(
     //       zero chunks on this shard.
 
     bool needsDbPrimaryShardCheck = false;
+    boost::optional<Timer> diskRecoveryTimer;
     const int maxNoProgressAttempts = maxShardMetadataDiskRecoveryAttempts.loadRelaxed();
     int noProgressAttempts = 0;
     std::string_view lastRetryReason;
@@ -1114,6 +1149,12 @@ void FilteringMetadataCache::_recoverCollectionMetadataFromDisk(
     auto incrementConsecutiveNoProgressAttempts = [&](std::string_view retryReason) {
         lastRetryReason = retryReason;
         ++noProgressAttempts;
+        auto& stats = ShardingStatistics::get(opCtx).collectionShardingMetadataStatistics;
+        stats.registerDiskRecoveryNoProgressRetry();
+        const bool budgetExhausted = noProgressAttempts >= maxNoProgressAttempts;
+        if (budgetExhausted) {
+            stats.registerDiskRecoveryAttemptsExhausted();
+        }
         tassert(StaleConfigInfo(nss,
                                 ShardVersionFactory::make(chunkVersionReceived
                                                               ? *chunkVersionReceived
@@ -1125,7 +1166,7 @@ void FilteringMetadataCache::_recoverCollectionMetadataFromDisk(
                                  "recovery attempts for "
                               << nss.toStringForErrorMsg()
                               << "; last retry reason: " << lastRetryReason,
-                noProgressAttempts < maxNoProgressAttempts);
+                !budgetExhausted);
     };
 
     while (true) {
@@ -1177,8 +1218,11 @@ void FilteringMetadataCache::_recoverCollectionMetadataFromDisk(
                 return;
             }
 
+            if (!diskRecoveryTimer) {
+                diskRecoveryTimer.emplace();
+            }
             ShardingStatistics::get(opCtx)
-                .authoritativeCollectionMetadataStatistics.registerCreationOfRecoverer();
+                .collectionShardingMetadataStatistics.registerRecovererCreated();
 
             recoverer =
                 std::make_shared<CollectionCacheRecoverer>(nss, opCtx->getCancellationToken());
@@ -1320,8 +1364,9 @@ void FilteringMetadataCache::_recoverCollectionMetadataFromDisk(
                             AuthoritativeMetadataAccessLevelEnum::kWritesAndReadsAllowed);
 
                 scopedCsr->setCollectionMetadata(opCtx, *metadata, noRoutingTableAs);
-                ShardingStatistics::get(opCtx)
-                    .authoritativeCollectionMetadataStatistics.registerDiskRecovery();
+                auto& stats = ShardingStatistics::get(opCtx).collectionShardingMetadataStatistics;
+                stats.registerDiskRecoveryMillis(diskRecoveryTimer->millis());
+                stats.registerDiskRecovery();
             }
 
             scopedCsr->setCollectionRecoverer(nullptr);
@@ -1367,6 +1412,7 @@ FilteringMetadataCache::_waitForConfigTimeOrChunkVersionChange(OperationContext*
     // Race two futures: (1) majority read concern reaching configTime, which proves all DDLs have
     // been applied and the router must be stale, or (2) the shard version matching the router's
     // via oplog application. Whichever completes first allows the caller to return authoritatively.
+    Timer postRecoveryWaitTimer;
     auto majorityFuture =
         repl::ReplicationCoordinator::get(opCtx)->registerWaiterForMajorityReadOpTime(
             opCtx, timeToWaitFor);
@@ -1404,7 +1450,8 @@ FilteringMetadataCache::_waitForConfigTimeOrChunkVersionChange(OperationContext*
         uassertStatusOK(status);
     }
 
-    auto& stats = ShardingStatistics::get(opCtx).authoritativeCollectionMetadataStatistics;
+    auto& stats = ShardingStatistics::get(opCtx).collectionShardingMetadataStatistics;
+    stats.registerPostRecoveryWaitMillis(postRecoveryWaitTimer.millis());
     if (versionFuture.isReady()) {
         stats.registerPostRecoveryWaitResolvedByVersionChange();
     } else {
@@ -1527,7 +1574,8 @@ void FilteringMetadataCache::_onShardVersionMismatchAuthoritative(
         if (receivedShardVersion &&
             _isRecoveredShardVersionSufficient(opCtx, nss, *receivedShardVersion)) {
             ShardingStatistics::get(opCtx)
-                .authoritativeCollectionMetadataStatistics.registerVersionResolvedBeforeRecovery();
+                .collectionShardingMetadataStatistics
+                .registerVersionMismatchResolvedBeforeRecovery();
 
             LOGV2(12307911,
                   "Authoritative collection metadata recovery completed successfully",
@@ -1558,7 +1606,8 @@ void FilteringMetadataCache::_onShardVersionMismatchAuthoritative(
         // retry loop.
         if (_isRecoveredShardVersionSufficient(opCtx, nss, *receivedShardVersion)) {
             ShardingStatistics::get(opCtx)
-                .authoritativeCollectionMetadataStatistics.registerVersionResolvedAfterRecovery();
+                .collectionShardingMetadataStatistics
+                .registerVersionMismatchResolvedAfterRecovery();
 
             LOGV2(12307913,
                   "Authoritative collection metadata recovery completed successfully",
@@ -1831,20 +1880,27 @@ void FilteringMetadataRefreshTracker::_release(
 }
 
 void FilteringMetadataRefreshTracker::interruptIncompatibleRefreshes(OperationContext* opCtx) {
-    std::unique_lock lk(_mutex);
-    const bool authoritativeEnabled = feature_flags::gAuthoritativeShardsCRUD.isEnabled(
+    bool authoritativeEnabled = feature_flags::gAuthoritativeShardsCRUD.isEnabled(
         VersionContext::getDecoration(opCtx),
         serverGlobalParams.featureCompatibility.acquireFCVSnapshot());
-    auto& list =
-        authoritativeEnabled ? _activeNonAuthoritativeRefreshes : _activeAuthoritativeRefreshes;
-    for (auto& source : list) {
-        source.cancel();
+
+    {
+        std::unique_lock lk(_mutex);
+        auto& list =
+            authoritativeEnabled ? _activeNonAuthoritativeRefreshes : _activeAuthoritativeRefreshes;
+        for (auto& source : list) {
+            source.cancel();
+        }
+        hangAfterCancelingIncompatibleRefreshes.pauseWhileSet();
+        // Wait for all incompatible refreshes to be canceled and drained.
+        opCtx->waitForConditionOrInterrupt(_canceled, lk, [&] { return list.empty(); });
     }
-    // Wait for all refreshes that were ongoing to be canceled. New refreshes are appended to the
-    // end of the list, so we can wait until the refresh at the front of the list isn't canceled.
-    // TODO(SERVER-127444): Wait until the list is empty, since new refreshes are of the other kind.
-    opCtx->waitForConditionOrInterrupt(
-        _canceled, lk, [&] { return list.empty() || !list.front().token().isCanceled(); });
+
+    // Interrupt in-flight loads on the ShardServerCatalogCacheLoader. (These loads use a separate
+    // pool, so they do not get interrupted when the filtering metadata refresh is).
+    if (authoritativeEnabled) {
+        FilteringMetadataCache::get(opCtx)->interruptLoaderAfterAuthoritativeShardsTransition();
+    }
 }
 
 }  // namespace mongo

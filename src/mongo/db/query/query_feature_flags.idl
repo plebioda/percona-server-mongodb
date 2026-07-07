@@ -209,7 +209,7 @@ feature_flags:
             "Feature flag to enable expression-level memory usage tracking during query
             execution. Only takes effect when featureFlagQueryMemoryTracking is also enabled."
         cpp_varname: gFeatureFlagExpressionMemoryTracking
-        default: false
+        default: true
         fcv_gated: false
 
     featureFlagMongotIndexedViews:
@@ -333,7 +333,8 @@ feature_flags:
     featureFlagQueryStatsDelete:
         description: "Feature flag to enable query stats for the delete command."
         cpp_varname: gFeatureFlagQueryStatsDelete
-        default: false
+        default: true
+        version: 9.0
         fcv_gated: true
 
     featureFlagQueryStatsCBRMetrics:
@@ -379,7 +380,7 @@ feature_flags:
     featureFlagAllowUserFacingQuerySettings:
         description: "Allow users to pass querySettings directly in commands as runtime hints without persistence."
         cpp_varname: gFeatureFlagAllowUserFacingQuerySettings
-        default: false
+        default: true
         fcv_gated: false
 
     featureFlagEnableTestingAggregateRewriteRules:
@@ -536,7 +537,7 @@ feature_flags:
     featureFlagExtensionsOptimizations:
         description: "Feature flag to enable new extension stage optimizations."
         cpp_varname: gFeatureFlagExtensionsOptimizations
-        default: false
+        default: true
         fcv_gated: false
 
     featureFlagPqsQueryKnobs:
@@ -562,6 +563,16 @@ feature_flags:
             "Feature flag to enable optimized change stream updateLookup and pre-image lookups via
             specialized local execution (Express/SBE) with an aggregation-pipeline fallback."
         cpp_varname: gFeatureFlagChangeStreamOptimizedUpdateLookup
+        default: false
+        fcv_gated: false
+        incremental_rollout_phase: in_development
+
+    featureFlagSearchOptimizedIdLookup:
+        description:
+            "Feature flag to enable the Express fast path for $search / $vectorSearch
+            $_internalSearchIdLookup local _id point lookups, falling back to the existing
+            local-read aggregation path when Express declines."
+        cpp_varname: gFeatureFlagSearchOptimizedIdLookup
         default: false
         fcv_gated: false
         incremental_rollout_phase: in_development

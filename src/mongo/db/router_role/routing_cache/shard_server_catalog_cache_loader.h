@@ -91,6 +91,20 @@ public:
     virtual void waitForCollectionFlush(OperationContext* opCtx, const NamespaceString& nss) = 0;
 
     virtual void waitForDatabaseFlush(OperationContext* opCtx, const DatabaseName& dbName) = 0;
+
+    /**
+     * Interrupts all in-flight loads with error code `MetadataRefreshCanceledDueToFCVTransition`
+     * after the node has become authoritative for the sharding metadata.
+     * TODO (SERVER-98118): remove once 9.0 becomes last LTS.
+     */
+    virtual void interruptAfterAuthoritativeShardsTransition() = 0;
+
+    /**
+     * Waits for all enqueued collection and database metadata persistence tasks to complete
+     * after the node has become authoritative for the sharding metadata.
+     * TODO (SERVER-98118): remove once 9.0 becomes last LTS.
+     */
+    virtual void waitForAllFlushes(OperationContext* opCtx) = 0;
 };
 
 }  // namespace mongo

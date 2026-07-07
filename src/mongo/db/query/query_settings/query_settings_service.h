@@ -180,6 +180,12 @@ public:
         const boost::optional<query_shape::QueryShapeHash>& queryShapeHash,
         const NamespaceString& nss,
         const boost::optional<QuerySettings>& querySettingsFromOriginalCommand) const {
+        // Ineligible queries (IDHACK/Express, FLE, internal/system namespaces) never receive query
+        // settings, whether from persisted settings or supplied directly by the user.
+        if (!isEligbleForQuerySettings(expCtx, nss)) {
+            return QuerySettings();
+        }
+
         if (!queryShapeHash) {
             return querySettingsFromOriginalCommand.value_or(QuerySettings());
         }
@@ -187,6 +193,23 @@ public:
         return lookupQuerySettingsWithRejectionCheck(
             expCtx, *queryShapeHash, nss, querySettingsFromOriginalCommand);
     }
+
+    /**
+     * Resolves the query settings for the current query and makes them the active settings on the
+     * operation: looks them up by 'queryShapeHash' (running the rejection check) and stores the
+     * result so that 'query_settings::forOp(opCtx)' returns it. When 'queryShapeHash' is
+     * boost::none the query is not eligible for settings and default settings are resolved.
+     *
+     * Resolution only runs while the operation is still 'Pending' (eligibility is decided lazily by
+     * 'query_settings_details::getQuerySettingsStateForOp'). An ineligible operation or a
+     * re-entrant resolution (view re-dispatch or a nested query against the same 'opCtx') is a
+     * no-op. Not yet wired into any command.
+     */
+    void initializeSettingsForQuery(
+        const boost::intrusive_ptr<ExpressionContext>& expCtx,
+        const boost::optional<query_shape::QueryShapeHash>& queryShapeHash,
+        const NamespaceString& nss,
+        const boost::optional<QuerySettings>& querySettingsFromOriginalCommand) const;
 
     /**
      * Returns all the query shape configurations and the timestamp of the last modification.
@@ -280,6 +303,17 @@ public:
      * sentinels).
      */
     void validateQuerySettings(const QuerySettings& querySettings) const;
+
+    /**
+     * Validates user-provided query knob overrides in 'querySettings': rejects 'queryKnobs'
+     * unless featureFlagPqsQueryKnobs is enabled, and rejects individual knobs whose minimum FCV
+     * is above the current FCV. Must be called at every entry point accepting external query
+     * settings; parsing (QuerySettingsKnobOverrides::fromBSON()) deliberately performs no FCV
+     * validation, as it also handles internal traffic and stored settings.
+     * TODO SERVER-122103: Remove the feature flag guard once featureFlagPqsQueryKnobs is removed
+     * (SPM-4364).
+     */
+    void validateQueryKnobs(OperationContext* opCtx, const QuerySettings& querySettings) const;
 
     /**
      * Validates that QuerySettings can be applied to the query represented by 'queryInfo'.

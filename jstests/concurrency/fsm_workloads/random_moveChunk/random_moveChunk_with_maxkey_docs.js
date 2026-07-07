@@ -21,7 +21,7 @@
  */
 import {fsm} from "jstests/concurrency/fsm_libs/fsm.js";
 import {ShardingTopologyHelpers} from "jstests/concurrency/fsm_workload_helpers/catalog_and_routing/sharding_topology_helpers.js";
-import {ChunkHelper} from "jstests/concurrency/fsm_workload_helpers/chunks.js";
+import {ChunkHelper} from "jstests/concurrency/fsm_workload_helpers/cluster_scalability/chunks.js";
 import {isMoveChunkErrorAcceptableWithConcurrent} from "jstests/concurrency/fsm_workload_helpers/cluster_scalability/move_chunk_errors.js";
 import {findChunksUtil} from "jstests/sharding/libs/find_chunks_util.js";
 
@@ -87,7 +87,11 @@ export const $config = (function () {
         }
         const idx = Random.randInt(this.trackedDocs.length);
         const tracked = this.trackedDocs[idx];
-        const res = db[collName].update({_id: tracked._id}, {$inc: {counter: 1}});
+
+        const res = db[collName].update(
+            {_id: tracked._id, skey: tracked.skey, otherKey: tracked.otherKey},
+            {$inc: {counter: 1}},
+        );
         if (res.nModified === 1) {
             tracked.counter++;
         }

@@ -74,6 +74,10 @@ public:
      */
     void shutDown();
 
+    // TODO (SERVER-98118): remove once 9.0 becomes last LTS.
+    void interruptLoaderAfterAuthoritativeShardsTransition();
+    void waitForAllLoaderFlushes(OperationContext* opCtx);
+
     /**
      * Updates internal state so that the loader can start behaving like a secondary.
      */

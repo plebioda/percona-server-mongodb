@@ -137,8 +137,7 @@ public:
             const auto catalogClient = ShardingCatalogManager::get(opCtx)->localCatalogClient();
             const auto collEntry = catalogClient->getCollection(opCtx, nss);
             const auto dbPrimary =
-                catalogClient
-                    ->getDatabase(opCtx, nss.dbName(), repl::ReadConcernLevel::kMajorityReadConcern)
+                catalogClient->getDatabase(opCtx, nss.dbName(), repl::ReadConcernArgs::kMajority)
                     .getPrimary();
 
             if (!mongo::resharding::gFeatureFlagReshardingForTimeseries.isEnabled(
@@ -191,8 +190,6 @@ public:
                 resharding::validateShardDistribution(
                     *shardDistribution, opCtx, ShardKeyPattern(request().getKey()));
             }
-            resharding::validatePerformVerification(VersionContext::getDecoration(opCtx),
-                                                    request().getPerformVerification());
 
             // Returns boost::none if there isn't any work to be done by the resharding operation.
             auto instance = ([&]()
@@ -243,6 +240,11 @@ public:
 
                 auto coordinatorDoc = resharding::createReshardingCoordinatorDoc(
                     opCtx, request(), collEntry, dbPrimary, nss, setProvenance);
+
+                resharding::validatePerformVerification(
+                    coordinatorDoc.getCommonReshardingMetadata().getForwardableOpMetadata(),
+                    request().getPerformVerification());
+
                 auto instance = getOrCreateReshardingCoordinator(opCtx, coordinatorDoc);
                 instance->getCoordinatorDocWrittenFuture().get(opCtx);
                 return instance;

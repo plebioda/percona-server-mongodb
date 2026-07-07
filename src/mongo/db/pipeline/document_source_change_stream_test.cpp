@@ -194,6 +194,36 @@ TEST_F(ChangeStreamStageTest, ShouldRejectUnrecognizedFullDocumentOption) {
                        ErrorCodes::BadValue);
 }
 
+TEST_F(ChangeStreamStageTest, ShouldRejectMatchCollectionUUIDForUpdateLookupWithoutUpdateLookup) {
+    auto expCtx = getExpCtx();
+
+    // Omitting 'fullDocument' defaults to 'default', not 'updateLookup'.
+    ASSERT_THROWS_CODE(
+        DSChangeStream::createFromBson(
+            BSON(DSChangeStream::kStageName << BSON("matchCollectionUUIDForUpdateLookup" << true))
+                .firstElement(),
+            expCtx),
+        AssertionException,
+        12888201);
+
+    // 'matchCollectionUUIDForUpdateLookup' is only allowed for 'updateLookup'.
+    ASSERT_DOES_NOT_THROW(
+        DSChangeStream::createFromBson(
+            BSON(DSChangeStream::kStageName << BSON("matchCollectionUUIDForUpdateLookup"
+                                                    << true << "fullDocument" << "updateLookup"))
+                .firstElement(),
+            expCtx););
+
+    ASSERT_THROWS_CODE(
+        DSChangeStream::createFromBson(
+            BSON(DSChangeStream::kStageName << BSON("matchCollectionUUIDForUpdateLookup"
+                                                    << true << "fullDocument" << "required"))
+                .firstElement(),
+            expCtx),
+        AssertionException,
+        12888201);
+}
+
 TEST_F(ChangeStreamStageTest, ShouldRejectBothStartAtOperationTimeAndResumeAfterOptions) {
     auto expCtx = getExpCtx();
 
@@ -3267,6 +3297,57 @@ TEST_F(ChangeStreamStageTest, TransformApplyOpsWithCreateOperation) {
     ASSERT_EQ(operationDescription["lsid"].getDocument().toBson().woCompare(lsid.toBSON()), 0);
     // Third document (with txnOpIndex == 2) is skipped, so EOT should have txnOpIndex == 3.
     ASSERT_EQ(ResumeToken::parse(nextDoc["_id"].getDocument()).getData().txnOpIndex, 3);
+}
+
+// Helper class for testing that an unexpected command type is unwound inside a transactional
+// applyOps oplog entry throws an expected assertion.
+class ChangeStreamUnwindTransactionApplyOpsDeathTest : public ChangeStreamStageTestDeathTest {
+public:
+    void assertThrowsUnexpectedOpInApplyOpsAssertion(const Document& commandDoc) {
+        unittest::ServerParameterGuard controller("featureFlagEndOfTransactionChangeEvent", true);
+
+        Document applyOpsDoc{{"applyOps", Value{std::vector<Document>{commandDoc}}}};
+
+        LogicalSessionFromClient lsid = testLsid();
+        ASSERT_THROWS_CODE(getApplyOpsResults(applyOpsDoc, lsid, kShowExpandedEventsSpec),
+                           AssertionException,
+                           7694300);
+    }
+};
+
+DEATH_TEST_REGEX_F(ChangeStreamUnwindTransactionApplyOpsDeathTest,
+                   TransformApplyOpsWithCollModOperation,
+                   "Tripwire assertion.*7694300") {
+    assertThrowsUnexpectedOpInApplyOpsAssertion(
+        Document{{"op", "c"sv},
+                 {"ns", std::string(nss.db_forTest()) + ".$cmd"},
+                 {"ui", testUuid()},
+                 {"o", Value{Document{{"collMod", nss.coll()}}}},
+                 // collMod handler reads o2 for stateBeforeChange (collectionOptions_old,
+                 // indexOptions_old); provide an empty document to avoid a crash on missing o2.
+                 {"o2", Value{Document{}}}});
+}
+
+DEATH_TEST_REGEX_F(ChangeStreamUnwindTransactionApplyOpsDeathTest,
+                   TransformApplyOpsWithDropOperation,
+                   "Tripwire assertion.*7694300") {
+    assertThrowsUnexpectedOpInApplyOpsAssertion(
+        Document{{"op", "c"sv},
+                 {"ns", std::string(nss.db_forTest()) + ".$cmd"},
+                 {"ui", testUuid()},
+                 {"o", Value{Document{{"drop", nss.coll()}}}}});
+}
+
+DEATH_TEST_REGEX_F(ChangeStreamUnwindTransactionApplyOpsDeathTest,
+                   TransformApplyOpsWithDropIndexesOperation,
+                   "Tripwire assertion.*7694300") {
+    assertThrowsUnexpectedOpInApplyOpsAssertion(
+        Document{{"op", "c"sv},
+                 {"ns", std::string(nss.db_forTest()) + ".$cmd"},
+                 {"ui", testUuid()},
+                 {"o", Value{Document{{"dropIndexes", nss.coll()}, {"index", "x_1"sv}}}},
+                 // dropIndexes handler reads o2 as the index spec for operationDescription.
+                 {"o2", Value{Document{{"key", Document{{"x", 1}}}, {"name", "x_1"sv}}}}});
 }
 
 TEST_F(ChangeStreamStageTest, ClusterTimeMatchesOplogEntry) {
@@ -6833,6 +6914,9 @@ TEST_F(ChangeStreamMetricsTest, BooleanOptionCountersIncrementOnTrue) {
     struct Case {
         const char* optionKey;
         const char* metricRelPath;
+        // Extra options required for the option under test to be a legal combination, e.g.
+        // 'matchCollectionUUIDForUpdateLookup' requires 'fullDocument: updateLookup'.
+        BSONObj extraOptions = BSONObj();
     };
     const Case cases[] = {
         {"showExpandedEvents", "option.showExpandedEvents"},
@@ -6840,11 +6924,13 @@ TEST_F(ChangeStreamMetricsTest, BooleanOptionCountersIncrementOnTrue) {
         {"showSystemEvents", "option.showSystemEvents"},
         {"showRawUpdateDescription", "option.showRawUpdateDescription"},
         {"ignoreRemovedShards", "option.ignoreRemovedShards"},
-        {"matchCollectionUUIDForUpdateLookup", "option.matchCollectionUUIDForUpdateLookup"},
+        {"matchCollectionUUIDForUpdateLookup",
+         "option.matchCollectionUUIDForUpdateLookup",
+         BSON("fullDocument" << "updateLookup")},
     };
     for (const auto& c : cases) {
         const long long before = readCsMetric(c.metricRelPath);
-        openOnMongod(BSON("$changeStream" << BSON(c.optionKey << true)));
+        openOnMongod(BSON("$changeStream" << BSON(c.optionKey << true).addFields(c.extraOptions)));
         ASSERT_EQ(before + 1, readCsMetric(c.metricRelPath)) << "option: " << c.optionKey;
     }
 }

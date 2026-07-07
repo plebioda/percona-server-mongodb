@@ -39,8 +39,10 @@
 #include "mongo/db/pipeline/pipeline_factory.h"
 #include "mongo/db/query/find_command.h"
 #include "mongo/db/query/query_feature_flags_gen.h"
+#include "mongo/db/query/query_knobs/query_knob_registry.h"
 #include "mongo/db/query/query_settings/query_settings_backfill.h"
 #include "mongo/db/query/query_settings/query_settings_cluster_parameter_gen.h"
+#include "mongo/db/query/query_settings/query_settings_context.h"
 #include "mongo/db/query/query_settings/query_settings_gen.h"
 #include "mongo/db/query/query_settings/query_settings_manager.h"
 #include "mongo/db/query/query_settings/query_settings_service_dependencies.h"
@@ -50,6 +52,7 @@
 #include "mongo/db/query/query_utils.h"
 #include "mongo/db/shard_role/shard_catalog/index_descriptor.h"
 #include "mongo/db/topology/cluster_parameters/cluster_server_parameter_cmds_gen.h"
+#include "mongo/db/version_context.h"
 #include "mongo/logv2/log.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/log_and_backoff.h"
@@ -436,7 +439,7 @@ public:
     // these flags; 'run()' executes the present operations in a fixed, safe order.
     enum class Op : uint8_t {
         kNone = 0,
-        kRemoveQueryKnobs = 1 << 0,
+        kRemoveUnsupportedQueryKnobs = 1 << 0,
         kCreateCollection = 1 << 1,
         kMoveQueriesToCollection = 1 << 2,
         kMoveQueriesToParameter = 1 << 3,
@@ -455,7 +458,9 @@ public:
 
     QuerySettingsMigration(const QuerySettingsService* service) : _service(service) {}
 
-    void run(OperationContext* opCtx, Op plan) {
+    void run(OperationContext* opCtx,
+             Op plan,
+             multiversion::FeatureCompatibilityVersion targetFCV) {
         // Create the collection up front, before the retry loop populates it. The create is
         // idempotent and unrelated to the cluster parameter conflict being retried below.
         if (contains(plan, Op::kCreateCollection)) {
@@ -470,8 +475,8 @@ public:
                         "Running query settings migration pass",
                         "numQueryShapeConfigurations"_attr =
                             _config.queryShapeConfigurations.size());
-            if (contains(plan, Op::kRemoveQueryKnobs)) {
-                removeQueryKnobs();
+            if (contains(plan, Op::kRemoveUnsupportedQueryKnobs)) {
+                removeUnsupportedQueryKnobs(targetFCV);
             }
             if (contains(plan, Op::kMoveQueriesToCollection)) {
                 moveQueriesToCollection(opCtx);
@@ -497,30 +502,34 @@ public:
     }
 
 private:
-    void removeQueryKnobs() {
+    void removeUnsupportedQueryKnobs(multiversion::FeatureCompatibilityVersion targetFCV) {
         auto& configs = _config.queryShapeConfigurations;
         configs.erase(std::remove_if(configs.begin(),
                                      configs.end(),
                                      [&](auto&& entry) -> bool {
                                          auto&& settings = entry.getSettings();
-                                         if (auto&& knobs = settings.getQueryKnobs()) {
-                                             _dirty = true;
-                                             // TODO SERVER-129571: Scope down query knob downgrades
-                                             // only to knobs below the minimum FCV
-                                             settings.setQueryKnobs(boost::none);
-                                             const bool becameDefault = isDefault(settings);
-                                             LOGV2_DEBUG(
-                                                 12826802,
-                                                 3,
-                                                 "Stripping query knobs from query settings",
-                                                 "queryShapeHash"_attr =
-                                                     entry.getQueryShapeHash().toHexString(),
-                                                 "removedEntry"_attr = becameDefault);
-                                             if (becameDefault) {
-                                                 return true;
-                                             }
-                                             entry.setSettings(settings);
+                                         auto knobs = settings.getQueryKnobs();
+                                         if (!knobs ||
+                                             !knobs->removeKnobsRequiringHigherFcv(targetFCV)) {
+                                             return false;
                                          }
+                                         _dirty = true;
+                                         if (knobs->empty()) {
+                                             knobs = boost::none;
+                                         }
+                                         settings.setQueryKnobs(knobs);
+                                         const bool becameDefault = isDefault(settings);
+                                         LOGV2_DEBUG(12826802,
+                                                     3,
+                                                     "Stripping query knobs not supported on the "
+                                                     "target FCV from query settings",
+                                                     "queryShapeHash"_attr =
+                                                         entry.getQueryShapeHash().toHexString(),
+                                                     "removedEntry"_attr = becameDefault);
+                                         if (becameDefault) {
+                                             return true;
+                                         }
+                                         entry.setSettings(settings);
                                          return false;
                                      }),
                       configs.end());
@@ -607,6 +616,37 @@ private:
 
 }  // namespace
 
+void QuerySettingsService::initializeSettingsForQuery(
+    const boost::intrusive_ptr<ExpressionContext>& expCtx,
+    const boost::optional<query_shape::QueryShapeHash>& queryShapeHash,
+    const NamespaceString& nss,
+    const boost::optional<QuerySettings>& querySettingsFromOriginalCommand) const {
+    using namespace query_settings_details;
+    // A nested command running through DBDirectClient is part of the user command's execution: it
+    // must not resolve query settings on the user command's behalf, and instead observes the
+    // settings the user command resolved.
+    auto opCtx = expCtx->getOperationContext();
+    if (opCtx->getClient()->isInDirectClient()) {
+        return;
+    }
+    // Only resolve while the operation is still 'Pending' (an eligible command has begun via
+    // 'QuerySettingsCommandHooks' and settings have not been resolved yet). Once resolved
+    // (e.g. a view re-dispatched onto the same opCtx), this is a no-op. 'NotStarted' is also left
+    // alone: no eligible command was dispatched, so there is nothing to resolve against.
+    auto&& state = getQuerySettingsStateForOp(opCtx);
+    if (std::holds_alternative<Pending>(state)) {
+        auto settings = lookupQuerySettingsWithRejectionCheck(
+            expCtx, queryShapeHash, nss, querySettingsFromOriginalCommand);
+        // Collapse a default (no-op) resolution to 'Empty' so it is distinguishable from an
+        // operation that actually installed settings.
+        // TODO SERVER-XXXXXX: avoid re-inspecting the result here by having
+        // 'lookupQuerySettingsWithRejectionCheck' return the resolved state ('Empty' vs installed
+        // settings) directly.
+        state = isDefault(settings) ? QuerySettingsOperationState{Empty{}}
+                                    : QuerySettingsOperationState{std::move(settings)};
+    }
+}
+
 class QuerySettingsRouterService : public QuerySettingsService {
 public:
     QuerySettingsRouterService() {
@@ -642,16 +682,25 @@ public:
         const query_shape::QueryShapeHash& queryShapeHash,
         const NamespaceString& nss,
         const boost::optional<QuerySettings>& querySettingsFromOriginalCommand) const override {
-        if (expCtx->isIdHackQuery()) {
-            return QuerySettings();
-        }
-
         // Always perform cluster lookup (includes rejection check for cluster PQS).
         auto settings = lookupQuerySettingsFromInternalStorage(expCtx, queryShapeHash, nss);
         if (querySettingsFromOriginalCommand.has_value()) {
-            // Merge: user settings as base, cluster settings override on conflict.
-            settings = mergeQuerySettings(*querySettingsFromOriginalCommand, settings);
+            // The settings were supplied directly by the user, so validate them before applying.
+            // Unlike setQuerySettings, empty/default user settings are a no-op rather than an
+            // error.
+            auto userSettings = *querySettingsFromOriginalCommand;
+            validateQueryKnobs(expCtx->getOperationContext(), userSettings);
+
+            settings = mergeQuerySettings(userSettings, settings);
+            simplifyQuerySettings(settings);
+            if (!isDefault(settings)) {
+                validateQuerySettings(settings);
+            }
         }
+
+        // Fail the current command, if 'reject: true' flag is present.
+        failIfRejectedBySettings(expCtx, settings);
+
         return settings;
     }
 
@@ -703,39 +752,28 @@ protected:
         const boost::intrusive_ptr<ExpressionContext>& expCtx,
         const query_shape::QueryShapeHash& queryShapeHash,
         const NamespaceString& nss) const {
-        QuerySettings settings = [&]() {
-            try {
-                if (!isEligbleForQuerySettings(expCtx, nss)) {
-                    return QuerySettings();
-                }
-
-                // Return the found query settings or an empty one.
-                auto result =
-                    _manager.getQuerySettingsForQueryShapeHash(queryShapeHash, nss.tenantId());
-                if (!result.has_value()) {
-                    return QuerySettings();
-                }
-
-                // Backfill the representative query if needed.
-                auto* opCtx = expCtx->getOperationContext();
-                if (BackfillCoordinator::shouldBackfill(expCtx, result->hasRepresentativeQuery)) {
-                    _backfillCoordinator->markForBackfillAndScheduleIfNeeded(
-                        opCtx, queryShapeHash, CurOp::get(opCtx)->opDescription().getOwned());
-                }
-                return std::move(result->querySettings);
-            } catch (const DBException& ex) {
-                LOGV2_WARNING_OPTIONS(10153400,
-                                      {logv2::LogComponent::kQuery},
-                                      "Failed to perform query settings lookup",
-                                      "error"_attr = ex.toString());
+        try {
+            // Return the found query settings or an empty one.
+            auto result =
+                _manager.getQuerySettingsForQueryShapeHash(queryShapeHash, nss.tenantId());
+            if (!result.has_value()) {
                 return QuerySettings();
             }
-        }();
 
-        // Fail the current command, if 'reject: true' flag is present.
-        failIfRejectedBySettings(expCtx, settings);
-
-        return settings;
+            // Backfill the representative query if needed.
+            auto* opCtx = expCtx->getOperationContext();
+            if (BackfillCoordinator::shouldBackfill(expCtx, result->hasRepresentativeQuery)) {
+                _backfillCoordinator->markForBackfillAndScheduleIfNeeded(
+                    opCtx, queryShapeHash, CurOp::get(opCtx)->opDescription().getOwned());
+            }
+            return std::move(result->querySettings);
+        } catch (const DBException& ex) {
+            LOGV2_WARNING_OPTIONS(10153400,
+                                  {logv2::LogComponent::kQuery},
+                                  "Failed to perform query settings lookup",
+                                  "error"_attr = ex.toString());
+            return QuerySettings();
+        }
     }
 
 private:
@@ -753,10 +791,6 @@ public:
         const query_shape::QueryShapeHash& queryShapeHash,
         const NamespaceString& nss,
         const boost::optional<QuerySettings>& querySettingsFromOriginalCommand) const override {
-        if (expCtx->isIdHackQuery()) {
-            return QuerySettings();
-        }
-
         auto* opCtx = expCtx->getOperationContext();
         if (isInternalOrDirectClient(opCtx->getClient())) {
             // Mongos already looked up and merged - return forwarded settings as-is.
@@ -764,11 +798,24 @@ public:
         }
 
         // Replica set: perform cluster lookup (includes rejection check) and merge with user
-        // settings.
+        // settings. These settings come directly from an external client, so validate them first.
         auto settings = lookupQuerySettingsFromInternalStorage(expCtx, queryShapeHash, nss);
         if (querySettingsFromOriginalCommand.has_value()) {
-            settings = mergeQuerySettings(*querySettingsFromOriginalCommand, settings);
+            // Unlike setQuerySettings, empty/default user settings are a no-op rather than an
+            // error.
+            auto& userSettings = *querySettingsFromOriginalCommand;
+            validateQueryKnobs(opCtx, userSettings);
+
+            settings = mergeQuerySettings(userSettings, settings);
+            simplifyQuerySettings(settings);
+            if (!isDefault(settings)) {
+                validateQuerySettings(settings);
+            }
         }
+
+        // Fail the current command, if 'reject: true' flag is present.
+        failIfRejectedBySettings(expCtx, settings);
+
         return settings;
     }
 
@@ -827,7 +874,7 @@ public:
                     "migrateRepresentativeQueriesToCollection"_attr =
                         QuerySettingsMigration::contains(plan, Op::kMoveQueriesToCollection));
         if (plan != Op::kNone) {
-            QuerySettingsMigration(this).run(opCtx, plan);
+            QuerySettingsMigration(this).run(opCtx, plan, targetFCV);
         }
     }
 
@@ -836,28 +883,21 @@ public:
         multiversion::FeatureCompatibilityVersion targetFCV) const override {
         using Op = QuerySettingsMigration::Op;
 
-        auto plan = Op::kNone;
+        // Query knob overrides not supported on the target FCV must be stripped on every
+        // downgrade.
+        auto plan = Op::kRemoveUnsupportedQueryKnobs;
         // Move representative queries back to the cluster parameter once backfill is disabled.
         if (!feature_flags::gFeatureFlagPQSBackfill.isEnabledOnVersion(targetFCV)) {
             plan |= Op::kMoveQueriesToParameter | Op::kDropCollection;
         }
-        // Strip query knobs once the target FCV no longer supports them.
-        if (!feature_flags::gFeatureFlagPqsQueryKnobs.isEnabledOnVersion(targetFCV)) {
-            plan |= Op::kRemoveQueryKnobs;
-        }
-
         LOGV2_DEBUG(12826804,
                     2,
                     "Planning query settings FCV downgrade",
                     "targetFCV"_attr = multiversion::toString(targetFCV),
-                    "removeQueryKnobs"_attr =
-                        QuerySettingsMigration::contains(plan, Op::kRemoveQueryKnobs),
                     "migrateRepresentativeQueriesToClusterParameter"_attr =
                         QuerySettingsMigration::contains(plan, Op::kMoveQueriesToParameter));
 
-        if (plan != Op::kNone) {
-            QuerySettingsMigration(this).run(opCtx, plan);
-        }
+        QuerySettingsMigration(this).run(opCtx, plan, targetFCV);
     }
 
     void upsertRepresentativeQueries(
@@ -1036,6 +1076,38 @@ QuerySettings mergeQuerySettings(const QuerySettings& lhs, const QuerySettings& 
     }
 
     return querySettings;
+}
+
+void QuerySettingsService::validateQueryKnobs(OperationContext* opCtx,
+                                              const QuerySettings& querySettings) const {
+    const auto& knobs = querySettings.getQueryKnobs();
+    if (!knobs) {
+        return;
+    }
+    const auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
+    uassert(12324800,
+            "Unknown field 'queryKnobs' in querySettings",
+            feature_flags::gFeatureFlagPqsQueryKnobs.isEnabled(VersionContext::getDecoration(opCtx),
+                                                               fcvSnapshot));
+
+    // Reject knobs that are not supported on the current FCV, including transitional versions:
+    // during a downgrade the knobs being removed must not be re-settable behind the migration's
+    // stripping pass. Skip the check if the FCV is not initialized (mongos, early startup).
+    if (!fcvSnapshot.isVersionInitialized()) {
+        return;
+    }
+    const auto& reg = QueryKnobRegistry::instance();
+    for (const auto& entry : knobs->entries()) {
+        // Deletions are always allowed so that stale overrides can be removed.
+        if (std::holds_alternative<DeleteQueryKnobOverride>(entry.value)) {
+            continue;
+        }
+        const auto& knobEntry = reg.entry(entry.id);
+        uassert(12955401,
+                str::stream() << "query knob not settable via QuerySettings: "
+                              << knobEntry.wireName,
+                fcvSnapshot.isGreaterThanOrEqualTo(*knobEntry.minFcv));
+    }
 }
 
 void QuerySettingsService::validateQuerySettings(const QuerySettings& querySettings) const {

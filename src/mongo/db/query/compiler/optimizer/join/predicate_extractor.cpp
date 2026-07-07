@@ -40,8 +40,9 @@ namespace {
 // Helper visitor to check if an expression contains any references to variables. We assume that any
 // expression which references a variable is ineligible to be a single table predicate (cannot be
 // pushed down into the find layer).
-struct SingleTablePredicateClassifier : public SelectiveConstExpressionVisitorBase {
-    using SelectiveConstExpressionVisitorBase::visit;
+struct SingleTablePredicateClassifier
+    : public SelectiveConstExpressionVisitorBase<SingleTablePredicateClassifier> {
+    using SelectiveConstExpressionVisitorBase<SingleTablePredicateClassifier>::visit;
 
     void visit(const ExpressionFieldPath* expr) final {
         referencesVariables |=
@@ -138,7 +139,7 @@ struct PredicateExtractor {
         if (auto cmp = dynamic_cast<const ExpressionCompare*>(aggExpr.get())) {
             if (isExprEquijoin(cmp)) {
                 return SplitPredicatesResult{
-                    .joinPredicates = {JoinPredicateExpr::make(_source, cmp, letVars)},
+                    .joinPredicates = {ExtractedJoinPredicate::make(_source, cmp, letVars)},
                 };
             }
         }
@@ -171,7 +172,7 @@ struct PredicateExtractor {
                 return splitJoinAndSingleCollectionPredicates(expr->getExpression(), variables);
             }
             case MatchExpression::AND: {
-                std::vector<JoinPredicateExpr> joinPredicates;
+                std::vector<ExtractedJoinPredicate> joinPredicates;
                 auto singleTablePreds = std::make_unique<AndMatchExpression>();
 
                 // Recursive calls to split for each child and aggregate join and residual
@@ -243,11 +244,11 @@ public:
     }
 
 private:
-    class ExpressionVisitor : public SelectiveConstExpressionVisitorBase {
+    class ExpressionVisitor : public SelectiveConstExpressionVisitorBase<ExpressionVisitor> {
     public:
         explicit ExpressionVisitor(ExtractExprPredicatesHelper& helper) : _helper(helper) {}
 
-        using SelectiveConstExpressionVisitorBase::visit;
+        using SelectiveConstExpressionVisitorBase<ExpressionVisitor>::visit;
 
         void visit(const ExpressionAnd* expr) final {
             ++_visited;
@@ -405,14 +406,15 @@ FieldPath localCollectionFieldPath(const std::vector<LetVariable>& letVars,
 
 }  // namespace
 
-JoinPredicateExpr JoinPredicateExpr::make(const DocumentSource* source,
-                                          const ExpressionCompare* eqNode,
-                                          const std::vector<LetVariable>& letVars) {
+ExtractedJoinPredicate ExtractedJoinPredicate::make(const DocumentSource* source,
+                                                    const ExpressionCompare* eqNode,
+                                                    const std::vector<LetVariable>& letVars) {
     auto left = tassert_cast<const ExpressionFieldPath*>(eqNode->getChildren()[0].get());
     auto right = tassert_cast<const ExpressionFieldPath*>(eqNode->getChildren()[1].get());
 
     if (left->isVariableReference()) {
-        return {localCollectionFieldPath(letVars, left),
+        return {true /* is $expr */,
+                localCollectionFieldPath(letVars, left),
                 right->getFieldPathWithoutCurrentPrefix(),
                 eqNode,
                 source};
@@ -421,10 +423,18 @@ JoinPredicateExpr JoinPredicateExpr::make(const DocumentSource* source,
     tassert(11317203,
             "Expected a variable & a field path in a join predicate",
             right->isVariableReference());
-    return {localCollectionFieldPath(letVars, right),
+    return {true /* is $expr */,
+            localCollectionFieldPath(letVars, right),
             left->getFieldPathWithoutCurrentPrefix(),
             eqNode,
             source};
+}
+
+ExtractedJoinPredicate ExtractedJoinPredicate::make(FieldPath localField,
+                                                    FieldPath foreignField,
+                                                    const DocumentSource* source) {
+    return {
+        false /* isn't $expr */, std::move(localField), std::move(foreignField), nullptr, source};
 }
 
 boost::optional<SplitPredicatesResult> splitJoinAndSingleCollectionPredicates(

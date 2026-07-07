@@ -39,6 +39,7 @@
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/repl/primary_only_service.h"
+#include "mongo/db/s/forwardable_operation_metadata.h"
 #include "mongo/db/s/resharding/resharding_collection_cloner.h"
 #include "mongo/db/s/resharding/resharding_coordinator_service.h"
 #include "mongo/db/s/resharding/resharding_donor_service.h"
@@ -50,6 +51,7 @@
 #include "mongo/db/service_context.h"
 #include "mongo/db/sharding_environment/grid.h"
 #include "mongo/db/topology/vector_clock/vector_clock_metadata_hook.h"
+#include "mongo/db/version_context.h"
 #include "mongo/executor/network_connection_hook.h"
 #include "mongo/executor/network_interface_factory.h"
 #include "mongo/executor/thread_pool_task_executor.h"
@@ -172,7 +174,7 @@ public:
             // The ReshardingCollectionCloner expects there to already be a Client associated with
             // the thread from the thread pool. We set up the ThreadPoolTaskExecutor identically to
             // how the recipient's primary-only service is set up.
-            auto donorShards = Grid::get(opCtx)->shardRegistry()->getAllShardRefs(opCtx).size();
+            auto donorShards = Grid::get(opCtx)->shardRegistry()->getAllShardIds(opCtx).size();
 
             auto metrics =
                 ReshardingMetrics::makeInstance_forTest(request().getUuid(),
@@ -203,6 +205,10 @@ public:
                     "TestReshardCloneCollectionNetwork", nullptr, std::move(hookList)));
             executor->startup();
 
+            ForwardableOperationMetadata fom(opCtx);
+            fom.setVersionContext(
+                VersionContext{serverGlobalParams.featureCompatibility.acquireFCVSnapshot()});
+
             UUID reshardingUUID =
                 request().getReshardingUUID() ? *request().getReshardingUUID() : UUID::gen();
             ReshardingCollectionCloner cloner(metrics.get(),
@@ -214,7 +220,8 @@ public:
                                               request().getAtClusterTime(),
                                               request().getOutputNs(),
                                               true /* storeProgress */,
-                                              request().getRelaxed());
+                                              request().getRelaxed(),
+                                              std::move(fom));
 
             std::shared_ptr<ThreadPool> cancelableOperationContextPool = [] {
                 ThreadPool::Options options;

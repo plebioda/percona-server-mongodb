@@ -36,6 +36,7 @@
 #include "mongo/db/global_catalog/type_collection.h"
 #include "mongo/db/op_observer/op_observer.h"
 #include "mongo/db/query/collation/collator_factory_interface.h"
+#include "mongo/db/query/find_command.h"
 #include "mongo/db/query/write_ops/write_ops.h"
 #include "mongo/db/repl/oplog.h"
 #include "mongo/db/shard_role/lock_manager/exception_util.h"
@@ -45,6 +46,7 @@
 #include "mongo/db/shard_role/shard_catalog/operation_sharding_state.h"
 #include "mongo/db/shard_role/shard_catalog/type_oplog_catalog_metadata_gen.h"
 #include "mongo/db/sharding_environment/grid.h"
+#include "mongo/db/sharding_environment/sharding_statistics.h"
 #include "mongo/db/storage/write_unit_of_work.h"
 #include "mongo/db/topology/sharding_state.h"
 #include "mongo/db/versioning_protocol/chunk_version.h"
@@ -52,12 +54,24 @@
 #include "mongo/db/versioning_protocol/stale_exception.h"
 #include "mongo/logv2/log.h"
 
+#include <algorithm>
+#include <set>
+
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kSharding
 
 namespace mongo {
 namespace shard_catalog_commit {
 namespace {
+
+// Max chunks sent to secondaries in one delta oplog entry. Bigger changes invalidate all metadata
+// instead.
+constexpr size_t kMaxChangedChunksInDeltaOplogEntry = 100;
+constexpr int kMaxCollectionShardingStateDeltaOplogEntryObjectSizeBytes = BSONObjMaxUserSize;
+
+std::string serializeNss(const NamespaceString& nss) {
+    return NamespaceStringUtil::serialize(nss, SerializationContext::stateDefault());
+}
 
 CollectionType fetchCollection(OperationContext* opCtx, const NamespaceString& nss) {
     auto catalogClient = Grid::get(opCtx)->catalogClient();
@@ -82,7 +96,7 @@ std::vector<ChunkType> fetchOwnedChunks(OperationContext* opCtx,
         nullptr,
         coll.getEpoch(),
         coll.getTimestamp(),
-        repl::ReadConcernLevel::kSnapshotReadConcern);
+        repl::ReadConcernArgs::kSnapshot);
     uassertStatusOK(chunksStatus.getStatus());
 
     return chunksStatus.getValue();
@@ -98,6 +112,22 @@ bool doesShardOwnChunks(OperationContext* opCtx,
 bool doesShardOwnChunks(OperationContext* opCtx, const NamespaceString& nss) {
     const auto coll = fetchCollection(opCtx, nss);
     return doesShardOwnChunks(opCtx, nss, coll);
+}
+
+std::vector<ChunkType> fetchLocalOwnedChunks(OperationContext* opCtx, const CollectionType& coll) {
+    DBDirectClient client(opCtx);
+
+    FindCommandRequest findCmd(NamespaceString::kConfigShardCatalogChunksNamespace);
+    findCmd.setFilter(BSON(ChunkType::collectionUUID() << coll.getUuid()));
+    findCmd.setSort(BSON(ChunkType::min() << 1));
+    auto cursor = client.find(std::move(findCmd));
+
+    std::vector<ChunkType> chunks;
+    while (cursor->more()) {
+        chunks.push_back(uassertStatusOK(ChunkType::parseFromConfigBSON(
+            cursor->nextSafe().getOwned(), coll.getEpoch(), coll.getTimestamp())));
+    }
+    return chunks;
 }
 
 write_ops::UpdateOpEntry makeUpdateEntry(BSONObj filter, BSONObj replacement) {
@@ -137,19 +167,33 @@ void executeLocalDelete(DBDirectClient& dbClient,
     write_ops::checkWriteErrors(dbClient.remove(std::move(req)));
 }
 
+void executeLocalDeletes(DBDirectClient& dbClient,
+                         const NamespaceString& nss,
+                         std::vector<write_ops::DeleteOpEntry> deletes) {
+    for (auto it = deletes.begin(); it != deletes.end();) {
+        std::vector<write_ops::DeleteOpEntry> batch;
+        while (it != deletes.end() && batch.size() < write_ops::kMaxWriteBatchSize) {
+            batch.push_back(std::move(*it));
+            ++it;
+        }
+
+        write_ops::DeleteCommandRequest req(nss);
+        req.setDeletes(std::move(batch));
+        req.setWriteConcern(defaultMajorityWriteConcern());
+        write_ops::checkWriteErrors(dbClient.remove(std::move(req)));
+    }
+}
+
 void writeCollectionAllowChunkOperationsLocally(OperationContext* opCtx,
                                                 const NamespaceString& nss,
                                                 bool allowChunkOperations) {
-    const auto serializedNs =
-        NamespaceStringUtil::serialize(nss, SerializationContext::stateDefault());
-
     DBDirectClient dbClient(opCtx);
 
     executeLocalUpdates(
         dbClient,
         NamespaceString::kConfigShardCatalogCollectionsNamespace,
         {makeUpdateEntry(
-            BSON(CollectionType::kNssFieldName << serializedNs),
+            BSON(CollectionType::kNssFieldName << serializeNss(nss)),
             allowChunkOperations
                 ? BSON("$unset" << BSON(CollectionType::kAllowChunkOperationsFieldName << ""))
                 : BSON("$set" << BSON(CollectionType::kAllowChunkOperationsFieldName << false)))});
@@ -158,61 +202,64 @@ void writeCollectionAllowChunkOperationsLocally(OperationContext* opCtx,
 void writeCollectionMetadataLocally(OperationContext* opCtx,
                                     const NamespaceString& nss,
                                     const ShardCatalogCollectionTypeBase& coll,
-                                    const std::vector<ChunkType>& chunks) {
+                                    const std::vector<ChunkType>& chunks,
+                                    bool rewritePersistedChunks) {
     DBDirectClient dbClient(opCtx);
 
-    // Persist Chunk Metadata, we do this in batches because of the 16MB BSON limit.
-    for (auto it = chunks.begin(); it != chunks.end();) {
-        size_t updateSize = 0;
-        std::vector<write_ops::UpdateOpEntry> chunkUpdates;
+    if (rewritePersistedChunks) {
+        // Persist Chunk Metadata, we do this in batches because of the 16MB BSON limit.
+        for (auto it = chunks.begin(); it != chunks.end();) {
+            size_t updateSize = 0;
+            std::vector<write_ops::UpdateOpEntry> chunkUpdates;
 
-        while (it != chunks.end()) {
-            const auto& chunk = *it;
+            while (it != chunks.end()) {
+                const auto& chunk = *it;
 
-            auto q = BSON(ChunkType::name() << chunk.getName());
-            updateSize += q.objsize();
-            auto u = chunk.toConfigBSON();
-            updateSize += u.objsize();
+                auto q = BSON(ChunkType::name() << chunk.getName());
+                updateSize += q.objsize();
+                auto u = chunk.toConfigBSON();
+                updateSize += u.objsize();
 
-            write_ops::UpdateOpEntry entry;
-            entry.setQ(std::move(q));
-            entry.setU(std::move(u));
-            entry.setUpsert(true);
-            entry.setMulti(false);
-            chunkUpdates.push_back(std::move(entry));
+                write_ops::UpdateOpEntry entry;
+                entry.setQ(std::move(q));
+                entry.setU(std::move(u));
+                entry.setUpsert(true);
+                entry.setMulti(false);
+                chunkUpdates.push_back(std::move(entry));
 
-            it++;
+                it++;
 
-            // In principle we could do a better approximation of the update request size in order
-            // to be closer to the 16MB limit. However, after a certain batch size the speedup
-            // improvement reaches a limit as can be seen with batched deletes. 10MB is a reasonable
-            // limit that will accommodate all batched update requests comfortably under the 16MB
-            // limit while offering the same advantages.
-            static constexpr auto k10MbLimit = 10 * 1024 * 1024;
-            if (updateSize >= k10MbLimit || chunkUpdates.size() >= write_ops::kMaxWriteBatchSize) {
-                break;
+                // In principle we could do a better approximation of the update request size in
+                // order to be closer to the 16MB limit. However, after a certain batch size the
+                // speedup improvement reaches a limit as can be seen with batched deletes. 10MB is
+                // a reasonable limit that will accommodate all batched update requests comfortably
+                // under the 16MB limit while offering the same advantages.
+                static constexpr auto k10MbLimit = 10 * 1024 * 1024;
+                if (updateSize >= k10MbLimit ||
+                    chunkUpdates.size() >= write_ops::kMaxWriteBatchSize) {
+                    break;
+                }
             }
-        }
 
-        executeLocalUpdates(
-            dbClient, NamespaceString::kConfigShardCatalogChunksNamespace, std::move(chunkUpdates));
+            executeLocalUpdates(dbClient,
+                                NamespaceString::kConfigShardCatalogChunksNamespace,
+                                std::move(chunkUpdates));
+        }
     }
 
-    auto serializedNs = NamespaceStringUtil::serialize(nss, SerializationContext::stateDefault());
     executeLocalUpdates(
         dbClient,
         NamespaceString::kConfigShardCatalogCollectionsNamespace,
-        {makeUpsertEntry(BSON(ShardCatalogCollectionTypeBase::kNssFieldName << serializedNs),
+        {makeUpsertEntry(BSON(ShardCatalogCollectionTypeBase::kNssFieldName << serializeNss(nss)),
                          coll.toBSON())});
 }
 
 void deleteCollectionEntryLocally(OperationContext* opCtx, const NamespaceString& nss) {
     DBDirectClient dbClient(opCtx);
-    auto serializedNs = NamespaceStringUtil::serialize(nss, SerializationContext::stateDefault());
 
     executeLocalDelete(dbClient,
                        NamespaceString::kConfigShardCatalogCollectionsNamespace,
-                       BSON(CollectionType::kNssFieldName << serializedNs),
+                       BSON(CollectionType::kNssFieldName << serializeNss(nss)),
                        false /* multi */);
 }
 
@@ -221,16 +268,14 @@ void upsertCollectionEntryLocally(OperationContext* opCtx,
                                   const CollectionType& coll) {
     DBDirectClient dbClient{opCtx};
 
-    auto entry =
-        makeUpsertEntry(BSON(CollectionType::kNssFieldName << NamespaceStringUtil::serialize(
-                                 nss, SerializationContext::stateDefault())),
-                        coll.asShardCatalogType().toBSON());
+    auto entry = makeUpsertEntry(BSON(CollectionType::kNssFieldName << serializeNss(nss)),
+                                 coll.asShardCatalogType().toBSON());
 
     executeLocalUpdates(
         dbClient, NamespaceString::kConfigShardCatalogCollectionsNamespace, {entry});
 }
 
-void deleteCollectionChunksMetadataLocally(OperationContext* opCtx, const UUID& uuid) {
+void deleteEntireCollectionChunksMetadataLocally(OperationContext* opCtx, const UUID& uuid) {
     DBDirectClient dbClient(opCtx);
     executeLocalDelete(dbClient,
                        NamespaceString::kConfigShardCatalogChunksNamespace,
@@ -242,41 +287,84 @@ void deleteAllCollectionMetadataLocally(OperationContext* opCtx,
                                         const NamespaceString& nss,
                                         const UUID& uuid) {
     deleteCollectionEntryLocally(opCtx, nss);
-    deleteCollectionChunksMetadataLocally(opCtx, uuid);
+    deleteEntireCollectionChunksMetadataLocally(opCtx, uuid);
+}
+
+repl::MutableOplogEntry makeShardCatalogCommandOplogEntry(OperationContext* opCtx,
+                                                          const NamespaceString& nss,
+                                                          const UUID& uuid,
+                                                          BSONObj object) {
+    repl::MutableOplogEntry oplogEntry;
+    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
+    oplogEntry.setVersionContextIfHasOperationFCV(VersionContext::getDecoration(opCtx));
+    oplogEntry.setNss(nss.getCommandNS());
+    oplogEntry.setUuid(uuid);
+    oplogEntry.setObject(std::move(object));
+    oplogEntry.setOpTime(OplogSlot());
+    oplogEntry.setWallClockTime(opCtx->fastClockSource().now());
+    return oplogEntry;
+}
+
+void logShardCatalogCommandOplogEntry(OperationContext* opCtx,
+                                      repl::MutableOplogEntry& oplogEntry,
+                                      const char* opName) {
+    writeConflictRetry(opCtx, opName, NamespaceString::kRsOplogNamespace, [&] {
+        AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kWrite);
+        WriteUnitOfWork wuow(opCtx);
+        repl::OpTime opTime = repl::logOp(opCtx, &oplogEntry);
+        uassert(10281501,
+                str::stream() << "Failed to create new oplog entry for " << opName
+                              << " with opTime: " << oplogEntry.getOpTime().toString() << ": "
+                              << redact(oplogEntry.toBSON()),
+                !opTime.isNull());
+        wuow.commit();
+    });
 }
 
 void invalidateCollectionMetadata(OperationContext* opCtx,
                                   const NamespaceString& nss,
                                   const UUID& uuid,
                                   bool forDroppedCollection) {
-    repl::MutableOplogEntry oplogEntry;
-    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
-    oplogEntry.setVersionContextIfHasOperationFCV(VersionContext::getDecoration(opCtx));
-    oplogEntry.setNss(nss.getCommandNS());
-    oplogEntry.setUuid(uuid);
     auto entry = InvalidateCollectionMetadataOplogEntry{std::string(nss.coll())};
     entry.setForDroppedCollection(forDroppedCollection);
-    oplogEntry.setObject(entry.toBSON());
-    oplogEntry.setOpTime(OplogSlot());
-    oplogEntry.setWallClockTime(opCtx->fastClockSource().now());
 
     // Replicate the invalidation through the oplog to secondaries via a 'c' entry.
-    writeConflictRetry(
-        opCtx, "invalidateCollectionMetadata", NamespaceString::kRsOplogNamespace, [&] {
-            AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kWrite);
-            WriteUnitOfWork wuow(opCtx);
-            repl::OpTime opTime = repl::logOp(opCtx, &oplogEntry);
-            uassert(10281501,
-                    str::stream() << "Failed to create new oplog entry for "
-                                     "invalidateCollectionMetadata with opTime: "
-                                  << oplogEntry.getOpTime().toString() << ": "
-                                  << redact(oplogEntry.toBSON()),
-                    !opTime.isNull());
-            wuow.commit();
-        });
+    auto oplogEntry = makeShardCatalogCommandOplogEntry(opCtx, nss, uuid, entry.toBSON());
+    logShardCatalogCommandOplogEntry(opCtx, oplogEntry, "invalidateCollectionMetadata");
 
     // Apply the invalidation on the current (primary) node after the timestamp has been assigned.
     opCtx->getServiceContext()->getOpObserver()->onInvalidateCollectionMetadata(
+        opCtx, repl::OplogEntry(oplogEntry.toBSON()));
+}
+
+void updateCollectionMetadata(OperationContext* opCtx,
+                              const NamespaceString& nss,
+                              const UUID& uuid,
+                              const std::vector<ChunkType>& changedChunks) {
+    if (changedChunks.size() > kMaxChangedChunksInDeltaOplogEntry) {
+        invalidateCollectionMetadata(opCtx, nss, uuid, false /* forDroppedCollection */);
+        return;
+    }
+
+    std::vector<BSONObj> changedChunkDocs;
+    changedChunkDocs.reserve(changedChunks.size());
+    for (const auto& chunk : changedChunks) {
+        changedChunkDocs.push_back(chunk.toConfigBSON());
+    }
+
+    auto entry = CollectionShardingStateDeltaOplogEntry{std::string(nss.coll()),
+                                                        std::move(changedChunkDocs)};
+
+    auto oplogEntry = makeShardCatalogCommandOplogEntry(opCtx, nss, uuid, entry.toBSON());
+    if (oplogEntry.toBSON().objsize() > kMaxCollectionShardingStateDeltaOplogEntryObjectSizeBytes) {
+        invalidateCollectionMetadata(opCtx, nss, uuid, false /* forDroppedCollection */);
+        return;
+    }
+
+    logShardCatalogCommandOplogEntry(opCtx, oplogEntry, "updateCollectionMetadata");
+
+    // Apply the update on the current (primary) node after the timestamp has been assigned.
+    opCtx->getServiceContext()->getOpObserver()->onApplyCollectionShardingStateDelta(
         opCtx, repl::OplogEntry(oplogEntry.toBSON()));
 }
 
@@ -284,28 +372,9 @@ void setAllowChunkOperationsOnSecondaries(OperationContext* opCtx,
                                           const NamespaceString& nss,
                                           const UUID& uuid,
                                           bool allowChunkOperations) {
-    repl::MutableOplogEntry oplogEntry;
-    oplogEntry.setOpType(repl::OpTypeEnum::kCommand);
-    oplogEntry.setVersionContextIfHasOperationFCV(VersionContext::getDecoration(opCtx));
-    oplogEntry.setNss(nss.getCommandNS());
-    oplogEntry.setUuid(uuid);
     auto entry = SetAllowChunkOperationsOplogEntry{std::string(nss.coll()), allowChunkOperations};
-    oplogEntry.setObject(entry.toBSON());
-    oplogEntry.setOpTime(OplogSlot());
-    oplogEntry.setWallClockTime(opCtx->fastClockSource().now());
-
-    writeConflictRetry(opCtx, "setAllowChunkOperations", NamespaceString::kRsOplogNamespace, [&] {
-        AutoGetOplogFastPath oplogWrite(opCtx, OplogAccessMode::kWrite);
-        WriteUnitOfWork wuow(opCtx);
-        repl::OpTime opTime = repl::logOp(opCtx, &oplogEntry);
-        uassert(12120908,
-                str::stream() << "Failed to create new oplog entry for "
-                                 "setAllowChunkOperations with opTime: "
-                              << oplogEntry.getOpTime().toString() << ": "
-                              << redact(oplogEntry.toBSON()),
-                !opTime.isNull());
-        wuow.commit();
-    });
+    auto oplogEntry = makeShardCatalogCommandOplogEntry(opCtx, nss, uuid, entry.toBSON());
+    logShardCatalogCommandOplogEntry(opCtx, oplogEntry, "setAllowChunkOperations");
 }
 
 void updateShardCatalogCache(OperationContext* opCtx,
@@ -348,10 +417,179 @@ void updateShardCatalogCache(OperationContext* opCtx,
 
     // Update allowChunkOperations and write an oplog 'c' entry to send the new allowChunkOperations
     // value to secondaries, since its value could have potentially changed.
-    // TODO (SERVER-127444): remove these lines.
+    // TODO (SERVER-130426) Remove these lines
     scopedCsr->setAllowChunkOperations(coll.getAllowChunkOperations());
     setAllowChunkOperationsOnSecondaries(
         opCtx, nss, coll.getUuid(), coll.getAllowChunkOperations());
+}
+
+struct CommitCollectionMetadataOptions {
+    // Whether to rewrite chunk documents in config.shard.catalog.chunks. When false, the caller
+    // guarantees the durable chunk documents are already correct (e.g., UUID-preserving rename)
+    // and only the collection entry needs to be updated.
+    bool rewritePersistedChunks = true;
+
+    enum class NotifyMode {
+        // Don't touch the in-memory CSR or the oplog at all.
+        kNone,
+        // Emit the oplog 'c' entry and apply it locally right away, clearing the CSR. If the
+        // collection ends up with a durable entry, eagerly reinstall the metadata afterwards via
+        // updateShardCatalogCache so the next query doesn't have to recover it from disk.
+        kInvalidateThenReinstallOnPrimary,
+    };
+    NotifyMode notifyMode = NotifyMode::kInvalidateThenReinstallOnPrimary;
+};
+
+void commitCollectionMetadataLocallyImpl(OperationContext* opCtx,
+                                         const NamespaceString& nss,
+                                         const CollectionType& coll,
+                                         const std::vector<ChunkType>& ownedChunks,
+                                         bool isDbPrimaryShard,
+                                         const CommitCollectionMetadataOptions& options) {
+    if (options.rewritePersistedChunks) {
+        // Drop any prior chunks for this collection so repeated calls don't accumulate stale rows.
+        deleteEntireCollectionChunksMetadataLocally(opCtx, coll.getUuid());
+    }
+
+    const bool hasCollectionEntry = isDbPrimaryShard || !ownedChunks.empty();
+    if (hasCollectionEntry) {
+        // Write to `config.shard.catalog.collections` and, when requested, `chunks`.
+        writeCollectionMetadataLocally(
+            opCtx, nss, coll.asShardCatalogType(), ownedChunks, options.rewritePersistedChunks);
+    } else {
+        // If the shard owns no chunks AND is not the dbPrimary then it really doesn't know
+        // anything about the collection. Make sure to delete any existing collection entry.
+        deleteCollectionEntryLocally(opCtx, nss);
+    }
+
+    switch (options.notifyMode) {
+        case CommitCollectionMetadataOptions::NotifyMode::kNone:
+            return;
+        case CommitCollectionMetadataOptions::NotifyMode::kInvalidateThenReinstallOnPrimary:
+            // Emit the oplog 'c' entry and clear the in-memory state.
+            invalidateCollectionMetadata(
+                opCtx, nss, coll.getUuid(), !hasCollectionEntry /* forDroppedCollection */);
+            if (hasCollectionEntry) {
+                // Update this node's CSR with collection metadata and chunks as an optimization,
+                // so the next query doesn't have to recover it from disk.
+                updateShardCatalogCache(opCtx, nss, coll, ownedChunks);
+            }
+            return;
+    }
+}
+
+// Joins the ranges of `newChunks` that touch or overlap into fewer [min, max) ranges. Searching
+// with these few ranges is cheaper than one search per chunk.
+std::vector<ChunkRange> mergeChunkRanges(const std::vector<ChunkType>& newChunks) {
+    std::vector<ChunkRange> ranges;
+    ranges.reserve(newChunks.size());
+    for (const auto& chunk : newChunks) {
+        ranges.push_back(chunk.getRange());
+    }
+    std::sort(ranges.begin(), ranges.end(), [](const ChunkRange& a, const ChunkRange& b) {
+        return a.getMin().woCompare(b.getMin()) < 0;
+    });
+
+    std::vector<ChunkRange> merged;
+    for (auto& range : ranges) {
+        // If the next range starts at or before the current range's end, grow the current range.
+        if (!merged.empty() && range.getMin().woCompare(merged.back().getMax()) <= 0) {
+            if (range.getMax().woCompare(merged.back().getMax()) > 0) {
+                merged.back() = ChunkRange(merged.back().getMin(), range.getMax());
+            }
+        } else {
+            merged.push_back(std::move(range));
+        }
+    }
+    return merged;
+}
+
+// Finds the on-disk chunks for `coll` that overlap any chunk in `newChunks` and returns the
+// deletes needed to remove them. This ensures the persisted chunks remain non-overlapping after
+// inserting the new ones.
+//
+// Stored chunks are already non-overlapping and indexed by `min`, so we only read the small set
+// that could overlap instead of scanning them all. A chunk overlaps `[qmin, qmax)` if
+// `min < qmax` and `max > qmin`.
+//
+// For each new chunk `[qmin, qmax)`, we check two cases:
+// 1. The single chunk whose `min` is before `qmin` but whose range extends past `qmin`.
+// 2. Any chunks whose `min` falls within `[qmin, qmax)`.
+std::vector<write_ops::DeleteOpEntry> reconcileOverlappingChunks(
+    OperationContext* opCtx, const CollectionType& coll, const std::vector<ChunkType>& newChunks) {
+    DBDirectClient dbClient(opCtx);
+
+    // We only need the chunk id (to delete it) and max (to test the first chunk); min comes from
+    // the index. Reading just these keeps the returned documents small.
+    const BSONObj projection =
+        BSON(ChunkType::name() << 1 << ChunkType::min() << 1 << ChunkType::max() << 1);
+
+    // Track ids already added so a chunk found by more than one range is deleted only once.
+    std::set<OID> seen;
+    std::vector<write_ops::DeleteOpEntry> deletes;
+
+    const auto addDelete = [&](const OID& name) {
+        if (!seen.insert(name).second) {
+            return;
+        }
+        write_ops::DeleteOpEntry del;
+        del.setQ(BSON(ChunkType::name() << name << ChunkType::collectionUUID() << coll.getUuid()));
+        del.setMulti(false);
+        deletes.push_back(std::move(del));
+    };
+
+    for (const auto& range : mergeChunkRanges(newChunks)) {
+        const auto& qMin = range.getMin();
+        const auto& qMax = range.getMax();
+
+        // The chunk with the largest min below qMin. It overlaps only if its max reaches past qMin.
+        // There is at most one such chunk.
+        {
+            FindCommandRequest findCmd(NamespaceString::kConfigShardCatalogChunksNamespace);
+            findCmd.setFilter(BSON(ChunkType::collectionUUID()
+                                   << coll.getUuid() << ChunkType::min() << BSON("$lt" << qMin)));
+            findCmd.setSort(BSON(ChunkType::min() << -1));
+            findCmd.setLimit(1);
+            findCmd.setProjection(projection);
+            auto cursor = dbClient.find(std::move(findCmd));
+            if (cursor->more()) {
+                const auto doc = cursor->next();
+                if (doc[ChunkType::max.name()].Obj().woCompare(qMin) > 0) {
+                    addDelete(doc[ChunkType::name.name()].OID());
+                }
+            }
+        }
+
+        // Every chunk whose min is inside [qMin, qMax) overlaps the range.
+        {
+            FindCommandRequest findCmd(NamespaceString::kConfigShardCatalogChunksNamespace);
+            findCmd.setFilter(BSON(ChunkType::collectionUUID()
+                                   << coll.getUuid() << ChunkType::min()
+                                   << BSON("$gte" << qMin << "$lt" << qMax)));
+            findCmd.setSort(BSON(ChunkType::min() << 1));
+            findCmd.setProjection(projection);
+            auto cursor = dbClient.find(std::move(findCmd));
+            while (cursor->more()) {
+                addDelete(cursor->next()[ChunkType::name.name()].OID());
+            }
+        }
+    }
+
+    return deletes;
+}
+
+void deleteOverlappingChunksLocally(OperationContext* opCtx,
+                                    const CollectionType& coll,
+                                    const std::vector<ChunkType>& newChunks) {
+    // Delete any stored chunk that overlaps a new chunk, so the stored chunks do not overlap once
+    // the new ones are inserted.
+    auto deletes = reconcileOverlappingChunks(opCtx, coll, newChunks);
+    if (deletes.empty()) {
+        return;
+    }
+    DBDirectClient dbClient(opCtx);
+    executeLocalDeletes(
+        dbClient, NamespaceString::kConfigShardCatalogChunksNamespace, std::move(deletes));
 }
 
 }  // namespace
@@ -359,23 +597,27 @@ void updateShardCatalogCache(OperationContext* opCtx,
 void commitDropCollectionLocally(OperationContext* opCtx,
                                  const NamespaceString& nss,
                                  const UUID& uuid) {
-
-    LOGV2_INFO(12295703,
-               "Dropping all shard catalog metadata for collection",
-               "nss"_attr = nss,
-               "uuid"_attr = uuid);
+    ShardingStatistics::get(opCtx)
+        .collectionShardingMetadataStatistics.registerLocalCollectionMetadataDrop();
 
     // Write to `config.shard.catalog.(collections|chunks)` to delete collection metadata.
     deleteAllCollectionMetadataLocally(opCtx, nss, uuid);
 
     // Write an oplog 'c' entry to invalidate the CSR and clear it on this node and secondaries.
     invalidateCollectionMetadata(opCtx, nss, uuid, true /* forDroppedCollection */);
+
+    LOGV2_INFO(12295703,
+               "Dropped all shard catalog metadata for collection",
+               "nss"_attr = nss,
+               "uuid"_attr = uuid);
 }
 
 void commitDropOfStaleChunksForRename(OperationContext* opCtx, const UUID& uuid) {
     // Delete the old chunks from `config.shard.catalog.chunks`. The deletion/replacement of the
     // collection entry happened before as part of calling commitRenameOfCollectionMetadata.
-    deleteCollectionChunksMetadataLocally(opCtx, uuid);
+    deleteEntireCollectionChunksMetadataLocally(opCtx, uuid);
+
+    LOGV2_INFO(12721500, "Dropped stale chunks metadata for rename", "uuid"_attr = uuid);
 }
 
 void commitRenameOfCollectionMetadata(OperationContext* opCtx,
@@ -385,9 +627,19 @@ void commitRenameOfCollectionMetadata(OperationContext* opCtx,
                                       const boost::optional<UUID>& targetUUID,
                                       const boost::optional<UUID>& newTargetUUID,
                                       bool isUpgrading,
-                                      bool isDbPrimary) {
-    // Delete the old collection entries if any exist since they'll be replaced by the final
-    // state.
+                                      bool isDbPrimaryShard) {
+    LOGV2_DEBUG(12721501,
+                1,
+                "Committing rename of collection shard catalog metadata locally",
+                "fromNss"_attr = fromNss,
+                "toNss"_attr = toNss,
+                "isUpgrading"_attr = isUpgrading,
+                "isDbPrimaryShard"_attr = isDbPrimaryShard);
+
+    ShardingStatistics::get(opCtx)
+        .collectionShardingMetadataStatistics.registerLocalCollectionMetadataRename();
+
+    // Delete the old collection entries if any exist since they'll be replaced by the final state.
     deleteCollectionEntryLocally(opCtx, fromNss);
     deleteCollectionEntryLocally(opCtx, toNss);
 
@@ -407,6 +659,25 @@ void commitRenameOfCollectionMetadata(OperationContext* opCtx,
         }
     };
 
+    // Fetches the target collection's entry from the CSRS. If it's untracked, the rename left
+    // nothing to persist in the local shard catalog: log it, clear the target's in-memory state
+    // (the durable collection entry was already deleted above), and return boost::none so the
+    // caller can bail out.
+    auto fetchTargetCollectionOrCleanup = [&]() -> boost::optional<CollectionType> {
+        try {
+            return fetchCollection(opCtx, toNss);
+        } catch (const ExceptionFor<ErrorCodes::NamespaceNotFound>& ex) {
+            LOGV2_DEBUG(12721502,
+                        1,
+                        "Nothing to persist in the local shard catalog since the renamed "
+                        "collection is untracked",
+                        "toNss"_attr = toNss,
+                        "error"_attr = ex.toStatus());
+            cleanupInMemoryState(false /*clearFromNss*/, true /*clearToNss*/);
+            return boost::none;
+        }
+    };
+
     if (isUpgrading || newTargetUUID.has_value()) {
         // If it's upgrading then we just need to fetch the entire filtering metadata from the CSRS
         // and durably persist it since the local state may be incomplete. This means that we have
@@ -415,29 +686,27 @@ void commitRenameOfCollectionMetadata(OperationContext* opCtx,
         //
         // We also perform this if the collection has undergone a UUID change since that invalidates
         // all previous chunks as well and the new chunks aren't present in the shard yet.
-        LOGV2_INFO(12295702,
-                   "Renaming metadata during an FCV upgrade, forcing a full refresh of the data on "
-                   "the shard",
-                   "fromNss"_attr = fromNss,
-                   "toNss"_attr = toNss);
+        LOGV2_DEBUG(12295702,
+                    1,
+                    "Renaming metadata during an FCV upgrade, forcing a full refresh of the data "
+                    "on the shard",
+                    "fromNss"_attr = fromNss,
+                    "toNss"_attr = toNss);
 
         if (fromUUID) {
             commitDropCollectionLocally(opCtx, fromNss, *fromUUID);
         }
-        try {
-            auto _ = fetchCollection(opCtx, toNss);
-        } catch (const ExceptionFor<ErrorCodes::NamespaceNotFound>& ex) {
-            LOGV2_INFO(12295701,
-                       "Nothing to persist in the local shard catalog since the renamed collection "
-                       "is untracked",
-                       "toNss"_attr = toNss,
-                       "error"_attr = ex.toStatus());
-            cleanupInMemoryState(false, true);
+        auto coll = fetchTargetCollectionOrCleanup();
+        if (!coll) {
             return;
         }
-        commitCollectionMetadataLocally(opCtx, toNss, isDbPrimary);
+        commitCollectionMetadataLocally(opCtx, toNss, isDbPrimaryShard);
         return;
     }
+
+    // The source namespace no longer exists after the rename, so its in-memory state must be
+    // invalidated and cleared regardless of what happens to the target namespace.
+    cleanupInMemoryState(true /*clearFromNss*/, false /*clearToNss*/);
 
     // At this point we can assume that the shard catalog metadata is durably persisted on this
     // shard, so all the chunk entries are stored locally for both from/target collections if they
@@ -446,85 +715,82 @@ void commitRenameOfCollectionMetadata(OperationContext* opCtx,
     // There are two paths to take here:
     // 1. Either the new collection state is tracked (there's a collection entry on the CSRS)
     // 2. Or it's untracked (No collection entry on the CSRS)
-    try {
-        // For the first case we must delete the collection entries for both fromNss and toNss
-        // namespaces and then insert the final entry for toNss. We've already deleted the first
-        // collection entry so we must upsert the new entry to end up in the final form.
-        auto newEntry = fetchCollection(opCtx, toNss);
-        auto ownsChunks = doesShardOwnChunks(opCtx, toNss, newEntry);
 
-        if (ownsChunks || isDbPrimary) {
-            upsertCollectionEntryLocally(opCtx, toNss, newEntry);
-        }
-        // The old chunks will now get cleaned up outside of the critical section if the rename
-        // actually replaced an existing sharded collection.
-    } catch (const ExceptionFor<ErrorCodes::NamespaceNotFound>& ex) {
-        // For the second one we have to delete all entries which has already occurred at the
-        // beginning.
-        LOGV2_INFO(12295700,
-                   "Target collection is untracked, nothing to persist in the local shard catalog",
-                   "toNss"_attr = toNss,
-                   "error"_attr = ex);
+    auto entryFromCSRS = fetchTargetCollectionOrCleanup();
+    if (!entryFromCSRS) {
+        return;
     }
-    cleanupInMemoryState(true /*clearFromNss*/, true /*clearToNss*/);
 
-    // TODO SERVER-127215: It should be possible to recover the filtering metadata at this point for
-    // the collection. However, we've chosen not to do it and defer that to the first query in order
-    // to simplify the rename path.
+    // For the first case we must delete the collection entries for both fromNss and toNss
+    // namespaces and then insert the final entry for toNss. We've already deleted the first
+    // collection entry so we must upsert the new entry to end up in the final form.
+    auto newEntry = *entryFromCSRS;
+
+    // The chunks for the renamed collection are already durable in the local shard catalog: the
+    // rename preserves the source UUID and never rewrites chunk documents, so the owned chunks
+    // can be read straight from disk without re-fetching them from the global catalog.
+    const auto ownedChunks = fetchLocalOwnedChunks(opCtx, newEntry);
+
+    // Skip re-deleting/rewriting the chunk documents (they haven't changed) and, since the final
+    // metadata is already known here, install it directly instead of clearing then reinstalling.
+    // This mirrors the eager install performed by the FCV-upgrade path above, but avoids both the
+    // global-catalog re-fetch and the redundant local invalidate/reinstall dance.
+    commitCollectionMetadataLocallyImpl(
+        opCtx,
+        toNss,
+        newEntry,
+        ownedChunks,
+        isDbPrimaryShard,
+        {.rewritePersistedChunks = false,
+         .notifyMode =
+             CommitCollectionMetadataOptions::NotifyMode::kInvalidateThenReinstallOnPrimary});
+
+    // The old chunks will now get cleaned up outside of the critical section if the rename actually
+    // replaced an existing sharded collection.
 }
 
 void commitCollectionMetadataLocally(OperationContext* opCtx,
                                      const NamespaceString& nss,
                                      bool isDbPrimaryShard) {
     auto coll = fetchCollection(opCtx, nss);
-
     const auto ownedChunks = fetchOwnedChunks(opCtx, nss, coll);
+    commitCollectionMetadataLocallyImpl(opCtx, nss, coll, ownedChunks, isDbPrimaryShard, {});
 
-    // Drop any prior chunk entries for this collection so repeated calls (e.g. when an unsplittable
-    // collection is sharded) don't accumulate stale rows. The new chunk documents may carry
-    // different OIDs, in which case writeCollectionMetadataLocally's upsert-by-OID would insert
-    // rather than replace.
-    deleteCollectionChunksMetadataLocally(opCtx, coll.getUuid());
+    ShardingStatistics::get(opCtx)
+        .collectionShardingMetadataStatistics.registerLocalCollectionMetadataCommit();
 
-    const bool hasCollectionEntry = isDbPrimaryShard || !ownedChunks.empty();
-    if (hasCollectionEntry) {
-        // Write to `config.shard.catalog.(collections|chunks)` to insert collection metadata.
-        writeCollectionMetadataLocally(opCtx, nss, coll.asShardCatalogType(), ownedChunks);
-    } else {
-        // If the shard owns no chunks AND is not the dbPrimary then it really doesn't know anything
-        // about the collection. Make sure to delete any existing collection entry.
-        deleteCollectionEntryLocally(opCtx, nss);
-    }
-
-    // Emit the oplog 'c' entry and clear the in-memory state.
-    invalidateCollectionMetadata(
-        opCtx, nss, coll.getUuid(), !hasCollectionEntry /* forDroppedCollection */);
-
-    if (hasCollectionEntry) {
-        // Update this node CSR with collection metadata and chunks as an optimization, so the next
-        // query doesn't have to recover it from disk.
-        updateShardCatalogCache(opCtx, nss, coll, ownedChunks);
-    }
+    LOGV2_INFO(12721503,
+               "Committed collection metadata to the local shard catalog",
+               "nss"_attr = nss,
+               "uuid"_attr = coll.getUuid(),
+               "numOwnedChunks"_attr = ownedChunks.size());
 }
 
 void cloneCollectionMetadataLocally(OperationContext* opCtx,
                                     const NamespaceString& nss,
                                     bool isDbPrimaryShard) {
     auto coll = fetchCollection(opCtx, nss);
-
     const auto ownedChunks = fetchOwnedChunks(opCtx, nss, coll);
+    // The clone does not change placement, so every node's CSR is either already up to date or
+    // kUnknown and recovers from the durable catalog once the cluster is fully upgraded.
+    // Installing the metadata in-memory or emitting an invalidate would only trigger a redundant
+    // and expensive refresh.
+    commitCollectionMetadataLocallyImpl(
+        opCtx,
+        nss,
+        coll,
+        ownedChunks,
+        isDbPrimaryShard,
+        {.notifyMode = CommitCollectionMetadataOptions::NotifyMode::kNone});
 
-    // Drop any prior chunk entries for this collection so repeated calls don't accumulate stale
-    // rows (see commitCollectionMetadataLocally for details).
-    deleteCollectionChunksMetadataLocally(opCtx, coll.getUuid());
+    ShardingStatistics::get(opCtx)
+        .collectionShardingMetadataStatistics.registerLocalCollectionMetadataClone();
 
-    if (isDbPrimaryShard || !ownedChunks.empty()) {
-        // Write to `config.shard.catalog.(collections|chunks)` to insert collection metadata.
-        writeCollectionMetadataLocally(opCtx, nss, coll.asShardCatalogType(), ownedChunks);
-    } else {
-        // The shard owns no chunks and is not the dbPrimary, so it doesn't track the collection.
-        deleteCollectionEntryLocally(opCtx, nss);
-    }
+    LOGV2_INFO(12721504,
+               "Cloned collection metadata into the local shard catalog",
+               "nss"_attr = nss,
+               "uuid"_attr = coll.getUuid(),
+               "isDbPrimaryShard"_attr = isDbPrimaryShard);
 }
 
 void commitChunklessCollectionMetadataLocally(OperationContext* opCtx, const NamespaceString& nss) {
@@ -553,6 +819,12 @@ void commitChunklessCollectionMetadataLocally(OperationContext* opCtx, const Nam
     if (isUnowned) {
         invalidateCollectionMetadata(opCtx, nss, coll.getUuid(), false /* forDroppedCollection */);
     }
+
+    LOGV2_INFO(12721505,
+               "Committed chunkless collection shard catalog metadata locally",
+               "nss"_attr = nss,
+               "uuid"_attr = coll.getUuid(),
+               "wasUnownedAndInvalidated"_attr = isUnowned);
 }
 
 void commitSetAllowChunkOperationsLocally(OperationContext* opCtx,
@@ -602,10 +874,41 @@ void commitSetAllowChunkOperationsLocally(OperationContext* opCtx,
     auto scopedCsr = CollectionShardingRuntime::acquireExclusive(opCtx, nss);
     scopedCsr->setAllowChunkOperations(allowChunkOperations);
 
-    LOGV2(12120905,
-          "commitSetAllowChunkOperationsLocally authoritatively",
-          "nss"_attr = nss,
-          "allowChunkOperations"_attr = allowChunkOperations);
+    LOGV2_INFO(12120905,
+               "commitSetAllowChunkOperationsLocally authoritatively",
+               "nss"_attr = nss,
+               "allowChunkOperations"_attr = allowChunkOperations);
+}
+
+void commitChunkOperationsMetadataLocally(OperationContext* opCtx,
+                                          const NamespaceString& nss,
+                                          const std::vector<BSONObj>& newChunks) {
+    // The collection entry may not be on disk yet on the first chunk operation. Read it from
+    // the global catalog and persist it here.
+    auto coll = fetchCollection(opCtx, nss);
+
+    auto chunksToInsert = ChunkType::parseConfigBSONDocuments(
+        newChunks, coll.getUuid(), coll.getEpoch(), coll.getTimestamp());
+
+    tassert(1269803,
+            "Expected chunk operations metadata to contain at least one new chunk",
+            !chunksToInsert.empty());
+
+    // Remove from the durable catalog any pre-existing chunks that overlap with newChunks.
+    // Note that this can discard PIT history. To avoid that, moveChunk checks up front whether the
+    // recipient already owns chunks in the moved range whose history must be preserved.
+    deleteOverlappingChunksLocally(opCtx, coll, chunksToInsert);
+
+    writeCollectionMetadataLocally(
+        opCtx, nss, coll.asShardCatalogType(), chunksToInsert, true /* rewritePersistedChunks */);
+
+    updateCollectionMetadata(opCtx, nss, coll.getUuid(), chunksToInsert);
+
+    LOGV2_INFO(12721506,
+               "Committed chunk operations metadata to the local shard catalog",
+               "nss"_attr = nss,
+               "uuid"_attr = coll.getUuid(),
+               "numNewChunks"_attr = chunksToInsert.size());
 }
 
 }  // namespace shard_catalog_commit
@@ -627,35 +930,31 @@ void commitRenameOfTemporaryCollection(OperationContext* opCtx,
                                        const UUID& tempReshardingUUID,
                                        const NamespaceString& sourceNss,
                                        const UUID& sourceUUID,
-                                       bool isUpgrading,
                                        bool isDbPrimaryShard) {
     return shard_catalog_commit::commitRenameOfCollectionMetadata(opCtx,
                                                                   tempReshardingNss,
                                                                   tempReshardingUUID,
                                                                   sourceNss,
                                                                   sourceUUID,
-                                                                  boost::none,
-                                                                  isUpgrading,
+                                                                  tempReshardingUUID,
+                                                                  false /* isUpgrading */,
                                                                   isDbPrimaryShard);
 }
-
-namespace {
-void ensureCollectionDoesNotExist(OperationContext* opCtx, const UUID& uuid) {
-    try {
-        auto catalogClient = Grid::get(opCtx)->catalogClient();
-        const auto _ = catalogClient->getCollection(opCtx, uuid);
-        tasserted(ErrorCodes::IllegalOperation,
-                  "Collection entry must not exist in the global catalog to drop stale chunks");
-    } catch (const ExceptionFor<ErrorCodes::NamespaceNotFound>&) {
-        // This is actually the expected path.
-    }
-}
-}  // namespace
 
 void commitDropOfStaleChunksForRename(OperationContext* opCtx,
                                       const NamespaceString& nss,
                                       const UUID& oldUuid) {
-    ensureCollectionDoesNotExist(opCtx, oldUuid);
+    const auto ensureCollectionDoesNotExist = [&]() {
+        try {
+            auto catalogClient = Grid::get(opCtx)->catalogClient();
+            const auto _ = catalogClient->getCollection(opCtx, oldUuid);
+            tasserted(ErrorCodes::IllegalOperation,
+                      "Collection entry must not exist in the global catalog to drop stale chunks");
+        } catch (const ExceptionFor<ErrorCodes::NamespaceNotFound>&) {
+            // This is actually the expected path.
+        }
+    };
+    ensureCollectionDoesNotExist();
 
     // This function gets called without holding a critical section but the DDL lock as well as
     // migrations are disabled. The order of operations here is quite deliberate in order to make
@@ -695,6 +994,13 @@ void commitDropOfStaleChunksForRename(OperationContext* opCtx,
         shard_catalog_commit::invalidateCollectionMetadata(
             opCtx, nss, oldUuid, true /* forDroppedCollection */);
     }
+
+    LOGV2_DEBUG(12721507,
+                1,
+                "Dropped stale shard catalog chunks after rename",
+                "nss"_attr = nss,
+                "oldUuid"_attr = oldUuid,
+                "shardOwnsChunks"_attr = shardOwnsChunks);
 }
 
 }  // namespace shard_catalog_commit_for_resharding

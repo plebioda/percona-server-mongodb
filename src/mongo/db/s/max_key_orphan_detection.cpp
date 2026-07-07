@@ -62,6 +62,7 @@
 #include "mongo/db/sharding_environment/shard_id.h"
 #include "mongo/db/sharding_environment/sharding_feature_flags_gen.h"
 #include "mongo/db/sharding_environment/sharding_runtime_d_params_gen.h"
+#include "mongo/db/sharding_environment/sharding_statistics.h"
 #include "mongo/db/topology/sharding_state.h"
 #include "mongo/logv2/log.h"
 #include "mongo/stdx/thread.h"
@@ -81,6 +82,15 @@
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kSharding
 
 namespace mongo {
+
+// Pauses the MaxKey orphan inventory scan just before it upserts the state document, so tests
+// can deterministically trigger stepdown while the scan is mid-flight.
+MONGO_FAIL_POINT_DEFINE(hangBeforePersistingMaxKeyOrphanScanState);
+
+// Pauses the MaxKey orphan inventory scan while it is iterating collections (before it inspects the
+// next one), so tests can run operations such as chunk migrations concurrently with the scan's
+// detection phase rather than only with the final state-doc upsert.
+MONGO_FAIL_POINT_DEFINE(hangDuringMaxKeyOrphanScan);
 
 namespace {
 
@@ -211,6 +221,8 @@ bool detectMaxKeyOrphanForCollection(OperationContext* opCtx,
     if (!rightmostMaxKeyPrefixedShardKey(opCtx, nss.dbName(), collUuid, shardKeyPattern)) {
         return false;
     }
+
+    hangDuringMaxKeyOrphanScan.pauseWhileSet(opCtx);
 
     MigrationBlockingGuard guard(
         opCtx, str::stream() << "MaxKey orphan detection for collection " << collUuid);
@@ -348,6 +360,13 @@ void runMaxKeyOrphanDetection(OperationContext* opCtx, long long term) {
         }
     }
 
+    auto publishOrphanScanStats = [&](bool foundMaxKey, bool alertEmitted) {
+        auto& stats = ShardingStatistics::get(opCtx);
+        stats.maxKeyOrphanScanComplete.store(1);
+        stats.maxKeyOrphanScanFoundMaxKey.store(foundMaxKey ? 1 : 0);
+        stats.maxKeyOrphanScanAlertEmitted.store(alertEmitted ? 1 : 0);
+    };
+
     // Read the prior state doc. A completed sweep short-circuits this one-shot sweep; the prior
     // alertEmitted is preserved so a re-scan never downgrades it.
     boost::optional<MaxKeyOrphanScanState> priorState;
@@ -373,6 +392,7 @@ void runMaxKeyOrphanDetection(OperationContext* opCtx, long long term) {
     }
 
     if (priorState && priorState->getScanCompletedAt().has_value()) {
+        publishOrphanScanStats(priorState->getFoundMaxKey(), priorState->getAlertEmitted());
         LOGV2_DEBUG(12799006,
                     2,
                     "Skipping MaxKey orphan detection: prior sweep already completed",
@@ -424,6 +444,7 @@ void runMaxKeyOrphanDetection(OperationContext* opCtx, long long term) {
             if (isScanFatalError(ex.code())) {
                 throw;
             }
+            ShardingStatistics::get(opCtx).maxKeyOrphanScanErrors.fetchAndAdd(1);
             LOGV2_WARNING(
                 12799007,
                 "MaxKey orphan detection: skipping collection due to per-collection error",
@@ -451,9 +472,13 @@ void runMaxKeyOrphanDetection(OperationContext* opCtx, long long term) {
     setBob.append(MaxKeyOrphanScanState::kFoundMaxKeyFieldName, foundMaxKey);
     setBob.append(MaxKeyOrphanScanState::kAlertEmittedFieldName, priorAlertEmitted || emitAlert);
 
+    hangBeforePersistingMaxKeyOrphanScanState.pauseWhileSet(opCtx);
+
     PersistentTaskStore<MaxKeyOrphanScanState> store(
         NamespaceString::kConfigMaxKeyOrphanScanStateNamespace);
     store.upsert(opCtx, BSON("_id" << kMaxKeyOrphanScanStateId), BSON("$set" << setBob.obj()));
+
+    publishOrphanScanStats(foundMaxKey, priorAlertEmitted || emitAlert);
 
     LOGV2_DEBUG(12799009,
                 2,

@@ -200,6 +200,33 @@ public:
         MetricNameMaker::make("change_streams.cursor.open.total");
     static constexpr MetricName kChangeStreamCursorsOpenPinned =
         MetricNameMaker::make("change_streams.cursor.open.pinned");
+    static constexpr MetricName kChangeStreamCursorsOpenOptimeMin =
+        MetricNameMaker::make("serverStatus.metrics.changeStreams.cursor.open.optime.min");
+    static constexpr MetricName kChangeStreamCursorsOpenOptimeMax =
+        MetricNameMaker::make("serverStatus.metrics.changeStreams.cursor.open.optime.max");
+    static constexpr MetricName kChangeStreamBatchExecMicrosSum =
+        MetricNameMaker::make("serverStatus.metrics.changeStreams.batch.execMicros.sum");
+    static constexpr MetricName kChangeStreamBatchShardLatencyMicrosSum =
+        MetricNameMaker::make("serverStatus.metrics.changeStreams.batch.shardLatencyMicros.sum");
+    static constexpr MetricName kChangeStreamBatchConfigLatencyMicrosSum =
+        MetricNameMaker::make("serverStatus.metrics.changeStreams.batch.configLatencyMicros.sum");
+    // Per-(consumer x engine) single-document lookup metrics for change stream updateLookup.
+    static constexpr MetricName kChangeStreamUpdateLookupExpressFound =
+        MetricNameMaker::make("changeStreams.updateLookup.express.found");
+    static constexpr MetricName kChangeStreamUpdateLookupExpressNotFound =
+        MetricNameMaker::make("changeStreams.updateLookup.express.notFound");
+    static constexpr MetricName kChangeStreamUpdateLookupExpressNotHandled =
+        MetricNameMaker::make("changeStreams.updateLookup.express.notHandled");
+    static constexpr MetricName kChangeStreamUpdateLookupExpressLatency =
+        MetricNameMaker::make("changeStreams.updateLookup.express.latencyMicros");
+    static constexpr MetricName kChangeStreamUpdateLookupAggregationFound =
+        MetricNameMaker::make("changeStreams.updateLookup.aggregation.found");
+    static constexpr MetricName kChangeStreamUpdateLookupAggregationNotFound =
+        MetricNameMaker::make("changeStreams.updateLookup.aggregation.notFound");
+    static constexpr MetricName kChangeStreamUpdateLookupAggregationNotHandled =
+        MetricNameMaker::make("changeStreams.updateLookup.aggregation.notHandled");
+    static constexpr MetricName kChangeStreamUpdateLookupAggregationLatency =
+        MetricNameMaker::make("changeStreams.updateLookup.aggregation.latencyMicros");
     static constexpr MetricName kChangeStreamErrorNonRetriableHistoryLost = MetricNameMaker::make(
         "serverStatus.metrics.changeStreams.error.nonRetriable.changeStreamHistoryLost");
     static constexpr MetricName kChangeStreamErrorNonRetriableFatalError = MetricNameMaker::make(
@@ -252,6 +279,10 @@ public:
         MetricNameMaker::make("serverStatus.metrics.changeStreams.scope.db");
     static constexpr MetricName kChangeStreamScopeCollection =
         MetricNameMaker::make("serverStatus.metrics.changeStreams.scope.collection");
+    static constexpr MetricName kChangeStreamOptionCursorBatchSize =
+        MetricNameMaker::make("serverStatus.metrics.changeStreams.option.cursor.batchSize");
+    static constexpr MetricName kChangeStreamOptionCursorMaxTimeMS =
+        MetricNameMaker::make("serverStatus.metrics.changeStreams.option.cursor.maxTimeMS");
 
     // Storage Execution Team Metrics
     static constexpr MetricName kIndexBuildsActive = MetricNameMaker::make("index_builds.active");

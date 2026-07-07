@@ -182,7 +182,7 @@ std::size_t getSupportedMax() {
 class SessionManagerCommon::Sessions {
 public:
     Sessions() {
-        ObservableMutexRegistry::get().add("SessionManagerCommon::Sessions::_mutex", _mutex);
+        ObservableMutexRegistry::get().add("sessionManagerCommonSessionsMutex", _mutex);
     }
     struct Entry {
         explicit Entry(std::shared_ptr<SessionWorkflow> workflow) : workflow{std::move(workflow)} {}
@@ -443,6 +443,14 @@ std::size_t SessionManagerCommon::numRejectedSessions() const {
     return _sessions->rejected();
 }
 
+void SessionManagerCommon::onLoadBalancerPeerSet(bool isLoadBalancerPeer) {
+    if (isLoadBalancerPeer) {
+        _loadBalancedSessions.increment();
+    } else {
+        _loadBalancedSessions.decrement();
+    }
+}
+
 void SessionManagerCommon::endSessionByClient(Client* client) {
     onClientDisconnect(client);
     for (auto&& observer : _observers) {
@@ -462,6 +470,40 @@ void SessionManagerCommon::endSessionByClient(Client* client) {
         LOGV2(22944,
               "Connection ended",
               logv2::DynamicAttributes{logAttrs(summary), "connectionCount"_attr = sync.size()});
+    }
+}
+
+SessionManagerCommon::SessionStats SessionManagerCommon::getSessionStats() const {
+    return {
+        .numOpenSessions = static_cast<int64_t>(numOpenSessions()),
+        .maxOpenSessions = static_cast<int64_t>(maxOpenSessions()),
+        .numCreatedSessions = static_cast<int64_t>(numCreatedSessions()),
+        .numRejectedSessions = static_cast<int64_t>(numRejectedSessions()) +
+            _sessionEstablishmentRateLimiter.rejected(),
+        .numActiveOperations = static_cast<int64_t>(getActiveOperations()),
+
+        .numLoadBalancedSessions = _loadBalancedSessions.get(),
+        .numPrioritySessions = _prioritySessions.get(),
+    };
+}
+
+void SessionManagerCommon::onClientConnect(Client* client) {
+    auto session = client->session();
+    if (session && session->isLoadBalancerPeer()) {
+        _loadBalancedSessions.increment();
+    }
+    if (session && session->isConnectedToPriorityPort()) {
+        _prioritySessions.increment();
+    }
+}
+
+void SessionManagerCommon::onClientDisconnect(Client* client) {
+    auto session = client->session();
+    if (session && session->isLoadBalancerPeer()) {
+        _loadBalancedSessions.decrement();
+    }
+    if (session && session->isConnectedToPriorityPort()) {
+        _prioritySessions.decrement();
     }
 }
 

@@ -208,8 +208,11 @@ std::unique_ptr<MigrationSourceManager> MigrationSourceManager::createMigrationS
     uassertStatusOK(
         FilteringMetadataCache::get(opCtx)->onShardVersionMismatch(opCtx, nss, boost::none));
 
-    // Complete any unfinished migration pending recovery
-    {
+    // Only the legacy path needs to drain migrations.
+    // On the authoritative path, migrations are already blocked and are drained during the setFCV
+    // upgrade.
+    if (managementMode == ManagementModeEnum::kStandalone) {
+        // Complete any unfinished migration pending recovery
         migrationutil::drainMigrationsPendingRecovery(opCtx);
 
         // Since the moveChunk command is holding the ActiveMigrationRegistry and we just drained
@@ -518,6 +521,10 @@ void MigrationSourceManager::startClone() {
         _cloneDriver = std::make_shared<MigrationChunkClonerSource>(
             _opCtx, _args, _writeConcern, metadata.getKeyPattern(), _donorConnStr, _recipientHost);
 
+        // Remember the donor's shard version before the migration. The coordinator persists it so
+        // the global-catalog commit can be re-sent from durable state after a failover.
+        _donorShardVersionPreMigration = metadata.getShardPlacementVersion();
+
         _coordinator.emplace(_migrationId,
                              _cloneDriver->getSessionId(),
                              _args.getFromShard(),
@@ -547,10 +554,16 @@ void MigrationSourceManager::startClone() {
 
     _coordinator->startMigration(_opCtx);
 
+    // The authoritative path (MoveRangeCoordinator) installs the post-migration metadata into the
+    // shard catalog directly, so the recipient does not need to force a filtering-metadata refresh
+    // when it starts receiving the chunk.
+    // TODO (SERVER-127253): Remove this once v9.0 branches out.
+    const bool isAuthoritative = _managementMode == ManagementModeEnum::kMoveRangeCoordinator;
     auto startCloneStatus = _cloneDriver->startClone(_opCtx,
                                                      _coordinator->getMigrationId(),
                                                      _coordinator->getLsid(),
-                                                     _coordinator->getTxnNumber());
+                                                     _coordinator->getTxnNumber(),
+                                                     isAuthoritative);
     withChangelogErrMsg(startCloneStatus.reason(), [&] { uassertStatusOK(startCloneStatus); });
 
     // Refresh the collection routing information after starting the clone driver to have a
@@ -925,67 +938,34 @@ void MigrationSourceManager::promoteCriticalSectionToBlockReads() {
         Milliseconds(migrationLockAcquisitionMaxWaitMS.load()));
 }
 
-Status MigrationSourceManager::commitMigrationToGlobalCatalog(const OperationSessionInfo& session) {
-    tassert(12795305,
-            "commitMigrationToGlobalCatalog is only valid on the MoveRangeCoordinator path",
+void MigrationSourceManager::markCommitInProgress() {
+    tassert(12953601,
+            "markCommitInProgress is only valid on the MoveRangeCoordinator path",
             _managementMode == ManagementModeEnum::kMoveRangeCoordinator);
-    tassert(12795306,
-            "commitMigrationToGlobalCatalog requires the clone to have completed",
+    tassert(12953602,
+            "markCommitInProgress requires the clone to have completed",
             _state == kCloneCompleted);
+    tassert(12953603,
+            "markCommitInProgress requires the chunk cloner to have finished",
+            _cloneDriver && _cloneDriver->isDone());
 
-    // If we have chunks left on the FROM shard, bump the version of one of them as well. This will
-    // change the local collection major version, which indicates to other processes that the chunk
-    // metadata has changed and they should refresh.
-    BSONObjBuilder builder;
-    {
-        // Read the pre-commit placement from the config server (the authoritative source) rather
-        // than the local deprecated filtering metadata. The config server uses only this version's
-        // epoch and timestamp for its collection identity check.
-        const auto cm = uassertStatusOK(
-            Grid::get(_opCtx)->catalogCache()->getCollectionPlacementInfoWithRefresh(_opCtx,
-                                                                                     nss()));
-
-        // Guard against the collection being dropped and recreated since the migration began.
-        uassert(
-            ErrorCodes::ConflictingOperationInProgress,
-            str::stream() << "The collection's timestamp has changed since the migration began. "
-                             "Expected timestamp: "
-                          << _collectionTimestamp.toStringPretty()
-                          << ", but found: " << cm.getVersion().getTimestamp().toStringPretty(),
-            cm.getVersion().getTimestamp() == _collectionTimestamp);
-
-        _buildCommitChunkMigrationRequest(&builder, cm.getVersion(), true /* isAuthoritative */);
-        // Attach the session id so the config server can run the commit as a retryable write.
-        session.serialize(&builder);
-    }
-
+    // The commit is about to be sent. From here on the migration may already be committed, so move
+    // past kCloneCompleted: cleanup keys off this state and must not treat it as a clean abort.
     _state = kCommittingOnConfig;
-
-    auto commitChunkMigrationResponse =
-        Grid::get(_opCtx)->shardRegistry()->getConfigShard()->runCommand(
-            _opCtx,
-            ReadPreferenceSetting{ReadPreference::PrimaryOnly},
-            DatabaseName::kAdmin,
-            builder.obj(),
-            Shard::RetryPolicy::kIdempotent);
-
-    if (MONGO_unlikely(migrationCommitNetworkError.shouldFail())) {
-        commitChunkMigrationResponse = Status(
-            ErrorCodes::HostUnreachable, "Failpoint 'migrationCommitNetworkError' generated error");
-    }
-
-    // Unlike commitChunkMetadataOnConfig(), the caller (MoveRangeCoordinator) drives recovery and
-    // cleanup, so no critical-section release, metadata refresh, or async recovery is performed
-    // here.
-    return Shard::CommandResponse::getEffectiveStatus(commitChunkMigrationResponse);
 }
 
-void MigrationSourceManager::recordCommitSuccess() {
+void MigrationSourceManager::recordCommitSuccess(OperationContext* opCtx) {
     tassert(12795307,
             "recordCommitSuccess is only valid on the MoveRangeCoordinator path",
             _managementMode == ManagementModeEnum::kMoveRangeCoordinator);
+
+    // Idempotent across same-term retries of the commit phase.
+    if (_commitRecorded) {
+        return;
+    }
+
     tassert(12795308,
-            "recordCommitSuccess requires the config-server commit to be in progress",
+            "recordCommitSuccess requires the config commit to be in progress",
             _state == kCommittingOnConfig);
 
     // The config commit has happened but the donor's metadata is not yet refreshed/installed (a
@@ -997,7 +977,7 @@ void MigrationSourceManager::recordCommitSuccess() {
     // metadata: the authoritative local shard catalog is installed later, while the critical
     // section is still held.
     const auto cm = uassertStatusOK(
-        Grid::get(_opCtx)->catalogCache()->getCollectionPlacementInfoWithRefresh(_opCtx, nss()));
+        Grid::get(opCtx)->catalogCache()->getCollectionPlacementInfoWithRefresh(opCtx, nss()));
 
     // If the migration has succeeded, clear the BucketCatalog so that the buckets that got migrated
     // out are no longer updatable.
@@ -1010,8 +990,7 @@ void MigrationSourceManager::recordCommitSuccess() {
     _coordinator->setMigrationDecision(DecisionEnum::kCommitted);
     _commitRecorded = true;
 
-    // Record the commit in the sharding changelog, mirroring commitChunkMetadataOnConfig() so that
-    // auditing and tooling also observe coordinator-driven commits.
+    // Record the commit in the sharding changelog for auditing and tooling.
     ShardingLogging::get(_opCtx)->logChange(
         _opCtx,
         "moveChunk.commit",
@@ -1048,7 +1027,7 @@ void MigrationSourceManager::finishCommit() {
 
     // Complete the migration coordinator (releases the recipient critical section, schedules range
     // deletion, and forgets the coordinator document). The donor critical section was already
-    // released by kReleaseCriticalSectionOnDonor. When the commit result was uncertain,
+    // released earlier in the kFinalizeMigration phase. When the commit result was uncertain,
     // _coordinator has no in-memory decision, so this is a no-op and the coordinator drives
     // completion from the persisted decision instead.
     uassertStatusOK(_cleanup(true));
@@ -1183,8 +1162,8 @@ Status MigrationSourceManager::_cleanup(bool completeMigration) {
     }();
 
     // Exit the migration critical section. For the MoveRangeCoordinator path the donor critical
-    // section is a recoverable critical section released by the coordinator's dedicated
-    // kReleaseCriticalSectionOnDonor phase, so _cleanup() must not touch it here.
+    // section is a recoverable critical section released by the coordinator during its
+    // kFinalizeMigration phase, so _cleanup() must not touch it here.
     if (_managementMode == ManagementModeEnum::kStandalone) {
         _critSec.reset();
 
@@ -1206,8 +1185,10 @@ Status MigrationSourceManager::_cleanup(bool completeMigration) {
     }
 
     // The cleanup operations below are potentially blocking or acquire other locks, so perform
-    // them outside of the collection X lock
-
+    // them outside of the collection X lock.
+    //
+    // cancelClone() only signals the recipient to abort while the clone is still running. Once the
+    // clone has finished (the commit phase), it just tears down donor-side cloner state.
     if (cloneDriver) {
         cloneDriver->cancelClone(_opCtx);
     }

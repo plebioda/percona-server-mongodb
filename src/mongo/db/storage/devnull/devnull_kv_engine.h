@@ -120,7 +120,8 @@ public:
                      std::string_view ident,
                      bool identHasSizeInfo,
                      const StorageEngine::DropIdentCallback& onDrop,
-                     boost::optional<uint64_t> schemaEpoch) override {
+                     boost::optional<uint64_t> schemaEpoch,
+                     bool waitForLocks) override {
         return Status::OK();
     }
 
@@ -279,7 +280,7 @@ public:
 
 private:
     std::shared_ptr<void> _catalogInfo;
-    int _cachePressureForTest;
+    int _cachePressureForTest = 0;
     std::deque<KVBackupBlock> _mockBackupBlocks;
     boost::filesystem::path _engineDbPath;
 };

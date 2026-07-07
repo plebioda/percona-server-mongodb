@@ -97,6 +97,70 @@ TEST(WasmtimeScope, Security_FrozenPrototypes_TypedArrayMapSetPromiseSymbol) {
     ASSERT_TRUE(scope->getBoolean("__returnValue"));
 }
 
+// MongoDB custom-type prototypes are frozen at install time, so user JS cannot attach
+// properties to them that would otherwise survive reset() (reset() only scrubs own
+// properties of the constructors, not of their prototypes).
+TEST(WasmtimeScope, Security_FrozenPrototypes_MongoCustomTypes) {
+    WasmtimeScriptEngine engine;
+    std::unique_ptr<Scope> scope(engine.createScopeForCurrentThread(boost::none));
+
+    ScriptingFunction check = scope->createFunction(
+        "return Object.isFrozen(Timestamp.prototype) &&"
+        "       Object.isFrozen(ObjectId.prototype) &&"
+        "       Object.isFrozen(NumberLong.prototype) &&"
+        "       Object.isFrozen(BinData.prototype) &&"
+        "       Object.isFrozen(DBRef.prototype) &&"
+        // MaxKey/MinKey are singleton instances, not constructors: they have no
+        // .prototype, so the singleton object itself is frozen instead.
+        "       Object.isFrozen(MaxKey) &&"
+        "       Object.isFrozen(MinKey) &&"
+        "       Object.isFrozen(NumberDecimal.prototype) &&"
+        "       Object.isFrozen(NumberInt.prototype);");
+    ASSERT_EQ(0, scope->invoke(check, nullptr, nullptr, 0));
+    ASSERT_TRUE(scope->getBoolean("__returnValue"));
+}
+
+// types.js attaches tojson/toString/etc. to Mongo custom-type prototypes; freezing must
+// not prevent those installs from taking effect.
+TEST(WasmtimeScope, Security_FrozenPrototypes_MongoTypesRetainInstalledMethods) {
+    WasmtimeScriptEngine engine;
+    std::unique_ptr<Scope> scope(engine.createScopeForCurrentThread(boost::none));
+
+    ScriptingFunction check = scope->createFunction(
+        "return typeof Timestamp.prototype.tojson === 'function' &&"
+        "       typeof ObjectId.prototype.tojson === 'function' &&"
+        "       typeof NumberLong.prototype.tojson === 'function' &&"
+        "       typeof BinData.prototype.tojson === 'function' &&"
+        "       typeof DBRef.prototype.tojson === 'function' &&"
+        "       typeof NumberDecimal.prototype.tojson === 'function' &&"
+        "       typeof NumberInt.prototype.tojson === 'function';");
+    ASSERT_EQ(0, scope->invoke(check, nullptr, nullptr, 0));
+    ASSERT_TRUE(scope->getBoolean("__returnValue"));
+}
+
+// Prototype pollution attempts on MongoDB custom types fail silently and do not leak
+// across cross-request reset().
+TEST(WasmtimeScope, Security_CrossRequest_MongoTypePrototypePollutionDoesNotLeak) {
+    GlobalEngineGuard engineGuard;
+    std::unique_ptr<Scope> scope(engineGuard.engine().createScopeForCurrentThread(boost::none));
+
+    ScriptingFunction pollute = scope->createFunction(
+        "Timestamp.prototype.custom = 'leak';"
+        "return new Timestamp(1, 1).custom;");
+    ASSERT_EQ(0, scope->invoke(pollute, nullptr, nullptr, 0));
+    auto t = scope->type("__returnValue");
+    ASSERT_TRUE(t == static_cast<int>(BSONType::undefined) ||
+                t == static_cast<int>(BSONType::null));
+
+    scope->reset();
+
+    ScriptingFunction check = scope->createFunction("return new Timestamp(1, 1).custom;");
+    ASSERT_EQ(0, scope->invoke(check, nullptr, nullptr, 0));
+    auto t2 = scope->type("__returnValue");
+    ASSERT_TRUE(t2 == static_cast<int>(BSONType::undefined) ||
+                t2 == static_cast<int>(BSONType::null));
+}
+
 // Prototype pollution: writing to a frozen prototype fails silently in sloppy mode
 // and the property is not visible on instances. Verifies cross-request isolation.
 TEST(WasmtimeScope, Security_FrozenPrototypes_PreventPollutionViaInstance) {
@@ -317,6 +381,54 @@ TEST(WasmtimeScope, Security_CrossRequest_FrozenBackdoorProperty) {
     ASSERT_TRUE(s2->getBoolean("__returnValue"));
 }
 
+// A non-configurable global installed during one invocation must not survive reset() on the
+// same scope. reset() must detect the failed deletion and fall back to resetRealm().
+TEST(WasmtimeScope, Security_Reset_NonConfigurableGlobalFallsBackToRealmReset) {
+    GlobalEngineGuard engineGuard;
+    std::unique_ptr<Scope> scope(engineGuard.engine().createScopeForCurrentThread(boost::none));
+
+    ScriptingFunction install = scope->createFunction(
+        "try {"
+        "  Object.defineProperty(globalThis, '__frozen__', {"
+        "    value: 'LEAK', writable: false, configurable: false, enumerable: true"
+        "  });"
+        "} catch(e) {}"
+        "return 1;");
+    ASSERT_EQ(0, scope->invoke(install, nullptr, nullptr, 0));
+
+    // reset() must erase the non-configurable property via a realm reset fallback.
+    scope->reset();
+
+    ScriptingFunction check =
+        scope->createFunction("return typeof globalThis.__frozen__ === 'undefined';");
+    ASSERT_EQ(0, scope->invoke(check, nullptr, nullptr, 0));
+    ASSERT_TRUE(scope->getBoolean("__returnValue"));
+}
+
+// A non-configurable property pinned onto a compiled slot function via arguments.callee must
+// not survive reset(). reset() must detect the failed deletion and fall back to resetRealm().
+TEST(WasmtimeScope, Security_Reset_NonConfigurableSlotFnPropertyFallsBackToRealmReset) {
+    GlobalEngineGuard engineGuard;
+    std::unique_ptr<Scope> scope(engineGuard.engine().createScopeForCurrentThread(boost::none));
+
+    ScriptingFunction install = scope->createFunction(
+        "try {"
+        "  Object.defineProperty(arguments.callee, '__frozen__', {"
+        "    value: 'LEAK', writable: false, configurable: false, enumerable: true"
+        "  });"
+        "} catch(e) {}"
+        "return 1;");
+    ASSERT_EQ(0, scope->invoke(install, nullptr, nullptr, 0));
+
+    scope->reset();
+
+    // The property must be gone — either deleted or the function replaced by resetRealm().
+    ScriptingFunction check =
+        scope->createFunction("return typeof arguments.callee.__frozen__ === 'undefined';");
+    ASSERT_EQ(0, scope->invoke(check, nullptr, nullptr, 0));
+    ASSERT_TRUE(scope->getBoolean("__returnValue"));
+}
+
 // Attacker captures sensitive data in a closure installed as a global function.
 // The next request must not be able to call the closure or observe its data.
 TEST(WasmtimeScope, Security_CrossRequest_ClosureCapturedInGlobal) {
@@ -431,6 +543,83 @@ TEST(WasmtimeScope, Security_CrossRequest_DeepGlobalStateDoesNotLeak) {
         "return typeof globalThis.__a === 'undefined' &&"
         "       typeof globalThis.__arr === 'undefined' &&"
         "       typeof globalThis.__fn === 'undefined';");
+    ASSERT_EQ(0, s2->invoke(check, nullptr, nullptr, 0));
+    ASSERT_TRUE(s2->getBoolean("__returnValue"));
+}
+
+// Attacker mutates the Array constructor directly. Array is a fresh, non-shared object
+// per child realm (_setupChildRealm() skips copyMissingProps() whenever pObj == cObj), so
+// this must not be visible from a sibling realm reusing the same parked bridge.
+TEST(WasmtimeScope, Security_CrossRequest_ArrayConstructorMutationDoesNotLeak) {
+    GlobalEngineGuard engineGuard;
+    {
+        std::unique_ptr<Scope> s(engineGuard.engine().createScopeForCurrentThread(boost::none));
+        ScriptingFunction fn = s->createFunction("Array.injected = 'poison'; return 1;");
+        ASSERT_EQ(0, s->invoke(fn, nullptr, nullptr, 0));
+    }
+    std::unique_ptr<Scope> s2(engineGuard.engine().createScopeForCurrentThread(boost::none));
+    ScriptingFunction check = s2->createFunction("return typeof Array.injected;");
+    ASSERT_EQ(0, s2->invoke(check, nullptr, nullptr, 0));
+    ASSERT_EQ("undefined", s2->getString("__returnValue"));
+}
+
+// Attacker mutates a types.js extension function (Array.tojson) instead of the constructor
+// itself. copyMissingProps() in _setupChildRealm() copies these extensions onto every child
+// realm *by reference* — the same JS object is shared with _parentGlobal and with every
+// other child on the thread — and kFreezeBuiltinsScript only Object.freeze()s the standard
+// constructors/prototypes, never the extension function objects hanging off them. A mutation
+// to Array.tojson therefore lands on the literal object every future realm on this thread
+// will inherit from the parent, leaking across the realm boundary that's supposed to
+// separate unrelated requests.
+TEST(WasmtimeScope, Security_CrossRequest_SharedExtensionFunctionMutationLeaks) {
+    GlobalEngineGuard engineGuard;
+    {
+        std::unique_ptr<Scope> s(engineGuard.engine().createScopeForCurrentThread(boost::none));
+        ScriptingFunction fn = s->createFunction("Array.tojson.injected = 'poison'; return 1;");
+        ASSERT_EQ(0, s->invoke(fn, nullptr, nullptr, 0));
+    }
+    std::unique_ptr<Scope> s2(engineGuard.engine().createScopeForCurrentThread(boost::none));
+    ScriptingFunction check = s2->createFunction("return typeof Array.tojson.injected;");
+    ASSERT_EQ(0, s2->invoke(check, nullptr, nullptr, 0));
+    ASSERT_EQ("undefined", s2->getString("__returnValue"));
+}
+
+// Same shared-extension-function attack as above, but targeting a MongoDB custom-type
+// prototype method (ObjectId.prototype.tojson) rather than a standard built-in. types.js
+// attaches these methods by reference and copyMissingProps() mirrors them into every child
+// realm, so mutating one would otherwise leak across the realm boundary. _freezeBuiltins()
+// walks the custom-type prototype chains and freezes each method value one level deep, which
+// must prevent the mutation from taking hold or leaking.
+TEST(WasmtimeScope, Security_CrossRequest_MongoTypeExtensionFunctionMutationDoesNotLeak) {
+    GlobalEngineGuard engineGuard;
+    {
+        std::unique_ptr<Scope> s(engineGuard.engine().createScopeForCurrentThread(boost::none));
+        ScriptingFunction fn =
+            s->createFunction("ObjectId.prototype.tojson.injected = 'poison'; return 1;");
+        ASSERT_EQ(0, s->invoke(fn, nullptr, nullptr, 0));
+    }
+    std::unique_ptr<Scope> s2(engineGuard.engine().createScopeForCurrentThread(boost::none));
+    ScriptingFunction check =
+        s2->createFunction("return typeof ObjectId.prototype.tojson.injected;");
+    ASSERT_EQ(0, s2->invoke(check, nullptr, nullptr, 0));
+    ASSERT_EQ("undefined", s2->getString("__returnValue"));
+}
+
+// MaxKey/MinKey are frozen singleton instances (not constructors). An attacker attaching a
+// property to the singleton must fail silently and must not leak across a cross-request
+// reset() reusing the same parked bridge.
+TEST(WasmtimeScope, Security_CrossRequest_MaxMinKeySingletonPollutionDoesNotLeak) {
+    GlobalEngineGuard engineGuard;
+    {
+        std::unique_ptr<Scope> s(engineGuard.engine().createScopeForCurrentThread(boost::none));
+        ScriptingFunction fn =
+            s->createFunction("MaxKey.injected = 'poison'; MinKey.injected = 'poison'; return 1;");
+        ASSERT_EQ(0, s->invoke(fn, nullptr, nullptr, 0));
+    }
+    std::unique_ptr<Scope> s2(engineGuard.engine().createScopeForCurrentThread(boost::none));
+    ScriptingFunction check = s2->createFunction(
+        "return typeof MaxKey.injected === 'undefined' &&"
+        "       typeof MinKey.injected === 'undefined';");
     ASSERT_EQ(0, s2->invoke(check, nullptr, nullptr, 0));
     ASSERT_TRUE(s2->getBoolean("__returnValue"));
 }

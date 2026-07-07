@@ -43,7 +43,6 @@
 #include "mongo/db/global_catalog/ddl/sharded_ddl_commands_gen.h"
 #include "mongo/db/global_catalog/ddl/sharding_ddl_util.h"
 #include "mongo/db/global_catalog/ddl/sharding_recovery_service.h"
-#include "mongo/db/global_catalog/ddl/shardsvr_commit_create_database_metadata_command.h"
 #include "mongo/db/global_catalog/sharding_catalog_client.h"
 #include "mongo/db/global_catalog/type_database_gen.h"
 #include "mongo/db/global_catalog/type_namespace_placement_gen.h"
@@ -57,6 +56,7 @@
 #include "mongo/db/session/logical_session_id.h"
 #include "mongo/db/session/logical_session_id_gen.h"
 #include "mongo/db/shard_role/ddl/list_collections_filter.h"
+#include "mongo/db/shard_role/shard_catalog/commit_database_metadata_locally.h"
 #include "mongo/db/shard_role/shard_catalog/flush_database_cache_updates_gen.h"
 #include "mongo/db/shard_role/shard_catalog/participant_block_gen.h"
 #include "mongo/db/sharding_environment/grid.h"
@@ -131,8 +131,7 @@ void removeDatabaseMetadataFromShard(OperationContext* opCtx,
  */
 void cloneAuthoritativeDatabaseMetadata(OperationContext* opCtx, const DatabaseName& dbName) {
     auto catalogClient = Grid::get(opCtx)->catalogClient();
-    auto dbMetadata =
-        catalogClient->getDatabase(opCtx, dbName, repl::ReadConcernLevel::kMajorityReadConcern);
+    auto dbMetadata = catalogClient->getDatabase(opCtx, dbName, repl::ReadConcernArgs::kMajority);
 
     const auto thisShardId = ShardingState::get(opCtx)->shardId();
 
@@ -145,7 +144,8 @@ void cloneAuthoritativeDatabaseMetadata(OperationContext* opCtx, const DatabaseN
                         thisShardId.toString()),
             thisShardId == dbMetadata.getPrimary());
 
-    commitCreateDatabaseMetadataLocally(opCtx, dbMetadata, true /* fromClone */);
+    shard_catalog_commit::commitCreateDatabaseMetadataLocally(
+        opCtx, dbMetadata, true /* fromClone */);
 }
 
 /**
@@ -245,8 +245,8 @@ bool isDbAlreadyDropped(OperationContext* opCtx,
     if (dbVersion) {
         try {
             auto const catalogClient = Grid::get(opCtx)->catalogClient();
-            const auto db = catalogClient->getDatabase(
-                opCtx, dbName, repl::ReadConcernLevel::kMajorityReadConcern);
+            const auto db =
+                catalogClient->getDatabase(opCtx, dbName, repl::ReadConcernArgs::kMajority);
             if (dbVersion->getUuid() != db.getVersion().getUuid()) {
                 // The database was dropped and re-created with a different UUID
                 return true;
@@ -281,7 +281,7 @@ void DropDatabaseCoordinator::_dropTrackedCollection(
         sharding_ddl_util::sendShardsvrParticipantBlockCommandToShards(
             opCtx,
             nss,
-            Grid::get(opCtx)->shardRegistry()->getAllShardRefs(opCtx),
+            Grid::get(opCtx)->shardRegistry()->getAllShardRefs_UNSAFE(opCtx),
             mongo::CriticalSectionBlockTypeEnum::kReadsAndWrites,
             getReasonForDropCollection(nss),
             _doc.getAuthoritativeMetadataAccessLevel(),
@@ -314,7 +314,7 @@ void DropDatabaseCoordinator::_dropTrackedCollection(
             opCtx,
             nss,
             coll.getUuid(),
-            Grid::get(opCtx)->shardRegistry()->getAllShardRefs(opCtx),
+            Grid::get(opCtx)->shardRegistry()->getAllShardRefs_UNSAFE(opCtx),
             session,
             executor,
             token);
@@ -342,10 +342,8 @@ void DropDatabaseCoordinator::_dropTrackedCollection(
             boost::none /* collectionUUID */,
             false /* requireCollectionEmpty */);
     };
-    auto participants = Grid::get(opCtx)->shardRegistry()->getAllShardRefs(opCtx);
+    auto participants = Grid::get(opCtx)->shardRegistry()->getAllShardRefs_UNSAFE(opCtx);
     // Remove primary shard from participants
-    // TODO SERVER-129691 convert changeStreamsNotifierShardId to ShardRef, participants to
-    // ShardHandles, and handle the mixed-variant case correctly.
     participants.erase(std::remove_if(participants.begin(),
                                       participants.end(),
                                       [&](const auto& shard) {
@@ -390,7 +388,7 @@ void DropDatabaseCoordinator::_dropTrackedCollection(
         sharding_ddl_util::sendShardsvrParticipantBlockCommandToShards(
             opCtx,
             nss,
-            Grid::get(opCtx)->shardRegistry()->getAllShardRefs(opCtx),
+            Grid::get(opCtx)->shardRegistry()->getAllShardRefs_UNSAFE(opCtx),
             CriticalSectionBlockTypeEnum::kUnblock,
             getReasonForDropCollection(nss),
             _doc.getAuthoritativeMetadataAccessLevel(),
@@ -430,14 +428,13 @@ ExecutorFuture<void> DropDatabaseCoordinator::_runImpl(
                 }
 
                 // Drop all collections under this DB
-                const auto allTrackedCollectionsForDb = catalogClient->getCollections(
-                    opCtx, _dbName, repl::ReadConcernLevel::kMajorityReadConcern);
+                const auto allTrackedCollectionsForDb =
+                    catalogClient->getCollections(opCtx, _dbName, repl::ReadConcernArgs::kMajority);
 
                 // Check if the operation was previously interrupted in the middle of a sharded
                 // collection drop; if so, resume the step.
                 if (_doc.getCollInfo()) {
                     const auto coll = _doc.getCollInfo().value();
-                    // TODO SERVER-129691 convert collChangeStreamsNotifierShardId.
                     const auto& collChangeStreamsNotifierShardId =
                         _doc.getCollChangeStreamsNotifier().value_or(primaryShardRef);
                     LOGV2_DEBUG(5494504,
@@ -470,11 +467,11 @@ ExecutorFuture<void> DropDatabaseCoordinator::_runImpl(
                         if (feature_flags::gFeatureFlagChangeStreamPreciseShardTargeting.isEnabled(
                                 VersionContext::getDecoration(opCtx),
                                 serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
-                            auto dataBearingShardRef =
+                            auto dataBearingShardId =
                                 sharding_ddl_util::pickShardOwningCollectionChunks(opCtx,
                                                                                    coll.getUuid());
-                            if (dataBearingShardRef) {
-                                changeStreamsNotifier = *dataBearingShardRef;
+                            if (dataBearingShardId) {
+                                changeStreamsNotifier = *dataBearingShardId;
                             } else {
                                 LOGV2_WARNING(10488700,
                                               "Unable to retrieve the identity of a data bearing "
@@ -484,7 +481,9 @@ ExecutorFuture<void> DropDatabaseCoordinator::_runImpl(
                                               "nss"_attr = nss);
                             }
                         }
-                        return changeStreamsNotifier;
+
+                        // TODO SERVER-128569: Remove getShardId() call
+                        return changeStreamsNotifier.getShardId();
                     }());
                     _updateStateDocument(opCtx, std::move(newStateDoc));
 
@@ -529,7 +528,8 @@ ExecutorFuture<void> DropDatabaseCoordinator::_runImpl(
                                                                    std::move(unshardedCollUUIDs));
                 }
 
-                const auto allShardRefs = Grid::get(opCtx)->shardRegistry()->getAllShardRefs(opCtx);
+                const auto allShardRefs =
+                    Grid::get(opCtx)->shardRegistry()->getAllShardRefs_UNSAFE(opCtx);
                 {
                     // Acquire the database critical section in order to disallow implicit
                     // collection creations from happening concurrently with dropDatabase
@@ -689,13 +689,11 @@ ExecutorFuture<void> DropDatabaseCoordinator::_runImpl(
 
             if (_doc.getAuthoritativeMetadataAccessLevel() ==
                 AuthoritativeMetadataAccessLevelEnum::kNone) {
-                const auto primaryShardRef = ShardingState::get(opCtx)->asShardRef(opCtx);
-                auto participants = Grid::get(opCtx)->shardRegistry()->getAllShardRefs(opCtx);
-                // TODO SERVER-129691 Convert participants to ShardHandles and perform
-                // primaryShardRef removal correctly for the mixed-variant case (shardids and shard
-                // refs).
+                const auto primaryShardId = ShardingState::get(opCtx)->shardId();
+                auto participants =
+                    Grid::get(opCtx)->shardRegistry()->getAllShardRefs_UNSAFE(opCtx);
                 participants.erase(
-                    std::remove(participants.begin(), participants.end(), primaryShardRef),
+                    std::remove(participants.begin(), participants.end(), primaryShardId),
                     participants.end());
                 // Send _flushDatabaseCacheUpdates to all shards
                 const auto db = DatabaseNameUtil::serialize(

@@ -29,15 +29,17 @@
 
 #pragma once
 
+#include "mongo/bson/bsonobj.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/sharding_environment/shard_id.h"
 #include "mongo/util/modules.h"
 
+#include <vector>
+
 namespace mongo {
 
 namespace MONGO_MOD_PARENT_PRIVATE shard_catalog_commit {
-
 
 /**
  * Deletes the collection and chunk metadata from the shard catalog
@@ -58,8 +60,11 @@ void commitDropOfStaleChunksForRename(OperationContext* opCtx, const UUID& uuid)
 /**
  * Modifies the shard catalog for both fromNss and toNss in order to durably persist the decision to
  * rename the collection.
- * The command will invalidate the collection metadata for both namespaces and clear the in-memory
- * state in order to repopulate it on the next query.
+ * The source namespace metadata is invalidated and cleared. The target namespace filtering metadata
+ * is recovered in-memory from the (already durable) local shard catalog so that it does not have to
+ * be repopulated on the next query, while secondaries are signalled to recover it lazily. When the
+ * commit is forced to behave as an FCV upgrade, the full metadata is instead re-fetched from the
+ * global catalog.
  */
 void commitRenameOfCollectionMetadata(OperationContext* opCtx,
                                       const NamespaceString& fromNss,
@@ -107,6 +112,18 @@ void commitSetAllowChunkOperationsLocally(OperationContext* opCtx,
                                           bool allowChunkOperations,
                                           const boost::optional<UUID>& uuid);
 
+/**
+ * Commits an incremental chunk delta to the shard catalog given only the list of new chunk
+ * documents. The shard reconciles overlaps with its pre-existing durable chunks
+ * (config.shard.catalog.chunks) locally: any pre-existing chunk that overlaps a new chunk is
+ * removed so the collection stays non-overlapping once the new chunks are inserted. After
+ * persisting the delta, both the in-memory CollectionShardingRuntime and the secondaries (via an
+ * oplog 'c' entry) are updated with the new chunks.
+ */
+void commitChunkOperationsMetadataLocally(OperationContext* opCtx,
+                                          const NamespaceString& nss,
+                                          const std::vector<BSONObj>& newChunks);
+
 }  // namespace MONGO_MOD_PARENT_PRIVATE shard_catalog_commit
 
 /**
@@ -127,7 +144,6 @@ void commitRenameOfTemporaryCollection(OperationContext* opCtx,
                                        const UUID& tempReshardingUUID,
                                        const NamespaceString& sourceNss,
                                        const UUID& sourceUUID,
-                                       bool isUpgrading,
                                        bool isDbPrimaryShard);
 
 void commitDropOfStaleChunksForRename(OperationContext* opCtx,

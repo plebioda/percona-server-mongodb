@@ -117,8 +117,7 @@ protected:
                          DatabaseVersion(UUID::gen(), Timestamp(1, 1)));
 
         auto future = launchAsync([&] {
-            return assertGet(
-                catalogClient()->getDatabasesForShard(operationContext(), ShardRef{kShardId1}));
+            return assertGet(catalogClient()->getDatabasesForShard(operationContext(), kShardId1));
         });
 
         onFindCommand([this, dbt, expectedReadPreference](const RemoteCommandRequest& request) {
@@ -150,7 +149,7 @@ protected:
 
         auto future = launchAsync([&] {
             return catalogClient()->getAllDBs(
-                operationContext(), repl::ReadConcernLevel::kSnapshotReadConcern, readPrefOverride);
+                operationContext(), repl::ReadConcernArgs::kSnapshot, readPrefOverride);
         });
 
         onFindCommand([this, dbt, expectedReadPreference](const RemoteCommandRequest& request) {

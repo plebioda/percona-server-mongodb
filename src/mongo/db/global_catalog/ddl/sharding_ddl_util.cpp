@@ -589,7 +589,7 @@ bool checkAllowMigrationsOnConfigServer(OperationContext* opCtx, const Namespace
         uassertStatusOK(Grid::get(opCtx)->shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
                             opCtx,
                             ReadPreferenceSetting(ReadPreference::PrimaryOnly, TagSet{}),
-                            repl::ReadConcernLevel::kMajorityReadConcern,
+                            repl::ReadConcernArgs::kMajority,
                             NamespaceString::kConfigsvrCollectionsNamespace,
                             BSON(CollectionType::kNssFieldName << NamespaceStringUtil::serialize(
                                      nss, SerializationContext::stateDefault())),
@@ -1109,6 +1109,7 @@ void commitRenameCollectionMetadataToShardCatalog(
     const boost::optional<UUID>& sourceUuid,
     const boost::optional<UUID>& targetUuid,
     const boost::optional<UUID>& newTargetUuid,
+    AuthoritativeMetadataAccessLevelEnum authoritativeAccessLevel,
     const std::vector<ShardRef>& shardRefs,
     const OperationSessionInfo& osi,
     const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
@@ -1120,14 +1121,13 @@ void commitRenameCollectionMetadataToShardCatalog(
     request.setTargetUUID(targetUuid);
     request.setNewTargetUUID(newTargetUuid);
 
-    // TODO SERVER-127216: Replace with the CRUD feature flag to check if we're upgrading or not.
-    //
     // In the event the cluster is undergoing an FCV upgrade then metadata cannot be
     // assumed to be present on the shard since it may or may not yet contain the
     // authoritative catalog. As such the commit has to fetch the data. This is an
     // idempotent operation so it poses no issues with the concurrent
     // AuthoritativeCloningCoordinator.
-    const bool isUpgrading = true;
+    const bool isUpgrading =
+        authoritativeAccessLevel == AuthoritativeMetadataAccessLevelEnum::kWritesAllowed;
     request.setShouldCloneEverything(isUpgrading);
 
     generic_argument_util::setMajorityWriteConcern(request);
@@ -1155,6 +1155,33 @@ void commitCreateCollectionChunklessMetadataToShardCatalog(
     auto opts = std::make_shared<
         async_rpc::AsyncRPCOptions<ShardsvrCommitCreateCollectionChunklessMetadata>>(
         **executor, token, std::move(request));
+    sendAuthenticatedCommandToShards(opCtx, opts, shardRefs);
+}
+
+void commitChunkOperationsMetadataToShardCatalog(
+    OperationContext* opCtx,
+    const NamespaceString& nss,
+    std::vector<BSONObj> newChunkDocs,
+    const std::vector<ShardRef>& shardRefs,
+    const OperationSessionInfo& osi,
+    const std::shared_ptr<executor::ScopedTaskExecutor>& executor,
+    const CancellationToken& token) {
+    ShardsvrCommitChunkOperationsMetadata request(nss);
+    request.setDbName(DatabaseName::kAdmin);
+    request.setNewChunks(std::move(newChunkDocs));
+
+    generic_argument_util::setMajorityWriteConcern(request);
+    generic_argument_util::setOperationSessionInfo(request, osi);
+
+    const auto requestSize = request.toBSON().objsize();
+    tassert(12698804,
+            str::stream() << "Commit chunk operations request size " << requestSize
+                          << " exceeds maximum BSON object size " << BSONObjMaxUserSize,
+            requestSize <= BSONObjMaxUserSize);
+
+    auto opts = std::make_shared<async_rpc::AsyncRPCOptions<ShardsvrCommitChunkOperationsMetadata>>(
+        **executor, token, std::move(request));
+
     sendAuthenticatedCommandToShards(opCtx, opts, shardRefs);
 }
 
@@ -1204,8 +1231,8 @@ ShardIdentificationTypeEnum getGrantedShardIdentificationType(
     return ShardIdentificationTypeEnum::kUuid;
 }
 
-boost::optional<ShardRef> pickShardOwningCollectionChunks(OperationContext* opCtx,
-                                                          const UUID& collUuid) {
+boost::optional<ShardId> pickShardOwningCollectionChunks(OperationContext* opCtx,
+                                                         const UUID& collUuid) {
     const Timestamp dummyTimestamp;
     const OID dummyEpoch;
     auto chunks = uassertStatusOK(Grid::get(opCtx)->catalogClient()->getChunks(
@@ -1216,8 +1243,8 @@ boost::optional<ShardRef> pickShardOwningCollectionChunks(OperationContext* opCt
         nullptr /*opTime*/,
         dummyEpoch,
         dummyTimestamp,
-        repl::ReadConcernLevelEnum::kMajorityReadConcern));
-    return chunks.empty() ? boost::none : boost::optional<ShardRef>(chunks[0].getShard());
+        repl::ReadConcernArgs::kMajority));
+    return chunks.empty() ? boost::none : boost::optional<ShardId>(chunks[0].getShard());
 }
 
 std::vector<ShardRef> getListOfShardsOwningChunksForCollection(OperationContext* opCtx,
@@ -1487,7 +1514,7 @@ ComputeAllMergeableChunksOnShardResult computeAllMergeableChunksOnShard(
     const auto zones = uassertStatusOK(configShard->exhaustiveFindOnConfig(
         opCtx,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
-        repl::ReadConcernLevel::kMajorityReadConcern,
+        repl::ReadConcernArgs::kMajority,
         TagsType::ConfigNS,
         /* query */
         BSON(TagsType::ns(

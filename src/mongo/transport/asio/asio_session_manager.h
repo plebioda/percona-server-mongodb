@@ -58,33 +58,15 @@ class MONGO_MOD_NEEDS_REPLACEMENT AsioSessionManager : public SessionManagerComm
 public:
     using SessionManagerCommon::SessionManagerCommon;
 
-    void appendStats(BSONObjBuilder* bob) const;
-
     ConnectionsStatsSnapshot getConnectionsStatsSnapshot() const;
 
-    /**
-     * Increments and decrements the count of total Load Balanced connections.
-     * Currently only implemented in asio_session_manager.
-     */
-    void incrementLBConnections();
-    void decrementLBConnections();
-
-    /**
-     * Increments and decrements the count of total priority port connections.
-     * Currently only implemented in asio_session_manager.
-     */
-    void incrementPriorityConnections();
-    void decrementPriorityConnections();
+    bool shouldIncludeInConnectionsServerStatus() const override {
+        return true;
+    }
 
 protected:
     std::string getClientThreadName(const Session&) const override;
     void configureServiceExecutorContext(Client& client, bool isPrivilegedSession) const override;
-    void onClientConnect(Client* client) override;
-    void onClientDisconnect(Client* client) override;
-
-private:
-    Counter64 _loadBalancedConnections;
-    Counter64 _priorityPortConnections;
 };
 
 }  // namespace mongo::transport

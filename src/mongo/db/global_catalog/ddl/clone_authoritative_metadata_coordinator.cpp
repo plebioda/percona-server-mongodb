@@ -33,9 +33,9 @@
 #include "mongo/db/generic_argument_util.h"
 #include "mongo/db/global_catalog/ddl/convert_shard_refs_in_namespace_metadata_gen.h"
 #include "mongo/db/global_catalog/ddl/sharding_ddl_util.h"
-#include "mongo/db/global_catalog/ddl/shardsvr_commit_create_database_metadata_command.h"
 #include "mongo/db/namespace_string_util.h"
 #include "mongo/db/shard_role/ddl/ddl_lock_manager.h"
+#include "mongo/db/shard_role/shard_catalog/commit_database_metadata_locally.h"
 #include "mongo/db/shard_role/shard_catalog/database_sharding_runtime.h"
 #include "mongo/db/shard_role/shard_catalog/operation_sharding_state.h"
 #include "mongo/db/shard_role/shard_catalog/shard_filtering_metadata_refresh.h"
@@ -54,13 +54,14 @@ namespace mongo {
 using namespace std::literals::string_view_literals;
 
 MONGO_FAIL_POINT_DEFINE(hangAfterEnterInShardRoleCloneAuthoritativeMetadataDDL);
+MONGO_FAIL_POINT_DEFINE(hangBeforeCloningCollectionCloneAuthoritativeMetadataDDL);
 
 namespace {
 
 std::vector<NamespaceString> getTrackedNamespaces(OperationContext* opCtx,
                                                   const DatabaseName& dbName) {
     auto collections = Grid::get(opCtx)->catalogClient()->getCollections(
-        opCtx, dbName, repl::ReadConcernLevel::kMajorityReadConcern);
+        opCtx, dbName, repl::ReadConcernArgs::kMajority);
     std::vector<NamespaceString> nssList;
     nssList.reserve(collections.size());
     for (const auto& coll : collections) {
@@ -196,8 +197,7 @@ void CloneAuthoritativeMetadataCoordinator::_cloneSingleDatabaseWithShardRole(
     auto catalogClient = Grid::get(opCtx)->catalogClient();
     DatabaseType dbMetadata;
     try {
-        dbMetadata =
-            catalogClient->getDatabase(opCtx, dbName, repl::ReadConcernLevel::kMajorityReadConcern);
+        dbMetadata = catalogClient->getDatabase(opCtx, dbName, repl::ReadConcernArgs::kMajority);
     } catch (const ExceptionFor<ErrorCodes::NamespaceNotFound>&) {
         // If the database has been dropped, we remove it from the cloning list. If any
         // concurrent operations are attempting to recreate it, they will handle the cloning.
@@ -242,12 +242,23 @@ void CloneAuthoritativeMetadataCoordinator::_cloneSingleDatabaseWithShardRole(
         BypassDatabaseMetadataAccess bypassDbMetadataAccess(
             opCtx, BypassDatabaseMetadataAccess::Type::kWriteOnly);  // NOLINT
 
-        commitCreateDatabaseMetadataLocally(opCtx, dbMetadata, true /* fromClone */);
+        shard_catalog_commit::commitCreateDatabaseMetadataLocally(
+            opCtx, dbMetadata, true /* fromClone */);
     }
 
-    // Now that the database metadata is cloned, clone the metadata of its tracked collections by
-    // instructing the shards owning data to persist it into their local shard catalog.
-    for (const auto& nss : getTrackedNamespaces(opCtx, dbName)) {
+    // Clone the tracked collections in namespace order, persisting the last cloned one after each
+    // step so a step-down resumes from there instead of re-cloning the whole database.
+    auto nssList = getTrackedNamespaces(opCtx, dbName);
+    std::sort(nssList.begin(), nssList.end());
+
+    for (const auto& nss : nssList) {
+        if (_doc.getLastClonedCollectionForCurrentDb() &&
+            nss <= *_doc.getLastClonedCollectionForCurrentDb()) {
+            continue;
+        }
+
+        hangBeforeCloningCollectionCloneAuthoritativeMetadataDDL.pauseWhileSet();
+
         try {
             DDLLockManager::ScopedCollectionDDLLock collLock(
                 opCtx, nss, "cloneAuthoritativeMetadata"sv, MODE_X);
@@ -267,6 +278,8 @@ void CloneAuthoritativeMetadataCoordinator::_cloneSingleDatabaseWithShardRole(
             // before taking the DDL lock), so there is nothing to clone. If any concurrent
             // operations are attempting to recreate it, they will handle the cloning.
         }
+
+        _updateLastClonedCollection(opCtx, nss);
     }
 }
 
@@ -275,6 +288,13 @@ void CloneAuthoritativeMetadataCoordinator::_removeDbFromCloningList(OperationCo
     auto dbs = *_doc.getDbsToClone();
     dbs.erase(std::remove(dbs.begin(), dbs.end(), dbName), dbs.end());
     _doc.setDbsToClone(std::move(dbs));
+    _doc.setLastClonedCollectionForCurrentDb(boost::none);
+    _updateStateDocument(opCtx, StateDoc(_doc));
+}
+
+void CloneAuthoritativeMetadataCoordinator::_updateLastClonedCollection(
+    OperationContext* opCtx, const NamespaceString& nss) {
+    _doc.setLastClonedCollectionForCurrentDb(nss);
     _updateStateDocument(opCtx, StateDoc(_doc));
 }
 

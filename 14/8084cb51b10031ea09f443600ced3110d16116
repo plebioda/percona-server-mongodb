@@ -1,0 +1,264 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "c0798871aa157ba367ded6ed53081d9810e99a4a",
+    "merge_commit": "59962ffd3dfd37f2d5bcac7ebf3b9e196b7703cf"
+  },
+  "mergai_version": "0.1.dev1+gf10daa235",
+  "conflict_context": {
+    "ours_commit": "c0798871aa157ba367ded6ed53081d9810e99a4a",
+    "theirs_commit": "59962ffd3dfd37f2d5bcac7ebf3b9e196b7703cf",
+    "base_commit": "c48b8d1873efa5297e9d4bca894df85a4e1bffa4",
+    "files": [
+      "MODULE.bazel.lock",
+      "sbom.json"
+    ],
+    "conflict_types": {
+      "MODULE.bazel.lock": "both modified",
+      "sbom.json": "both modified"
+    },
+    "diffs": {
+      "MODULE.bazel.lock": "diff --cc MODULE.bazel.lock\nindex b59b3e67b95,6725e033616..00000000000\n--- a/MODULE.bazel.lock\n+++ b/MODULE.bazel.lock\n@@@ -365,1 -365,1 +365,7 @@@\n++<<<<<<< HEAD\n +        \"bzlTransitiveDigest\": \"szxFXDL9A0myyy3r3c/gqfxxWaCg2HSXnqa4ZNoJ78c=\",\n++||||||| c48b8d1873e\n++        \"bzlTransitiveDigest\": \"IrYH+a7AsYhcP1C1eWf52uQbgGa+XlCaD11SNgek5WM=\",\n++=======\n+         \"bzlTransitiveDigest\": \"hKYNVSGErZ49H9Bu7qd5QVftZtx/GtMKqwCE/l2Y5Wk=\",\n++>>>>>>> 59962ffd3dfd37f2d5bcac7ebf3b9e196b7703cf",
+      "sbom.json": "diff --cc sbom.json\nindex eb6c2e1fc1a,9111d5daf17..00000000000\n--- a/sbom.json\n+++ b/sbom.json\n@@@ -5,2 -5,2 +5,10 @@@\n++<<<<<<< HEAD\n +  \"serialNumber\": \"urn:uuid:95a559f1-b091-4a92-b80d-e6d37c5e477c\",\n +  \"version\": 6,\n++||||||| c48b8d1873e\n++  \"serialNumber\": \"urn:uuid:2d7fbf85-c8b6-4f90-9966-70da88224a36\",\n++  \"version\": 10,\n++=======\n+   \"serialNumber\": \"urn:uuid:2d7fbf85-c8b6-4f90-9966-70da88224a36\",\n+   \"version\": 12,\n++>>>>>>> 59962ffd3dfd37f2d5bcac7ebf3b9e196b7703cf\n@@@ -63,1 -65,9 +71,23 @@@\n++<<<<<<< HEAD\n +        \"https://percona.com\"\n++||||||| c48b8d1873e\n++        \"https://mongodb.com\"\n++      ]\n++    },\n++    \"tools\": {\n++      \"services\": [\n++        {\n++          \"name\": \"Endor Labs Inc\",\n++          \"version\": \"v1.7.1053\"\n++        }\n++=======\n+         \"https://mongodb.com\"\n+       ]\n+     },\n+     \"tools\": {\n+       \"services\": [\n+         {\n+           \"name\": \"Endor Labs Inc\",\n+           \"version\": \"v1.7.1060\"\n+         }\n++>>>>>>> 59962ffd3dfd37f2d5bcac7ebf3b9e196b7703cf"
+    },
+    "their_commits": {
+      "MODULE.bazel.lock": [
+        "69ce480c43f7e6e120ca79c693aee956c31ea9a2"
+      ],
+      "sbom.json": [
+        "e5f837c926e9b2c4b2130080f320eb56ba71cdf5"
+      ]
+    }
+  },
+  "merge_context": {
+    "merge_commit": "59962ffd3dfd37f2d5bcac7ebf3b9e196b7703cf",
+    "merged_commits": [
+      "59962ffd3dfd37f2d5bcac7ebf3b9e196b7703cf",
+      "ff622631a9f8bbb22c0548202b0739203fbd86fc",
+      "47881b6e3e09c17c093dbe84e13263fc548062c0",
+      "4299f64d15be03e2c40a47237d434bb059d7b6bf",
+      "b638b6e8fe246a96dff7721712dc4a44f7ba1d8c",
+      "6f1203062f47a0a23ca0ec9a6d5af8d5e640bed4",
+      "2481269cc9acb7393930f37d5abded88b14f1d8c",
+      "0ec4a35d62136cf046ca77a88526a86d29e1af67",
+      "9eda0508e2e242c3b153af4a84ba3a6ca8935547",
+      "8e3581e49aa99bebd07ed97cb4630efe5b1f3c3c",
+      "310ea4c7f46b027f3b158fe309f0c4145fd7133c",
+      "a62edd9cb1ba3f7116fb52532ad3e05795e5ca8d",
+      "fd864f3a9f70cf1b804c2ac7c8294e021d61b6c0",
+      "bc39b3face3f567c79259d73789cf3c07c22ac7f",
+      "69ce480c43f7e6e120ca79c693aee956c31ea9a2",
+      "590aa79cad29dddccc44c8b34feff4b2d3f5d3cb",
+      "b19ac578ec8403b42538a7f41b97612898a4d25f",
+      "ac7eeb58aa41c3d9cf15cc9c4a9e5d9d696eca4f",
+      "7a8988a9914bbba381209293a3a8233dc9ed5c90",
+      "adef6f5d87a32f57714b4e9e65793c7d1da3b8af",
+      "e9f67ddd6b530fadb3b9dac9bf1679cbfc438bba",
+      "509c7028d5db0b725ff6978fab8102415a8af8b8",
+      "bd4ad7199b07880ff1287084fc7ecc907713df31",
+      "1b48c97c9923853d5dc06ced74d903ff04763d7e",
+      "aa6797c1d4ac07293a355b78e7ce806dcb58a6aa",
+      "ef5dcb48743196c2a2b5d00c905ca4529970bea7",
+      "ab110e93392d95cdb1faf6bd35ade062b4fa968c",
+      "3f36242d8cebc070146fa4cd28fd81ce05ef98e1",
+      "3609f167530f3de3216e357d0f23223bc817c2e0",
+      "8d14e838febc4ddc4e327e9c76181c44c0f5df4c",
+      "163c929d229e7063e40af39c138e0b076b1cbe1f",
+      "204ce9c690fd58fed708764a6365f9a142452836",
+      "e5f837c926e9b2c4b2130080f320eb56ba71cdf5",
+      "4c4a0b729f055e198afece70b640158145dfaea0",
+      "66563216014dcab8d1cd258f821b66fdc7c929d6",
+      "40e712a1d859e7cf804b1094a09e5c37406f85ea",
+      "ddc7c64b6d9d65ee9eecb7706c3e147f06641b1d",
+      "deaf4ed528e78f822c4c1e8d8d45adc6709d9bc8",
+      "2bc37e940fd004f6a959b234fc2e11943ceae105",
+      "4543659ad628ec4957a1dc4f5743445b9139c5d7",
+      "a1a4175b1dc3ba82b742d852b165a86aa34e079a",
+      "0e534fd45bf6408e6ad73dec50cfe6dd5c217de9",
+      "eca223376adbf92633f732e5d24002ec748e4303",
+      "7cedc78aab4bf405c13e675590c5c805347974fc",
+      "d2325f31c409a9e9df54ceaf798edd39441640b3",
+      "d30d60eb272791e19bb3bae511bf69ae30cfc326",
+      "9a5a91c52f8ededa23b160b1240284f78984ba7c",
+      "0a2992101e4b602f96d53adf902b95d2896ce4d3",
+      "29dbdf776db4be217e5cd05675e3b4ebbcbd2f8c",
+      "410e418c027fdf96864f831995c1dfd7370d88f3",
+      "5213eda553abe834c7ec24020ae4087ded28255e",
+      "256f0646330d9812170a79b9912626a46929ec2f",
+      "569ce042a38b6b98cbaf324056993b3314c27c11",
+      "e6bb96d7d10a8c4219f509c32f2008586723fe32",
+      "dc3d315a92366826702cec74d488f8f4c6fc5fcf",
+      "d1bf655bff327b89d8dd780501dcd8b05363c870",
+      "6bbc74144b92824782eef0d5630f9d97736e6e27",
+      "59907c1f34efcc4a47863834415a50349c082695",
+      "a09de5fb270532ba78767879cf4efaf136610d38",
+      "4d73d13d16a6140a54a15139a9ef3af1d4b747b9",
+      "b8a093a3188f1e3660353ee64fd965c85412dfe2",
+      "e9da4562ce83695da3e50f3be4056208cb160c4c",
+      "2a62f06250c4476c7600fce907efb8956a003ff8"
+    ],
+    "important_files_modified": [
+      "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp",
+      "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine_test.cpp"
+    ],
+    "auto_merged": {
+      "strategy": "ort",
+      "files": [
+        ".bazelrc",
+        "MODULE.bazel.lock",
+        "README.third_party.md",
+        "bazel/config/BUILD.bazel",
+        "bazel/resmoke/resmoke.bzl",
+        "buildscripts/resmokelib/testing/fixtures/replicaset.py",
+        "sbom.json",
+        "src/mongo/db/BUILD.bazel",
+        "src/mongo/db/index_builds/BUILD.bazel",
+        "src/mongo/db/repl/replication_coordinator_impl.cpp",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_util.cpp",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_util_test.cpp",
+        "src/third_party/wiredtiger/src/include/wiredtiger.h.in"
+      ]
+    }
+  },
+  "merge_description": {
+    "status": "success",
+    "is_error": false,
+    "duration_ms": 90082,
+    "num_turns": 6,
+    "stop_reason": "end_turn",
+    "total_cost_usd": 0.42855424999999997,
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 603,
+        "outputTokens": 18,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.000693,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      },
+      "claude-opus-4-8": {
+        "inputTokens": 12,
+        "outputTokens": 6316,
+        "cacheReadInputTokens": 134990,
+        "cacheCreationInputTokens": 32385,
+        "webSearchRequests": 0,
+        "costUSD": 0.42786124999999997,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000
+      }
+    },
+    "stats": {
+      "models": {
+        "claude-haiku-4-5-20251001": {
+          "tokens": {
+            "input": 603,
+            "output": 18,
+            "cache_read": 0,
+            "cache_creation": 0
+          },
+          "cost_usd": 0.000693
+        },
+        "claude-opus-4-8": {
+          "tokens": {
+            "input": 12,
+            "output": 6316,
+            "cache_read": 134990,
+            "cache_creation": 32385
+          },
+          "cost_usd": 0.42786124999999997
+        }
+      }
+    },
+    "text_result": "I've read the actual `diff base \u2192 merge commit` diffs for every file in the changeset and written the JSON response.\n\nSummary of what this merge introduces (upstream MongoDB changes since the fork base):\n\n- **WiredTiger stats error handling (core behavioral change)** \u2014 `wiredtiger_util.cpp` now maps native WT return codes via `wtRCToStatus` instead of always returning `CursorNotFound`; index/ident size accounting distinguishes `NoSuchKey` (missing file \u2192 0) from `ObjectIsBusy` (retryable). `wiredtiger_kv_engine.cpp` adds a `WTIndexStorageSizeReturnBusy` failpoint and rewrites `getIndexStorageSize`'s error branching. Test expectations updated accordingly.\n- **Bazel coverage plumbing** \u2014 `resmoke.bzl` gains LLVM source-based/continuous-mode coverage support; `.bazelrc` narrows coverage output download.\n- **Build/config tweaks** \u2014 new `rhel10_ppc64le_gcc_linkstatic` group, a source add (`ifr_context_decoration.cpp`), a dep removal, a replica-set heartbeat tweak, an unused-constant removal, WiredTiger header doc-only comments, and routine SBOM/lockfile/third-party refreshes (valgrind \u2192 3.17.0).\n\nEach file description is backed by lines I actually saw in the diff. Note: `wiredtiger_kv_engine_test.cpp` appeared under `important_files_modified` but is **not** in `auto_merged.files`, so I did not describe it. The two conflict files (`MODULE.bazel.lock`, `sbom.json`) are flagged in the review notes with their required special handling per the conflict hints.",
+    "response": {
+      "summary": "Upstream merge pulling MongoDB master changes since the fork point (base c48b8d1873e). The dominant theme is WiredTiger statistics error-code handling: getStatisticsValue now maps native WT return codes via wtRCToStatus instead of always returning CursorNotFound, and index/ident size accounting distinguishes NoSuchKey (missing file -> contributes 0) from ObjectIsBusy (data handle transiently held). A new WTIndexStorageSizeReturnBusy failpoint and updated unit-test expectations accompany this. Secondary changes add C++ code-coverage (LLVM source-based / continuous-mode) plumbing to the Bazel resmoke test rule, a new rhel10_ppc64le_gcc_linkstatic config group, a BUILD source/dependency reshuffle, a replica-set fixture heartbeat tweak, removal of an unused constant in replication_coordinator_impl.cpp, WiredTiger public-header doc/comment updates, and routine SBOM/lockfile/third-party metadata refreshes (valgrind pinned to 3.17.0).",
+      "auto_merged": {
+        ".bazelrc": "Coverage config: replaces `coverage --remote_download_outputs=all` with `coverage --remote_download_regex=.*coverage.*\\.dat$` so only the coverage report `.dat` files are pulled back from remote execution rather than every instrumented output.",
+        "MODULE.bazel.lock": "Generated lockfile refresh only: `bzlTransitiveDigest` hashes updated (e.g. for the `bazel_features_deps` and `setup_mongo_python_toolchains` module extensions) from IrYH+a7... to hKYNVSGErZ49.... Per conflict hints this file is regenerated with `bazel query //...` after resolving all other conflicts; no manual merge of contents.",
+        "README.third_party.md": "The valgrind.h third-party entry's version is changed from the git SHA `093bef43d69236287ccc748591c9560a71181b0a` to the release tag `3.17.0`.",
+        "bazel/config/BUILD.bazel": "Adds a new `selects.config_setting_group` named `rhel10_ppc64le_gcc_linkstatic` matching linux + ppc64le + gcc compiler + rhel10 platform + linkstatic_enabled.",
+        "bazel/resmoke/resmoke.bzl": "Adds C++ code-coverage support to the resmoke test rule. New module docstring and a load of `find_cpp_toolchain`/`use_cpp_toolchain`. In `_resmoke_test_impl`: resolves the cc toolchain, exports `COVERAGE_GCOV_PATH` and `LLVM_COV`, emits a runtime `profile_override` shell snippet setting `LLVM_PROFILE_FILE` to `${COVERAGE_DIR}/server-%p-%m%c.profraw` (continuous mode + per-module online merge) prepended to the exec line, seeds runfiles with the cc toolchain's `all_files`, and returns `coverage_common.instrumented_files_info` over server_deps/data. Adds a `_coverage_dso_transition` that appends the `llvm_coverage_dso` feature when collecting coverage, applied via `cfg` on the `server_deps` attr; adds `_cc_toolchain`, `_lcov_merger`, `_collect_cc_coverage` attrs plus `toolchains = use_cpp_toolchain()` and `fragments = [\"cpp\", \"coverage\"]`. Also drops `server_deps_attr` from the py_test `deps` list and removes two explanatory comment blocks.",
+        "buildscripts/resmokelib/testing/fixtures/replicaset.py": "In ReplicaSetFixture the repl-config `settings.heartbeatIntervalMillis` is changed from 1000 to 1800.",
+        "sbom.json": "Metadata refresh: `version` bump, `metadata.timestamp` updated, the Endor Labs tool `services` version bumped (v1.7.1053 -> v1.7.1060 in the incoming side), and the valgrind component's bom-ref/name-version/purl changed from the git SHA to `3.17.0`. Per conflict hints the resolution keeps Percona's supplier url (https://percona.com) and removes the `metadata.tools` section; serialNumber/version are release-time values and resolved either way.",
+        "src/mongo/db/BUILD.bazel": "Adds `ifr_context_decoration.cpp` to the source list of a mongo_cc_library (alongside operation_context.cpp etc.).",
+        "src/mongo/db/index_builds/BUILD.bazel": "Removes the dependency `//src/mongo/db/index_builds/primary_driven:tearable_side_write_redo_state` from a mongo_cc_library's deps.",
+        "src/mongo/db/repl/replication_coordinator_impl.cpp": "Removes the unused anonymous-namespace constant `kQuiesceModeShutdownMessage` (\"The server is in quiesce mode and will shut down\").",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp": "Defines a new failpoint `WTIndexStorageSizeReturnBusy`. In `WiredTigerKVEngineBase::getIndexStorageSize`, after reading the block-size statistic the failpoint can inject an ObjectIsBusy status; error handling is rewritten: ObjectIsBusy is returned to the caller (retryable), NoSuchKey means no on-disk checkpoint yet so the entry contributes zero (continue), and any other error is surfaced. This replaces the prior logic that mapped CursorNotFound and cross-checked metadata for NoSuchKey.",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_util.cpp": "`getStatisticsValue_DoNotUse` now builds its error via `wtRCToStatus(ret, session, ...)` (using fmt::format for the message) instead of hardcoding ErrorCodes::CursorNotFound. `getIdentSize` and `getEphemeralIdentSize` now treat NoSuchKey (missing file, ident gone) and ObjectIsBusy (data handle transiently held) as size 0, replacing the previous CursorNotFound check.",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_util_test.cpp": "Updates expected error codes to match the new wtRCToStatus mapping: GetStatisticsValueMissingTable now expects NoSuchKey (was CursorNotFound) and GetStatisticsValueStatisticsDisabled now expects BadValue (was CursorNotFound).",
+        "src/third_party/wiredtiger/src/include/wiredtiger.h.in": "Documentation/comment-only changes in the WiredTiger public header: expands the `overwrite` cursor/session config doc to describe layered-follower WT_CURSOR::remove tombstone behavior, refines several page_log callback `@param args` descriptions (pl_complete_checkpoint, pl_get_complete_checkpoint, terminate), and adds inline field comments to the __wt_page_log_*_args structs and plh_cache_* callbacks. No functional/API changes."
+      },
+      "review_notes": "The WiredTiger error-code change is the behavioral core: callers of getStatisticsValue/getIndexStorageSize/getIdentSize now branch on NoSuchKey vs ObjectIsBusy instead of CursorNotFound. Verify no other PSMDB/Percona code still relies on the old CursorNotFound return from these helpers. The two conflict files (MODULE.bazel.lock, sbom.json) require the documented handling: regenerate the lockfile via bazel and, for sbom.json, keep Percona's supplier url and strip the metadata.tools section. wiredtiger_kv_engine_test.cpp was listed among important modified files but is not in the auto_merged changeset, so it is not described here. All wiredtiger.h.in edits are comments only."
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "All diffs read. Now writing the response."
+          ],
+          "tools_used": []
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Write"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I've read the actual `diff base \u2192 merge commit` diffs for every file in the changeset and written the JSON response.\n\nSummary of what this merge introduces (upstream MongoDB changes since the fork base):\n\n- **WiredTiger stats error handling (core behavioral change)** \u2014 `wiredtiger_util.cpp` now maps native WT return codes via `wtRCToStatus` instead of always returning `CursorNotFound`; index/ident size accounting distinguishes `NoSuchKey` (missing file \u2192 0) from `ObjectIsBusy` (retryable). `wiredtiger_kv_engine.cpp` adds a `WTIndexStorageSizeReturnBusy` failpoint and rewrites `getIndexStorageSize`'s error branching. Test expectations updated accordingly.\n- **Bazel coverage plumbing** \u2014 `resmoke.bzl` gains LLVM source-based/continuous-mode coverage support; `.bazelrc` narrows coverage output download.\n- **Build/config tweaks** \u2014 new `rhel10_ppc64le_gcc_linkstatic` group, a source add (`ifr_context_decoration.cpp`), a dep removal, a replica-set heartbeat tweak, an unused-constant removal, WiredTiger header doc-only comments, and routine SBOM/lockfile/third-party refreshes (valgrind \u2192 3.17.0).\n\nEach file description is backed by lines I actually saw in the diff. Note: `wiredtiger_kv_engine_test.cpp` appeared under `important_files_modified` but is **not** in `auto_merged.files`, so I did not describe it. The two conflict files (`MODULE.bazel.lock`, `sbom.json`) are flagged in the review notes with their required special handling per the conflict hints."
+          ],
+          "tools_used": []
+        }
+      ],
+      "metadata": {
+        "lastPrompt": "Read @/home/runner/work/percona-server-mongodb/percona-server-mongodb/.cache/mergai/prompt_20260721_073609_255007.md and write your JSON response to @/home/runner/work/percona-server-mongodb/percona-s\u2026"
+      }
+    },
+    "agent_info": {
+      "agent_type": "claude_cli",
+      "version": "2.1.216 (Claude Code)"
+    }
+  }
+}

@@ -121,24 +121,26 @@ env:
 #   - PSMDB_RBE_HOST: the RBE host (no scheme/port); used to build the
 #     credential-helper flag (see the env block above).
 #
-# First-version trust model: every run goes through `gate` and pays the
-# approval cost, internal and external alike. Planned next step (NOT YET
-# IMPLEMENTED — needs security review + CODEOWNERS on .github/** first):
-# make `gate.environment` conditional on author_association so internal
-# PRs skip the approval. The ternary below sketches that; do NOT enable
-# it without first (1) auditing how a malicious .github/actions/**
-# change could exfiltrate the OIDC credential in the unattended path,
-# and (2) wiring CODEOWNERS on .github/** to dev-psmdb so the code-
-# review half of the gate actually fires.
+# Trust model: same-repo PRs (head repo == base repo) route to the ungated
+# `rbe` environment; forks/external PRs route to `rbe-approve` and pay the
+# approval cost. A branch can only exist in this repo if someone with write
+# access pushed it, so same-repo is the trust signal -- mergai bot PRs
+# (mergai/** on this repo) and maintainers' own branches skip the approval,
+# forks do not. author_association is intentionally NOT used (spoofable in some
+# contexts); same-repo is the reliable signal.
 #
-#   environment: ${{ (github.event.pull_request.head.repo.full_name == github.repository || contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) && 'rbe' || 'rbe-approve' }}
+# SECURITY PREREQUISITES for the production repo (defense in depth; less
+# critical on a personal test fork): (1) audit how a malicious
+# .github/actions/** change could exfiltrate the OIDC credential on the now
+# unattended `rbe` path, and (2) wire CODEOWNERS on .github/** to dev-psmdb so
+# such an edit cannot be merged.
 jobs:
-  # No-op gatekeeper. The approval click on this job's `rbe-approve`
-  # environment authorizes the entire workflow run's downstream RBE
-  # access, including the `unittests` job that doesn't run until ~30
-  # minutes later. The maintainer reviewing the PR is implicitly
-  # approving every job that transitively depends on `gate`. Runs on every
-  # trigger; once approved the rest of the pipeline proceeds.
+  # No-op gatekeeper. For fork/external PRs the approval click on this job's
+  # `rbe-approve` environment authorizes the entire workflow run's downstream
+  # RBE access, including the `unittests` job that doesn't run until ~30
+  # minutes later -- the maintainer reviewing the PR is implicitly approving
+  # every job that transitively depends on `gate`. Same-repo PRs resolve to the
+  # ungated `rbe` environment and proceed with no click. Runs on every trigger.
   gate:
     name: gate
     # Master switch for the entire RBE pipeline: `vars.PSMDB_RBE_ENABLED` must
@@ -148,7 +150,7 @@ jobs:
     # dark on a repo/fork that has not opted into remote Bazel.
     if: ${{ vars.PSMDB_RBE_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
-    environment: rbe-approve
+    environment: ${{ github.event.pull_request.head.repo.full_name == github.repository && 'rbe' || 'rbe-approve' }}
     steps:
       # Fail fast on RBE misconfiguration. This job runs only when
       # PSMDB_RBE_ENABLED == 'true', and in that case every RBE endpoint variable

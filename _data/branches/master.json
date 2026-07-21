@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 111,
+    "commits_behind": 112,
     "days_behind": 4,
-    "unmerged_oldest_age_days": 3.9867558056134262,
+    "unmerged_oldest_age_days": 4.009990302268519,
     "files_affected": 594,
-    "total_additions": 17424,
+    "total_additions": 17441,
     "total_deletions": 16593,
     "date_range": {
       "first": "2026-07-17T08:21:53+00:00",
-      "last": "2026-07-21T04:20:10+00:00"
+      "last": "2026-07-21T07:41:06+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,16 @@
     "reason": "force:important_files"
   },
   "unmerged_commits": [
+    {
+      "sha": "be79e8062344f8290b81757c42403312b380630d",
+      "short_sha": "be79e806234",
+      "date": "2026-07-21T02:41:06-05:00",
+      "author": {
+        "name": "Indy Prentice",
+        "email": "iprentic@users.noreply.github.com"
+      },
+      "summary": "SERVER-131640: Treat ErrorCodes.ShardingStateNotInitialized as a transient error in metadata consistency checker (#58887)"
+    },
     {
       "sha": "03913d95ace6873f6cdd9513d984d16ce3453cff",
       "short_sha": "03913d95ace",
@@ -1326,7 +1336,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-21 08:02:45",
+  "generated_at": "2026-07-21 08:36:13",
   "branch_name": "master",
   "display_name": "master"
 }

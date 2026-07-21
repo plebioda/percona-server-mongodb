@@ -70,7 +70,7 @@ private:
                           fmt::format("not authorized to execute command {}", cmdObj.toString()));
         }
 
-        return Status::OK();
+        return "ok";
     }
 
     bool supportsWriteConcern(const BSONObj& cmdObj) const override {

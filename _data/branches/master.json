@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 171,
+    "commits_behind": 174,
     "days_behind": 3,
-    "unmerged_oldest_age_days": 3.686510731793981,
-    "files_affected": 1044,
-    "total_additions": 31841,
-    "total_deletions": 7381,
+    "unmerged_oldest_age_days": 3.7283951616203708,
+    "files_affected": 1068,
+    "total_additions": 32295,
+    "total_deletions": 7438,
     "date_range": {
       "first": "2026-07-20T02:24:43+00:00",
-      "last": "2026-07-23T18:11:10+00:00"
+      "last": "2026-07-23T18:33:29+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,36 @@
     "reason": "force:important_files"
   },
   "unmerged_commits": [
+    {
+      "sha": "500140201c4bea3e66b705c0e63841ff3674e513",
+      "short_sha": "500140201c4",
+      "date": "2026-07-23T14:33:29-04:00",
+      "author": {
+        "name": "Mike Nugent",
+        "email": "mike.nugent@mongodb.com"
+      },
+      "summary": "SERVER-131195: Add and set SpanKind (#59230)"
+    },
+    {
+      "sha": "d8e7623100f655e8ab432e16568688fc3ae48806",
+      "short_sha": "d8e7623100f",
+      "date": "2026-07-23T14:23:30-04:00",
+      "author": {
+        "name": "Finley Lau",
+        "email": "finley.lau@mongodb.com"
+      },
+      "summary": "SERVER-127094 Enable change_stream tests in TSAN variant for disagg (#59361)"
+    },
+    {
+      "sha": "22e0bc561767a159cd09973f8fbe8eae65613337",
+      "short_sha": "22e0bc56176",
+      "date": "2026-07-23T14:20:06-04:00",
+      "author": {
+        "name": "Elise Zhu",
+        "email": "89541745+elise-yz@users.noreply.github.com"
+      },
+      "summary": "SERVER-130898: Make an ASC and DSC jscore passthrough for SPM-4740 (#59005)"
+    },
     {
       "sha": "785e63146cba54ae189bfa16aa48c852d9f8cc00",
       "short_sha": "785e63146cb",
@@ -1953,7 +1983,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-23 18:53:13",
+  "generated_at": "2026-07-23 19:53:33",
   "branch_name": "master",
   "display_name": "master"
 }

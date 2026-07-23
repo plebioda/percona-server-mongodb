@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 167,
+    "commits_behind": 171,
     "days_behind": 3,
-    "unmerged_oldest_age_days": 3.674132108576389,
-    "files_affected": 1010,
-    "total_additions": 31553,
-    "total_deletions": 7260,
+    "unmerged_oldest_age_days": 3.686510731793981,
+    "files_affected": 1044,
+    "total_additions": 31841,
+    "total_deletions": 7381,
     "date_range": {
       "first": "2026-07-20T02:24:43+00:00",
-      "last": "2026-07-23T17:50:52+00:00"
+      "last": "2026-07-23T18:11:10+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,46 @@
     "reason": "force:important_files"
   },
   "unmerged_commits": [
+    {
+      "sha": "785e63146cba54ae189bfa16aa48c852d9f8cc00",
+      "short_sha": "785e63146cb",
+      "date": "2026-07-23T14:11:10-04:00",
+      "author": {
+        "name": "Gregory Noma",
+        "email": "gregory.noma@gmail.com"
+      },
+      "summary": "SERVER-132115 Short-circuit `ReplOperation::setTid` for `boost::none` (#59442)"
+    },
+    {
+      "sha": "3c81de18c08e69250c01452cbc1d49999bf3c1d9",
+      "short_sha": "3c81de18c08",
+      "date": "2026-07-23T14:07:07-04:00",
+      "author": {
+        "name": "Kruti Shah",
+        "email": "70412403+krutishah139@users.noreply.github.com"
+      },
+      "summary": "SERVER-131629 Ensure resharding coordinator always resumes migration and removes state document (#59264)"
+    },
+    {
+      "sha": "b8eafb2844703d7fc5858c3b9ba02138f8e53db0",
+      "short_sha": "b8eafb28447",
+      "date": "2026-07-23T14:00:51-04:00",
+      "author": {
+        "name": "Daniel Segel",
+        "email": "71151509+dhsegel@users.noreply.github.com"
+      },
+      "summary": "SERVER-131073 Formally serialize $searchMeta for query stats (#59347)"
+    },
+    {
+      "sha": "fff04da52550103a94ff2d51b6916426ddff13fa",
+      "short_sha": "fff04da5255",
+      "date": "2026-07-23T13:59:25-04:00",
+      "author": {
+        "name": "Matthew Boros",
+        "email": "mattBoros@users.noreply.github.com"
+      },
+      "summary": "SERVER-130747 Update product_limits variants and separate them into smaller jstests (#59330)"
+    },
     {
       "sha": "5a550d7b99773004fc47c42161780c65132a54dc",
       "short_sha": "5a550d7b997",
@@ -1913,7 +1953,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-23 18:35:24",
+  "generated_at": "2026-07-23 18:53:13",
   "branch_name": "master",
   "display_name": "master"
 }

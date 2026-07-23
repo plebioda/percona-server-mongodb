@@ -424,6 +424,7 @@ jobs:
       contents: read # checkout
       pull-requests: read # read PR labels (mergai-skip-ci-fix)
       security-events: read # mergai ci status -> classify clang-tidy via code-scanning analyses
+      statuses: write # publish the ci-gate commit status on the PR head
     # Serialize completions for the same branch so two near-simultaneous
     # workflow_run events can't each observe the other as in-progress and both
     # no-op (a deadlock). The last-queued gate sees the full set done. This
@@ -492,6 +493,34 @@ jobs:
             echo "skip_ci_fix=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Surface this job on the PR as the "mergai / ci-gate" check. workflow_run
+      # jobs are invisible on the PR by default, so we publish a commit status on
+      # the PR head SHA. The status reflects whether THIS JOB executed cleanly --
+      # NOT the gate's verdict about the watched workflows: ci-gate is green
+      # whenever it ran, even when it decides the watched CI failed (that verdict
+      # is surfaced in the description). target_url deep-links to this run.
+      - name: Report ci-gate status on the PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          JOB_STATUS: ${{ job.status }}
+          GATE_STATE: ${{ steps.gate.outputs.state }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          case "$JOB_STATUS" in
+            success) STATE=success ;;
+            cancelled) STATE=error ;;
+            *) STATE=failure ;;
+          esac
+          gh api "repos/$GH_REPO/statuses/$HEAD_SHA" \
+            -f state="$STATE" \
+            -f context="mergai / ci-gate" \
+            -f target_url="$RUN_URL" \
+            -f description="gate: ${GATE_STATE:-unknown}" \
+            || echo "::warning::could not publish ci-gate status"
+
   ci-handle:
     needs: ci-gate
     # Only failure reaches the privileged job; in-progress/none/success simply
@@ -518,6 +547,11 @@ jobs:
       cancel-in-progress: false
     environment: ai
     runs-on: ubuntu-latest
+    # The default GITHUB_TOKEN is used only to publish the ci-handle commit
+    # status (below); all real work uses the scoped GitHub App tokens. Restrict
+    # it to statuses:write accordingly.
+    permissions:
+      statuses: write # publish the ci-handle commit status on the PR head
     env:
       GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
       GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
@@ -747,6 +781,33 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
         run: mergai notes push
+
+      # Surface this job on the PR as the "mergai / ci-handle" check (see the
+      # ci-gate equivalent). The status reflects whether THIS JOB executed
+      # cleanly -- a green ci-handle means the auto-fix run finished without
+      # error, whatever it decided to do (fix, relocate, or no-op). It only
+      # appears when the job actually runs (i.e. ci-gate saw a failure).
+      - name: Report ci-handle status on the PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          JOB_STATUS: ${{ job.status }}
+          HANDLE_STATE: ${{ steps.recheck.outputs.state }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          case "$JOB_STATUS" in
+            success) STATE=success ;;
+            cancelled) STATE=error ;;
+            *) STATE=failure ;;
+          esac
+          gh api "repos/$GH_REPO/statuses/$HEAD_SHA" \
+            -f state="$STATE" \
+            -f context="mergai / ci-handle" \
+            -f target_url="$RUN_URL" \
+            -f description="handle: ${HANDLE_STATE:-n/a}" \
+            || echo "::warning::could not publish ci-handle status"
 
   # Handle code-review feedback on a mergai PR. Triggered by:
   #   * a `/mergai review fix` comment on the PR (issue_comment), or

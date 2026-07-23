@@ -1,0 +1,156 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "34cd5c4a12ecd149552a337bfa41766f4ed5b828",
+    "merge_commit": "29dbdf776db4be217e5cd05675e3b4ebbcbd2f8c"
+  },
+  "mergai_version": "0.1.dev1+g7c01165c6",
+  "merge_context": {
+    "merge_commit": "29dbdf776db4be217e5cd05675e3b4ebbcbd2f8c",
+    "merged_commits": [
+      "29dbdf776db4be217e5cd05675e3b4ebbcbd2f8c",
+      "410e418c027fdf96864f831995c1dfd7370d88f3",
+      "5213eda553abe834c7ec24020ae4087ded28255e",
+      "256f0646330d9812170a79b9912626a46929ec2f",
+      "569ce042a38b6b98cbaf324056993b3314c27c11",
+      "e6bb96d7d10a8c4219f509c32f2008586723fe32",
+      "dc3d315a92366826702cec74d488f8f4c6fc5fcf",
+      "d1bf655bff327b89d8dd780501dcd8b05363c870",
+      "6bbc74144b92824782eef0d5630f9d97736e6e27",
+      "59907c1f34efcc4a47863834415a50349c082695",
+      "a09de5fb270532ba78767879cf4efaf136610d38",
+      "4d73d13d16a6140a54a15139a9ef3af1d4b747b9",
+      "b8a093a3188f1e3660353ee64fd965c85412dfe2",
+      "e9da4562ce83695da3e50f3be4056208cb160c4c",
+      "2a62f06250c4476c7600fce907efb8956a003ff8"
+    ],
+    "important_files_modified": [
+      "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp",
+      "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine_test.cpp"
+    ],
+    "auto_merged": {
+      "strategy": "ort",
+      "files": [
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_util.cpp",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_util_test.cpp"
+      ]
+    }
+  },
+  "merge_description": {
+    "status": "success",
+    "is_error": false,
+    "duration_ms": 39007,
+    "num_turns": 4,
+    "stop_reason": "end_turn",
+    "total_cost_usd": 0.16035950000000002,
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 603,
+        "outputTokens": 15,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.000678,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty"
+      },
+      "claude-opus-4-8": {
+        "inputTokens": 8,
+        "outputTokens": 2338,
+        "cacheReadInputTokens": 46883,
+        "cacheCreationInputTokens": 12440,
+        "webSearchRequests": 0,
+        "costUSD": 0.1596815,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "canonicalModel": "claude-opus-4-8",
+        "provider": "firstParty"
+      }
+    },
+    "stats": {
+      "models": {
+        "claude-haiku-4-5-20251001": {
+          "tokens": {
+            "input": 603,
+            "output": 15,
+            "cache_read": 0,
+            "cache_creation": 0
+          },
+          "cost_usd": 0.000678
+        },
+        "claude-opus-4-8": {
+          "tokens": {
+            "input": 8,
+            "output": 2338,
+            "cache_read": 46883,
+            "cache_creation": 12440
+          },
+          "cost_usd": 0.1596815
+        }
+      }
+    },
+    "text_result": "I've read the incoming diffs (`c48b8d1873e \u2192 29dbdf776db`) for the three auto-merged files and written the JSON response.\n\n**Summary of what this merge pulls in** \u2014 an upstream refactor of WiredTiger statistics-value error handling:\n\n- **wiredtiger_util.cpp**: `getStatisticsValue_DoNotUse` now maps the raw WiredTiger return code through `wtRCToStatus` (with an `fmt::format` message) instead of always returning `CursorNotFound`, yielding specific codes like `NoSuchKey`, `ObjectIsBusy`, `BadValue`. `getIdentSize`/`getEphemeralIdentSize` return 0 for both `NoSuchKey` and `ObjectIsBusy`.\n- **wiredtiger_kv_engine.cpp**: adds a `WTIndexStorageSizeReturnBusy` failpoint; `getIndexStorageSize` now returns `ObjectIsBusy` (retryable) and skips `NoSuchKey` files.\n- **wiredtiger_util_test.cpp**: two test expectations updated to `NoSuchKey` and `BadValue`.\n\nAll three merged cleanly with no Percona-specific lines in the diff. I noted for reviewers that `wiredtiger_kv_engine_test.cpp` appears under `important_files_modified` but not `auto_merged.files`, so it wasn't part of this comparison.",
+    "response": {
+      "summary": "This merge pulls in upstream changes to the WiredTiger storage engine's statistics-value error handling. Previously, a failure to open a statistics cursor was always mapped to ErrorCodes::CursorNotFound; the merge changes getStatisticsValue_DoNotUse to translate the WiredTiger return code through wtRCToStatus, producing distinct error codes (e.g. NoSuchKey for a missing file, ObjectIsBusy for a transiently held data handle, BadValue when statistics are disabled). Callers are updated accordingly: getIndexStorageSize, getIdentSize and getEphemeralIdentSize now treat NoSuchKey as a zero-contribution missing ident, propagate/handle ObjectIsBusy, and a new WTIndexStorageSizeReturnBusy failpoint lets tests simulate the busy path. Unit tests are updated to expect the new error codes.",
+      "auto_merged": {
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp": "Adds the WTIndexStorageSizeReturnBusy failpoint (MONGO_FAIL_POINT_DEFINE). In WiredTigerKVEngineBase::getIndexStorageSize, the failpoint can inject an ObjectIsBusy status to simulate a transient busy stable index file. The error handling after reading the on-disk block size is rewritten: an ObjectIsBusy status is now returned so the caller can retry; a NoSuchKey status means the index has no on-disk checkpoint yet and is skipped (contributes zero). This replaces the previous logic that treated CursorNotFound (confirmed via getMetadata returning NoSuchKey) as the missing-file case.",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_util.cpp": "getStatisticsValue_DoNotUse no longer hard-codes ErrorCodes::CursorNotFound when the statistics cursor cannot be opened; it now returns wtRCToStatus(ret, session, ...) with an fmt::format message, so the WiredTiger return code maps to the appropriate error code. getIdentSize and getEphemeralIdentSize are updated to return 0 for both NoSuchKey (ident gone) and ObjectIsBusy (data handle transiently held) instead of the former CursorNotFound check.",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_util_test.cpp": "Updates two test expectations to match the new error-code mapping: GetStatisticsValueMissingTable now expects ErrorCodes::NoSuchKey (was CursorNotFound), and GetStatisticsValueStatisticsDisabled now expects ErrorCodes::BadValue (was CursorNotFound)."
+      },
+      "review_notes": "The three auto-merged files were merged cleanly by the ort strategy; no Percona-specific customizations appear in these diffs. The change is purely an upstream refactor of WiredTiger statistics error-code handling (CursorNotFound replaced by the more specific NoSuchKey / ObjectIsBusy / BadValue codes). Reviewers should confirm no other in-tree callers still rely on getStatisticsValue returning CursorNotFound. wiredtiger_kv_engine_test.cpp is listed under important_files_modified but not under auto_merged.files, so it was not part of this diff base -> merge commit comparison."
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Write"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I've read the incoming diffs (`c48b8d1873e \u2192 29dbdf776db`) for the three auto-merged files and written the JSON response.\n\n**Summary of what this merge pulls in** \u2014 an upstream refactor of WiredTiger statistics-value error handling:\n\n- **wiredtiger_util.cpp**: `getStatisticsValue_DoNotUse` now maps the raw WiredTiger return code through `wtRCToStatus` (with an `fmt::format` message) instead of always returning `CursorNotFound`, yielding specific codes like `NoSuchKey`, `ObjectIsBusy`, `BadValue`. `getIdentSize`/`getEphemeralIdentSize` return 0 for both `NoSuchKey` and `ObjectIsBusy`.\n- **wiredtiger_kv_engine.cpp**: adds a `WTIndexStorageSizeReturnBusy` failpoint; `getIndexStorageSize` now returns `ObjectIsBusy` (retryable) and skips `NoSuchKey` files.\n- **wiredtiger_util_test.cpp**: two test expectations updated to `NoSuchKey` and `BadValue`.\n\nAll three merged cleanly with no Percona-specific lines in the diff. I noted for reviewers that `wiredtiger_kv_engine_test.cpp` appears under `important_files_modified` but not `auto_merged.files`, so it wasn't part of this comparison."
+          ],
+          "tools_used": []
+        }
+      ],
+      "metadata": {
+        "lastPrompt": "Read @/home/runner/work/percona-server-mongodb/percona-server-mongodb/.cache/mergai/prompt_20260723_091935_301313.md and write your JSON response to @/home/runner/work/percona-server-mongodb/percona-s\u2026"
+      }
+    },
+    "agent_info": {
+      "agent_type": "claude_cli",
+      "version": "2.1.218 (Claude Code)"
+    }
+  },
+  "merge_pick": {
+    "type": "gate",
+    "sha": "29dbdf776db4be217e5cd05675e3b4ebbcbd2f8c",
+    "short_sha": "29dbdf776db",
+    "strategy": "important_files",
+    "summary": "Gate-respecting deterministic pick - matched strategy `important_files`."
+  }
+}

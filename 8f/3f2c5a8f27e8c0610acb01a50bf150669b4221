@@ -1,0 +1,183 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "34b36cf7b98760267632bc8dcff53754555c9c41",
+    "merge_commit": "850bb42a71deeaa9a6b51efcc55da9261025a827"
+  },
+  "mergai_version": "0.1.dev1+gdf2558fc3",
+  "merge_context": {
+    "merge_commit": "850bb42a71deeaa9a6b51efcc55da9261025a827",
+    "merged_commits": [
+      "850bb42a71deeaa9a6b51efcc55da9261025a827",
+      "4002c003c00682780a61457657ed47df6bcd2685",
+      "f1f40f66d13437540e0c3f4e3eaad0632660dbf7",
+      "b79fd73434bbbe9092de3d48cf96de3962d74d99"
+    ],
+    "important_files_modified": [],
+    "auto_merged": {
+      "strategy": "ort",
+      "files": []
+    }
+  },
+  "merge_description": {
+    "status": "success",
+    "is_error": false,
+    "duration_ms": 66382,
+    "num_turns": 10,
+    "stop_reason": "end_turn",
+    "total_cost_usd": 0.261981,
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 603,
+        "outputTokens": 19,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.000698,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty"
+      },
+      "claude-opus-4-8": {
+        "inputTokens": 14,
+        "outputTokens": 4161,
+        "cacheReadInputTokens": 100776,
+        "cacheCreationInputTokens": 17088,
+        "webSearchRequests": 0,
+        "costUSD": 0.26128300000000004,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "canonicalModel": "claude-opus-4-8",
+        "provider": "firstParty"
+      }
+    },
+    "stats": {
+      "models": {
+        "claude-haiku-4-5-20251001": {
+          "tokens": {
+            "input": 603,
+            "output": 19,
+            "cache_read": 0,
+            "cache_creation": 0
+          },
+          "cost_usd": 0.000698
+        },
+        "claude-opus-4-8": {
+          "tokens": {
+            "input": 14,
+            "output": 4161,
+            "cache_read": 100776,
+            "cache_creation": 17088
+          },
+          "cost_usd": 0.26128300000000004
+        }
+      }
+    },
+    "text_result": "I've written the JSON response. Summary of what I found and documented:\n\nThe merge pulls in **four upstream commits** with **no conflicts** (the auto-merged file list was empty, so no manual resolution was involved):\n\n1. **850bb42 (merge tip)** \u2014 Revert of \"SERVER-127413 SERVER-127412\". This is the bulk of the churn (68 files): it rolls back the variant-based `ShardRef` abstraction so `ShardRef` again holds a plain `std::string` instead of a `ShardId`, reverting `chunk.*`, `type_chunk.*`, IDL files, catalog manager DDL, catalog cache, resharding, change-stream shard targeters and their tests.\n2. **b79fd73 / SERVER-129873** \u2014 operation-timeout support in the WiredTiger recovery unit (new `RecoveryUnit::setOperationTimeout` + `operationTimeoutMs` plumbing).\n3. **f1f40f6 / SERVER-128674** \u2014 prevents new IndexTypes from being used as shard-key indexes by default (`isAcceptableShardKeyIndexType`, `kErrorIndexType`).\n4. **4002c00 / SERVER-131537** \u2014 FTDC README doc corrections.\n\nI verified each claim against the actual `59962ff \u2192 850bb42` diff. `auto_merged` is left as an empty object since there were no conflict-resolved files to describe individually.",
+    "response": {
+      "summary": "Pulls in four upstream MongoDB commits since the fork's diff base (59962ff). The merge tip (850bb42) reverts \"SERVER-127413 SERVER-127412\", which reverts the introduction of a variant-based ShardRef abstraction across the sharding catalog: in shard_ref.h/.cpp the ShardRef's internal variant goes back from holding a ShardId to holding a plain std::string, dropping the assert_util.h include and related helpers, and chunk.cpp/.h, type_chunk.cpp/.h, type_chunk_base.idl, type_namespace_placement.idl, the sharding_catalog_manager DDL code, catalog_cache, resharding, change-stream shard targeters and their many *_test.cpp files revert to the pre-ShardRef ShardId-based representation. The three preceding commits are: SERVER-129873 adds operation-timeout support to the WiredTiger recovery unit (new RecoveryUnit::setOperationTimeout(Milliseconds) hook plus operationTimeoutMs plumbing through WiredTigerBeginTxnBlock, wiredtiger_recovery_unit and wiredtiger_snapshot_manager, bounding storage operations so WiredTiger rolls back with WT_ROLLBACK rather than waiting indefinitely); SERVER-128674 prevents new IndexTypes from being used as shard-key indexes by default (new isAcceptableShardKeyIndexType() in shard_key_index_util.cpp/.h with an explicit allow/disallow switch and a new kErrorIndexType reason in isCompatibleWithShardKey, plus a MONGO_MOD_PUBLIC annotation on index_names.h toString()); and SERVER-131537 corrects inaccuracies in the FTDC README documentation.",
+      "auto_merged": {},
+      "review_notes": "This was a clean auto-merge with no conflicting files (merge_context.auto_merged.files is empty), so there was no manual conflict resolution to review. The large file count (68 files in the tip commit) comes almost entirely from the SERVER-127413/127412 revert, which rolls back the ShardRef-holds-ShardId change back to a plain-string representation across chunk/placement types and their tests; verify no Percona-specific customization depended on the newer ShardRef(ShardId) semantics. The SERVER-129873 WiredTiger operation-timeout change adds a new virtual RecoveryUnit hook and touches core storage transaction plumbing (wiredtiger_recovery_unit, begin_transaction_block, snapshot_manager) \u2014 worth confirming it interacts cleanly with any Percona storage-engine changes. Descriptions here are derived from the diff base -> merge commit diff (59962ff -> 850bb42)."
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Write"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I've written the JSON response. Summary of what I found and documented:\n\nThe merge pulls in **four upstream commits** with **no conflicts** (the auto-merged file list was empty, so no manual resolution was involved):\n\n1. **850bb42 (merge tip)** \u2014 Revert of \"SERVER-127413 SERVER-127412\". This is the bulk of the churn (68 files): it rolls back the variant-based `ShardRef` abstraction so `ShardRef` again holds a plain `std::string` instead of a `ShardId`, reverting `chunk.*`, `type_chunk.*`, IDL files, catalog manager DDL, catalog cache, resharding, change-stream shard targeters and their tests.\n2. **b79fd73 / SERVER-129873** \u2014 operation-timeout support in the WiredTiger recovery unit (new `RecoveryUnit::setOperationTimeout` + `operationTimeoutMs` plumbing).\n3. **f1f40f6 / SERVER-128674** \u2014 prevents new IndexTypes from being used as shard-key indexes by default (`isAcceptableShardKeyIndexType`, `kErrorIndexType`).\n4. **4002c00 / SERVER-131537** \u2014 FTDC README doc corrections.\n\nI verified each claim against the actual `59962ff \u2192 850bb42` diff. `auto_merged` is left as an empty object since there were no conflict-resolved files to describe individually."
+          ],
+          "tools_used": []
+        }
+      ],
+      "metadata": {
+        "lastPrompt": "Read @/home/runner/work/percona-server-mongodb/percona-server-mongodb/.cache/mergai/prompt_20260723_184505_193761.md and write your JSON response to @/home/runner/work/percona-server-mongodb/percona-s\u2026"
+      }
+    },
+    "agent_info": {
+      "agent_type": "claude_cli",
+      "version": "2.1.218 (Claude Code)"
+    }
+  },
+  "merge_pick": {
+    "type": "next",
+    "sha": "850bb42a71deeaa9a6b51efcc55da9261025a827",
+    "short_sha": "850bb42a71d",
+    "strategy": "huge_commit",
+    "summary": "Raw strategy pick (--next; no gate, no window cap) - matched strategy `huge_commit`.",
+    "run_url": "https://github.com/plebioda/percona-server-mongodb/actions/runs/30034499423"
+  }
+}

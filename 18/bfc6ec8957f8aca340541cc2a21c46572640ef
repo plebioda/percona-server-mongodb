@@ -1,0 +1,224 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "5643416f7e792f8b4da0c67405f7a8bb3bde9709",
+    "merge_commit": "03913d95ace6873f6cdd9513d984d16ce3453cff"
+  },
+  "mergai_version": "0.1.dev1+gbe5a19a3d",
+  "merge_context": {
+    "merge_commit": "03913d95ace6873f6cdd9513d984d16ce3453cff",
+    "merged_commits": [
+      "03913d95ace6873f6cdd9513d984d16ce3453cff",
+      "fe82f6afeb60d1e5ef4d08389d0d3373b6bd5aca",
+      "12f316663ed1c50ab1185d29addded4c06701161",
+      "34c7f865648174254f3936d43ba6e9e9b9f5aabb",
+      "f84183e6c1f55aa323e23f4e6c41e9f6eecf2162",
+      "d30b6b9b1f5bae2d6c35f2e422fcb144b7c179bc",
+      "b482f65b801670a874d8b2326043c6cfbf84cfc6",
+      "fff5731508a1acac63fe8c66ece12639cac3c1b1",
+      "c13e26499975c0fd36f6f52693293f030f4784b7",
+      "446357072071db2c52c4f35e486a6eea8a5a4483",
+      "78bf45c3ec89652169becf4bc883efcdf3ceac8e",
+      "3de4e0e37893de9dbd153ffd8d4156a46f8048f3",
+      "968e13ea92aa65ab88bd5875f8279ea87bb2a8d1",
+      "dfc37d709b7f0bd8d44ad70316939434d456e6bd",
+      "3a2bd182fac784da4cda4c367edd72339b7bb0bd",
+      "f82218cda1e043190aefc1f5a8f9b653dd369648",
+      "f243c09d22b5ccdd4c3badfd6c630adc78a63149",
+      "56d7912e94b86ba7791c80a3070366fdbc8a740d",
+      "cd9d2cd6a636f351a17062fd7eb640a6ea98e72d",
+      "d8ee8066a329d07e28c2ba98037c7ce1d13548b5",
+      "9027e93df18bbe778d45c4fa2ba4a39e2e94057b",
+      "6b29ece426453b58d94b7398fd60e094ff5098fa",
+      "c237690bb8e94f0c6fd2e0b897df3a76d1fc7e76",
+      "6a9701993e4751b2e8a531ae1a722ede69fc3dd3",
+      "35066d7040845f44ae530d1296ab40b1864244ab",
+      "195d1431c225917d9db57d88c80879c5a7625340",
+      "4bd1535ad38dd4389a28b92fc062426f9280c361",
+      "c16374b2dbab5c02ae967a23aab6f485cf1769bc",
+      "f142a2358f076f52bbb3d729f63f12ffb2057210",
+      "dceab84ec3b87f352b96d52b43b30a70eeb1669b",
+      "17103c77ca4a874f954edc91987e6c4c02aeb0dc",
+      "65009a0b1b6b0a7630cb37775064b04a0ac69f7f",
+      "4b6d9abdb75dc232193f18c70679ae1a200fb021",
+      "3400d290530c6d38940d9a69b1d03ce75c15a890",
+      "c35c9f5f44bf5aedab055c852d68e3a09fccf311",
+      "de59bb98e2718b8963a0ac45967d83c8513c6373",
+      "14b4075ca1aeae22cb912200c400a0e77260374f",
+      "3b24929edab9b41543f91253b7887d8d9df983d1",
+      "1f14239571955345dd3deb9208859d1059e5ff31",
+      "da815a79cd8b37c5d628c2f0884b022fa5583d36",
+      "281158640567c3e75cb0abf1962a1a0c21b13667",
+      "55c106b5f41da165e72bcfcbc9cbc731e2987c17",
+      "86a35f6b55d6c808299fdbd5239e2806335dfddc",
+      "eebe422b6a62007d7fd73b7cdc95d41e5dfc80e7",
+      "850bb42a71deeaa9a6b51efcc55da9261025a827",
+      "4002c003c00682780a61457657ed47df6bcd2685",
+      "f1f40f66d13437540e0c3f4e3eaad0632660dbf7",
+      "b79fd73434bbbe9092de3d48cf96de3962d74d99"
+    ],
+    "important_files_modified": [
+      "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp",
+      "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine_test.cpp"
+    ],
+    "auto_merged": {
+      "strategy": "ort",
+      "files": [
+        "buildscripts/resmokelib/core/programs.py",
+        "src/mongo/db/auth/security_file.cpp",
+        "src/mongo/db/curop_test.cpp",
+        "src/mongo/db/index_builds/BUILD.bazel",
+        "src/mongo/db/op_debug.cpp",
+        "src/mongo/db/pipeline/BUILD.bazel",
+        "src/mongo/db/shard_role/shard_catalog/collection_catalog_helper.cpp",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp"
+      ]
+    }
+  },
+  "merge_description": {
+    "status": "success",
+    "is_error": false,
+    "duration_ms": 41376,
+    "num_turns": 4,
+    "stop_reason": "end_turn",
+    "total_cost_usd": 0.19838025000000004,
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 603,
+        "outputTokens": 15,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.000678,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty"
+      },
+      "claude-opus-4-8": {
+        "inputTokens": 8,
+        "outputTokens": 2805,
+        "cacheReadInputTokens": 54537,
+        "cacheCreationInputTokens": 16043,
+        "webSearchRequests": 0,
+        "costUSD": 0.19770225000000002,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "canonicalModel": "claude-opus-4-8",
+        "provider": "firstParty"
+      }
+    },
+    "stats": {
+      "models": {
+        "claude-haiku-4-5-20251001": {
+          "tokens": {
+            "input": 603,
+            "output": 15,
+            "cache_read": 0,
+            "cache_creation": 0
+          },
+          "cost_usd": 0.000678
+        },
+        "claude-opus-4-8": {
+          "tokens": {
+            "input": 8,
+            "output": 2805,
+            "cache_read": 54537,
+            "cache_creation": 16043
+          },
+          "cost_usd": 0.19770225000000002
+        }
+      }
+    },
+    "text_result": "I've read the prompt and inspected the actual `diff base \u2192 merge commit` diff for each of the 8 auto-merged files, then wrote the JSON response.\n\nSummary of what the merge introduces (all verified against the diffs):\n\n- **programs.py** \u2014 resolves binaries via `shutil.which` against the augmented PATH instead of manually appending `.exe` on Windows.\n- **security_file.cpp** \u2014 key-file \"invalid char\" error no longer appends the file contents (avoids leaking key material).\n- **curop_test.cpp** \u2014 new test asserting `authorization` and `LDAPOperations` are distinct output objects.\n- **index_builds/BUILD.bazel** & **pipeline/BUILD.bazel** \u2014 new bazel deps (`join_plan_cache`, `await_data_state`).\n- **op_debug.cpp** \u2014 LDAP stats now emitted under a dedicated `LDAPOperations` top-level field.\n- **collection_catalog_helper.cpp** \u2014 `initializeCollectionCatalog` now passes explicit `InitMode::kStartup`.\n- **wiredtiger_kv_engine.cpp** \u2014 `tracksSizeAdjustments` now keyed off `!provider.shouldUseReplicatedFastCount()`.\n\nThe response is written to `response_20260724_082305_775805.json`. I flagged in review notes the coupling between op_debug/curop_test and the `provider` reference reviewers should confirm.",
+    "response": {
+      "summary": "Upstream changes pulled in by this merge touch a mix of build definitions, operation-stats reporting, storage-engine fast-count handling, catalog initialization, key-file error messages, resmoke tooling, and a new unit test. The most notable behavioral changes: op_debug now emits LDAP operation stats under a dedicated \"LDAPOperations\" top-level BSON field (separate from \"authorization\"), the WiredTiger KV engine ties size-adjustment tracking to whether the storage provider uses a replicated fast count, and collection catalog initialization is now called with an explicit InitMode::kStartup argument.",
+      "auto_merged": {
+        "buildscripts/resmokelib/core/programs.py": "In get_binary_version_output, the Windows-specific logic that appended a \".exe\" extension to the binary path is replaced with a shutil.which(binary_path, path=env_vars[\"PATH\"]) lookup (falling back to binary_path). This resolves the binary against the augmented PATH (which includes multiversion and install directories) when only a bare name like \"mongod\" is passed. Adds an `import shutil`.",
+        "src/mongo/db/auth/security_file.cpp": "In stripString, the UnsupportedFormat error message for an invalid character in a key file no longer appends the key file contents (\": \" << str); it now only reports the filename, avoiding leaking the key material in the error message.",
+        "src/mongo/db/curop_test.cpp": "Adds a new test, AppendReportsUserAcquisitionAndLDAPOperationStatsAsDistinctObjects, which records a user-cache acquisition and an LDAP bind, calls OpDebug::append, and asserts that the output contains distinct \"authorization\" and \"LDAPOperations\" objects (the latter with LDAPNumberOfReferrals and bindStats fields).",
+        "src/mongo/db/index_builds/BUILD.bazel": "Adds a dependency on //src/mongo/db/query/plan_cache:join_plan_cache to two mongo_cc_library targets.",
+        "src/mongo/db/op_debug.cpp": "In OpDebug::append, the LDAP operation stats builder is now constructed as a subobject via b.subobjStart(\"LDAPOperations\") instead of a standalone BSONObjBuilder, so the stats are attached to the output. In appendStaged, LDAP operation stats are moved out of the user-cache-acquisition callback into their own addIfNeeded(\"LDAPOperations\", ...) entry, making \"LDAPOperations\" a separate top-level reported field.",
+        "src/mongo/db/pipeline/BUILD.bazel": "Adds a dependency on //src/mongo/db/query:await_data_state to a mongo_cc_library target.",
+        "src/mongo/db/shard_role/shard_catalog/collection_catalog_helper.cpp": "The two calls to catalog::initializeCollectionCatalog (in startUpCollectionCatalogDeferred and startUpStorageEngineAndCollectionCatalog) now pass an explicit catalog::InitMode::kStartup argument.",
+        "src/mongo/db/storage/wiredtiger/wiredtiger_kv_engine.cpp": "In WiredTigerKVEngine::getRecordStore, the tracksSizeAdjustments field for both the Oplog::Params and the standard record store params is changed from the hardcoded `true` to `!provider.shouldUseReplicatedFastCount()`, so size-adjustment tracking is disabled when the provider uses a replicated fast count. (The oplog Params initializer is also reformatted.)"
+      },
+      "review_notes": "All listed files had non-empty diff base -> merge commit diffs and were described from the actual diff. The wiredtiger_kv_engine.cpp change references `provider.shouldUseReplicatedFastCount()`; reviewers should confirm the `provider` object is available in that scope in the fork's version (it was not part of the shown diff context lines but is referenced by the incoming change). The op_debug.cpp / curop_test.cpp changes are coupled: the test validates the new separate \"LDAPOperations\" top-level field introduced in op_debug.cpp. No Percona-specific customizations appear affected by these auto-merges."
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I'll read the diffs for each auto-merged file to describe the changes this merge introduces."
+          ],
+          "tools_used": []
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "Let me see the rest of the wiredtiger diff."
+          ],
+          "tools_used": []
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "Now I have all the diffs. Let me write the JSON response."
+          ],
+          "tools_used": []
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Write"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I've read the prompt and inspected the actual `diff base \u2192 merge commit` diff for each of the 8 auto-merged files, then wrote the JSON response.\n\nSummary of what the merge introduces (all verified against the diffs):\n\n- **programs.py** \u2014 resolves binaries via `shutil.which` against the augmented PATH instead of manually appending `.exe` on Windows.\n- **security_file.cpp** \u2014 key-file \"invalid char\" error no longer appends the file contents (avoids leaking key material).\n- **curop_test.cpp** \u2014 new test asserting `authorization` and `LDAPOperations` are distinct output objects.\n- **index_builds/BUILD.bazel** & **pipeline/BUILD.bazel** \u2014 new bazel deps (`join_plan_cache`, `await_data_state`).\n- **op_debug.cpp** \u2014 LDAP stats now emitted under a dedicated `LDAPOperations` top-level field.\n- **collection_catalog_helper.cpp** \u2014 `initializeCollectionCatalog` now passes explicit `InitMode::kStartup`.\n- **wiredtiger_kv_engine.cpp** \u2014 `tracksSizeAdjustments` now keyed off `!provider.shouldUseReplicatedFastCount()`.\n\nThe response is written to `response_20260724_082305_775805.json`. I flagged in review notes the coupling between op_debug/curop_test and the `provider` reference reviewers should confirm."
+          ],
+          "tools_used": []
+        }
+      ],
+      "metadata": {
+        "lastPrompt": "Read @/home/runner/work/percona-server-mongodb/percona-server-mongodb/.cache/mergai/prompt_20260724_082305_775629.md and write your JSON response to @/home/runner/work/percona-server-mongodb/percona-s\u2026"
+      }
+    },
+    "agent_info": {
+      "agent_type": "claude_cli",
+      "version": "2.1.218 (Claude Code)"
+    }
+  },
+  "merge_pick": {
+    "type": "ai",
+    "sha": "03913d95ace6873f6cdd9513d984d16ce3453cff",
+    "short_sha": "03913d95ace",
+    "strategy": "huge_commit",
+    "summary": "This is a self-contained revert commit that sits at ~48 commits into the window, squarely in the ~50 target band, and it forms an exceptionally clean boundary because it neutralizes both of the revert pairs present in the range. SERVER-131370 (#58633) is introduced at 3400d290 and reverted at 34c7f865, both before this cut; SERVER-124383 (#52532) is introduced at f84183e6 (the only 'conflict'-flagged commit here) and reverted by this very commit (03913d95). By ending here, both the original changes and their reverts land in the same batch and cancel out, so the fork imports the settled net result instead of pulling in a conflict-prone change (SERVER-124383, 38 files) only to remove it next merge, or importing SERVER-131370 without its revert. Stopping earlier (e.g. at d30b6b9b, pos 43) would import SERVER-131370's original without its in-window revert; stopping later drags in unrelated fresh work and the separate SERVER-131370 re-land far beyond target size. Nothing immediately after this commit is a fixup of it, making it a safe, easy-to-validate cut point.",
+    "run_url": "https://github.com/plebioda/percona-server-mongodb/actions/runs/30078503996"
+  }
+}

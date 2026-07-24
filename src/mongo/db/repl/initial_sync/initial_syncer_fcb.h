@@ -49,6 +49,7 @@ Copyright (C) 2024-present Percona and/or its affiliates. All rights reserved.
 #include "mongo/db/repl/replication_process.h"
 #include "mongo/db/repl/rollback_checker.h"
 #include "mongo/db/repl/storage_interface.h"
+#include "mongo/db/shard_role/shard_catalog/collection_catalog.h"
 #include "mongo/db/startup_recovery.h"
 #include "mongo/executor/scoped_task_executor.h"
 #include "mongo/executor/task_executor.h"
@@ -474,6 +475,11 @@ private:
                       const boost::filesystem::path& destDir);
 
     StatusWith<std::vector<std::string>> _getBackupFiles(OperationContext* opCtx);
+
+    // InitMode used when re-initializing the collection catalog while switching the storage
+    // location during File-Copy-Based initial sync.
+    static constexpr catalog::InitMode kSwitchStorageLocationInitMode =
+        catalog::InitMode::kStorageChange;
 
     /**
      * Switches the storage location to 'newLocation'.

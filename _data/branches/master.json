@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 174,
-    "days_behind": 3,
-    "unmerged_oldest_age_days": 3.7283951616203708,
-    "files_affected": 1068,
-    "total_additions": 32295,
-    "total_deletions": 7438,
+    "commits_behind": 190,
+    "days_behind": 4,
+    "unmerged_oldest_age_days": 4.2460343253703705,
+    "files_affected": 1152,
+    "total_additions": 36887,
+    "total_deletions": 8378,
     "date_range": {
       "first": "2026-07-20T02:24:43+00:00",
-      "last": "2026-07-23T18:33:29+00:00"
+      "last": "2026-07-24T07:26:49+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,166 @@
     "reason": "force:important_files"
   },
   "unmerged_commits": [
+    {
+      "sha": "512d585a81f4b41e5b228b7c8c685f97fb612dd6",
+      "short_sha": "512d585a81f",
+      "date": "2026-07-24T08:26:49+01:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#59527)"
+    },
+    {
+      "sha": "9e950f5fd65744f774ddf0269fd3951ce1fa2561",
+      "short_sha": "9e950f5fd65",
+      "date": "2026-07-24T09:22:17+02:00",
+      "author": {
+        "name": "Aitor Esteve Alvarado",
+        "email": "aitor.esteve@mongodb.com"
+      },
+      "summary": "SERVER-130426 Remove setAllowChunkOperationsOnSecondaries from updateShardCatalogCache (#59407)"
+    },
+    {
+      "sha": "59c95e4da869d98a7770fd7fa7fa7a4d69adcfa2",
+      "short_sha": "59c95e4da86",
+      "date": "2026-07-24T09:10:17+02:00",
+      "author": {
+        "name": "Jan",
+        "email": "jsteemann@users.noreply.github.com"
+      },
+      "summary": "SERVER-132163 Don't print stacktrace in unittest SUCCEED() (#59500)"
+    },
+    {
+      "sha": "56ac53f13146ea7f73323a467f3dd3d9fa640db5",
+      "short_sha": "56ac53f1314",
+      "date": "2026-07-24T08:40:12+02:00",
+      "author": {
+        "name": "Silvia Surroca",
+        "email": "silvia.surroca@mongodb.com"
+      },
+      "summary": "SERVER-132083 _shardsvrMoveRange should fail with a StaleConfig when targeting an old donor (#59422)"
+    },
+    {
+      "sha": "bf972a1b2780fc1ae78580f29d9e0f7930aa5635",
+      "short_sha": "bf972a1b278",
+      "date": "2026-07-24T09:36:37+03:00",
+      "author": {
+        "name": "Timour Katchaounov",
+        "email": "34627040+timourk@users.noreply.github.com"
+      },
+      "summary": "SERVER-130529 Restructure explain to produce V3 output (#58846)"
+    },
+    {
+      "sha": "0dabaf771f0b8586f09bd7c4dfb5b4e90c4fbe04",
+      "short_sha": "0dabaf771f0",
+      "date": "2026-07-24T01:20:27+02:00",
+      "author": {
+        "name": "Jan",
+        "email": "jsteemann@users.noreply.github.com"
+      },
+      "summary": "SERVER-132088 Use chunked memory trackers in SBE group stages (#59291)"
+    },
+    {
+      "sha": "48f1370f5469951df72a20d09b0950da0a9d1ae6",
+      "short_sha": "48f1370f546",
+      "date": "2026-07-24T08:56:37+10:00",
+      "author": {
+        "name": "wt-vendoring-bot[bot]",
+        "email": "169275211+wt-vendoring-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "Import wiredtiger: b2038ab9cb782caffcda8d2f122ba685302eaa8c from branch mongodb-master (#59426)"
+    },
+    {
+      "sha": "3c5b001b9d817a402e46629f34e6c98dc47809c6",
+      "short_sha": "3c5b001b9d8",
+      "date": "2026-07-23T17:30:43-04:00",
+      "author": {
+        "name": "Randolph Tan",
+        "email": "randolph@10gen.com"
+      },
+      "summary": "SERVER-132152 Make resharding_coordinator_service_test.cpp skip calling make*ProceedToDone (#59498)"
+    },
+    {
+      "sha": "beb64c487297268ed7924874f7613650982f1254",
+      "short_sha": "beb64c48729",
+      "date": "2026-07-23T17:25:02-04:00",
+      "author": {
+        "name": "Sean Lyons",
+        "email": "sean.lyons@mongodb.com"
+      },
+      "summary": "SERVER-132129: Repair core_high_yielding task (#59438)"
+    },
+    {
+      "sha": "ba187fdea4e12c6f25574b5f15472fff3b04c22e",
+      "short_sha": "ba187fdea4e",
+      "date": "2026-07-23T15:55:21-05:00",
+      "author": {
+        "name": "Indy Prentice",
+        "email": "iprentic@users.noreply.github.com"
+      },
+      "summary": "SERVER-131262: Populate Locker debugInfo with OperationContext state in getGlobalLockManager()->dump() (#59243)"
+    },
+    {
+      "sha": "fe83eb086255be959f796a3dfc85aed79ad02260",
+      "short_sha": "fe83eb08625",
+      "date": "2026-07-23T16:55:19-04:00",
+      "author": {
+        "name": "Lee Maguire",
+        "email": "lee.maguire@mongodb.com"
+      },
+      "summary": "SERVER-132008: Fix use-after-free when a second JS scope registers on an operation (#59308)"
+    },
+    {
+      "sha": "7c4be4e01596a77761792287c79e1d3c97a79ebe",
+      "short_sha": "7c4be4e0159",
+      "date": "2026-07-23T16:37:31-04:00",
+      "author": {
+        "name": "Lynne Wang",
+        "email": "lynne.wang@mongodb.com"
+      },
+      "summary": "SERVER-132069 Enable no_passthrough_disagg_override_replsets in no-ff variant (#59428)"
+    },
+    {
+      "sha": "4a62c1afe8be37078fb8355862fd0a04a71c08e8",
+      "short_sha": "4a62c1afe8b",
+      "date": "2026-07-23T15:59:57-04:00",
+      "author": {
+        "name": "natalie-hill",
+        "email": "natalie.hill@mongodb.com"
+      },
+      "summary": "SERVER-130446 Support fetching and reassembling multiple chained sample docs on the persistent samples read path (#58253)"
+    },
+    {
+      "sha": "fd098e781802be302fa7bb662229ce1f78ac9cff",
+      "short_sha": "fd098e78180",
+      "date": "2026-07-23T21:43:06+02:00",
+      "author": {
+        "name": "Anna Maria Nestorov",
+        "email": "annamaria.nestorov@gmail.com"
+      },
+      "summary": "SERVER-132082 Fix mayBypassReplicaSetWriteBlocking and bypassReplicaSetWriteBlocking naming inconsistency (#59408)"
+    },
+    {
+      "sha": "a0191794809ce9a13d7f3016d7b542c0b6aa6b2a",
+      "short_sha": "a0191794809",
+      "date": "2026-07-23T15:24:02-04:00",
+      "author": {
+        "name": "Cheahuychou Mao",
+        "email": "cheahuychou.mao@mongodb.com"
+      },
+      "summary": "SERVER-131350 Add metrics filtering to replSetGetStatus command (#59367)"
+    },
+    {
+      "sha": "86d156c612fde2a09f8086c77f61a76aa8892a12",
+      "short_sha": "86d156c612f",
+      "date": "2026-07-23T15:19:10-04:00",
+      "author": {
+        "name": "Ayesha Islam",
+        "email": "ayeshhaislamm@gmail.com"
+      },
+      "summary": "SERVER-128791 create size limiting class for _extraIndexEntries and _missingIndexEntries (#59329)"
+    },
     {
       "sha": "500140201c4bea3e66b705c0e63841ff3674e513",
       "short_sha": "500140201c4",
@@ -1980,10 +2140,33 @@
           "num_of_dirs": 15
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "bf972a1b2780fc1ae78580f29d9e0f7930aa5635",
+        "short_sha": "bf972a1b278",
+        "date": "2026-07-24T09:36:37+03:00",
+        "author": {
+          "name": "Timour Katchaounov",
+          "email": "34627040+timourk@users.noreply.github.com"
+        },
+        "summary": "SERVER-130529 Restructure explain to produce V3 output (#58846)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 41,
+          "num_of_lines": 3184,
+          "lines_added": 2468,
+          "lines_deleted": 716,
+          "num_of_dirs": 15
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-23 19:53:33",
+  "generated_at": "2026-07-24 08:18:56",
   "branch_name": "master",
   "display_name": "master"
 }

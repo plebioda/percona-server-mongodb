@@ -10,14 +10,14 @@ name: build-and-test
 on:
   pull_request_target:
     # Deliberately NOT triggered on labeled/unlabeled. The workflow is a single
-    # gated pipeline (gate -> format_gate -> build -> {dbtests, unittests} ->
+    # gated pipeline (gate -> format_gate -> build -> {binary_tests, unittests} ->
     # jstests); whether jstests runs is decided from the PR's labels at run time
     # by jstests_gate,
     # so it does not need a label trigger. Listening to label events would also
     # make every label a producer like mergai stamps on a PR (ci-skip-clang-tidy
     # / ci-skip-format, meant for other workflows) spawn an extra run that skips
     # the heavy jobs and shadows the real code run -- the regression that made
-    # build/unittests/dbtests show "skipped" on mergai PRs.
+    # build/unittests/binary_tests show "skipped" on mergai PRs.
     #
     # ready_for_review runs the heavy jobs for a PR opened as a draft: they are
     # gated on `draft == false` (see their `if:` below) so they skip while the
@@ -85,7 +85,7 @@ env:
   # path to _trusted/ keeps the entire import chain on the trusted copy.
   RBE_CREDENTIAL_HELPER: ${{ vars.PSMDB_RBE_HOST }}=%workspace%/_trusted/bazel/wrapper_hook/credential_helper.py
 
-# Jobs: gate, format_gate, build, unittests, dbtests, jstests (plus the
+# Jobs: gate, format_gate, build, unittests, binary_tests, jstests (plus the
 # jstests_gate decider). `gate` is a no-op whose only purpose is to host the
 # protected `rbe-external` environment so a single maintainer approval authorizes
 # the entire workflow run. `format_gate` waits for the `format` workflow and
@@ -153,7 +153,7 @@ jobs:
       # Fail fast on RBE misconfiguration. This job runs only when
       # PSMDB_RBE_ENABLED == 'true', and in that case every RBE endpoint variable
       # must be set — otherwise Bazel would receive empty --remote_* /
-      # --credential_helper values and fail deep inside build/unittests/dbtests/
+      # --credential_helper values and fail deep inside build/unittests/binary_tests/
       # jstests with an opaque error (or silently fall back to local execution).
       # Checking here, in the root job every RBE job transitively depends on,
       # turns that into one clear message before any heavy job starts. Values are
@@ -267,7 +267,7 @@ jobs:
     # build runs then. needs.format_gate.outputs.passed holds build until format
     # has passed (~6 min); it is empty (falsey) when format failed or was
     # skipped, so a format failure skips build (and the test jobs that chain off
-    # it). unittests and dbtests chain off `needs.build.result == 'success'`, so
+    # it). unittests and binary_tests chain off `needs.build.result == 'success'`, so
     # they inherit the draft + format skip automatically; jstests carries its own
     # draft guard.
     if: >-
@@ -386,13 +386,14 @@ jobs:
 
   unittests:
     name: unittests
-    # Runs in PARALLEL with dbtests: both depend only on `build`, so once build
-    # succeeds the two test jobs start together (pipeline is build -> {dbtests,
-    # unittests} -> jstests). This trades the old strict serialization (build ->
-    # dbtests -> unittests) for wall-clock: on a cached PR unittests is all
-    # remote cache hits (0 local actions) and dbtests' RBE use is only its build
-    # phase, so the two barely contend for RBE workers; on a real code change
-    # they may compete, which the bb-psmdb farm (300-way jobs) absorbs.
+    # Runs in PARALLEL with binary_tests: both depend only on `build`, so once
+    # build succeeds the two test jobs start together (pipeline is build ->
+    # {binary_tests, unittests} -> jstests). This trades the old strict
+    # serialization (build ran the two test jobs one after the other) for
+    # wall-clock: on a cached PR unittests is all remote cache hits (0 local
+    # actions) and binary_tests' RBE use is only its build phase, so the two
+    # barely contend for RBE workers; on a real code change they may compete,
+    # which the bb-psmdb farm (300-way jobs) absorbs.
     needs: [gate, build]
     # Gated on build success: build runs only after the gate approval AND format
     # passing, so build.result == 'success' implies rbe-external was approved,
@@ -522,26 +523,31 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-  # Builds the dbtest binary on RBE and runs the resmoke `dbtest` suite LOCALLY
-  # on the runner. dbtest is a single monolithic mongo_cc_binary
-  # (//src/mongo/dbtests:dbtest, tagged "dbtest") with NO Bazel test target, so
-  # -- unlike the jstests job, which runs each suite ON the remote executors --
-  # the binary is built remotely (a cache hit for most objects, since the build
-  # job compiled the same tree) and then driven by resmoke here. resmoke's
-  # db_test kind enumerates the sub-suites from `dbtest --list` and runs the
-  # binary per suite. The local `run_dbtest.sh` helper performs the same two
-  # steps. dbtest is built HERE (not in the build job) so build only fetches
-  # install-devcore.
+  # Runs the project's standalone C++ test binaries -- ones that are
+  # mongo_cc_binary runners with NO Bazel test target, so `bazel test` never
+  # executes them. Each is built on RBE (a cache hit for most objects, since the
+  # build job compiled the same tree) and then driven by resmoke LOCALLY on the
+  # runner, unlike the jstests job which runs each suite ON the remote executors.
+  # None need a mongod fixture. Currently three binaries, one resmoke suite each:
+  #   - //src/mongo/dbtests:dbtest              (suite `dbtest`)
+  #   - //src/mongo/client/sdam:sdam_json_test  (suite `sdam_json_test`)
+  #   - //src/mongo/client/sdam:server_selection_json_test
+  #                                             (suite `server_selection_json_test`)
+  # dbtest is one monolithic binary whose resmoke db_test kind enumerates the
+  # sub-suites from `dbtest --list`; the two SDAM runners replay JSON spec files
+  # (one spec per process). They all share this single job/check and one job-
+  # summary section ("Binary test results"). The binaries are built HERE (not
+  # in the build job) so build only fetches install-devcore.
   #
   # `needs: [gate, build]` so it runs right after build, in PARALLEL with
   # unittests (which also depends only on build). jstests orders AFTER both via
-  # its own needs, so the pipeline is build -> {dbtests, unittests} -> jstests.
+  # its own needs, so the pipeline is build -> {binary_tests, unittests} -> jstests.
   # Each job gates on BUILD success, not on a sibling test job, so a failure in
   # one does not block the others: both test jobs run whenever build passed.
   # `needs.gate.result == 'success'` preserves the rbe-external approval gate
   # (it carries the same secrets via the `rbe` environment).
-  dbtests:
-    name: dbtests
+  binary_tests:
+    name: binary-tests
     needs: [gate, build]
     # Gated on build success, which implies the gate approval AND format passing
     # (build gates on format_gate). No separate lint gate here.
@@ -583,23 +589,24 @@ jobs:
       - name: Setup environment
         uses: ./_trusted/.github/actions/setup-env
 
-      # Build just the dbtest install target on RBE. Mirrors the build job's
-      # invocation (same --host_jvm_args / --output_user_root rationale, and the
-      # same GIT_COMMIT_HASH=nogitversion pin -- see the build step for why a
-      # constant keeps the local link-action keys stable across pushes so they
-      # cache-hit on re-runs instead of re-linking every no-op trigger).
+      # Build the C++ binary test install targets on RBE, all in one invocation.
+      # Mirrors the build job's flags (same --host_jvm_args / --output_user_root
+      # rationale, and the same GIT_COMMIT_HASH=nogitversion pin -- see the build
+      # step for why a constant keeps the local link-action keys stable across
+      # pushes so they cache-hit on re-runs instead of re-linking every no-op
+      # trigger).
       #
-      # Unlike the build job, dbtests does NOT pass
-      # --remote_download_outputs=toplevel: it must RUN the binary locally, so
-      # the whole install tree -- bazel-bin/install-dbtest/{bin/dbtest,lib/*.so}
+      # Unlike the build job, binary_tests does NOT pass
+      # --remote_download_outputs=toplevel: it must RUN these binaries locally, so
+      # each whole install tree -- bazel-bin/install-<name>/{bin/<binary>,lib/*.so}
       # -- and everything those entries resolve to has to be materialized on the
       # runner. The build job overrides the .bazelrc default to `toplevel` purely
       # for download efficiency because it never executes what it builds; here we
-      # fall back to that .bazelrc default (--remote_download_outputs=all) so the
+      # fall back to that .bazelrc default (--remote_download_outputs=all) so each
       # install tree and the binary/.so outputs it points at are all present.
       # (toplevel left the install symlinks' targets unmaterialized, so resmoke
       # failed with "File not found: bazel-bin/install-dbtest/bin/dbtest".)
-      - name: Build //:install-dbtest via RBE
+      - name: Build binary test install targets via RBE
         run: |
           bazel \
             --output_user_root=/mnt/bazel \
@@ -615,72 +622,124 @@ jobs:
             --jobs=300 \
             --keep_going \
             --build_event_json_file=bazel-bep.json \
-            //:install-dbtest
+            //:install-dbtest \
+            //:install-sdam_json_test \
+            //:install-server_selection_json_test
 
-      # Run the resmoke dbtest suite locally against the freshly built binary.
-      # resmoke runs via the uv venv set up by setup-env. The suite selector
-      # is empty; resmoke enumerates sub-suites from `dbtest --list`. One resmoke
-      # job per CPU. Tee the console to a file (pipefail so resmoke's exit, not
-      # tee's, decides the step result) for the failure-artifact upload.
-      - name: Run dbtest suite (local)
+      # Run each C++ binary test suite locally against its freshly built binary.
+      # resmoke runs via the uv venv set up by setup-env, one job per CPU, and
+      # writes a per-suite report.json under binary-test-reports/ (the report step
+      # globs them all into one summary section). Tee each console to a file
+      # (pipefail so resmoke's exit, not tee's, decides the outcome) for the
+      # failure-artifact upload. Every suite runs even if an earlier one fails
+      # (rc is accumulated, not short-circuited), so the summary is complete and
+      # one flaky binary doesn't mask another's result; the step exits non-zero if
+      # any suite failed.
+      - name: Run binary test suites (local)
         run: |
-          mkdir -p dbtest-logs
+          mkdir -p binary-test-logs binary-test-reports
           set -o pipefail
-          # Locate the built dbtest binary. The `bazel-bin/...` convenience-symlink
-          # path is unreliable here (the build ran with --output_user_root=/mnt/
-          # bazel and the symlink/config dir did not resolve to the install tree),
-          # so find the real install output under the Bazel output base and hand
-          # resmoke its absolute path. The binary links its libs via rpath
-          # $ORIGIN/../lib, and the install tree keeps lib/ a sibling of bin/, so
-          # an absolute bin/dbtest path still resolves the .so files.
-          echo "::group::locate dbtest binary"
+
+          # Locate an installed test binary by its install tree + binary name.
+          # The `bazel-bin/...` convenience-symlink path is unreliable here (the
+          # build ran with --output_user_root=/mnt/bazel and the symlink/config
+          # dir did not resolve to the install tree), so find the real install
+          # output under the Bazel output base. Each binary links its libs via
+          # rpath $ORIGIN/../lib and every install tree keeps lib/ a sibling of
+          # bin/, so an absolute bin/<binary> path still resolves the .so files.
+          locate_bin() {
+            local tree="$1" name="$2" p
+            p="$(find -L /mnt/bazel -maxdepth 14 -type f -path "*/install-${tree}/bin/${name}" 2>/dev/null | head -1)"
+            if [ -z "$p" ]; then
+              p="$(find -L "$PWD" -maxdepth 8 -type f -path "*/install-${tree}/bin/${name}" 2>/dev/null | head -1)"
+            fi
+            echo "$p"
+          }
+
+          # Prefix every test_file in a suite's resmoke report with "<suite>:" so
+          # the merged summary table (and the uploaded report) shows which suite
+          # each row came from -- resmoke's own test_file is a dbtest sub-suite
+          # name or a bare JSON spec path with no suite tag. jq is preinstalled on
+          # the GH-hosted ubuntu runner. No-op if the suite wrote no report.
+          prefix_report() {
+            local suite="$1" file="$2"
+            [ -f "$file" ] || return 0
+            jq --arg s "$suite" '.results |= map(.test_file = $s + ":" + (.test_file // ""))' \
+              "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+          }
+
           echo "workspace=$(pwd)"
           echo "bazel-bin -> $(readlink bazel-bin 2>/dev/null || echo MISSING)"
-          DBTEST="$(find -L /mnt/bazel -maxdepth 14 -type f -path '*/install-dbtest/bin/dbtest' 2>/dev/null | head -1)"
-          if [ -z "$DBTEST" ]; then
-            DBTEST="$(find -L "$PWD" -maxdepth 8 -type f -path '*/install-dbtest/bin/dbtest' 2>/dev/null | head -1)"
-          fi
-          echo "resolved dbtest=${DBTEST:-NOT FOUND}"
-          [ -n "$DBTEST" ] && ls -la "$(dirname "$DBTEST")" || true
-          echo "::endgroup::"
-          if [ -z "$DBTEST" ]; then
-            echo "ERROR: dbtest binary not found under the Bazel output base after build" >&2
-            exit 1
-          fi
-          uv run --no-sync python buildscripts/resmoke.py run \
-            --suites=dbtest \
-            --dbtest="$DBTEST" \
-            --jobs="$(nproc)" \
-            --reportFile=dbtest-report.json \
-            2>&1 | tee dbtest-logs/dbtest.log
+          rc=0
 
-      # Render a pass/fail table into the job summary from resmoke's report.json.
-      # Same composite action as build/unittests/jstests, but a local resmoke run
-      # emits no Bazel BEP, so bep-glob is cleared and the resmoke report is fed
-      # via resmoke-report instead. if: always() so the summary is present on
-      # failure (the report.json is written even when suites fail).
-      - name: Report dbtest results
+          # All three are standalone C++ test binaries whose install tree, binary,
+          # and resmoke suite share the target name, so one loop drives them. They
+          # differ only in how resmoke is pointed at the binary: dbtest is one
+          # monolithic binary (resmoke enumerates its sub-suites from
+          # `dbtest --list`) taking --dbtest=<path>; the SDAM JSON spec runners
+          # (one spec file per process, no mongod fixture) take --installDir=<bin
+          # dir> so rpath $ORIGIN/../lib resolves their .so siblings. rc is
+          # accumulated (not short-circuited) so every suite runs and uploads its
+          # report even if an earlier one fails; the step exits non-zero if any did.
+          for suite in dbtest sdam_json_test server_selection_json_test; do
+            echo "::group::$suite"
+            BIN="$(locate_bin "$suite" "$suite")"
+            echo "resolved $suite=${BIN:-NOT FOUND}"
+            if [ -z "$BIN" ]; then
+              echo "ERROR: $suite binary not found under the Bazel output base after build" >&2
+              rc=1
+              echo "::endgroup::"
+              continue
+            fi
+            if [ "$suite" = dbtest ]; then
+              locator=(--dbtest="$BIN")
+            else
+              locator=(--installDir="$(dirname "$BIN")")
+            fi
+            report="binary-test-reports/$suite.json"
+            uv run --no-sync python buildscripts/resmoke.py run \
+              --suites="$suite" \
+              "${locator[@]}" \
+              --jobs="$(nproc)" \
+              --reportFile="$report" \
+              2>&1 | tee "binary-test-logs/$suite.log" || rc=1
+            prefix_report "$suite" "$report"
+            echo "::endgroup::"
+          done
+
+          exit $rc
+
+      # Render one pass/fail table into the job summary from every suite's resmoke
+      # report.json, merged via a single glob. Each report's test_file was
+      # prefixed with its suite name (see prefix_report above), so a row like
+      # `sdam_json_test:rs/discover.json` shows which suite ran it and the sorted
+      # table clusters each suite together. Same composite action as
+      # build/unittests/jstests, but a local resmoke run emits no Bazel BEP, so
+      # bep-glob is cleared and the reports are fed via resmoke-report instead.
+      # if: always() so the summary is present on failure (each report.json is
+      # written even when suites fail).
+      - name: Report binary test results
         if: always()
         uses: ./_trusted/.github/actions/test-report
         with:
-          title: "🧪 dbtest results"
+          title: "🧪 Binary test results"
           bep-glob: ""
-          resmoke-report: dbtest-report.json
+          resmoke-report: binary-test-reports/*.json
           detailed: "true"
 
-      # On failure, upload the teed resmoke console log (rich per-test failure
-      # output), the machine-readable resmoke report.json, and the build BEP.
-      # This is the artifact `mergai ci fix` downloads for the build-and-test
-      # workflow (see .mergai/config.yml). mongod/dbtest core dumps are not
-      # collected.
-      - name: Upload dbtest failure logs
+      # On failure, upload the teed per-suite resmoke console logs (rich per-test
+      # failure output), the machine-readable per-suite resmoke report.json, and
+      # the build BEP. The artifact name `binary-test-failure-logs` is referenced
+      # by .mergai/config.yml -- keep the two in sync when renaming.
+      # mongod/dbtest core dumps are not collected.
+      - name: Upload binary test failure logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dbtest-failure-logs
+          name: binary-test-failure-logs
           path: |
-            dbtest-logs/
-            dbtest-report.json
+            binary-test-logs/
+            binary-test-reports/
             bazel-bep.json
           retention-days: 14
           if-no-files-found: warn
@@ -690,13 +749,13 @@ jobs:
   # the decision reflects the current label set -- same freshness trick as
   # format.yml / clang-tidy.yml.
   #
-  # `needs: [dbtests, unittests]` (with `if: !cancelled()` so it still runs when
-  # those are skipped or failed) makes this resolve LATE -- after both parallel
-  # test jobs -- so it reads a ci-skip-jstests / ci-run-jstests label applied
-  # *while the build/tests were running* and that label takes effect on the same
-  # run. (The workflow is not triggered by label changes, so toggling a label
-  # after the run finishes only takes effect on the next push.) Depending on
-  # both keeps jstests serialized after the parallel dbtests+unittests pair.
+  # `needs: [binary_tests, unittests]` (with `if: !cancelled()` so it still runs
+  # when those are skipped or failed) makes this resolve LATE -- after both
+  # parallel test jobs -- so it reads a ci-skip-jstests / ci-run-jstests label
+  # applied *while the build/tests were running* and that label takes effect on
+  # the same run. (The workflow is not triggered by label changes, so toggling a
+  # label after the run finishes only takes effect on the next push.) Depending on
+  # both keeps jstests serialized after the parallel binary_tests+unittests pair.
   #
   # Precedence: ci-skip-jstests > ci-run-jstests > vars.RUN_JSTESTS (default run).
   #   - ci-skip-jstests label : force skip.
@@ -705,7 +764,7 @@ jobs:
   #                             'false' => skip unless ci-run-jstests is set.
   jstests_gate:
     name: jstests gate
-    needs: [dbtests, unittests]
+    needs: [binary_tests, unittests]
     if: ${{ !cancelled() && vars.PSMDB_RBE_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
     outputs:
@@ -735,12 +794,12 @@ jobs:
 
   # Runs the Percona resmoke jstest suites on RBE. Separate runner / GH check
   # from build+unittests (see the build-vs-unittests rationale block at the top
-  # for why distinct runners are intentional). `needs: [dbtests, unittests]` so
-  # it runs AFTER both parallel test jobs rather than alongside them -- jstests
-  # stays serialized at the tail (build -> {dbtests, unittests} -> jstests) and
-  # avoids competing for the same RBE workers. Ordering only: the `if` gates on
-  # build success, not dbtests/unittests success, so a unittest (or dbtest)
-  # failure does not block jstests. It does not consume the upstream jobs'
+  # for why distinct runners are intentional). `needs: [binary_tests, unittests]`
+  # so it runs AFTER both parallel test jobs rather than alongside them -- jstests
+  # stays serialized at the tail (build -> {binary_tests, unittests} -> jstests)
+  # and avoids competing for the same RBE workers. Ordering only: the `if` gates
+  # on build success, not binary_tests/unittests success, so a unittest (or C++
+  # binary test) failure does not block jstests. It does not consume the upstream jobs'
   # artifacts -- mongod/mongos/mongo are rebuilt here as RBE cache hits.
   #
   # Gated on jstests_gate: skipped when ci-skip-jstests is set, or when
@@ -770,12 +829,12 @@ jobs:
   #                     2-core pool) -- re-enable once PSMDB-2100 §1 lands.
   jstests:
     name: jstests
-    # `dbtests` and `unittests` are in needs for ORDERING (jstests runs after
-    # both, so the heavy jobs stay serialized), but the `if` gates on BUILD
-    # success, not their success, so a dbtest/unittest failure does not block
+    # `binary_tests` and `unittests` are in needs for ORDERING (jstests runs
+    # after both, so the heavy jobs stay serialized), but the `if` gates on BUILD
+    # success, not their success, so a binary-test/unittest failure does not block
     # jstests -- all run whenever build passed. `build` is in needs so the `if`
     # can read needs.build.result.
-    needs: [gate, build, dbtests, unittests, jstests_gate]
+    needs: [gate, build, binary_tests, unittests, jstests_gate]
     # `draft == false` so jstests never runs on a draft (it runs once the PR is
     # marked ready). `build` is in needs so the `if` can read needs.build.result
     # (which implies format passed via format_gate).

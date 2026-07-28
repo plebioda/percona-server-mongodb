@@ -97,6 +97,7 @@ mongo_cc_library(
         "//src/mongo/db:server_base",
         "//src/mongo/db:server_feature_flags",
         "//src/mongo/db:service_context",
+        "//src/mongo/db/admission:write_throttler_admission_context",
         "//src/mongo/db/audit:audit_impl",
         "//src/mongo/db/encryption:key_management",
         "//src/mongo/db/rss:replicated_storage_service",

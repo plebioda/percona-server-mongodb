@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 93,
+    "commits_behind": 94,
     "days_behind": 4,
-    "unmerged_oldest_age_days": 3.977759879965278,
-    "files_affected": 1020,
-    "total_additions": 24982,
-    "total_deletions": 13379,
+    "unmerged_oldest_age_days": 3.9955320528819445,
+    "files_affected": 1022,
+    "total_additions": 25003,
+    "total_deletions": 13384,
     "date_range": {
       "first": "2026-07-24T08:48:01+00:00",
-      "last": "2026-07-28T06:08:15+00:00"
+      "last": "2026-07-28T07:36:47+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,16 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "470734a0e36acc02667d6b4b2b60730787981dee",
+      "short_sha": "470734a0e36",
+      "date": "2026-07-28T09:36:47+02:00",
+      "author": {
+        "name": "Jan",
+        "email": "jsteemann@users.noreply.github.com"
+      },
+      "summary": "SERVER-132338 Do not add a memory usage delta of 0 (#59695)"
+    },
     {
       "sha": "5fa101859e48f529e58bde7e6a33c834109453d1",
       "short_sha": "5fa101859e4",
@@ -1172,7 +1182,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-28 08:15:57",
+  "generated_at": "2026-07-28 08:41:32",
   "branch_name": "master",
   "display_name": "master"
 }

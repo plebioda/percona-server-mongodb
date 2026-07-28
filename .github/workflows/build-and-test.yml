@@ -618,7 +618,7 @@ jobs:
             //:install-dbtest
 
       # Run the resmoke dbtest suite locally against the freshly built binary.
-      # resmoke runs via the poetry venv set up by setup-env. The suite selector
+      # resmoke runs via the uv venv set up by setup-env. The suite selector
       # is empty; resmoke enumerates sub-suites from `dbtest --list`. One resmoke
       # job per CPU. Tee the console to a file (pipefail so resmoke's exit, not
       # tee's, decides the step result) for the failure-artifact upload.
@@ -647,7 +647,7 @@ jobs:
             echo "ERROR: dbtest binary not found under the Bazel output base after build" >&2
             exit 1
           fi
-          poetry run python buildscripts/resmoke.py run \
+          uv run --no-sync python buildscripts/resmoke.py run \
             --suites=dbtest \
             --dbtest="$DBTEST" \
             --jobs="$(nproc)" \

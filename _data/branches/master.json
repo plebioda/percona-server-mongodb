@@ -7,7 +7,7 @@
   "divergence": {
     "commits_behind": 52,
     "days_behind": 1,
-    "unmerged_oldest_age_days": 1.0721717929050927,
+    "unmerged_oldest_age_days": 1.0815951735069445,
     "files_affected": 277,
     "total_additions": 7825,
     "total_deletions": 2653,
@@ -624,7 +624,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-29 07:33:13",
+  "generated_at": "2026-07-29 07:46:48",
   "branch_name": "master",
   "display_name": "master"
 }

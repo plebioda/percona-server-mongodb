@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 52,
+    "commits_behind": 54,
     "days_behind": 1,
-    "unmerged_oldest_age_days": 1.0815951735069445,
-    "files_affected": 277,
-    "total_additions": 7825,
-    "total_deletions": 2653,
+    "unmerged_oldest_age_days": 1.124299897326389,
+    "files_affected": 288,
+    "total_additions": 8170,
+    "total_deletions": 2695,
     "date_range": {
       "first": "2026-07-28T05:49:20+00:00",
-      "last": "2026-07-29T00:36:05+00:00"
+      "last": "2026-07-29T08:00:08+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,26 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "77d7ae42ff96aec6457f71d1a0ce0e094e91de8b",
+      "short_sha": "77d7ae42ff9",
+      "date": "2026-07-29T10:00:08+02:00",
+      "author": {
+        "name": "Alya Carina Berciu",
+        "email": "alya.berciu@mongodb.com"
+      },
+      "summary": "SERVER-132001 Create a supplemental QueryStats JoinOptimization type (#59432)"
+    },
+    {
+      "sha": "8f0e35179ac94135ce1b0e5c4738de7b4266fec4",
+      "short_sha": "8f0e35179ac",
+      "date": "2026-07-29T09:56:44+02:00",
+      "author": {
+        "name": "ppolato",
+        "email": "82828243+ppolato@users.noreply.github.com"
+      },
+      "summary": "SERVER-131444 Avoid raising CollectionUUIDMismatch errors while running CheckMetadataConsistency (#59676)"
+    },
     {
       "sha": "bb7a39b05fe3be59b6dbe0b2f65e7da2f4c8c42b",
       "short_sha": "bb7a39b05fe",
@@ -624,7 +644,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-29 07:46:48",
+  "generated_at": "2026-07-29 08:48:16",
   "branch_name": "master",
   "display_name": "master"
 }

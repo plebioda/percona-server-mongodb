@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 54,
+    "commits_behind": 59,
     "days_behind": 1,
-    "unmerged_oldest_age_days": 1.124299897326389,
-    "files_affected": 288,
-    "total_additions": 8170,
-    "total_deletions": 2695,
+    "unmerged_oldest_age_days": 1.2577637175925926,
+    "files_affected": 329,
+    "total_additions": 10316,
+    "total_deletions": 2870,
     "date_range": {
       "first": "2026-07-28T05:49:20+00:00",
-      "last": "2026-07-29T08:00:08+00:00"
+      "last": "2026-07-29T11:16:59+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,56 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "0ad751e33765b9d18d0e167a17ca02d2db6b1986",
+      "short_sha": "0ad751e3376",
+      "date": "2026-07-29T12:16:59+01:00",
+      "author": {
+        "name": "Max Verbinnen",
+        "email": "64088654+Max-Verbinnen@users.noreply.github.com"
+      },
+      "summary": "SERVER-114229 Add pre-flight check to FCV upgrade for invalid wildcard index (#59538)"
+    },
+    {
+      "sha": "b9beb4ab132a1d895daf49e980dd18ba860e34c6",
+      "short_sha": "b9beb4ab132",
+      "date": "2026-07-29T11:58:10+02:00",
+      "author": {
+        "name": "Ivan Fefer",
+        "email": "ivan.fefer@mongodb.com"
+      },
+      "summary": "SERVER-128766: Add a knob to limit the amount of memory-intensive ops (#55481)"
+    },
+    {
+      "sha": "2ebf8908340c0e4d602db74f5e6d49482a964b65",
+      "short_sha": "2ebf8908340",
+      "date": "2026-07-29T11:57:30+02:00",
+      "author": {
+        "name": "Igor Praznik",
+        "email": "95708172+igpraznik@users.noreply.github.com"
+      },
+      "summary": "SERVER-132121 Retry write conflicts during setFeatureCompatibilityVersion (#59651)"
+    },
+    {
+      "sha": "d524d030eda7f2f3193aba41578960acd69509d2",
+      "short_sha": "d524d030eda",
+      "date": "2026-07-29T11:44:16+02:00",
+      "author": {
+        "name": "Alya Carina Berciu",
+        "email": "alya.berciu@mongodb.com"
+      },
+      "summary": "SERVER-132100 Add plan enumerator stats to JoinOptimization query stats (#59647)"
+    },
+    {
+      "sha": "886cd9e38a655bd8407d64b351fb6615aee2d001",
+      "short_sha": "886cd9e38a6",
+      "date": "2026-07-29T10:42:14+02:00",
+      "author": {
+        "name": "Alya Carina Berciu",
+        "email": "alya.berciu@mongodb.com"
+      },
+      "summary": "SERVER-132086 Increment agg join model counters (#59548)"
+    },
     {
       "sha": "77d7ae42ff96aec6457f71d1a0ce0e094e91de8b",
       "short_sha": "77d7ae42ff9",
@@ -644,7 +694,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-29 08:48:16",
+  "generated_at": "2026-07-29 12:00:27",
   "branch_name": "master",
   "display_name": "master"
 }

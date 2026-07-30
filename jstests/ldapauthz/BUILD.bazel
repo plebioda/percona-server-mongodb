@@ -1,4 +1,4 @@
-load("@poetry//:dependencies.bzl", "dependency")
+load("//bazel/uv:defs.bzl", "dependency")
 load("//bazel:mongo_js_rules.bzl", "all_subpackage_javascript_files", "mongo_js_library")
 load("//bazel/resmoke:resmoke.bzl", "resmoke_suite_test")
 

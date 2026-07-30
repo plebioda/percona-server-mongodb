@@ -20,6 +20,7 @@
 #include "mongo/db/index/preallocated_container_pool.h"
 #include "mongo/db/index/wildcard_access_method.h"
 #include "mongo/db/index_builds/index_build_interceptor.h"
+#include "mongo/db/index_builds/primary_driven/enabled.h"
 #include "mongo/db/index_names.h"
 #include "mongo/db/matcher/expression.h"
 #include "mongo/db/multi_key_path_tracker.h"
@@ -41,7 +42,6 @@
 #include "mongo/db/storage/recovery_unit.h"
 #include "mongo/db/storage/storage_engine.h"
 #include "mongo/db/storage/storage_options.h"
-#include "mongo/db/storage/storage_parameters_gen.h"
 #include "mongo/db/validate/validate_results.h"
 #include "mongo/logv2/log.h"
 #include "mongo/otel/metrics/metric_unit.h"
@@ -123,6 +123,8 @@ auto& keysInsertedCounter = otel::metrics::MetricsService::instance().createInt6
     otel::metrics::MetricNames::kIndexBuildKeysInsertedFromScan,
     "Total number of keys inserted to indexes from collection scan",
     otel::metrics::MetricUnit::kEvents);
+
+constexpr int32_t kMetricUpdateIntervalKeyCount = 1000;
 
 /**
  * Returns true if at least one prefix of any of the indexed fields causes the index to be
@@ -792,11 +794,8 @@ Status SortedDataIndexAccessMethod::applyIndexBuildSideWrite(OperationContext* o
     auto& ru = *shard_role_details::getRecoveryUnit(opCtx);
     const KeyStringSet keySet{keyString};
 
-    // TODO(SERVER-110289): Use utility function instead of checking fcvSnapshot.
-    auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
-    bool primaryDrivenFeatureFlagEnabled = fcvSnapshot.isVersionInitialized() &&
-        feature_flags::gFeatureFlagPrimaryDrivenIndexBuilds.isEnabled(
-            VersionContext::getDecoration(opCtx), fcvSnapshot);
+    bool primaryDrivenIndexBuildEnabled = index_builds::primary_driven::enabled(
+        opCtx, serverGlobalParams.featureCompatibility.acquireFCVSnapshot());
     if (opType == IndexBuildInterceptor::Op::kInsert) {
         int64_t numInserted;
         auto status = insertKeysAndUpdateMultikeyPaths(
@@ -811,8 +810,8 @@ Status SortedDataIndexAccessMethod::applyIndexBuildSideWrite(OperationContext* o
             std::move(onDuplicateKey),
             &numInserted,
             IncludeDuplicateRecordId::kOff,
-            primaryDrivenFeatureFlagEnabled ? ContainerWriteBehavior::kReplicate
-                                            : ContainerWriteBehavior::kDoNotReplicate);
+            primaryDrivenIndexBuildEnabled ? ContainerWriteBehavior::kReplicate
+                                           : ContainerWriteBehavior::kDoNotReplicate);
         if (!status.isOK()) {
             return status;
         }
@@ -830,8 +829,8 @@ Status SortedDataIndexAccessMethod::applyIndexBuildSideWrite(OperationContext* o
                        {keySet.begin(), keySet.end()},
                        options,
                        &numDeleted,
-                       primaryDrivenFeatureFlagEnabled ? ContainerWriteBehavior::kReplicate
-                                                       : ContainerWriteBehavior::kDoNotReplicate);
+                       primaryDrivenIndexBuildEnabled ? ContainerWriteBehavior::kReplicate
+                                                      : ContainerWriteBehavior::kDoNotReplicate);
         if (!s.isOK()) {
             return s;
         }
@@ -937,7 +936,11 @@ private:
         const SortOptions& opts,
         const boost::optional<std::vector<SorterRange>>& ranges = boost::none) const;
 
-    void _addKeyForCommit(OperationContext* opCtx,
+    /**
+     * Inserts key into the index. Returns true if successfully inserted, or false on a KeyExists
+     * error.
+     */
+    bool _addKeyForCommit(OperationContext* opCtx,
                           RecoveryUnit& ru,
                           const CollectionPtr& coll,
                           const key_string::View& key);
@@ -1200,26 +1203,38 @@ Status BulkBuilderImpl::commit(OperationContext* opCtx,
     std::vector<key_string::Value> batch;
     size_t bytesInBatch = 0;
     int64_t nKeys = 0;
+    int64_t keysCounted = 0;
 
     auto commitBatch = [&]() {
         if (batch.empty()) {
             return;
         }
-        writeConflictRetry(opCtx, "addingKey", _ns, [&] {
+        auto keysInserted = writeConflictRetry(opCtx, "addingKey", _ns, [&] {
             WriteUnitOfWork wunit(opCtx);
+            int64_t keysAdded{0};
             for (auto&& key : batch) {
-                _addKeyForCommit(opCtx, ru, *collection, key);
+                if (_addKeyForCommit(opCtx, ru, *collection, key)) {
+                    keysAdded++;
+                }
             }
             wunit.commit();
+            return keysAdded;
         });
-        nKeys += batch.size();
+        nKeys += keysInserted;
+        keysCounted += keysInserted;
         batch.clear();
         bytesInBatch = 0;
+        if (keysCounted >= kMetricUpdateIntervalKeyCount) {
+            keysInsertedCounter.add(keysCounted);
+            keysCounted = 0;
+        }
         if (nKeys >= onNKeysLoadedFnInterval) {
             onNKeysLoaded();
             nKeys = 0;
         }
     };
+
+    ON_BLOCK_EXIT([&] { keysInsertedCounter.add(keysCounted); });
 
     while (it && it->more()) {
         opCtx->checkForInterrupt();
@@ -1358,7 +1373,7 @@ void BulkBuilderImpl::releaseSorter() {
     _sorter.reset();
 }
 
-void BulkBuilderImpl::_addKeyForCommit(OperationContext* opCtx,
+bool BulkBuilderImpl::_addKeyForCommit(OperationContext* opCtx,
                                        RecoveryUnit& ru,
                                        const CollectionPtr& coll,
                                        const key_string::View& key) {
@@ -1371,22 +1386,21 @@ void BulkBuilderImpl::_addKeyForCommit(OperationContext* opCtx,
                                               _nonexistentKeyGuarantee);
         if (status == ErrorCodes::KeyExists) {
             // The key was already inserted by a previous bulk builder on this same container.
-            return;
+            return false;
         } else if (!_nonexistentKeyGuarantee && status.isOK()) {
             // We've reached the end of any keys previously inserted. From this point forward, we
             // can assume that the keys we're inserting do not already exist in the container.
             _nonexistentKeyGuarantee.emplace();
         }
         uassertStatusOK(status);
-        keysInsertedCounter.add(1);
-        return;
+        return true;
     }
 
     if (!_builder) {
         _builder = _iam->getSortedDataInterface()->makeBulkBuilder(opCtx, ru);
     }
     _builder->addKey(ru, key);
-    keysInsertedCounter.add(1);
+    return true;
 }
 
 std::unique_ptr<BulkBuilderImpl::Sorter> BulkBuilderImpl::_makeSorter(

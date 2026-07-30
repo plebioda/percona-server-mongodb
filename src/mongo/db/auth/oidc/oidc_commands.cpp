@@ -74,7 +74,7 @@ private:
     }
 
     bool supportsWriteConcern(const BSONObj& cmdObj) const override {
-        return false;
+        return false;  // ok
     }
 
     AllowedOnSecondary secondaryAllowed(ServiceContext* context) const override {

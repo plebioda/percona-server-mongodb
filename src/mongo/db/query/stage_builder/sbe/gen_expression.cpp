@@ -3,9 +3,6 @@
 
 #include "mongo/db/query/stage_builder/sbe/gen_expression.h"
 
-#include <boost/none.hpp>
-#include <boost/smart_ptr/intrusive_ptr.hpp>
-// IWYU pragma: no_include "ext/alloc_traits.h"
 #include "mongo/base/error_codes.h"
 #include "mongo/bson/bsontypes.h"
 #include "mongo/db/exec/docval_to_sbeval.h"
@@ -44,6 +41,10 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include <boost/none.hpp>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
+// IWYU pragma: no_include "ext/alloc_traits.h"
 
 
 namespace mongo::stage_builder {
@@ -3099,7 +3100,8 @@ public:
 
         binds[0] = _b.makeInt32Constant(expr->getInputs().size());
         binds[1] = _b.makeBoolConstant(expr->getUseLongestLength());
-        // Pop expressions from the stack in reverse, so that inputs come before defaults.
+        // Pop expressions from the stack in reverse, so that the inputs come before the optional
+        // trailing child that evaluates to the whole defaults array.
         for (size_t i = binds.size(); i > localVariables;) {
             --i;
             binds[i] = popExpr();

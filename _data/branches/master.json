@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 114,
+    "commits_behind": 122,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.1144918776967594,
-    "files_affected": 564,
-    "total_additions": 16472,
-    "total_deletions": 4494,
+    "unmerged_oldest_age_days": 2.263019090821759,
+    "files_affected": 595,
+    "total_additions": 18273,
+    "total_deletions": 4802,
     "date_range": {
       "first": "2026-07-28T05:49:20+00:00",
-      "last": "2026-07-30T03:27:30+00:00"
+      "last": "2026-07-30T09:57:57+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,86 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "022cb0baaafe9c5fc22488cf5f91351b1469ab37",
+      "short_sha": "022cb0baaaf",
+      "date": "2026-07-30T10:57:57+01:00",
+      "author": {
+        "name": "Henri Nikku",
+        "email": "henri.nikku@mongodb.com"
+      },
+      "summary": "SERVER-132493: Retry slow query log readback in query_settings_max_time_ms.js (#59884)"
+    },
+    {
+      "sha": "cb8274dc933177c3e498d2737bb3958644261344",
+      "short_sha": "cb8274dc933",
+      "date": "2026-07-30T10:48:10+01:00",
+      "author": {
+        "name": "Henri Nikku",
+        "email": "henri.nikku@mongodb.com"
+      },
+      "summary": "SERVER-132504: Wait for the index build scan phase before writing in PDIB tests (#59911)"
+    },
+    {
+      "sha": "711433fecb296525aa3dbff4f3f4f2975910356f",
+      "short_sha": "711433fecb2",
+      "date": "2026-07-30T10:26:09+01:00",
+      "author": {
+        "name": "Alexander Ignatyev",
+        "email": "alexander.ignatyev@mongodb.com"
+      },
+      "summary": "SERVER-128341 Fix crash when using $meta expressions in sort patterns (#54001)"
+    },
+    {
+      "sha": "0ff4d08eb2ff278b124bc8ffb566ca1dbb7e1503",
+      "short_sha": "0ff4d08eb2f",
+      "date": "2026-07-30T10:25:55+01:00",
+      "author": {
+        "name": "Henri Nikku",
+        "email": "henri.nikku@mongodb.com"
+      },
+      "summary": "SERVER-132491: Verify startup error messages without parallel shells in internal_validate_features_as_primary.js (#59872)"
+    },
+    {
+      "sha": "225cef61468b32537ed1543ca0f4b2184af6095d",
+      "short_sha": "225cef61468",
+      "date": "2026-07-30T11:22:03+02:00",
+      "author": {
+        "name": "Jordi Olivares Provencio",
+        "email": "jordi.olivares-provencio@mongodb.com"
+      },
+      "summary": "SERVER-131669 Add metrics and allow disabling of strict chunk checks (#59283)"
+    },
+    {
+      "sha": "ed96970b766e7ded71e0da57b23782a9783fdaf3",
+      "short_sha": "ed96970b766",
+      "date": "2026-07-30T10:45:12+02:00",
+      "author": {
+        "name": "Alya Carina Berciu",
+        "email": "alya.berciu@mongodb.com"
+      },
+      "summary": "SERVER-132186 Add per-join-opt-phase timers & metrics (#59655)"
+    },
+    {
+      "sha": "93597e45dbcbd763cca771eb40e7986b15556ac4",
+      "short_sha": "93597e45dbc",
+      "date": "2026-07-30T18:07:43+10:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#59946)"
+    },
+    {
+      "sha": "18f98e8709c8c6fe96e7cf0797353a2319cbda55",
+      "short_sha": "18f98e8709c",
+      "date": "2026-07-30T10:01:44+02:00",
+      "author": {
+        "name": "Aitor Esteve Alvarado",
+        "email": "aitor.esteve@mongodb.com"
+      },
+      "summary": "SERVER-132110 DDL coordinators: create new collections with `allowChunkOperations: false` (#59761)"
+    },
     {
       "sha": "05f38efe81ed1e38e429e0d585bc8bd77579b6c3",
       "short_sha": "05f38efe81e",
@@ -1280,7 +1360,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-30 08:34:09",
+  "generated_at": "2026-07-30 12:08:01",
   "branch_name": "master",
   "display_name": "master"
 }

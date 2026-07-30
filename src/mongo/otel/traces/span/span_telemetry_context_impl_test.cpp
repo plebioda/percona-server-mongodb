@@ -85,7 +85,16 @@ TEST_F(SpanTelemetryContextImplTest, ConcurrentSetSpanAndGetSpan) {
     SpanTelemetryContextImpl impl(getSpanContext());
 
     stdx::thread writer([&] {
+<<<<<<< HEAD
         for (int i = 0; i < kIterations; ++i) {
+||||||| bb7a39b05fe
+        while (!stop.load()) {
+=======
+        // Internally, our span's DataList maintains a shared ptr to the next node.
+        // Cap the writes so that we don't stack overflow on recursive DataList destruction.
+        constexpr int kWriteIterations = 50;
+        for (int i = 0; i < kWriteIterations; ++i) {
+>>>>>>> 0e934993a4a0bc9a43e8d0c8a2a4b5b859e68830
             impl.setSpan(makeValidSpan());
             std::this_thread::yield();
         }

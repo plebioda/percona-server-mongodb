@@ -1,15 +1,6 @@
 // Copyright (c) MongoDB, Inc.
 // SPDX-License-Identifier: SSPL-1.0
 
-#include <algorithm>
-#include <iterator>
-#include <memory>
-#include <string>
-#include <string_view>
-#include <vector>
-
-#include <boost/container/small_vector.hpp>
-// IWYU pragma: no_include "boost/intrusive/detail/iterator.hpp"
 #include "mongo/base/error_codes.h"
 #include "mongo/base/status.h"
 #include "mongo/bson/bsonelement.h"
@@ -27,6 +18,7 @@
 #include "mongo/db/field_ref.h"
 #include "mongo/db/index_builds/commit_quorum_options.h"
 #include "mongo/db/index_builds/index_builds_coordinator.h"
+#include "mongo/db/index_builds/primary_driven/enabled.h"
 #include "mongo/db/index_builds/repl_index_build_state.h"
 #include "mongo/db/index_builds/two_phase_index_build_knobs_gen.h"
 #include "mongo/db/index_key_validate.h"
@@ -76,9 +68,18 @@
 #include "mongo/util/str.h"
 #include "mongo/util/uuid.h"
 
+#include <algorithm>
+#include <iterator>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include <boost/container/small_vector.hpp>
 #include <boost/move/utility_core.hpp>
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
+// IWYU pragma: no_include "boost/intrusive/detail/iterator.hpp"
 
 #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kIndex
 
@@ -251,11 +252,10 @@ boost::optional<CommitQuorumOptions> parseAndGetCommitQuorum(OperationContext* o
 
     // TODO(SERVER-109664): Do not use the feature-flag to disable commit quorum for
     // primary-driven index builds.
-    const auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
-    auto isPrimaryDrivenIndexBuild = replCoord->getSettings().isReplSet() &&
-        fcvSnapshot.isVersionInitialized() &&
-        feature_flags::gFeatureFlagPrimaryDrivenIndexBuilds.isEnabled(
-            VersionContext::getDecoration(opCtx), fcvSnapshot);
+    auto isPrimaryDrivenIndexBuild =
+        replCoord->getSettings().isReplSet() &&
+        index_builds::primary_driven::enabled(
+            opCtx, serverGlobalParams.featureCompatibility.acquireFCVSnapshot());
 
     // Commit quorum is disabled for primary-driven index builds.
     auto commitQuorum = cmd.getCommitQuorum();
@@ -471,7 +471,8 @@ bool isCreatingInternalConfigTxnsPartialIndex(const CreateIndexesCommand& cmd) {
 IndexBuildProtocol determineProtocol(OperationContext* opCtx, const NamespaceString& ns) {
     if (repl::ReplicationCoordinator::get(opCtx)->isOplogDisabledFor(opCtx, ns)) {
         return IndexBuildProtocol::kSinglePhase;
-    } else if (isPrimaryDrivenIndexBuildEnabled(VersionContext::getDecoration(opCtx))) {
+    } else if (index_builds::primary_driven::enabled(
+                   opCtx, serverGlobalParams.featureCompatibility.acquireFCVSnapshot())) {
         return IndexBuildProtocol::kPrimaryDriven;
     }
     return IndexBuildProtocol::kTwoPhase;
@@ -661,14 +662,12 @@ CreateIndexesReply runCreateIndexesWithCoordinator(
 
     auto buildUUID = UUID::gen();
     ReplIndexBuildState::IndexCatalogStats stats;
-    const auto fcvSnapshot = serverGlobalParams.featureCompatibility.acquireFCVSnapshot();
     IndexBuildsCoordinator::IndexBuildOptions indexBuildOptions = {
         // TODO(SERVER-109664): Set this to IndexBuildMethodEnum::kHybrid
-        .indexBuildMethod = ((fcvSnapshot.isVersionInitialized() &&
-                              feature_flags::gFeatureFlagPrimaryDrivenIndexBuilds.isEnabled(
-                                  VersionContext::getDecoration(opCtx), fcvSnapshot))
-                                 ? IndexBuildMethodEnum::kPrimaryDriven
-                                 : IndexBuildMethodEnum::kHybrid),
+        .indexBuildMethod = index_builds::primary_driven::enabled(
+                                opCtx, serverGlobalParams.featureCompatibility.acquireFCVSnapshot())
+            ? IndexBuildMethodEnum::kPrimaryDriven
+            : IndexBuildMethodEnum::kHybrid,
         .indexBuildProtocol = protocol,
         .commitQuorum = commitQuorum};
 

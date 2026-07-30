@@ -3,13 +3,6 @@
 
 #pragma once
 
-#include <boost/intrusive_ptr.hpp>
-#include <boost/none.hpp>
-#include <boost/optional.hpp>
-#include <boost/optional/optional.hpp>
-#include <boost/smart_ptr.hpp>
-#include <boost/smart_ptr/intrusive_ptr.hpp>
-// IWYU pragma: no_include "ext/alloc_traits.h"
 #include "mongo/base/init.h"  // IWYU pragma: keep
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonobj.h"
@@ -49,6 +42,14 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include <boost/intrusive_ptr.hpp>
+#include <boost/none.hpp>
+#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
+#include <boost/smart_ptr.hpp>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
+// IWYU pragma: no_include "ext/alloc_traits.h"
 
 namespace mongo {
 using namespace std::literals::string_view_literals;
@@ -4989,11 +4990,13 @@ public:
 
 class ExpressionZip final : public Expression {
 public:
+    using ExprRef = std::reference_wrapper<boost::intrusive_ptr<Expression>>;
+
     ExpressionZip(ExpressionContext* const expCtx,
                   bool useLongestLength,
                   ExpressionVector&& children,
-                  std::vector<std::reference_wrapper<boost::intrusive_ptr<Expression>>> inputs,
-                  std::vector<std::reference_wrapper<boost::intrusive_ptr<Expression>>> defaults)
+                  std::vector<ExprRef> inputs,
+                  boost::optional<ExprRef> defaults)
         : Expression(expCtx, std::move(children)),
           _useLongestLength(useLongestLength),
           _inputs(std::move(inputs)),
@@ -5026,35 +5029,35 @@ public:
         return _useLongestLength;
     }
 
-    const std::vector<std::reference_wrapper<boost::intrusive_ptr<Expression>>>& getInputs() const {
+    const std::vector<ExprRef>& getInputs() const {
         return _inputs;
     }
 
-    const std::vector<std::reference_wrapper<boost::intrusive_ptr<Expression>>>& getDefaults()
-        const {
+    const boost::optional<ExprRef>& getDefaults() const {
         return _defaults;
     }
 
     boost::intrusive_ptr<Expression> clone(ExpressionContext& expCtx) const final {
         ExpressionVector children = cloneChildren(expCtx);
-        std::vector<std::reference_wrapper<boost::intrusive_ptr<Expression>>> inputs;
-        std::vector<std::reference_wrapper<boost::intrusive_ptr<Expression>>> defaults;
+        const size_t numDefaultChildren = _defaults ? 1 : 0;
 
         tassert(3100301,
                 fmt::format("Input and default array sizes mismatch with children array, "
                             "input={}, defaults={}, children={}",
                             _inputs.size(),
-                            _defaults.size(),
+                            numDefaultChildren,
                             children.size()),
-                _inputs.size() + _defaults.size() == children.size());
+                _inputs.size() + numDefaultChildren == children.size());
 
+        std::vector<ExprRef> inputs;
         inputs.reserve(_inputs.size());
-        defaults.reserve(_defaults.size());
         for (size_t childIdx = 0; childIdx < _inputs.size(); ++childIdx) {
             inputs.push_back(children[childIdx]);
         }
-        for (size_t childIdx = _inputs.size(); childIdx < children.size(); ++childIdx) {
-            defaults.push_back(children[childIdx]);
+
+        boost::optional<ExprRef> defaults;
+        if (_defaults) {
+            defaults = ExprRef(children.back());
         }
 
         return make_intrusive<ExpressionZip>(&expCtx,
@@ -5065,9 +5068,21 @@ public:
     }
 
 private:
+    /**
+     * Validates a literal 'defaults' array: it must have one default per input. Any other
+     * defaults expression — including one that is (or constant-folds into) a non-array constant
+     * — is deliberately validated only at evaluation time. Such a query still records a query
+     * stats entry (it parses fine and fails lazily), and its representative shape collapses the
+     * constant into a fixed placeholder (e.g. {$const: {?: "?"}} or a fixed-length array) that
+     * must survive re-parsing — and re-optimizing, for stages like $setWindowFields that
+     * optimize their expressions at parse time — when $queryStats reshapifies the entry.
+     */
+    static void _validateZipDefaults(const boost::intrusive_ptr<Expression>& defaults,
+                                     size_t numInputs);
+
     bool _useLongestLength;
-    std::vector<std::reference_wrapper<boost::intrusive_ptr<Expression>>> _inputs;
-    std::vector<std::reference_wrapper<boost::intrusive_ptr<Expression>>> _defaults;
+    std::vector<ExprRef> _inputs;
+    boost::optional<ExprRef> _defaults;
 };
 
 enum class ConversionBase {

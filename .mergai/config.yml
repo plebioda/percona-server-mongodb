@@ -23,6 +23,20 @@ project:
   upstream_term: "upstream"
 
 # -----------------------------------------------------------------------------
+# RUN LINK CONFIGURATION
+# -----------------------------------------------------------------------------
+# When running under GitHub Actions, link mergai's output back to the workflow
+# run that produced it: a footer on every PR comment the bot posts (CI-fix
+# explanations, review replies, acknowledgements), and a "Triggered by" link in
+# the merge-pick section of the PR description. The link is built from the
+# standard Actions environment (GITHUB_SERVER_URL / GITHUB_REPOSITORY /
+# GITHUB_RUN_ID); outside Actions there is nothing to link and it is a no-op.
+run_link:
+  # Off by default in mergai; enabled here so maintainers can click straight
+  # from a bot comment or merge pick to the run that made it.
+  enabled: true
+
+# -----------------------------------------------------------------------------
 # FORK CONFIGURATION
 # -----------------------------------------------------------------------------
 # Configuration for the 'fork' subcommand which handles syncing with upstream.
@@ -598,22 +612,23 @@ workflows:
       # code_scanning_tool_name: clang-tidy
 
   # `build-and-test` covers the jobs in `.github/workflows/build-and-test.yml`:
-  # `build`, `unittests`, `dbtests`, and `jstests`.
+  # `build`, `unittests`, `binary_tests`, and `jstests`.
   # Mergai's workflow_run trigger fires once for the whole workflow, so a single
   # entry covers all the jobs; the BEP context builder decides what to feed the
   # agent based on which artifact is present in the failing run.
   #
-  # build -> dbtests -> unittests -> jstests run sequentially on RBE, but each
-  # test job is gated only on build success (not on the preceding test job), so
-  # one test failure doesn't block the later test jobs. More than one failure
+  # binary_tests and unittests run in PARALLEL after build, then jstests; each
+  # test job is gated only on build success (not on a sibling test job), so
+  # one test failure doesn't block the other test jobs. More than one failure
   # artifact can therefore be present in a run; the context builder picks up
   # whichever artifact(s) are present.
   #
-  # NOTE: dbtests runs resmoke LOCALLY (the dbtest binary has no Bazel test
-  # target), so its `dbtest-failure-logs` artifact carries the teed resmoke
-  # console log + report.json rather than a Bazel BEP. The other artifacts carry
+  # NOTE: binary_tests runs resmoke LOCALLY (the C++ binary test runners -- dbtest and
+  # the SDAM JSON spec runners -- have no Bazel test target), so its
+  # `binary-test-failure-logs` artifact carries the teed per-suite resmoke console
+  # logs + report.json rather than a Bazel BEP. The other artifacts carry
   # bazel-bep*.json. If the bazel context builder needs a BEP to extract the
-  # failure, the dbtest console log is the fallback the agent reads.
+  # failure, the resmoke console logs are the fallback the agent reads.
   #
   # Capped at 2 attempts: like clang-tidy, build/test fixes need human-grade
   # judgement and shouldn't loop indefinitely on flakes or environmental
@@ -634,8 +649,8 @@ workflows:
       # The build job uploads `build-failure-artifacts` (bazel-bep.json);
       # the unittests job uploads `unittest-failure-artifacts` (bazel-bep.json
       # plus bazel-testlogs/ with per-target test.log and JUnit test.xml);
-      # the dbtests job uploads `dbtest-failure-logs` (the teed resmoke console
-      # log, resmoke's report.json, and the build bazel-bep.json);
+      # the binary_tests job uploads `binary-test-failure-logs` (the teed resmoke
+      # console logs, resmoke's report.json, and the build bazel-bep.json);
       # the jstests job uploads `jstest-failure-logs` (one bazel-bep*.json per
       # resmoke invocation -- bazel-bep.json for the reliable batch plus
       # bazel-bep-<suite>.json per load-sensitive suite -- the teed console
@@ -643,5 +658,5 @@ workflows:
       artifact_name:
         - build-failure-artifacts
         - unittest-failure-artifacts
-        - dbtest-failure-logs
+        - binary-test-failure-logs
         - jstest-failure-logs

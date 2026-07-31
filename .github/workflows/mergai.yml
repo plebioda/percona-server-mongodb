@@ -1444,6 +1444,8 @@ jobs:
             mergai pr --repo "$GITHUB_REPOSITORY" update \
               || echo "::warning::'mergai pr update' failed"
             FF_SHA=$(git rev-parse HEAD)
+            # Let the success comment report that a rebase was needed.
+            echo "rebased=true" >> "$GITHUB_OUTPUT"
           fi
 
           # Fast-forward the base branch to the head tip by pushing the head SHA
@@ -1461,8 +1463,9 @@ jobs:
           echo "Fast-forwarded $BASE_REF to $FF_SHA ($HEAD_REF)."
 
       # Confirm the fast-forward on the PR. Posted via `mergai pr comment` (not
-      # `gh`) so the comment carries the config-gated run-link footer, like every
-      # other bot comment.
+      # `gh`) so the comment carries the config-gated run-link footer (run_link
+      # enabled in .mergai/config.yml) linking back to this run, like every other
+      # bot comment. The wording reflects whether a rebase was needed first.
       - name: Post success comment
         if: success()
         env:
@@ -1470,9 +1473,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
           BASE_REF: ${{ needs.fast-forward-gate.outputs.base_ref }}
           HEAD_REF: ${{ needs.fast-forward-gate.outputs.head_ref }}
+          REBASED: ${{ steps.ff.outputs.rebased }}
         run: |
-          mergai pr --repo "$GITHUB_REPOSITORY" comment --allow-missing --body \
-            "Fast-forwarded \`$BASE_REF\` to \`$HEAD_REF\`." \
+          if [ "$REBASED" = "true" ]; then
+            BODY="Rebased \`$HEAD_REF\` onto \`$BASE_REF\` and fast-forwarded \`$BASE_REF\` to it."
+          else
+            BODY="Fast-forwarded \`$BASE_REF\` to \`$HEAD_REF\`."
+          fi
+          mergai pr --repo "$GITHUB_REPOSITORY" comment --allow-missing --body "$BODY" \
             || echo "::warning::could not post fast-forward success comment"
 
       # Explain the failure. A rebase-conflict failure (reason=rebase) gets

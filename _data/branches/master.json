@@ -7,7 +7,7 @@
   "divergence": {
     "commits_behind": 106,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.2526337458217593,
+    "unmerged_oldest_age_days": 2.255069417824074,
     "files_affected": 516,
     "total_additions": 23399,
     "total_deletions": 6435,
@@ -1105,6 +1105,26 @@
   "merge_picks": [
     {
       "commit": {
+        "sha": "2c77b7d5b3aea24ebaf54cee98f4b6f446c00af7",
+        "short_sha": "2c77b7d5b3a",
+        "date": "2026-07-29T14:23:53+02:00",
+        "author": {
+          "name": "ppolato",
+          "email": "82828243+ppolato@users.noreply.github.com"
+        },
+        "summary": "SERVER-131686 Extend the value of the electionTimeoutMillis parameter for DisaggReplicaSet (#59672)"
+      },
+      "strategy_name": "branching_point",
+      "result": {
+        "branches": [
+          "master",
+          "mergai/master-2c77b7d5b3a/main",
+          "mongodb"
+        ]
+      }
+    },
+    {
+      "commit": {
         "sha": "d4a21c1760449130f5a9de51284688f2af3e3a44",
         "short_sha": "d4a21c17604",
         "date": "2026-07-29T09:35:53-04:00",
@@ -1205,7 +1225,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-31 14:00:29",
+  "generated_at": "2026-07-31 14:04:00",
   "branch_name": "master",
   "display_name": "master"
 }

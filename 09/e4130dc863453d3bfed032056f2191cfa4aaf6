@@ -1,0 +1,147 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "c5761522903cb04ff6aed0ccdad859985a9c36d8",
+    "merge_commit": "2c77b7d5b3aea24ebaf54cee98f4b6f446c00af7"
+  },
+  "mergai_version": "0.1.dev1+g0a8015bb6",
+  "merge_context": {
+    "merge_commit": "2c77b7d5b3aea24ebaf54cee98f4b6f446c00af7",
+    "merged_commits": [
+      "2c77b7d5b3aea24ebaf54cee98f4b6f446c00af7",
+      "5ab2b07897746cc054905814fedb35cf0416e289",
+      "175ee51263014a675058aad4d05e35bd0b83fdd4",
+      "0ad751e33765b9d18d0e167a17ca02d2db6b1986",
+      "b9beb4ab132a1d895daf49e980dd18ba860e34c6",
+      "2ebf8908340c0e4d602db74f5e6d49482a964b65",
+      "d524d030eda7f2f3193aba41578960acd69509d2",
+      "886cd9e38a655bd8407d64b351fb6615aee2d001",
+      "77d7ae42ff96aec6457f71d1a0ce0e094e91de8b",
+      "8f0e35179ac94135ce1b0e5c4738de7b4266fec4"
+    ],
+    "important_files_modified": [],
+    "auto_merged": {
+      "strategy": "ort",
+      "files": [
+        "buildscripts/resmokelib/testing/fixtures/fixturelib.py",
+        "src/mongo/db/commands/BUILD.bazel"
+      ]
+    }
+  },
+  "merge_description": {
+    "status": "success",
+    "is_error": false,
+    "duration_ms": 19339,
+    "num_turns": 4,
+    "stop_reason": "end_turn",
+    "total_cost_usd": 0.10908275,
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 603,
+        "outputTokens": 17,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.000688,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty"
+      },
+      "claude-opus-4-8": {
+        "inputTokens": 6,
+        "outputTokens": 1385,
+        "cacheReadInputTokens": 28967,
+        "cacheCreationInputTokens": 9481,
+        "webSearchRequests": 0,
+        "costUSD": 0.10839475000000001,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "canonicalModel": "claude-opus-4-8",
+        "provider": "firstParty"
+      }
+    },
+    "stats": {
+      "models": {
+        "claude-haiku-4-5-20251001": {
+          "tokens": {
+            "input": 603,
+            "output": 17,
+            "cache_read": 0,
+            "cache_creation": 0
+          },
+          "cost_usd": 0.000688
+        },
+        "claude-opus-4-8": {
+          "tokens": {
+            "input": 6,
+            "output": 1385,
+            "cache_read": 28967,
+            "cache_creation": 9481
+          },
+          "cost_usd": 0.10839475000000001
+        }
+      }
+    },
+    "text_result": "I read the two auto-merged file diffs (`diff base \u2192 merge commit`) and wrote the JSON response.\n\nBoth files merged cleanly with additive-only changes:\n- **fixturelib.py** \u2014 imports `to_plain` from `utils.history` and adds a `to_plain()` method on `FixtureLib`.\n- **BUILD.bazel** \u2014 adds the `invalid_wildcard_index_fcv_step.cpp` source and an `index_access_method` dependency to a `mongo_cc_library` target.\n\nResponse written to `response_20260731_132458_435810.json`.",
+    "response": {
+      "summary": "Merge of an upstream MongoDB commit into the fork's master branch. The auto-merged portion introduces two changes: a new `to_plain` helper exposed on the resmoke `FixtureLib` for recursively converting Historic objects into plain python objects, and additions to the FCV command library BUILD.bazel for a new invalid_wildcard_index FCV step source and an index_access_method dependency. Both files merged cleanly with no conflicts.",
+      "auto_merged": {
+        "buildscripts/resmokelib/testing/fixtures/fixturelib.py": "Imports `to_plain` from buildscripts.resmokelib.utils.history (aliased as `_to_plain`) and adds a new `to_plain(self, obj)` method on `FixtureLib` that delegates to it, described as recursively converting a Historic into plain python objects (e.g. for json.dumps). Purely additive; existing methods (including `make_historic`) are unchanged.",
+        "src/mongo/db/commands/BUILD.bazel": "Adds two entries to a `mongo_cc_library` target: the source file `//src/mongo/db/commands/set_feature_compatibility_version_steps:invalid_wildcard_index_fcv_step.cpp` to the srcs list, and `//src/mongo/db/index:index_access_method` to the deps list. Both are additive insertions preserving alphabetical ordering; no existing entries removed."
+      },
+      "review_notes": "Both files were auto-merged by the ort strategy with no conflict markers. The changes are additive and consistent with new files introduced elsewhere in this changeset (e.g. the newly added invalid_wildcard_index_fcv_step.cpp source). Verify that the new BUILD.bazel dependency and source targets resolve during a bazel build, and that the `to_plain` symbol exists in buildscripts/resmokelib/utils/history.py."
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Write"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I read the two auto-merged file diffs (`diff base \u2192 merge commit`) and wrote the JSON response.\n\nBoth files merged cleanly with additive-only changes:\n- **fixturelib.py** \u2014 imports `to_plain` from `utils.history` and adds a `to_plain()` method on `FixtureLib`.\n- **BUILD.bazel** \u2014 adds the `invalid_wildcard_index_fcv_step.cpp` source and an `index_access_method` dependency to a `mongo_cc_library` target.\n\nResponse written to `response_20260731_132458_435810.json`."
+          ],
+          "tools_used": []
+        }
+      ],
+      "metadata": {
+        "lastPrompt": "Read @/home/runner/work/percona-server-mongodb/percona-server-mongodb/.cache/mergai/prompt_20260731_132458_435652.md and write your JSON response to @/home/runner/work/percona-server-mongodb/percona-s\u2026"
+      }
+    },
+    "agent_info": {
+      "agent_type": "claude_cli",
+      "version": "2.1.220 (Claude Code)"
+    }
+  },
+  "merge_pick": {
+    "type": "manual",
+    "sha": "2c77b7d5b3a",
+    "short_sha": "2c77b7d5b3a",
+    "strategy": null,
+    "summary": "Manually specified by @plebioda via workflow_dispatch; gate bypassed.",
+    "run_url": "https://github.com/plebioda/percona-server-mongodb/actions/runs/30634169186"
+  }
+}

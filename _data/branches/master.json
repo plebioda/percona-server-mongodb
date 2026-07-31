@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 104,
+    "commits_behind": 105,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.0772066251273147,
+    "unmerged_oldest_age_days": 2.087971581203704,
     "files_affected": 514,
     "total_additions": 23385,
     "total_deletions": 6429,
     "date_range": {
       "first": "2026-07-29T07:56:44+00:00",
-      "last": "2026-07-30T23:05:15+00:00"
+      "last": "2026-07-31T08:44:46+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,16 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "1afa35ecf07b11c93f80b6df6a178c19d479d525",
+      "short_sha": "1afa35ecf07",
+      "date": "2026-07-31T08:44:46+00:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#60072)"
+    },
     {
       "sha": "1fea357a0b23298efec1ececdae0913503ee4215",
       "short_sha": "1fea357a0b2",
@@ -1085,6 +1095,27 @@
   "merge_picks": [
     {
       "commit": {
+        "sha": "2c77b7d5b3aea24ebaf54cee98f4b6f446c00af7",
+        "short_sha": "2c77b7d5b3a",
+        "date": "2026-07-29T14:23:53+02:00",
+        "author": {
+          "name": "ppolato",
+          "email": "82828243+ppolato@users.noreply.github.com"
+        },
+        "summary": "SERVER-131686 Extend the value of the electionTimeoutMillis parameter for DisaggReplicaSet (#59672)"
+      },
+      "strategy_name": "branching_point",
+      "result": {
+        "branches": [
+          "master",
+          "mergai/master-0e934993a4a/conflict",
+          "mergai/master-2c77b7d5b3a/main",
+          "mongodb"
+        ]
+      }
+    },
+    {
+      "commit": {
         "sha": "d4a21c1760449130f5a9de51284688f2af3e3a44",
         "short_sha": "d4a21c17604",
         "date": "2026-07-29T09:35:53-04:00",
@@ -1205,7 +1236,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-31 09:47:52",
+  "generated_at": "2026-07-31 10:03:22",
   "branch_name": "master",
   "display_name": "master"
 }

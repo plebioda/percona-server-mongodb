@@ -1462,25 +1462,30 @@ jobs:
           echo "final_sha=$FF_SHA" >> "$GITHUB_OUTPUT"
           echo "Fast-forwarded $BASE_REF to $FF_SHA ($HEAD_REF)."
 
-      # Confirm the fast-forward on the PR. Posted via `mergai pr comment` (not
-      # `gh`) so the comment carries the config-gated run-link footer (run_link
-      # enabled in .mergai/config.yml) linking back to this run, like every other
-      # bot comment. The wording reflects whether a rebase was needed first.
+      # Confirm the fast-forward on the PR. A successful fast-forward merges (and
+      # closes) the PR, and `mergai pr comment` only resolves an *open* PR -- it
+      # would skip with "No open main PR found". So comment via `gh` on the PR by
+      # number (works regardless of PR state) and append the workflow-run link
+      # manually (the link mergai's run_link footer would otherwise add). The
+      # wording reflects whether a rebase was needed first.
       - name: Post success comment
         if: success()
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.fast-forward-gate.outputs.number }}
           BASE_REF: ${{ needs.fast-forward-gate.outputs.base_ref }}
           HEAD_REF: ${{ needs.fast-forward-gate.outputs.head_ref }}
           REBASED: ${{ steps.ff.outputs.rebased }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
         run: |
           if [ "$REBASED" = "true" ]; then
             BODY="Rebased \`$HEAD_REF\` onto \`$BASE_REF\` and fast-forwarded \`$BASE_REF\` to it."
           else
             BODY="Fast-forwarded \`$BASE_REF\` to \`$HEAD_REF\`."
           fi
-          mergai pr --repo "$GITHUB_REPOSITORY" comment --allow-missing --body "$BODY" \
+          gh pr comment "$PR_NUMBER" --repo "$GH_REPO" \
+            --body "$(printf '%s\n\n---\n[Workflow run](%s)' "$BODY" "$RUN_URL")" \
             || echo "::warning::could not post fast-forward success comment"
 
       # Explain the failure. A rebase-conflict failure (reason=rebase) gets

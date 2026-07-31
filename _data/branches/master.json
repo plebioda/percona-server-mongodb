@@ -5,36 +5,36 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 106,
+    "commits_behind": 96,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.216458706261574,
-    "files_affected": 516,
-    "total_additions": 23399,
-    "total_deletions": 6435,
+    "unmerged_oldest_age_days": 1.9897455852430557,
+    "files_affected": 468,
+    "total_additions": 20786,
+    "total_deletions": 6200,
     "date_range": {
-      "first": "2026-07-29T07:56:44+00:00",
+      "first": "2026-07-29T13:35:53+00:00",
       "last": "2026-07-31T12:13:50+00:00"
     }
   },
   "last_merged_commit": {
-    "sha": "bb7a39b05fe3be59b6dbe0b2f65e7da2f4c8c42b",
-    "short_sha": "bb7a39b05fe",
-    "date": "2026-07-29T10:36:05+10:00",
-    "author": {
-      "name": "wt-vendoring-bot[bot]",
-      "email": "169275211+wt-vendoring-bot[bot]@users.noreply.github.com"
-    },
-    "summary": "Import wiredtiger: 09d06fa668530a865d3d66c903f4b0c731f8f2e5 from branch mongodb-master (#59783)"
-  },
-  "first_unmerged_commit": {
-    "sha": "8f0e35179ac94135ce1b0e5c4738de7b4266fec4",
-    "short_sha": "8f0e35179ac",
-    "date": "2026-07-29T09:56:44+02:00",
+    "sha": "2c77b7d5b3aea24ebaf54cee98f4b6f446c00af7",
+    "short_sha": "2c77b7d5b3a",
+    "date": "2026-07-29T14:23:53+02:00",
     "author": {
       "name": "ppolato",
       "email": "82828243+ppolato@users.noreply.github.com"
     },
-    "summary": "SERVER-131444 Avoid raising CollectionUUIDMismatch errors while running CheckMetadataConsistency (#59676)"
+    "summary": "SERVER-131686 Extend the value of the electionTimeoutMillis parameter for DisaggReplicaSet (#59672)"
+  },
+  "first_unmerged_commit": {
+    "sha": "d4a21c1760449130f5a9de51284688f2af3e3a44",
+    "short_sha": "d4a21c17604",
+    "date": "2026-07-29T09:35:53-04:00",
+    "author": {
+      "name": "Alex Li",
+      "email": "98560274+lia394126@users.noreply.github.com"
+    },
+    "summary": "SERVER-132096 Cap test span writes in ConcurrentSetSpanAndGetSpan (#59656)"
   },
   "gate": {
     "open": true,
@@ -1000,129 +1000,9 @@
         "email": "98560274+lia394126@users.noreply.github.com"
       },
       "summary": "SERVER-132096 Cap test span writes in ConcurrentSetSpanAndGetSpan (#59656)"
-    },
-    {
-      "sha": "2c77b7d5b3aea24ebaf54cee98f4b6f446c00af7",
-      "short_sha": "2c77b7d5b3a",
-      "date": "2026-07-29T14:23:53+02:00",
-      "author": {
-        "name": "ppolato",
-        "email": "82828243+ppolato@users.noreply.github.com"
-      },
-      "summary": "SERVER-131686 Extend the value of the electionTimeoutMillis parameter for DisaggReplicaSet (#59672)"
-    },
-    {
-      "sha": "5ab2b07897746cc054905814fedb35cf0416e289",
-      "short_sha": "5ab2b078977",
-      "date": "2026-07-29T13:54:20+02:00",
-      "author": {
-        "name": "Silvia Surroca",
-        "email": "silvia.surroca@mongodb.com"
-      },
-      "summary": "SERVER-132273 Legacy recovery of migrations must clear the filtering metadata on drain mode (#59659)"
-    },
-    {
-      "sha": "175ee51263014a675058aad4d05e35bd0b83fdd4",
-      "short_sha": "175ee512630",
-      "date": "2026-07-29T12:42:47+01:00",
-      "author": {
-        "name": "Henri Nikku",
-        "email": "henri.nikku@mongodb.com"
-      },
-      "summary": "SERVER-132347 Enable agg_non_ticketed_metrics.js in no_passthrough_disagg_override_replsets on TSAN variant (#59814)"
-    },
-    {
-      "sha": "0ad751e33765b9d18d0e167a17ca02d2db6b1986",
-      "short_sha": "0ad751e3376",
-      "date": "2026-07-29T12:16:59+01:00",
-      "author": {
-        "name": "Max Verbinnen",
-        "email": "64088654+Max-Verbinnen@users.noreply.github.com"
-      },
-      "summary": "SERVER-114229 Add pre-flight check to FCV upgrade for invalid wildcard index (#59538)"
-    },
-    {
-      "sha": "b9beb4ab132a1d895daf49e980dd18ba860e34c6",
-      "short_sha": "b9beb4ab132",
-      "date": "2026-07-29T11:58:10+02:00",
-      "author": {
-        "name": "Ivan Fefer",
-        "email": "ivan.fefer@mongodb.com"
-      },
-      "summary": "SERVER-128766: Add a knob to limit the amount of memory-intensive ops (#55481)"
-    },
-    {
-      "sha": "2ebf8908340c0e4d602db74f5e6d49482a964b65",
-      "short_sha": "2ebf8908340",
-      "date": "2026-07-29T11:57:30+02:00",
-      "author": {
-        "name": "Igor Praznik",
-        "email": "95708172+igpraznik@users.noreply.github.com"
-      },
-      "summary": "SERVER-132121 Retry write conflicts during setFeatureCompatibilityVersion (#59651)"
-    },
-    {
-      "sha": "d524d030eda7f2f3193aba41578960acd69509d2",
-      "short_sha": "d524d030eda",
-      "date": "2026-07-29T11:44:16+02:00",
-      "author": {
-        "name": "Alya Carina Berciu",
-        "email": "alya.berciu@mongodb.com"
-      },
-      "summary": "SERVER-132100 Add plan enumerator stats to JoinOptimization query stats (#59647)"
-    },
-    {
-      "sha": "886cd9e38a655bd8407d64b351fb6615aee2d001",
-      "short_sha": "886cd9e38a6",
-      "date": "2026-07-29T10:42:14+02:00",
-      "author": {
-        "name": "Alya Carina Berciu",
-        "email": "alya.berciu@mongodb.com"
-      },
-      "summary": "SERVER-132086 Increment agg join model counters (#59548)"
-    },
-    {
-      "sha": "77d7ae42ff96aec6457f71d1a0ce0e094e91de8b",
-      "short_sha": "77d7ae42ff9",
-      "date": "2026-07-29T10:00:08+02:00",
-      "author": {
-        "name": "Alya Carina Berciu",
-        "email": "alya.berciu@mongodb.com"
-      },
-      "summary": "SERVER-132001 Create a supplemental QueryStats JoinOptimization type (#59432)"
-    },
-    {
-      "sha": "8f0e35179ac94135ce1b0e5c4738de7b4266fec4",
-      "short_sha": "8f0e35179ac",
-      "date": "2026-07-29T09:56:44+02:00",
-      "author": {
-        "name": "ppolato",
-        "email": "82828243+ppolato@users.noreply.github.com"
-      },
-      "summary": "SERVER-131444 Avoid raising CollectionUUIDMismatch errors while running CheckMetadataConsistency (#59676)"
     }
   ],
   "merge_picks": [
-    {
-      "commit": {
-        "sha": "2c77b7d5b3aea24ebaf54cee98f4b6f446c00af7",
-        "short_sha": "2c77b7d5b3a",
-        "date": "2026-07-29T14:23:53+02:00",
-        "author": {
-          "name": "ppolato",
-          "email": "82828243+ppolato@users.noreply.github.com"
-        },
-        "summary": "SERVER-131686 Extend the value of the electionTimeoutMillis parameter for DisaggReplicaSet (#59672)"
-      },
-      "strategy_name": "branching_point",
-      "result": {
-        "branches": [
-          "master",
-          "mergai/master-2c77b7d5b3a/main",
-          "mongodb"
-        ]
-      }
-    },
     {
       "commit": {
         "sha": "d4a21c1760449130f5a9de51284688f2af3e3a44",
@@ -1225,7 +1105,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-31 13:08:24",
+  "generated_at": "2026-07-31 13:21:05",
   "branch_name": "master",
   "display_name": "master"
 }

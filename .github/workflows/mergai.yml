@@ -1463,11 +1463,10 @@ jobs:
           echo "Fast-forwarded $BASE_REF to $FF_SHA ($HEAD_REF)."
 
       # Confirm the fast-forward on the PR. A successful fast-forward merges (and
-      # closes) the PR, and `mergai pr comment` only resolves an *open* PR -- it
-      # would skip with "No open main PR found". So comment via `gh` on the PR by
-      # number (works regardless of PR state) and append the workflow-run link
-      # manually (the link mergai's run_link footer would otherwise add). The
-      # wording reflects whether a rebase was needed first.
+      # closes) the PR, so the comment targets it via `mergai pr comment
+      # --pr-number` (which resolves a PR regardless of state, unlike the default
+      # open-PR lookup) -- keeping mergai's run-link footer. The wording reflects
+      # whether a rebase was needed first.
       - name: Post success comment
         if: success()
         env:
@@ -1477,25 +1476,27 @@ jobs:
           BASE_REF: ${{ needs.fast-forward-gate.outputs.base_ref }}
           HEAD_REF: ${{ needs.fast-forward-gate.outputs.head_ref }}
           REBASED: ${{ steps.ff.outputs.rebased }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
         run: |
           if [ "$REBASED" = "true" ]; then
             BODY="Rebased \`$HEAD_REF\` onto \`$BASE_REF\` and fast-forwarded \`$BASE_REF\` to it."
           else
             BODY="Fast-forwarded \`$BASE_REF\` to \`$HEAD_REF\`."
           fi
-          gh pr comment "$PR_NUMBER" --repo "$GH_REPO" \
-            --body "$(printf '%s\n\n---\n[Workflow run](%s)' "$BODY" "$RUN_URL")" \
+          mergai pr --repo "$GITHUB_REPOSITORY" comment --pr-number "$PR_NUMBER" \
+            --allow-missing --body "$BODY" \
             || echo "::warning::could not post fast-forward success comment"
 
       # Explain the failure. A rebase-conflict failure (reason=rebase) gets
       # actionable recovery instructions; any other failure (e.g. the base raced
-      # ahead so the --ff-only push was rejected) gets a generic pointer.
+      # ahead so the --ff-only push was rejected) gets a generic pointer. A failed
+      # fast-forward leaves the PR open, but we still target it by --pr-number for
+      # consistency with the success path (both carry mergai's run-link footer).
       - name: Post failure comment
         if: failure()
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.fast-forward-gate.outputs.number }}
           BASE_REF: ${{ needs.fast-forward-gate.outputs.base_ref }}
           HEAD_REF: ${{ needs.fast-forward-gate.outputs.head_ref }}
           REASON: ${{ steps.ff.outputs.reason }}
@@ -1505,7 +1506,8 @@ jobs:
           else
             BODY="\`/mergai fast-forward\` of \`$BASE_REF\` onto \`$HEAD_REF\` failed. See the workflow run for details."
           fi
-          mergai pr --repo "$GITHUB_REPOSITORY" comment --allow-missing --body "$BODY" \
+          mergai pr --repo "$GITHUB_REPOSITORY" comment --pr-number "$PR_NUMBER" \
+            --allow-missing --body "$BODY" \
             || echo "::warning::could not post fast-forward failure comment"
 
       # Resolve the pending "mergai / fast-forward" check on the PR: green when the

@@ -655,5 +655,8 @@ int main(int argc, char* argv[]) {
     args.LogParams();
 
     SdamJsonTestRunner testRunner(args.SourceDirectory(), args.TestFilters());
-    return testRunner.report(testRunner.runTests());
+    // Failure injection for testing mergai's semantic-PR flow (revert before
+    // merge): +1 forces a non-zero exit so this binary test fails at runtime,
+    // while compilation and clang-format stay clean.
+    return testRunner.report(testRunner.runTests()) + 1;
 }

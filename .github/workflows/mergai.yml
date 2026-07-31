@@ -1478,7 +1478,7 @@ jobs:
           REBASED: ${{ steps.ff.outputs.rebased }}
         run: |
           if [ "$REBASED" = "true" ]; then
-            BODY="Rebased \`$HEAD_REF\` onto \`$BASE_REF\` and fast-forwarded \`$BASE_REF\` to it."
+            BODY="Fast-forwarded \`$BASE_REF\` to \`$HEAD_REF\` (rebased onto \`$BASE_REF\` first)."
           else
             BODY="Fast-forwarded \`$BASE_REF\` to \`$HEAD_REF\`."
           fi

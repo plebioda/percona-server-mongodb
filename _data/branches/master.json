@@ -7,7 +7,7 @@
   "divergence": {
     "commits_behind": 105,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.1676939725347224,
+    "unmerged_oldest_age_days": 2.176274664247685,
     "files_affected": 514,
     "total_additions": 23385,
     "total_deletions": 6429,
@@ -1108,7 +1108,6 @@
       "result": {
         "branches": [
           "master",
-          "mergai/master-0e934993a4a/conflict",
           "mergai/master-2c77b7d5b3a/main",
           "mongodb"
         ]
@@ -1170,26 +1169,6 @@
     },
     {
       "commit": {
-        "sha": "0e934993a4a0bc9a43e8d0c8a2a4b5b859e68830",
-        "short_sha": "0e934993a4a",
-        "date": "2026-07-29T20:38:09+00:00",
-        "author": {
-          "name": "auto-revert-app[bot]",
-          "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
-        },
-        "summary": "Revert \"SERVER-108218 Validate hybrid search subpipelines on sharded timeseries collections are rejected (#59701)\" (#59949)"
-      },
-      "strategy_name": "branching_point",
-      "result": {
-        "branches": [
-          "master",
-          "mergai/master-0e934993a4a/conflict",
-          "mongodb"
-        ]
-      }
-    },
-    {
-      "commit": {
         "sha": "0c04591b03c287d6c1b19f805c94c56ccef4c41c",
         "short_sha": "0c04591b03c",
         "date": "2026-07-30T10:53:43-04:00",
@@ -1236,7 +1215,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-07-31 11:58:11",
+  "generated_at": "2026-07-31 12:10:32",
   "branch_name": "master",
   "display_name": "master"
 }

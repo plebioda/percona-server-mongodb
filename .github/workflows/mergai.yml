@@ -1478,9 +1478,9 @@ jobs:
           REBASED: ${{ steps.ff.outputs.rebased }}
         run: |
           if [ "$REBASED" = "true" ]; then
-            BODY="Fast-forwarded \`$BASE_REF\` to \`$HEAD_REF\` (rebased onto \`$BASE_REF\` first)."
+            BODY="Fast-forwarded \`$HEAD_REF\` into \`$BASE_REF\` (rebased onto \`$BASE_REF\` first)."
           else
-            BODY="Fast-forwarded \`$BASE_REF\` to \`$HEAD_REF\`."
+            BODY="Fast-forwarded \`$HEAD_REF\` into \`$BASE_REF\`."
           fi
           mergai pr --repo "$GITHUB_REPOSITORY" comment --pr-number "$PR_NUMBER" \
             --allow-missing --body "$BODY" \

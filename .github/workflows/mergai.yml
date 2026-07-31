@@ -1193,26 +1193,135 @@ jobs:
             || echo "::warning::could not post rebase-success comment"
           echo "Rebase of $HEAD_REF onto $BASE_REF completed successfully"
 
-  # Fast-forward a mergai PR's base branch to the PR head, rebasing first when
-  # the base has advanced. Triggered by a `/mergai fast-forward` comment on the
-  # PR. This is the mergai-aware counterpart to the standalone `/fast-forward`
-  # (see fast-forward.yml): a plain fast-forward fails once the base branch moves
-  # past the point the mergai branch was cut from, because the head is no longer
-  # a descendant of the base. Rather than make a maintainer run `/mergai rebase`
-  # and then `/fast-forward` as two round-trips, this handler does both in one
-  # shot -- it rebases the mergai branch onto the current base tip
-  # (deterministically, reusing recorded conflict solutions, exactly like
-  # rebase-handle) and then fast-forwards the base onto the rebased head.
-  #
-  # Trust model mirrors the standalone fast-forward: advancing the protected base
-  # ref is gated by the 'push-approve' environment (a required reviewer approves
-  # the deployment), and the in-job permission check below is the second layer.
-  # The command filter and the mergai-branch check scope *what* it acts on.
-  fast-forward-handle:
+  # Gate + surface the `/mergai fast-forward` request on the PR. fast-forward-handle
+  # (below) is gated by the push-approve environment, but because this workflow is
+  # triggered by issue_comment its run is attributed to the *default branch*, so the
+  # environment approval gate would be invisible in the PR's checks section (unlike
+  # review-handle's pull_request_review path, where the run is tied to the PR head).
+  # This ungated gate job runs immediately and publishes a *pending* commit status on
+  # the PR head SHA, so the PR shows a "mergai / fast-forward" check waiting while a
+  # required reviewer approves the deployment -- the same idiom ci-gate/ci-handle use
+  # to make workflow_run jobs visible on a PR. It also does the cheap validation
+  # (open / same-repo / mergai / commenter permission) so an invalid or unauthorized
+  # request never creates an approval prompt: fast-forward-handle only runs when this
+  # gate sets proceed=true, and it resolves the pending check to success/failure.
+  fast-forward-gate:
     if: >-
       github.event_name == 'issue_comment'
       && github.event.issue.pull_request != null
       && contains(github.event.comment.body, '/mergai fast-forward')
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.pr.outputs.proceed }}
+      number: ${{ steps.pr.outputs.number }}
+      head_ref: ${{ steps.pr.outputs.head_ref }}
+      base_ref: ${{ steps.pr.outputs.base_ref }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
+          private-key: ${{ secrets.PSMDB_BOT_GH_APP_PRIVATE_KEY }}
+
+      # Resolve the PR (the issue_comment payload carries none of its refs) and
+      # confirm it is an open, same-repo mergai PR whose commenter may merge. Any
+      # failing check leaves proceed unset (fast-forward-handle is skipped) with an
+      # explanatory comment, and no pending approval check is published.
+      - name: Resolve and validate PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          PR_NUMBER='${{ github.event.issue.number }}'
+          read -r HEAD_REF BASE_REF STATE CROSS_REPO HEAD_SHA < <(gh pr view "$PR_NUMBER" \
+            --json headRefName,baseRefName,state,isCrossRepository,headRefOid \
+            --jq '"\(.headRefName) \(.baseRefName) \(.state) \(.isCrossRepository) \(.headRefOid)"')
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "Resolved PR #$PR_NUMBER (head: $HEAD_REF, base: $BASE_REF, state: $STATE, cross_repo: $CROSS_REPO, head_sha: $HEAD_SHA)"
+          # Only open PRs can be fast-forwarded.
+          if [ "$STATE" != "OPEN" ]; then
+            echo "PR #$PR_NUMBER is not open (state: $STATE); skipping."
+            gh pr comment "$PR_NUMBER" --body \
+              "\`/mergai fast-forward\` skipped: the pull request is not open (state: $STATE)."
+            exit 0
+          fi
+          # Fork PRs: the head branch does not exist in this repo, so we can
+          # neither rebase it nor push it back.
+          if [ "$CROSS_REPO" = "true" ]; then
+            echo "PR #$PR_NUMBER is a fork (cross-repository) PR; not supported."
+            gh pr comment "$PR_NUMBER" --body \
+              "\`/mergai fast-forward\` is not supported for pull requests from forks: the head branch must live in this repository."
+            exit 0
+          fi
+          # Only mergai branches carry the note context the rebase step needs.
+          case "$HEAD_REF" in
+            mergai/*) ;;
+            *)
+              echo "PR #$PR_NUMBER is not a mergai PR; skipping."
+              gh pr comment "$PR_NUMBER" --body \
+                "\`/mergai fast-forward\` only handles mergai PRs (it can rebase the mergai branch before fast-forwarding). For a regular branch, use \`/fast-forward\`."
+              exit 0 ;;
+          esac
+          # Defense-in-depth permission check (the push-approve environment on
+          # fast-forward-handle is the primary trust boundary). Only write/maintain/
+          # admin collaborators may advance the protected base ref, so an
+          # unauthorized comment never even creates an approval prompt.
+          LEVEL=$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq '.permission')
+          echo "Commenter $ACTOR permission: $LEVEL"
+          case "$LEVEL" in
+            admin|maintain|write) ;;
+            *)
+              echo "::error::User $ACTOR does not have permission to merge (permission: $LEVEL)"
+              gh pr comment "$PR_NUMBER" --body \
+                "\`/mergai fast-forward\` requires write access: @$ACTOR does not have permission to merge."
+              exit 0 ;;
+          esac
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
+      # Surface the request on the PR as a pending "mergai / fast-forward" check so
+      # its checks section shows the job waiting while approval is pending. Resolved
+      # by fast-forward-handle once it runs.
+      - name: Publish pending status (awaiting approval)
+        if: steps.pr.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          gh api "repos/$GH_REPO/statuses/$HEAD_SHA" \
+            -f state="pending" \
+            -f context="mergai / fast-forward" \
+            -f target_url="$RUN_URL" \
+            -f description="waiting for required-reviewer approval" \
+            || echo "::warning::could not publish pending fast-forward status"
+
+  # Fast-forward a mergai PR's base branch to the PR head, rebasing first when
+  # the base has advanced. Runs only after fast-forward-gate validated the request
+  # (proceed=true) and published the pending PR check. The mergai-aware counterpart
+  # to the standalone `/fast-forward` (see fast-forward.yml): a plain fast-forward
+  # fails once the base branch moves past the point the mergai branch was cut from,
+  # because the head is no longer a descendant of the base. Rather than make a
+  # maintainer run `/mergai rebase` and then `/fast-forward` as two round-trips, this
+  # handler does both in one shot -- it rebases the mergai branch onto the current
+  # base tip (deterministically, reusing recorded conflict solutions, exactly like
+  # rebase-handle) and then fast-forwards the base onto the rebased head.
+  #
+  # Trust model mirrors the standalone fast-forward: advancing the protected base
+  # ref is gated by the 'push-approve' environment (a required reviewer approves the
+  # deployment) -- visible on the PR via the gate's pending check -- and the gate's
+  # permission check is the second layer. This job resolves the pending check to
+  # success/failure.
+  fast-forward-handle:
+    needs: fast-forward-gate
+    if: needs.fast-forward-gate.outputs.proceed == 'true'
     environment: push-approve
     runs-on: ubuntu-latest
     # Share the per-PR branch-mutation lock with rebase-handle / review-handle:
@@ -1232,81 +1341,33 @@ jobs:
           app-id: ${{ secrets.PSMDB_BOT_GH_APP_ID }}
           private-key: ${{ secrets.PSMDB_BOT_GH_APP_PRIVATE_KEY }}
 
-      # Resolve the PR number, head branch and base branch (the issue_comment
-      # payload carries none of them), and confirm this is an open, same-repo
-      # mergai PR. A closed PR, a fork PR, or a non-mergai PR sets is_mergai=false
-      # and every later step is skipped (the job ends green).
-      - name: Resolve PR
-        id: pr
+      # Approval was granted (this job is past the push-approve gate): flip the
+      # pending "mergai / fast-forward" PR check from "waiting for approval" to
+      # "running" so the PR reflects that the work has started.
+      - name: Mark fast-forward running
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ needs.fast-forward-gate.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
         run: |
-          PR_NUMBER='${{ github.event.issue.number }}'
-          read -r HEAD_REF BASE_REF STATE CROSS_REPO < <(gh pr view "$PR_NUMBER" \
-            --json headRefName,baseRefName,state,isCrossRepository \
-            --jq '"\(.headRefName) \(.baseRefName) \(.state) \(.isCrossRepository)"')
-          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
-          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
-          echo "Resolved PR #$PR_NUMBER (head: $HEAD_REF, base: $BASE_REF, state: $STATE, cross_repo: $CROSS_REPO)"
-          # Only open PRs can be fast-forwarded.
-          if [ "$STATE" != "OPEN" ]; then
-            echo "is_mergai=false" >> "$GITHUB_OUTPUT"
-            echo "PR #$PR_NUMBER is not open (state: $STATE); skipping."
-            gh pr comment "$PR_NUMBER" --body \
-              "\`/mergai fast-forward\` skipped: the pull request is not open (state: $STATE)."
-            exit 0
-          fi
-          # Fork PRs: the head branch does not exist in this repo, so we can
-          # neither rebase it nor push it back. Bail out with a clear comment.
-          if [ "$CROSS_REPO" = "true" ]; then
-            echo "is_mergai=false" >> "$GITHUB_OUTPUT"
-            echo "PR #$PR_NUMBER is a fork (cross-repository) PR; /mergai fast-forward is not supported."
-            gh pr comment "$PR_NUMBER" --body \
-              "\`/mergai fast-forward\` is not supported for pull requests from forks: the head branch must live in this repository."
-            exit 0
-          fi
-          case "$HEAD_REF" in
-            mergai/*) echo "is_mergai=true" >> "$GITHUB_OUTPUT" ;;
-            *)
-              echo "is_mergai=false" >> "$GITHUB_OUTPUT"
-              echo "PR #$PR_NUMBER is not a mergai PR; skipping."
-              gh pr comment "$PR_NUMBER" --body \
-                "\`/mergai fast-forward\` only handles mergai PRs (it can rebase the mergai branch before fast-forwarding). For a regular branch, use \`/fast-forward\`." ;;
-          esac
-
-      # Defense-in-depth permission check (the push-approve environment is the
-      # primary trust boundary). Only write/maintain/admin collaborators may
-      # advance the protected base ref, mirroring the standalone fast-forward.
-      - name: Check merge permission
-        if: steps.pr.outputs.is_mergai == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          ACTOR: ${{ github.actor }}
-        run: |
-          LEVEL=$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq '.permission')
-          echo "Commenter $ACTOR permission: $LEVEL"
-          case "$LEVEL" in
-            admin|maintain|write) echo "$ACTOR is authorized to fast-forward." ;;
-            *)
-              echo "::error::User $ACTOR does not have permission to merge (permission: $LEVEL)"
-              exit 1 ;;
-          esac
+          gh api "repos/$GH_REPO/statuses/$HEAD_SHA" \
+            -f state="pending" \
+            -f context="mergai / fast-forward" \
+            -f target_url="$RUN_URL" \
+            -f description="approved; running" \
+            || echo "::warning::could not update fast-forward status"
 
       - name: Checkout PR branch
-        if: steps.pr.outputs.is_mergai == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ steps.pr.outputs.head_ref }}
+          ref: ${{ needs.fast-forward-gate.outputs.head_ref }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
       # No AI tokens needed: the rebase (when required) auto-resolves only from
       # previously recorded solutions (deterministic), like rebase-handle.
       - name: Setup workflow environment
-        if: steps.pr.outputs.is_mergai == 'true'
         uses: ./.github/actions/setup-mergai-workflow
         with:
           setup-gcp: "false"
@@ -1331,13 +1392,12 @@ jobs:
       #      --ff-only and push it.
       - name: Fast-forward (rebase if needed)
         id: ff
-        if: steps.pr.outputs.is_mergai == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
-          BASE_REF: ${{ steps.pr.outputs.base_ref }}
+          PR_NUMBER: ${{ needs.fast-forward-gate.outputs.number }}
+          HEAD_REF: ${{ needs.fast-forward-gate.outputs.head_ref }}
+          BASE_REF: ${{ needs.fast-forward-gate.outputs.base_ref }}
         run: |
           set -e
           echo "Fast-forwarding $BASE_REF to $HEAD_REF (rebasing first if needed)"
@@ -1372,24 +1432,30 @@ jobs:
             FF_SHA=$(git rev-parse HEAD)
           fi
 
-          # Fast-forward the base branch to the head tip and push it. --ff-only
-          # guarantees no merge commit is created; the push is rejected (and
-          # surfaced as a failure) if the base advanced again in the meantime.
-          git checkout "$BASE_REF"
-          git merge --ff-only "$FF_SHA"
-          git push origin "$BASE_REF"
+          # Fast-forward the base branch to the head tip by pushing the head SHA
+          # straight to the base ref. A non-force push is accepted by the remote
+          # only when it is a genuine fast-forward (origin/<base> is an ancestor
+          # of the head tip -- guaranteed above by the ancestor check or by the
+          # rebase), so this enforces --ff-only semantics AND avoids a local
+          # `git checkout <base>`: `mergai fork init` adds an `upstream` remote,
+          # so a bare `git checkout master` matches multiple remote-tracking
+          # branches (origin/master + upstream/master) and fails with exit 128.
+          git push origin "$FF_SHA:refs/heads/$BASE_REF"
+          # Expose the tip we fast-forwarded to so the status step can also
+          # resolve the check on the rebased head when the head SHA changed.
+          echo "final_sha=$FF_SHA" >> "$GITHUB_OUTPUT"
           echo "Fast-forwarded $BASE_REF to $FF_SHA ($HEAD_REF)."
 
       # Confirm the fast-forward on the PR. Posted via `mergai pr comment` (not
       # `gh`) so the comment carries the config-gated run-link footer, like every
       # other bot comment.
       - name: Post success comment
-        if: steps.pr.outputs.is_mergai == 'true' && success()
+        if: success()
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
-          BASE_REF: ${{ steps.pr.outputs.base_ref }}
-          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+          BASE_REF: ${{ needs.fast-forward-gate.outputs.base_ref }}
+          HEAD_REF: ${{ needs.fast-forward-gate.outputs.head_ref }}
         run: |
           mergai pr --repo "$GITHUB_REPOSITORY" comment --allow-missing --body \
             "Fast-forwarded \`$BASE_REF\` to \`$HEAD_REF\`." \
@@ -1399,12 +1465,12 @@ jobs:
       # actionable recovery instructions; any other failure (e.g. the base raced
       # ahead so the --ff-only push was rejected) gets a generic pointer.
       - name: Post failure comment
-        if: steps.pr.outputs.is_mergai == 'true' && failure()
+        if: failure()
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
-          BASE_REF: ${{ steps.pr.outputs.base_ref }}
-          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+          BASE_REF: ${{ needs.fast-forward-gate.outputs.base_ref }}
+          HEAD_REF: ${{ needs.fast-forward-gate.outputs.head_ref }}
           REASON: ${{ steps.ff.outputs.reason }}
         run: |
           if [ "$REASON" = "rebase" ]; then
@@ -1414,3 +1480,38 @@ jobs:
           fi
           mergai pr --repo "$GITHUB_REPOSITORY" comment --allow-missing --body "$BODY" \
             || echo "::warning::could not post fast-forward failure comment"
+
+      # Resolve the pending "mergai / fast-forward" check on the PR: green when the
+      # fast-forward succeeded, red otherwise. Publishes on the SHA the gate posted
+      # the pending status to; if a rebase moved the head, also publishes on the new
+      # tip so a still-open PR reflects the outcome on its current head.
+      - name: Report fast-forward status on the PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          GATE_SHA: ${{ needs.fast-forward-gate.outputs.head_sha }}
+          FINAL_SHA: ${{ steps.ff.outputs.final_sha }}
+          BASE_REF: ${{ needs.fast-forward-gate.outputs.base_ref }}
+          JOB_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          case "$JOB_STATUS" in
+            success)   STATE=success; DESC="fast-forwarded $BASE_REF" ;;
+            cancelled) STATE=error;   DESC="cancelled" ;;
+            *)         STATE=failure; DESC="fast-forward failed" ;;
+          esac
+          gh api "repos/$GH_REPO/statuses/$GATE_SHA" \
+            -f state="$STATE" \
+            -f context="mergai / fast-forward" \
+            -f target_url="$RUN_URL" \
+            -f description="$DESC" \
+            || echo "::warning::could not publish fast-forward status"
+          if [ -n "$FINAL_SHA" ] && [ "$FINAL_SHA" != "$GATE_SHA" ]; then
+            gh api "repos/$GH_REPO/statuses/$FINAL_SHA" \
+              -f state="$STATE" \
+              -f context="mergai / fast-forward" \
+              -f target_url="$RUN_URL" \
+              -f description="$DESC" \
+              || echo "::warning::could not publish fast-forward status on rebased head"
+          fi

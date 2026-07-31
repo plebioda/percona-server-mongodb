@@ -1211,6 +1211,12 @@ jobs:
       && github.event.issue.pull_request != null
       && contains(github.event.comment.body, '/mergai fast-forward')
     runs-on: ubuntu-latest
+    # The status is published with the default GITHUB_TOKEN (see the status step)
+    # so it is attributed to github-actions[bot] -- matching the icon of the other
+    # mergai commit statuses (ci-gate/ci-handle). Restrict the token accordingly;
+    # all other calls in this job use the GitHub App token.
+    permissions:
+      statuses: write # publish the "mergai / fast-forward" commit status
     outputs:
       proceed: ${{ steps.pr.outputs.proceed }}
       number: ${{ steps.pr.outputs.number }}
@@ -1291,7 +1297,9 @@ jobs:
       - name: Publish pending status (awaiting approval)
         if: steps.pr.outputs.proceed == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Default token so the status is attributed to github-actions[bot],
+          # matching the icon of the other mergai commit statuses.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
@@ -1324,6 +1332,10 @@ jobs:
     if: needs.fast-forward-gate.outputs.proceed == 'true'
     environment: push-approve
     runs-on: ubuntu-latest
+    # Commit statuses are published with the default GITHUB_TOKEN (github-actions[bot])
+    # to match the other mergai statuses' icon; all real work uses the App token.
+    permissions:
+      statuses: write # publish the "mergai / fast-forward" commit status
     # Share the per-PR branch-mutation lock with rebase-handle / review-handle:
     # this job rebases and force-pushes the head branch just like rebase-handle,
     # so it must not run concurrently with a `/mergai rebase` or `/mergai review
@@ -1346,7 +1358,9 @@ jobs:
       # "running" so the PR reflects that the work has started.
       - name: Mark fast-forward running
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Default token so the status is attributed to github-actions[bot],
+          # matching the icon of the other mergai commit statuses.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ needs.fast-forward-gate.outputs.head_sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
@@ -1488,7 +1502,9 @@ jobs:
       - name: Report fast-forward status on the PR
         if: always()
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Default token so the status is attributed to github-actions[bot],
+          # matching the icon of the other mergai commit statuses.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           GATE_SHA: ${{ needs.fast-forward-gate.outputs.head_sha }}
           FINAL_SHA: ${{ steps.ff.outputs.final_sha }}

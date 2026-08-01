@@ -1,0 +1,29 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "6d3da57ac5e7e2fe4b92a87e3849906e8240fd35",
+    "merge_commit": "8c9f0d06cee875c13c1ff04a941df790e25650f4"
+  },
+  "mergai_version": "0.1.dev1+g0a8015bb6",
+  "solutions": [
+    {
+      "type": "conflict_resolution",
+      "response": {
+        "summary": "Merge pull request #372 from plebioda/mergai/master-8c9f0d06cee/semantic",
+        "resolved": {},
+        "unresolved": {},
+        "modified": {
+          "src/mongo/client/sdam/sdam_json_test_runner.cpp": "Modified by human",
+          "src/mongo/client/sdam/server_selection_json_test_runner.cpp": "Modified by human"
+        },
+        "review_notes": "Resolve semantic conflicts for merge '8c9f0d06cee' into 'master'"
+      },
+      "author": {
+        "name": "Pawel Lebioda",
+        "email": "pawel.lebioda89@gmail.com",
+        "type": "human"
+      },
+      "commit_sha": "6a96c5ee3811b9eba0becacaa9594f2b9895168c"
+    }
+  ]
+}

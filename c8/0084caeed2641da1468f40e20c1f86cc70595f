@@ -1,0 +1,29 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "6d3da57ac5e7e2fe4b92a87e3849906e8240fd35",
+    "merge_commit": "8c9f0d06cee875c13c1ff04a941df790e25650f4"
+  },
+  "mergai_version": "0.1.dev1+g0a8015bb6",
+  "solutions": [
+    {
+      "type": "conflict_resolution",
+      "response": {
+        "summary": "TEST: inject runtime failure in sdam/server_selection binary tests",
+        "resolved": {},
+        "unresolved": {},
+        "modified": {
+          "src/mongo/client/sdam/sdam_json_test_runner.cpp": "Modified by human",
+          "src/mongo/client/sdam/server_selection_json_test_runner.cpp": "Modified by human"
+        },
+        "review_notes": "Force sdam_json_test and server_selection_json_test to exit non-zero so the\nbuild-and-test binary-tests job fails at runtime, to exercise mergai's\nsemantic-PR flow. Only the recently added SDAM binary tests fail; compilation,\nformat, and every other suite (dbtest, unittests, jstests) stay green.\n\nRevert before merge."
+      },
+      "author": {
+        "name": "Pawel Lebioda",
+        "email": "pawel.lebioda@percona.com",
+        "type": "human"
+      },
+      "commit_sha": "c80084caeed2641da1468f40e20c1f86cc70595f"
+    }
+  ]
+}

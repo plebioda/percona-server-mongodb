@@ -16,6 +16,7 @@
 #include "mongo/db/query/compiler/optimizer/join/cardinality_estimator.h"
 #include "mongo/db/query/compiler/optimizer/join/catalog_stats.h"
 #include "mongo/db/query/compiler/optimizer/join/hint.h"
+#include "mongo/db/query/compiler/optimizer/join/index_fingerprint.h"
 #include "mongo/db/query/compiler/optimizer/join/join_cost_estimator_impl.h"
 #include "mongo/db/query/compiler/optimizer/join/join_reordering_context.h"
 #include "mongo/db/query/compiler/optimizer/join/reorder_joins.h"
@@ -139,9 +140,7 @@ bool isCollectionOrViewEligibleForJoinOpt(const CollectionOrViewAcquisition& col
     return coll.isCollection() && isCollectionEligibleForJoinOpt(coll.getCollection());
 }
 
-bool isAggEligibleForJoinReordering(const MultipleCollectionAccessor& mca,
-                                    const Pipeline& pipeline,
-                                    const boost::optional<BSONObj>& queryHint) {
+bool isJoinOrderingEnabled(const ExpressionContext& ctx) {
     // The join optimizer unconditionally uses CBR, if the feature flag is disabled
     // this also disables join ordering.
     // TODO: SERVER-129697 Remove this check when the feature flag is removed.
@@ -149,27 +148,38 @@ bool isAggEligibleForJoinReordering(const MultipleCollectionAccessor& mca,
         return false;
     }
 
-    const auto& queryKnob = pipeline.getContext()->getQueryKnobConfiguration();
-
+    const auto& queryKnob = ctx.getQueryKnobConfiguration();
     if (!queryKnob.isJoinOrderingEnabled()) {
         return false;
     }
-
     if (queryKnob.isForceClassicEngineEnabled()) {
+        return false;
+    }
+    return true;
+}
+
+bool isAggEligibleForJoinReordering(const MultipleCollectionAccessor& mca,
+                                    const Pipeline& pipeline,
+                                    const boost::optional<BSONObj>& queryHint) {
+    if (!AggJoinModel::pipelineEligibleForJoinReordering(pipeline)) {
+        // Return false- don't want to record any kind of metric for this.
         return false;
     }
 
     if (queryHint.has_value() && !queryHint->isEmpty()) {
+        // TODO SERVER-132003: Record reason as JoinFallbackReason::kUserHintPresent.
         return false;
     }
 
     if (!mca.hasMainCollection()) {
         // We can't determine if the base collection is sharded.
+        // TODO SERVER-132003: Record reason as JoinFallbackReason::kNoMainCollection.
         return false;
     }
 
     // Ensure that the base collection is eligible. If not, this aggregation can't participate in
     // join optimization.
+    // TODO SERVER-132003: Record reason.
     if (!isCollectionEligibleForJoinOpt(mca.getMainCollectionAcquisition())) {
         return false;
     }
@@ -178,6 +188,7 @@ bool isAggEligibleForJoinReordering(const MultipleCollectionAccessor& mca,
     // TODO SERVER-125401: instead of falling back, shorten the prefix.
     for (const auto& [_, collAcq] : mca.getSecondaryCollectionAcquisitions()) {
         if (!isCollectionOrViewEligibleForJoinOpt(collAcq)) {
+            // TODO SERVER-132003: Record reason.
             return false;
         }
     }
@@ -191,10 +202,12 @@ bool isAggEligibleForJoinReordering(const MultipleCollectionAccessor& mca,
         }
     });
     if (foundCrossDbLookup) {
+        // TODO SERVER-132003: Record reason as JoinFallbackReason::kCrossDbLookup.
         return false;
     }
 
-    return AggJoinModel::pipelineEligibleForJoinReordering(pipeline);
+    // Yay! Eligible.
+    return true;
 }
 
 bool indexIsValidForINLJ(const std::shared_ptr<const IndexCatalogEntry>& ice) {
@@ -344,19 +357,75 @@ void recordSuffixLoweringMetrics(const Pipeline* suffix,
     metrics.numResidualClassicSources = suffix ? suffix->getSources().size() : 0;
 }
 
+/**
+ * Returns true if the cached entry 'hit' can still be used against the current catalog, and false
+ * if it is stale and the query must be replanned.
+ *
+ * A bumped collection version alone is not enough to reject the entry: the DDL responsible may
+ * have touched an index that is irrelevant to the cached plan. In that case we use relevant-index
+ * fingerprints, which only cover indexes usable for the fields each join graph node actually
+ * references.
+ */
+bool validateCacheEntry(JoinPlanCacheEntry& hit,
+                        const MultipleCollectionAccessor& mca,
+                        const AggJoinModel& model,
+                        const AvailableIndexes& perCollIdxs) {
+    auto cachedTags = hit.getCollectionTags();
+    switch (classifyCollectionTags(cachedTags, mca)) {
+        case CollectionTagStatus::kCurrent:
+            // Nothing has changed since the entry was cached, so no fingerprinting is needed.
+            return true;
+        case CollectionTagStatus::kStale:
+            // A stale tag can mean a dropped collection or a sample refresh.
+            return false;
+        case CollectionTagStatus::kNeedsIndexRevalidation:
+            break;
+    }
+
+    tassert(13036801,
+            "Cached join plan must have one index fingerprint per join graph node",
+            hit.nodeFingerprints.size() == model.getGraph().numNodes());
+
+    auto currentFingerprints =
+        makeNodeFingerprints(model.getGraph(), model.getResolvedPaths(), perCollIdxs);
+    if (hit.nodeFingerprints != currentFingerprints) {
+        LOGV2_DEBUG(
+            13036802, 5, "Join plan cache entry invalidated by a change to a relevant index");
+        return false;
+    }
+
+    // The catalog change left every relevant index untouched, so this entry is valid against the
+    // current collection state. Adopt that state's version tags so subsequent lookups take the
+    // fast path above instead of re-fingerprinting on every query.
+    auto currentTags = makeCollectionTags(mca);
+    hit.refreshCollectionTags(currentTags);
+
+    LOGV2_DEBUG(13036803,
+                5,
+                "Join plan cache entry revalidated: the catalog change did not affect any relevant "
+                "index",
+                "cachedVersions"_attr = collectionVersionsForLog(cachedTags),
+                "currentVersions"_attr = collectionVersionsForLog(currentTags));
+    return true;
+}
+
 std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> checkPlanCacheForPlan(
     OperationContext* opCtx,
     const JoinPlanCacheKey& cacheKey,
     const MultipleCollectionAccessor& mca,
     const AggJoinModel& model,
+    const AvailableIndexes& perCollIdxs,
     PlanYieldPolicy::YieldPolicy yieldPolicy,
     OpDebug::JoinOptimizationMetrics& metrics) {
     auto& cache = JoinPlanCache::get(opCtx->getServiceContext());
     auto hit = cache.lookup(cacheKey);
+    if (!hit) {
+        return nullptr;
+    }
+
     // TODO (SERVER-129268): Evict stale entries.
-    if (hit && areCollectionTagsCurrent(hit->collections, mca)) {
+    if (validateCacheEntry(*hit, mca, model, perCollIdxs)) {
         LOGV2_DEBUG(11083906, 5, "Join plan cache hit, skipping join optimization");
-        auto perCollIdxs = extractINLJEligibleIndexesFromGraph(model.getGraph(), mca);
         auto qsn = fromCachedJoinPlan(opCtx, model.getGraph(), mca, perCollIdxs, *hit->joinTree);
         auto winnerSoln = std::make_unique<QuerySolution>();
         winnerSoln->setRoot(std::move(qsn));
@@ -412,6 +481,12 @@ StatusWith<JoinReorderedExecutorResult> getJoinReorderedExecutor(
     const boost::optional<BSONObj>& queryHint,
     OperationContext* opCtx,
     const boost::intrusive_ptr<ExpressionContext> expCtx) {
+    // Don't proceed if join optimization is not enabled.
+    if (!isJoinOrderingEnabled(*expCtx)) {
+        return Status(ErrorCodes::QueryFeatureNotAllowed,
+                      "Pipeline or collection ineligible for join-reordering");
+    }
+
     // Quick eligibility check.
     if (!isAggEligibleForJoinReordering(mca, pipeline, queryHint)) {
         return Status(ErrorCodes::QueryFeatureNotAllowed,
@@ -452,6 +527,7 @@ StatusWith<JoinReorderedExecutorResult> getJoinReorderedExecutor(
                                                return !mca.knowsNamespace(lookup->getFromNs());
                                            });
     if (missingAcquisitions) {
+        metrics.fallbackReason = JoinFallbackReason::kMissingForeignAcquisition;
         return Status(
             ErrorCodes::QueryFeatureNotAllowed,
             "Pipeline ineligible for join-reordering due to missing foreign namespace acquisition");
@@ -479,10 +555,15 @@ StatusWith<JoinReorderedExecutorResult> getJoinReorderedExecutor(
     const bool useJoinPlanCache = !hintedStrat &&
         qkc.getJoinReorderMode() != JoinReorderModeEnum::kRandom && qkc.getEnableJoinPlanCache() &&
         !expCtx->getExplain().has_value();
+
+    // 'cacheKey' and 'cacheEligibleIdxs' are set iff 'useJoinPlanCache' is true.
     boost::optional<JoinPlanCacheKey> cacheKey;
+    boost::optional<AvailableIndexes> cacheEligibleIdxs;
     if (useJoinPlanCache) {
         cacheKey = makeJoinPlanCacheKey(model.getGraph(), model.getResolvedPaths(), mca);
-        auto exec = checkPlanCacheForPlan(opCtx, *cacheKey, mca, model, yieldPolicy, metrics);
+        cacheEligibleIdxs = extractINLJEligibleIndexesFromGraph(model.getGraph(), mca);
+        auto exec = checkPlanCacheForPlan(
+            opCtx, *cacheKey, mca, model, *cacheEligibleIdxs, yieldPolicy, metrics);
         if (exec) {
             joinPlanCacheHits.increment(1);
             return JoinReorderedExecutorResult{.executor = std::move(exec),
@@ -505,6 +586,7 @@ StatusWith<JoinReorderedExecutorResult> getJoinReorderedExecutor(
     auto swAccessPlans =
         singleTableAccessPlans(opCtx, mca, model.getGraph(), samplingEstimators, peMetrics);
     if (!swAccessPlans.isOK()) {
+        metrics.fallbackReason = JoinFallbackReason::kCBRFailedToGetSingleTableAccess;
         return swAccessPlans.getStatus();
     }
     auto singleTableAccess = std::move(swAccessPlans.getValue());
@@ -590,8 +672,18 @@ StatusWith<JoinReorderedExecutorResult> getJoinReorderedExecutor(
 
     // Store the winning plan in the join plan cache for future queries with the same shape.
     if (cacheWinningPlan && reordered.cachedJoinPlan) {
+        tassert(13036804,
+                "Join plan cache key must be set when the join plan cache is in use",
+                cacheKey.has_value());
+        tassert(13036805,
+                "Join plan cache eligible indexes must be set when the join plan cache is in use",
+                cacheEligibleIdxs.has_value());
+
         auto entry = std::make_unique<JoinPlanCacheEntry>(
-            std::move(reordered.cachedJoinPlan), reordered.baseNode, makeCollectionTags(mca));
+            std::move(reordered.cachedJoinPlan),
+            reordered.baseNode,
+            makeCollectionTags(mca),
+            makeNodeFingerprints(model.getGraph(), model.getResolvedPaths(), *cacheEligibleIdxs));
         JoinPlanCache::get(opCtx->getServiceContext()).put(std::move(*cacheKey), std::move(entry));
     }
 

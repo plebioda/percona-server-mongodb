@@ -16,4 +16,8 @@ IngressRequestAdmissionContext& IngressRequestAdmissionContext::get(OperationCon
     return contextDecoration(opCtx);
 }
 
+OperationContext* IngressRequestAdmissionContext::getOperationContext() {
+    return contextDecoration.owner(this);
+}
+
 }  // namespace mongo

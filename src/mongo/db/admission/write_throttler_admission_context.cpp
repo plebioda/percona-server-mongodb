@@ -16,4 +16,8 @@ WriteThrottlerAdmissionContext& WriteThrottlerAdmissionContext::get(OperationCon
     return contextDecoration(opCtx);
 }
 
+OperationContext* WriteThrottlerAdmissionContext::getOperationContext() {
+    return contextDecoration.owner(this);
+}
+
 }  // namespace mongo

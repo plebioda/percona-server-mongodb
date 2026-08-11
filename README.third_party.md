@@ -74,6 +74,7 @@ a notice will be included in
 | [timelib]                                            | MIT                                            | 2022.13                                  |                      | ✗                               |
 | [Unicode Character Database]                         | Unicode-DFS-2016                               | 8.0.0                                    | ✗                    | ✗                               |
 | [valgrind.h]                                         | BSD-4-Clause                                   | 3.17.0                                   |                      | ✗                               |
+| [xxHash]                                             | BSD-2-Clause                                   | 0.8.3                                    | ✗                    | ✗                               |
 | [yaml-cpp]                                           | MIT                                            | 0.6.3                                    |                      | ✗                               |
 | [zlib]                                               | Zlib                                           | 1.3.2                                    | ✗                    | ✗                               |
 | [Zstandard (zstd)]                                   | BSD-3-Clause OR GPL-2.0-only                   | 1.5.5                                    | ✗                    | ✗                               |
@@ -126,28 +127,13 @@ a notice will be included in
 [rnp]: https://github.com/rnpgp/rnp
 [s2n-tls TLS library]: https://github.com/aws/s2n-tls.git
 [siphash]: https://github.com/veorq/siphash/
-[snappy]: https://github.com/google/tcmalloc.git
+[snappy]: https://github.com/google/snappy.git
 [tcmalloc]: https://github.com/google/tcmalloc.git
 [timelib]: https://github.com/derickr/timelib.git
 [valgrind.h]: https://sourceware.org/git/valgrind.git
+[xxHash]: https://github.com/Cyan4973/xxHash.git
 [yaml-cpp]: https://github.com/jbeder/yaml-cpp.git
 [zlib]: https://zlib.net/fossils/
-
-## WiredTiger Vendored Test Libraries
-
-The following libraries are transitively included by WiredTiger,
-and are used by that component for testing. They don't appear in
-released binary artifacts.
-
-| Name                           |
-| ------------------------------ |
-| pkg:pypi/concurrencytest@0.1.2 |
-| pkg:pypi/discover@0.4.0        |
-| pkg:pypi/extras@0.0.3          |
-| pkg:pypi/iso8601@2.1.0         |
-| pkg:pypi/python-subunit@1.4.4  |
-| pkg:pypi/testscenarios@0.4     |
-| pkg:pypi/testtools@2.7.1       |
 
 ## Dynamically Linked Libraries
 

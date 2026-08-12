@@ -1636,8 +1636,10 @@ boost::optional<int64_t> getValidationHash(const OplogEntry& op) {
 }
 
 // Compares 'actualHash', recomputed by this non-primary, against the hash the primary recorded on
-// 'op', and fasserts on mismatch. 'diagnosticDoc' is used only to compute the field-level diff. It
-// is the post-image for inserts, and the pre-image for deletes and updates.
+// 'op'. On mismatch this fasserts, or only logs when
+// 'continuousInternodeValidationFatalOnMismatch' is disabled. 'diagnosticDoc' is used only to
+// compute the field-level diff. It is the post-image for inserts, and the pre-image for deletes and
+// updates.
 void verifyValidationHash(OperationContext* opCtx,
                           const CollectionPtr& collection,
                           const RecordId& recordId,
@@ -1660,6 +1662,22 @@ void verifyValidationHash(OperationContext* opCtx,
         : doc_diff::computeInlineDiff(diagnosticDoc, storedDocument);
 
     const HostAndPort nodeId = repl::ReplicationCoordinator::get(opCtx)->getMyHostAndPort();
+
+    if (!continuousInternodeValidationFatalOnMismatch.load()) {
+        LOGV2_ERROR(12882800,
+                    "Document validation hash mismatch",
+                    "expectedHash"_attr = *expectedHash,
+                    "actualHash"_attr = actualHash,
+                    logAttrs(op.getNss()),
+                    "id"_attr = redact(op.getIdElement().wrap()),
+                    "recordId"_attr = recordId,
+                    "timestamp"_attr = op.getTimestamp().toString(),
+                    "opType"_attr = idl::serialize(op.getOpType()),
+                    "nodeId"_attr = nodeId,
+                    "fieldLevelDiff"_attr = (fieldLevelDiff ? redact(*fieldLevelDiff).toString()
+                                                            : std::string("<not derivable>")));
+        return;
+    }
 
     LOGV2_FATAL(12851600,
                 "Document validation hash mismatch",
@@ -3276,6 +3294,21 @@ Status applyContainerOperations(OperationContext* opCtx,
                                 OplogApplication::Mode mode) {
     uassert(12337300, "applyContainerOperations requires at least one op", !ops.empty());
 
+    // A replicated fast count store can legitimately diverge from the state the sync source's oplog
+    // assumes, so mismatching writes to fast count idents self-heal: an update of a missing key
+    // inserts, an insert of an existing key updates, and a delete of a missing key is a no-op. This
+    // applies:
+    //  - During initial sync oplog application, where the seeded store reflects the sync source's
+    //    state at clone time rather than at each replayed flush.
+    //  - In any mode when the persistence provider relaxes container oplog constraints:
+    //    listCollections seeding cannot transfer entries for namespaces initial sync does not clone
+    //    (such as collections have been dropped but not yet flushed or the oplog since it is in the
+    //    local db and has a unique uuid on each node)
+    const bool allowFastCountSelfHealing = mode == OplogApplication::Mode::kInitialSync ||
+        rss::ReplicatedStorageService::get(opCtx)
+            .getPersistenceProvider()
+            .relaxContainerOplogConstraints();
+
     const auto& firstOp = ops.front();
     auto* engine = opCtx->getServiceContext()->getStorageEngine();
     auto* ru = shard_role_details::getRecoveryUnit(opCtx);
@@ -3421,6 +3454,12 @@ Status applyContainerOperations(OperationContext* opCtx,
                         // Single int-keyed insert. 'v' is optional; an absent value is empty.
                         const auto valSpan = maybeVal.value_or(ContainerVal{}).data();
                         auto status = cursor->insert(*ru, key, valSpan);
+                        // Initial sync may have seeded an entry that a replayed flush from the sync
+                        // source also inserts; demote the insert to an update.
+                        if (status == ErrorCodes::KeyExists && allowFastCountSelfHealing &&
+                            ident::isReplicatedFastCountIdent(ident)) {
+                            status = cursor->update(*ru, key, valSpan);
+                        }
                         if (status.isOK()) {
                             opObserver->onContainerInsert(opCtx, ident, key, valSpan);
                         }
@@ -3430,6 +3469,12 @@ Status applyContainerOperations(OperationContext* opCtx,
                         // Single bytes-keyed insert. 'v' is optional; an absent value is empty.
                         const auto valSpan = maybeVal.value_or(ContainerVal{}).data();
                         auto status = cursor->insert(*ru, key, valSpan);
+                        // Initial sync may have seeded an entry that a replayed flush from the sync
+                        // source also inserts; demote the insert to an update.
+                        if (status == ErrorCodes::KeyExists && allowFastCountSelfHealing &&
+                            ident::isReplicatedFastCountIdent(ident)) {
+                            status = cursor->update(*ru, key, valSpan);
+                        }
                         if (status.isOK()) {
                             opObserver->onContainerInsert(opCtx, ident, key, valSpan);
                         }
@@ -3449,6 +3494,12 @@ Status applyContainerOperations(OperationContext* opCtx,
                     [&](const std::vector<std::span<const char>>&) -> Status { MONGO_UNREACHABLE; },
                     [&](auto key) -> Status {
                         auto status = cursor->update(*ru, key, valSpan);
+                        // Initial sync may have seeded a store that is missing an entry the sync
+                        // source flushed later; promote the update to an insert.
+                        if (status == ErrorCodes::NoSuchKey && allowFastCountSelfHealing &&
+                            ident::isReplicatedFastCountIdent(ident)) {
+                            status = cursor->insert(*ru, key, valSpan);
+                        }
                         if (status.isOK()) {
                             opObserver->onContainerUpdate(opCtx, ident, key, valSpan);
                         }
@@ -3475,6 +3526,12 @@ Status applyContainerOperations(OperationContext* opCtx,
                     },
                     [&](auto key) -> Status {
                         auto status = cursor->remove(*ru, key);
+                        // Initial sync never seeds entries for collections already dropped on the
+                        // sync source; treat the delete of the missing key as a no-op.
+                        if (status == ErrorCodes::NoSuchKey && allowFastCountSelfHealing &&
+                            ident::isReplicatedFastCountIdent(ident)) {
+                            return Status::OK();
+                        }
                         if (status.isOK()) {
                             opObserver->onContainerDelete(opCtx, ident, key);
                         }

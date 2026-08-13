@@ -261,6 +261,13 @@ DocumentSourceLookUp::DocumentSourceLookUp(NamespaceString fromNs,
     // necessary.
     initializeResolvedIntrospectionPipeline();
 
+    // The view's stages are the entire subpipeline, so the join $match goes after every source the
+    // view expanded into.
+    if (_fromNsIsAView) {
+        _fieldMatchIntrospectionIdx =
+            _sharedState->resolvedIntrospectionPipeline->getSources().size();
+    }
+
     _sharedState->resolvedPipeline.push_back(BSON("$match" << BSONObj()));
     _fieldMatchPipelineIdx = _sharedState->resolvedPipeline.size() - 1;
 }
@@ -312,6 +319,29 @@ bool isMongotLookupSubpipeline(const std::shared_ptr<IncrementalFeatureRolloutCo
         search_helper_bson_obj::isExtensionMongotPipeline(ifrContext, pipeline) ||
         isSourceStage(pipeline[0]);
 }
+
+// Returns true if the resolved view prefix must be discarded because the subpipeline's own first
+// stage applies the view itself: a legacy mongot pipeline, a mongot pipeline that arrived already
+// desugared, or a stage that declared kDoNothing at lite-parse time (e.g. an extension search
+// stage).
+//
+// An empty user subpipeline has no such stage, so the prefix must be kept. Discarding it would both
+// run the join against the backing collection instead of the view, and leave the join $match index
+// pointing past the end of an empty resolved pipeline.
+bool shouldDiscardViewPrefix(bool fromNsIsAView,
+                             const std::vector<BSONObj>& pipeline,
+                             FirstStageViewApplicationPolicy subpipelineViewPolicy,
+                             const boost::intrusive_ptr<ExpressionContext>& expCtx) {
+    if (!fromNsIsAView || pipeline.empty()) {
+        return false;
+    }
+    // Skip view application when the router already processed the view.
+    if (pipeline[0].hasField(InternalSearchMongotRemoteSpec::kMongotQueryFieldName)) {
+        return false;
+    }
+    return isMongotLookupSubpipeline(expCtx->getIfrContext(), pipeline) ||
+        subpipelineViewPolicy == FirstStageViewApplicationPolicy::kDoNothing;
+}
 }  // namespace
 
 // Process and copy the given `pipeline` to the `_sharedState->resolvedPipeline` attribute and
@@ -323,24 +353,8 @@ void DocumentSourceLookUp::resolvedPipelineHelper(
     boost::optional<std::pair<std::string, std::string>> localForeignFields,
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     FirstStageViewApplicationPolicy subpipelineViewPolicy) {
-    // When fromNs represents a view, we have to decipher if the view is mongot-indexed or not.
-    // Currently, if the pipeline to be run on the joined collection is a
-    // mongot pipeline (it starts with $search, $searchMeta, or $vectorSearch), $lookup assumes
-    // the view is mongot-indexed. The same applies when the subpipeline's first stage declared
-    // FirstStageViewApplicationPolicy::kDoNothing at lite-parse time (e.g. an extension search
-    // stage): the stage applies the view itself, so the view pipeline must not be prepended.
-    //
-    // Skip validation/view application when we know that the router already processed the view.
-    const bool pipelineIsAlreadyDesugared = !pipeline.empty() &&
-        pipeline[0].hasField(InternalSearchMongotRemoteSpec::kMongotQueryFieldName);
-
-    const bool isLegacyMongotPipeline =
-        search_helper_bson_obj::isMongotPipeline(expCtx->getIfrContext(), pipeline);
-    if (_fromNsIsAView &&
-        (isMongotLookupSubpipeline(expCtx->getIfrContext(), pipeline) ||
-         subpipelineViewPolicy == FirstStageViewApplicationPolicy::kDoNothing) &&
-        !pipelineIsAlreadyDesugared) {
-        if (isLegacyMongotPipeline) {
+    if (shouldDiscardViewPrefix(_fromNsIsAView, pipeline, subpipelineViewPolicy, expCtx)) {
+        if (search_helper_bson_obj::isMongotPipeline(expCtx->getIfrContext(), pipeline)) {
             // The user pipeline is a legacy mongot pipeline so we assume the view is a
             // mongot-indexed view. Stash the view on the subpipeline's ExpressionContext so the
             // legacy stage's createFromBson can attach it: idLookup applies the view transforms
@@ -372,6 +386,9 @@ void DocumentSourceLookUp::resolvedPipelineHelper(
         // Save the correct position of the $match, but wait to insert it until we have finished
         // constructing the pipeline and created the introspection pipeline below.
         _fieldMatchPipelineIdx = _sharedState->resolvedPipeline.size();
+        // A $documents/$queue source stage ahead of the join $match means the prefix is not purely
+        // the view's stages.
+        _canSplitAtFieldMatch = _fromNsIsAView && sourceStages.empty();
 
         // Add the rest of the user pipeline to `_sharedState->resolvedPipeline` after any potential
         // view prefix and $match.
@@ -426,7 +443,8 @@ DocumentSourceLookUp::DocumentSourceLookUp(
     boost::optional<BSONObj> unwindSpec,
     const boost::intrusive_ptr<ExpressionContext>& pExpCtx,
     bool containsUserSpecifiedPipeline,
-    FirstStageViewApplicationPolicy subpipelineViewPolicy)
+    FirstStageViewApplicationPolicy subpipelineViewPolicy,
+    size_t subpipelineViewPrefixLen)
     : DocumentSourceLookUp(fromNs, as, pExpCtx) {
     resolvedPipelineHelper(
         fromNs, userPipeline, localForeignFields, pExpCtx, subpipelineViewPolicy);
@@ -442,9 +460,42 @@ DocumentSourceLookUp::DocumentSourceLookUp(
     const auto& resolvedNamespaces = pExpCtx->getResolvedNamespaces();
     auto it = resolvedNamespaces.find(_fromNs);
     if (it != resolvedNamespaces.end() && !it->second.getBsonPipeline().empty()) {
-        _sharedState->resolvedIntrospectionPipeline =
-            parsePipelineFromStageParamsWithMaybeViewDefinition(
-                _fromExpCtx, it->second, std::move(subpipelineStageParams), userPipeline, _fromNs);
+        // Parse the view prefix and the user's stages separately so the seam between them survives
+        // as a parsed-source index, which is what makes the serialized $match position exact.
+        const bool split =
+            _shouldSpliceAtFieldMatch(subpipelineViewPrefixLen, subpipelineStageParams.size());
+        // If the params hold more stages than the user wrote then the view's stages are among them,
+        // so a prefix length must have come through; without one the join $match would serialize at
+        // a position that indexes unexpanded BSON.
+        tassert(13320301,
+                str::stream() << "view prefix length missing for a subpipeline of "
+                              << subpipelineStageParams.size() << " stages over a user pipeline of "
+                              << userPipeline.size(),
+                !(_canSplitAtFieldMatch && subpipelineViewPrefixLen == 0 &&
+                  subpipelineStageParams.size() > userPipeline.size()));
+        if (split) {
+            _spliceIntrospectionPipelineAtFieldMatch(
+                std::move(subpipelineStageParams),
+                subpipelineViewPrefixLen,
+                // Use the view-aware helper on the prefix so the view's namespace, collation and
+                // involved-namespace setup still happens.
+                [&](StageParamsPipeline prefix) {
+                    return parsePipelineFromStageParamsWithMaybeViewDefinition(
+                        _fromExpCtx, it->second, std::move(prefix), userPipeline, _fromNs);
+                },
+                [&](StageParamsPipeline suffix) {
+                    return Pipeline::parseFromStageParams(
+                        std::move(suffix), _fromExpCtx, lookupPipeValidator);
+                });
+        } else {
+            _sharedState->resolvedIntrospectionPipeline =
+                parsePipelineFromStageParamsWithMaybeViewDefinition(
+                    _fromExpCtx,
+                    it->second,
+                    std::move(subpipelineStageParams),
+                    userPipeline,
+                    _fromNs);
+        }
     } else {
         _sharedState->resolvedIntrospectionPipeline = Pipeline::parseFromStageParams(
             std::move(subpipelineStageParams), _fromExpCtx, lookupPipeValidator);
@@ -520,6 +571,10 @@ void DocumentSourceLookUp::relocateFieldMatchPlaceholder(
             insertIdx <= resolvedPipeline.size());
     resolvedPipeline.insert(resolvedPipeline.begin() + insertIdx, BSON("$match" << BSONObj()));
     lookupStage->_fieldMatchPipelineIdx = insertIdx;
+    // The subpipeline arrived already serialized in final units, so drop any boundary the
+    // constructor recorded.
+    lookupStage->_canSplitAtFieldMatch = false;
+    lookupStage->_fieldMatchIntrospectionIdx = boost::none;
 }
 
 namespace {
@@ -606,14 +661,20 @@ DocumentSourceContainer DocumentSourceLookUp::createFromStageParams(
         if (auto view =
                 tryGetPreResolvedNamespace(params.fromNss, expCtx->getResolvedNamespaces())) {
             auto stageParams = view->getViewPipeline().getStageParams();
-            return {make_intrusive<DocumentSourceLookUp>(std::move(params.fromNss),
-                                                         std::move(params.as),
-                                                         std::vector<BSONObj>{},
-                                                         std::move(stageParams),
-                                                         std::move(params.letVariables),
-                                                         std::move(localForeignFields),
-                                                         std::move(params.unwindSpec),
-                                                         expCtx)};
+            // The whole subpipeline is the view definition, so every stage is a view stage.
+            const size_t viewPrefixLen = stageParams.size();
+            return {make_intrusive<DocumentSourceLookUp>(
+                std::move(params.fromNss),
+                std::move(params.as),
+                std::vector<BSONObj>{},
+                std::move(stageParams),
+                std::move(params.letVariables),
+                std::move(localForeignFields),
+                std::move(params.unwindSpec),
+                expCtx,
+                true /* containsUserSpecifiedPipeline */,
+                FirstStageViewApplicationPolicy::kDefaultPrepend,
+                viewPrefixLen)};
         }
         return {DocumentSourceLookUp::createFromBson(params.getOriginalBson(), expCtx)};
     }
@@ -628,7 +689,8 @@ DocumentSourceContainer DocumentSourceLookUp::createFromStageParams(
                                              std::move(params.unwindSpec),
                                              expCtx,
                                              !params.noUserPipeline,
-                                             params.subpipelineViewPolicy);
+                                             params.subpipelineViewPolicy,
+                                             params.subpipelineViewPrefixLen);
 
     // 'internalFieldMatchPipelineIdx' is only ever serialized alongside 'internalFromIsAView' (see
     // serializeToArray).
@@ -746,6 +808,8 @@ DocumentSourceLookUp::DocumentSourceLookUp(const DocumentSourceLookUp& original,
       _localField(original._localField),
       _foreignField(original._foreignField),
       _fieldMatchPipelineIdx(original._fieldMatchPipelineIdx),
+      _fieldMatchIntrospectionIdx(original._fieldMatchIntrospectionIdx),
+      _canSplitAtFieldMatch(original._canSplitAtFieldMatch),
       _variables(original._variables),
       _variablesParseState(original._variablesParseState.copyWith(_variables.useIdGenerator())),
       _fromExpCtx(makeCopyFromExpressionContext(original._fromExpCtx,
@@ -1106,10 +1170,45 @@ void DocumentSourceLookUp::parseAndDefineLetVariables(
 
 void DocumentSourceLookUp::insertFieldMatchPlaceholder() {
     if (_fieldMatchPipelineIdx) {
+        // Inserting past the end of 'resolvedPipeline' is out of range, and silently corrupts the
+        // vector rather than throwing. Fail loudly instead.
+        tassert(13296300,
+                "field match placeholder index is out of range for the resolved pipeline",
+                *_fieldMatchPipelineIdx <= _sharedState->resolvedPipeline.size());
         _sharedState->resolvedPipeline.insert(_sharedState->resolvedPipeline.begin() +
                                                   *_fieldMatchPipelineIdx,
                                               BSON("$match" << BSONObj()));
     }
+}
+
+size_t DocumentSourceLookUp::_serializedFieldMatchPipelineIdx(
+    const query_shape::SerializationOptions& opts) const {
+    tassert(13287902,
+            "expected a field match index to translate for serialization",
+            _fieldMatchPipelineIdx.has_value());
+    const size_t rawIdx = *_fieldMatchPipelineIdx;
+
+    // No boundary was recorded, so the index is already in the units we serialize.
+    if (rawIdx == 0 || !_fieldMatchIntrospectionIdx.has_value()) {
+        return rawIdx;
+    }
+
+    const auto& sources = _sharedState->resolvedIntrospectionPipeline->getSources();
+    tassert(13287903,
+            str::stream() << "_fieldMatchIntrospectionIdx " << *_fieldMatchIntrospectionIdx
+                          << " out of range of introspection pipeline of size " << sources.size(),
+            *_fieldMatchIntrospectionIdx <= sources.size());
+
+    // Sum the stages each source ahead of the boundary serializes to, using the same 'opts' the
+    // subpipeline is serialized with.
+    const auto boundary = std::next(sources.begin(), *_fieldMatchIntrospectionIdx);
+    size_t serializedIdx = 0;
+    for (auto sourceIt = sources.begin(); sourceIt != boundary; ++sourceIt) {
+        std::vector<Value> serializedStage;
+        (*sourceIt)->serializeToArray(serializedStage, opts);
+        serializedIdx += serializedStage.size();
+    }
+    return serializedIdx;
 }
 
 void DocumentSourceLookUp::initializeResolvedIntrospectionPipeline() {
@@ -1123,8 +1222,23 @@ void DocumentSourceLookUp::initializeResolvedIntrospectionPipeline() {
         LiteParsedPipeline viewLpp(_resolvedNs, _sharedState->resolvedPipeline);
         _fromExpCtx->addResolvedNamespaces(viewLpp.getInvolvedNamespaces());
     }
-    _sharedState->resolvedIntrospectionPipeline =
-        pipeline_factory::makePipeline(_sharedState->resolvedPipeline, _fromExpCtx, pipelineOpts);
+
+    const auto& resolvedPipeline = _sharedState->resolvedPipeline;
+    // Parse the two sides of the boundary separately so we learn where it lands after parsing has
+    // expanded any alias stages. The placeholder is not in 'resolvedPipeline' yet, so
+    // '_fieldMatchPipelineIdx' is the split point.
+    const bool split =
+        _shouldSpliceAtFieldMatch(_fieldMatchPipelineIdx.value_or(0), resolvedPipeline.size());
+    if (split) {
+        auto build = [&](const std::vector<BSONObj>& half) {
+            return pipeline_factory::makePipeline(half, _fromExpCtx, pipelineOpts);
+        };
+        _spliceIntrospectionPipelineAtFieldMatch(
+            resolvedPipeline, *_fieldMatchPipelineIdx, build, build);
+    } else {
+        _sharedState->resolvedIntrospectionPipeline =
+            pipeline_factory::makePipeline(resolvedPipeline, _fromExpCtx, pipelineOpts);
+    }
     _fromExpCtx->stopExpressionCounters();
 }
 
@@ -1167,9 +1281,13 @@ void DocumentSourceLookUp::serializeToArray(std::vector<Value>& array,
         // against a view with no user pipeline, the view's stages are the entire serialized
         // subpipeline, and without this index the shard would rebuild the join $match *before*
         // them, joining on fields the view has not computed yet.
+        //
+        // The index must be in the units of the pipeline we serialize below, which is the parsed
+        // (alias- and desugar-expanded) pipeline rather than the raw BSON that
+        // '_fieldMatchPipelineIdx' indexes. See _serializedFieldMatchPipelineIdx().
         if (serializeResolvedViewForRemote && _fieldMatchPipelineIdx.has_value()) {
             output[getSourceName()]["$_internalFieldMatchPipelineIdx"] =
-                Value(static_cast<long long>(*_fieldMatchPipelineIdx));
+                Value(static_cast<long long>(_serializedFieldMatchPipelineIdx(opts)));
         }
     }
 

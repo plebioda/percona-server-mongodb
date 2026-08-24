@@ -26,11 +26,19 @@ def _setup_local_config_platform(ctx):
     arch_constraint = ARCH_TO_PLATFORM_MAP[toolchain_arch]
 
     constraints = [os_constraint, arch_constraint]
+    if os == "macos":
+        constraints.append("@//bazel/platforms:use_mongo_native_apple_toolchain")
 
     # So Starlark doesn't throw an indentation error when this gets injected.
     constraints_str = ",\n        ".join(['"%s"' % c for c in constraints])
 
-    distro = get_host_distro_major_version(ctx)
+    # Keep the execution platform in sync with the image used by the wrapper. These
+    # values are declared in the repository rule's environ list below so changing an
+    # override also regenerates the platform and its action identity.
+    distro = (
+        ctx.os.environ.get("MONGO_HERMETIC_CONTAINER_DISTRO") or
+        get_host_distro_major_version(ctx)
+    )
     arch = toolchain_arch
     if arch == "x86_64":
         arch = "amd64"
@@ -73,10 +81,12 @@ def _setup_local_config_platform(ctx):
         # bazel/platforms/platform_util.bzl for the explicit
         # //bazel/platforms:<distro>_<arch> targets. See
         # bazel/platforms/psmdb_rbe_containers.bzl for rationale and
-        # maintenance procedure.
+        # maintenance procedure. An explicit MONGO_HERMETIC_CONTAINER_IMAGE
+        # env var (upstream) still wins over both maps when set.
         psmdb_entry = PSMDB_REMOTE_EXECUTION_CONTAINERS.get(distro)
         container_url = (
-            psmdb_entry["container-url"] if psmdb_entry else REMOTE_EXECUTION_CONTAINERS[distro]["container-url"]
+            ctx.os.environ.get("MONGO_HERMETIC_CONTAINER_IMAGE") or
+            (psmdb_entry["container-url"] if psmdb_entry else REMOTE_EXECUTION_CONTAINERS[distro]["container-url"])
         )
         web_url = REMOTE_EXECUTION_CONTAINERS[distro]["web-url"]
         dockerfile = REMOTE_EXECUTION_CONTAINERS[distro]["dockerfile"]
@@ -147,5 +157,9 @@ setup_local_config_platform = repository_rule(
             doc = "Template modeling the builtin local config platform constraints file.",
         ),
     },
-    environ = ["USE_NATIVE_TOOLCHAIN"],
+    environ = [
+        "MONGO_HERMETIC_CONTAINER_DISTRO",
+        "MONGO_HERMETIC_CONTAINER_IMAGE",
+        "USE_NATIVE_TOOLCHAIN",
+    ],
 )

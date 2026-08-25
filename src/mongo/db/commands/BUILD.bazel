@@ -43,6 +43,8 @@ mongo_cc_library(
     deps = [
         "//src/mongo:base",
         "//src/mongo/db:commands",
+        "//src/mongo/db:metrics_filtering_util",
+        "//src/mongo/db:metrics_policy_manager",
         "//src/mongo/db:server_base",
         "//src/mongo/db/auth",
         "//src/mongo/util:buildinfo",
@@ -816,6 +818,7 @@ mongo_cc_library(
         "//src/mongo/db/pipeline",
         "//src/mongo/db/pipeline:change_stream_pipeline",
         "//src/mongo/db/pipeline:document_source_internal_apply_oplog_update",
+        "//src/mongo/db/pipeline:document_source_join_plan_cache_stats",
         "//src/mongo/db/pipeline:search_id_lookup_stage",
         "//src/mongo/db/repl:isself",
         "//src/mongo/db/repl:repl_coordinator_interface",

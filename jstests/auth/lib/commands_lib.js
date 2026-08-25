@@ -2131,6 +2131,26 @@ export const authCommandsLib = {
             ],
         },
         {
+            testname: "aggregate_joinPlanCacheStats",
+            command: {aggregate: 1, pipeline: [{$joinPlanCacheStats: {}}], cursor: {}},
+            // $joinPlanCacheStats dumps the node-global join plan cache. It is collectionless on
+            // 'admin' and is gated behind the internalEnableJoinOptimization/
+            // internalEnableJoinPlanCache knobs which are off by default -- so an authorized user
+            // still fails with QueryFeatureNotAllowed after the authorization check passes. This
+            // holds on both a standalone and a router, since the router authorizes and applies the
+            // knob gate before dispatching to the shards.
+            testcases: [
+                {
+                    runOnDb: adminDbName,
+                    roles: roles_readDbAdminAny,
+                    privileges: [
+                        {resource: {db: adminDbName, collection: ""}, actions: ["planCacheRead"]},
+                    ],
+                    expectFailWithErrorCodes: [ErrorCodes.QueryFeatureNotAllowed],
+                },
+            ],
+        },
+        {
             testname: "aggregate_currentOp_allUsers_true",
             command: {aggregate: 1, pipeline: [{$currentOp: {allUsers: true}}], cursor: {}},
             testcases: [
@@ -4026,8 +4046,9 @@ export const authCommandsLib = {
         {
             testname: "compactStructuredEncryptionData",
             command: {compactStructuredEncryptionData: "foo", compactionTokens: {}},
-            skipSharded: true,
-            skipUnlessReplicaSet: true,
+            skipTest: (conn) => {
+                return isStandalone(conn);
+            },
             setup: function (db) {
                 assert.commandWorked(
                     db.createCollection("foo", {
@@ -4059,7 +4080,7 @@ export const authCommandsLib = {
                     },
                     privileges: [
                         {
-                            resource: {db: firstDbName, collection: "foo"},
+                            resource: {db: firstDbName, collection: ""},
                             actions: ["compactStructuredEncryptionData"],
                         },
                     ],
@@ -4070,19 +4091,31 @@ export const authCommandsLib = {
                     roles: {readWriteAnyDatabase: 1, root: 1, __system: 1},
                     privileges: [
                         {
-                            resource: {db: secondDbName, collection: "foo"},
+                            resource: {db: secondDbName, collection: ""},
                             actions: ["compactStructuredEncryptionData"],
                         },
                     ],
                     expectFail: true, // Missing compaction token.
+                },
+                {
+                    // privilege must be conferred at db scope, not exact-namespace scope
+                    expectAuthzFailure: true,
+                    runOnDb: firstDbName,
+                    privileges: [
+                        {
+                            resource: {db: firstDbName, collection: "foo"},
+                            actions: ["compactStructuredEncryptionData"],
+                        },
+                    ],
                 },
             ],
         },
         {
             testname: "cleanupStructuredEncryptionData",
             command: {cleanupStructuredEncryptionData: "foo", cleanupTokens: {}},
-            skipSharded: true,
-            skipUnlessReplicaSet: true,
+            skipTest: (conn) => {
+                return isStandalone(conn);
+            },
             setup: function (db) {
                 assert.commandWorked(
                     db.createCollection("foo", {
@@ -4114,22 +4147,33 @@ export const authCommandsLib = {
                     },
                     privileges: [
                         {
-                            resource: {db: firstDbName, collection: "foo"},
+                            resource: {db: firstDbName, collection: ""},
                             actions: ["cleanupStructuredEncryptionData"],
                         },
                     ],
-                    expectFail: true, // Missing compaction token.
+                    expectFail: true, // Missing cleanup tokens.
                 },
                 {
                     runOnDb: secondDbName,
                     roles: {readWriteAnyDatabase: 1, root: 1, __system: 1},
                     privileges: [
                         {
-                            resource: {db: secondDbName, collection: "foo"},
+                            resource: {db: secondDbName, collection: ""},
                             actions: ["cleanupStructuredEncryptionData"],
                         },
                     ],
-                    expectFail: true, // Missing compaction token.
+                    expectFail: true, // Missing cleanup tokens.
+                },
+                {
+                    // privilege must be conferred at db scope, not exact-namespace scope
+                    expectAuthzFailure: true,
+                    runOnDb: firstDbName,
+                    privileges: [
+                        {
+                            resource: {db: firstDbName, collection: "foo"},
+                            actions: ["cleanupStructuredEncryptionData"],
+                        },
+                    ],
                 },
             ],
         },

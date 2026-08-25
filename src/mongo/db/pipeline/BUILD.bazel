@@ -358,6 +358,7 @@ mongo_cc_library(
         "//src/mongo/db/exec:sort_executor",
         "//src/mongo/db/index:index_access_method",
         "//src/mongo/db/query/compiler/logical_model/sort_pattern",
+        "//src/mongo/db/query/util:represent_as_util",
         "//src/mongo/db/sorter:sorter_base",
     ],
 )
@@ -373,6 +374,7 @@ mongo_cc_library(
         ":field_path",
         "//src/mongo/db:query_expressions",
         "//src/mongo/db/exec/document_value",
+        "//src/mongo/db/query/util:represent_as_util",
     ],
 )
 
@@ -780,6 +782,21 @@ mongo_cc_library(
         "//src/mongo/db/query/write_ops:write_ops_parsers",
         "//src/mongo/db/update:update_driver",
         "//src/mongo/s/query/exec:router_exec_stage",
+    ],
+)
+
+mongo_cc_library(
+    name = "document_source_join_plan_cache_stats",
+    srcs = [
+        "document_source_join_plan_cache_stats.cpp",
+    ],
+    # This document source is not part of the 'pipeline' library because reading the node-global
+    # join plan cache requires a dep on 'join_plan_cache', which 'pipeline' cannot take: that would
+    # create the cycle 'pipeline' -> 'join_plan_cache' -> 'join_ordering' ->
+    # 'canonical_query_base' -> 'pipeline'.
+    deps = [
+        "//src/mongo/db/pipeline",
+        "//src/mongo/db/query/plan_cache:join_plan_cache",
     ],
 )
 
@@ -1510,6 +1527,7 @@ mongo_cc_unit_test(
         "document_source_internal_document_results_and_metadata_test.cpp",
         "document_source_internal_hybrid_search_test.cpp",
         "document_source_internal_split_pipeline_test.cpp",
+        "document_source_join_plan_cache_stats_test.cpp",
         "document_source_limit_test.cpp",
         "document_source_list_extensions_test.cpp",
         "document_source_list_mql_entities_test.cpp",
@@ -1567,6 +1585,7 @@ mongo_cc_unit_test(
         ":accumulator",
         ":aggregation_context_fixture",
         ":document_source_internal_apply_oplog_update",
+        ":document_source_join_plan_cache_stats",
         ":document_source_lookup_test_util",
         ":document_source_mock",
         ":document_sources_idl",

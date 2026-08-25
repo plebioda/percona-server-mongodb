@@ -3994,6 +3994,13 @@ void WiredTigerKVEngine::setStepDownTimestamp(Timestamp stepDownTimestamp) {
     // already set, so any error here reflects a violated precondition in the caller.
     auto stepDownTSConfigString =
         fmt::format("step_down_timestamp={:x}", stepDownTimestamp.asULL());
+    // Declare the same boundary in schema-epoch space, which WiredTiger only accepts once an
+    // epoch is in use.
+    if (getStableSchemaEpoch()) {
+        fmt::format_to(std::back_inserter(stepDownTSConfigString),
+                       ",step_down_disaggregated_schema_epoch={:x}",
+                       _provider.getSchemaEpochForTimestamp(stepDownTimestamp));
+    }
     invariantWTOK(_conn->set_timestamp(_conn, stepDownTSConfigString.c_str()), nullptr);
 
     _stepDownTimestamp.store(stepDownTimestamp.asULL());
@@ -4859,6 +4866,7 @@ boost::optional<BSONObj> WiredTigerKVEngine::collectStorageStats() {
         "cache: tracked dirty bytes in the cache",
         "cache: maximum bytes configured",
         "data-handle: connection data handles currently active",
+        "data-handle: Layered connection data handles currently active",
         "checkpoint: most recent time (msecs)",
     };
 
@@ -4866,7 +4874,16 @@ boost::optional<BSONObj> WiredTigerKVEngine::collectStorageStats() {
     if (!WiredTigerUtil::collectConnectionStatistics(*this, bob, fieldsToInclude))
         return boost::none;
 
-    return bob.obj();
+    BSONObj stats = bob.obj();
+
+    // Report the active layered data handle count to the provider's metrics sink.
+    BSONElement layeredElem =
+        stats.getObjectField("data-handle")["Layered connection data handles currently active"];
+    if (layeredElem.isNumber()) {
+        _provider.reportLayeredDataHandleCount(layeredElem.safeNumberLong());
+    }
+
+    return stats;
 }
 
 BSONObj WiredTigerKVEngine::getSanitizedStorageOptionsForSecondaryReplication(

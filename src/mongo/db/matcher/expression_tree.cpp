@@ -81,7 +81,6 @@ PathMatchExpression* getEligiblePathMatchForNotSerialization(MatchExpression* ex
         case MatchExpression::INTERNAL_SCHEMA_MATCH_ARRAY_INDEX:
         case MatchExpression::INTERNAL_SCHEMA_MAX_ITEMS:
         case MatchExpression::INTERNAL_SCHEMA_MAX_LENGTH:
-        case MatchExpression::INTERNAL_SCHEMA_MAX_PROPERTIES:
         case MatchExpression::INTERNAL_SCHEMA_MIN_ITEMS:
         case MatchExpression::INTERNAL_SCHEMA_MIN_LENGTH:
         case MatchExpression::INTERNAL_SCHEMA_TYPE:
@@ -110,6 +109,7 @@ PathMatchExpression* getEligiblePathMatchForNotSerialization(MatchExpression* ex
         case MatchExpression::INTERNAL_SCHEMA_COND:
         case MatchExpression::INTERNAL_SCHEMA_EQ:
         case MatchExpression::INTERNAL_SCHEMA_FMOD:
+        case MatchExpression::INTERNAL_SCHEMA_MAX_PROPERTIES:
         case MatchExpression::INTERNAL_SCHEMA_MIN_PROPERTIES:
         case MatchExpression::INTERNAL_SCHEMA_OBJECT_MATCH:
         case MatchExpression::INTERNAL_SCHEMA_ROOT_DOC_EQ:
@@ -276,10 +276,9 @@ void NotMatchExpression::serialize(BSONObjBuilder* out,
     // For $pull modifier, rewrite $not{$eq/$in/$exists} back to $ne/$nin/{$exists: false} since
     // top-level $not cannot be re-parsed.
     if (opts.serializeForUpdatePullModifier) {
-        tassert(
-            11699500,
-            "serializeForUpdatePullModifier should only be set when serializing for query stats",
-            opts.isSerializingForQueryStats());
+        tassert(11699500,
+                "serializeForUpdatePullModifier should only be set when shapifying",
+                opts.isShapifying());
         const auto childType = expressionToNegate->matchType();
         if (childType == MatchExpression::EQ || childType == MatchExpression::MATCH_IN ||
             childType == MatchExpression::EXISTS) {

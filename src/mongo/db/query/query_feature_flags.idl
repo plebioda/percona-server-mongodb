@@ -38,20 +38,6 @@ feature_flags:
         default: false
         fcv_gated: false
 
-    featureFlagQueryStats:
-        description: "Feature flag for enabling full queryStats collection."
-        cpp_varname: gFeatureFlagQueryStats
-        default: true
-        version: 7.2
-        fcv_gated: true
-        check_against_fcv: legacy_fcv_snapshot_only
-
-    featureFlagAggOutTimeseries:
-        description: "Feature flag for enabling support for $out to write to time-series collections"
-        cpp_varname: gFeatureFlagAggOutTimeseries
-        default: true
-        fcv_gated: false
-
     featureFlagTimeSeriesInSbe:
         description: "Feature flag to enable queries against time-series collections to execute in SBE"
         cpp_varname: gFeatureFlagTimeSeriesInSbe
@@ -241,27 +227,11 @@ feature_flags:
         version: 8.3
         fcv_gated: true
 
-    featureFlagConvertBinDataVectors:
-        description: "Feature flag to enable converting to and from BinDataVectors and BSON Arrays"
-        cpp_varname: gFeatureFlagConvertBinDataVectors
-        default: true
-        version: 8.3
-        fcv_gated: true
-
     featureFlagConvertObjectToBinData:
         description: "Feature flag to enable converting from Object to BinData"
         cpp_varname: gFeatureFlagConvertObjectToBinData
         default: true
         version: 9.0
-        fcv_gated: true
-
-    featureFlagVectorSimilarityExpressions:
-        description:
-            "Feature flag to enable vector similarity expressions $similarityDotProduct,
-            $similarityCosine, and $similarityEuclidean"
-        cpp_varname: gFeatureFlagVectorSimilarity
-        default: true
-        version: 8.2
         fcv_gated: true
 
     featureFlagExtensionsAPI:

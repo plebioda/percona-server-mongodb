@@ -472,6 +472,8 @@ public:
         MetricNameMaker::make("mongodb.serverStatus.metrics.indexBuilds.phaseDurationMicros");
     static constexpr MetricName kIndexBuildDocsScanned =
         MetricNameMaker::make("mongodb.serverStatus.indexBuilds.docsScanned");
+    static constexpr MetricName kIndexBuildBytesScanned =
+        MetricNameMaker::make("mongodb.serverStatus.indexBuilds.bytesScanned");
     static constexpr MetricName kIndexBuildResumeSucceeded =
         MetricNameMaker::make("mongodb.serverStatus.indexBuilds.resume.succeeded");
     static constexpr MetricName kIndexBuildResumeFailed =
@@ -628,6 +630,16 @@ public:
 
     static constexpr MetricName kOperationLatency =
         MetricNameMaker::make("mongodb.serverStatus.opLatencies.latency");
+
+    // Query latency histograms for plan selection strategies.
+    static constexpr MetricName kQueryLatencyMultiPlanner =
+        MetricNameMaker::make("mongodb.serverStatus.queryLatencies.multiPlanner");
+    static constexpr MetricName kQueryLatencyCostBased =
+        MetricNameMaker::make("mongodb.serverStatus.queryLatencies.costBased");
+    static constexpr MetricName kQueryLatencySinglePlan =
+        MetricNameMaker::make("mongodb.serverStatus.queryLatencies.singlePlan");
+    static constexpr MetricName kQueryLatencyCachedPlan =
+        MetricNameMaker::make("mongodb.serverStatus.queryLatencies.cachedPlan");
 
     // Op Counters
     static constexpr MetricName kInsertOpCount =

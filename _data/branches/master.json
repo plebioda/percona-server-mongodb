@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 246,
-    "days_behind": 9,
-    "unmerged_oldest_age_days": 9.170370928472222,
-    "files_affected": 1157,
-    "total_additions": 53877,
-    "total_deletions": 12933,
+    "commits_behind": 276,
+    "days_behind": 10,
+    "unmerged_oldest_age_days": 10.205983074456018,
+    "files_affected": 1499,
+    "total_additions": 61014,
+    "total_deletions": 17658,
     "date_range": {
       "first": "2026-08-18T13:27:32+00:00",
-      "last": "2026-08-27T15:52:37+00:00"
+      "last": "2026-08-28T17:46:57+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,306 @@
     "reason": "force:important_files"
   },
   "unmerged_commits": [
+    {
+      "sha": "45edc7b3b281d88b27256d0778ef873d5a340945",
+      "short_sha": "45edc7b3b28",
+      "date": "2026-08-28T17:46:57+00:00",
+      "author": {
+        "name": "Jordan Glassley",
+        "email": "jordan.glassley@mongodb.com"
+      },
+      "summary": "SERVER-134165 Add AwaitReplication for analyze_shard_key_options.js DSC suites (#61865)"
+    },
+    {
+      "sha": "5bec2efc0469473195cfc375a5e4abf811a3e639",
+      "short_sha": "5bec2efc046",
+      "date": "2026-08-28T17:37:20+00:00",
+      "author": {
+        "name": "Brett Nawrocki",
+        "email": "90278537+brettnawrocki@users.noreply.github.com"
+      },
+      "summary": "SERVER-134149 Add multiversion_incompatible tag (#61859)"
+    },
+    {
+      "sha": "1b5eeaaf4d4b53c0afc6f014e190c4ebbdd86376",
+      "short_sha": "1b5eeaaf4d4",
+      "date": "2026-08-28T17:33:35+00:00",
+      "author": {
+        "name": "seanzimm",
+        "email": "102551488+seanzimm@users.noreply.github.com"
+      },
+      "summary": "SERVER-131384: Add tags to hello response for dsc (#61660)"
+    },
+    {
+      "sha": "68953a5e69180ab715d985f9bbef17e586116b2c",
+      "short_sha": "68953a5e691",
+      "date": "2026-08-28T17:10:00+00:00",
+      "author": {
+        "name": "Thomas Goyne",
+        "email": "thomas.goyne@mongodb.com"
+      },
+      "summary": "SERVER-134028 Remove redundant null-pointer checks in KeyStringIndexConsistency::traverseIndex (#61831)"
+    },
+    {
+      "sha": "9b6dbace9212522440e14b7457fb7a9cbec0a594",
+      "short_sha": "9b6dbace921",
+      "date": "2026-08-28T15:08:52+00:00",
+      "author": {
+        "name": "Benjamin Pearce",
+        "email": "benjamin.pearce@mongodb.com"
+      },
+      "summary": "SERVER-134101 Pass option for parallel slice record count (#61777)"
+    },
+    {
+      "sha": "54decd42131768083b01dafcaef2ebc41f8f79ba",
+      "short_sha": "54decd42131",
+      "date": "2026-08-28T15:04:11+00:00",
+      "author": {
+        "name": "Marco Bizzarri",
+        "email": "marco.bizzarri@mongodb.com"
+      },
+      "summary": "SERVER-132953 Re-enable test disabled due to FCV upgrade to 9.1 (#61456)"
+    },
+    {
+      "sha": "47473d4bff9432e6041b8368f52e5e66f312eb43",
+      "short_sha": "47473d4bff9",
+      "date": "2026-08-28T14:43:40+00:00",
+      "author": {
+        "name": "Tymoteusz Slepowronski",
+        "email": "81040246+tymos2000@users.noreply.github.com"
+      },
+      "summary": "SERVER-133525 Modify the description/name of the metadata cleanup feature flag (#61888)"
+    },
+    {
+      "sha": "c717a469ec0a47aae682aeff1ac6f8e6df19206f",
+      "short_sha": "c717a469ec0",
+      "date": "2026-08-28T13:23:59+00:00",
+      "author": {
+        "name": "seanzimm",
+        "email": "102551488+seanzimm@users.noreply.github.com"
+      },
+      "summary": "SERVER-134070: Release and reacquire intents when yielding locks (#61767)"
+    },
+    {
+      "sha": "94fd9ed6e6b7335c47eb90628618801aca09c722",
+      "short_sha": "94fd9ed6e6b",
+      "date": "2026-08-28T13:00:15+00:00",
+      "author": {
+        "name": "Anja Kalaba",
+        "email": "anja.kalaba@mongodb.com"
+      },
+      "summary": "SERVER-134137 Add ConnectionClosedByPeer to the list of retryable error in remove shard suite (#61852)"
+    },
+    {
+      "sha": "5141d73382b7ef2ca69df523e9ad3f823c381c7d",
+      "short_sha": "5141d73382b",
+      "date": "2026-08-28T11:32:49+00:00",
+      "author": {
+        "name": "Mike Nugent",
+        "email": "mike.nugent@mongodb.com"
+      },
+      "summary": "SERVER-130639: Clean up telemetry context serialization (#61773)"
+    },
+    {
+      "sha": "e786cde4e84d275d836043323d3e51d03fba355b",
+      "short_sha": "e786cde4e84",
+      "date": "2026-08-28T11:26:17+00:00",
+      "author": {
+        "name": "Aaron Schüttpelz",
+        "email": "aaron.schuettpelz@mongodb.com"
+      },
+      "summary": "SERVER-131766 Serve composite NDV requests from persisted statistics (#61090)"
+    },
+    {
+      "sha": "9b3f53cbbc9e5a6556b0726679f22d558bb488f5",
+      "short_sha": "9b3f53cbbc9",
+      "date": "2026-08-28T09:52:31+00:00",
+      "author": {
+        "name": "Anna Maria Nestorov",
+        "email": "annamaria.nestorov@gmail.com"
+      },
+      "summary": "SERVER-133659 Allow updating allowDeletions on an active replica set write block (#61346)"
+    },
+    {
+      "sha": "7ad200777ff1d8f558f9a5b80c019e39d754074b",
+      "short_sha": "7ad200777ff",
+      "date": "2026-08-28T09:24:31+00:00",
+      "author": {
+        "name": "Meryama",
+        "email": "meryama.nadim@mongodb.com"
+      },
+      "summary": "SERVER-134119: Disable batch_write_command_update.js in FCV sharding upgrade downgrade suite (#61801)"
+    },
+    {
+      "sha": "38388f66194bb79b4b2f64443b88218c7c933934",
+      "short_sha": "38388f66194",
+      "date": "2026-08-28T07:36:03+00:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#61871)"
+    },
+    {
+      "sha": "a24bc7aadf07d25882ce1ca086715629433822bb",
+      "short_sha": "a24bc7aadf0",
+      "date": "2026-08-28T06:43:55+00:00",
+      "author": {
+        "name": "Allison Easton",
+        "email": "allison.easton@mongodb.com"
+      },
+      "summary": "SERVER-134104 ShardsvrDropDatabaseParticipantCommand strips the mayBypassWriteBlocking flag (#61799)"
+    },
+    {
+      "sha": "a49653fe567fcb605ebb51ada74f216bf537386c",
+      "short_sha": "a49653fe567",
+      "date": "2026-08-28T04:34:33+00:00",
+      "author": {
+        "name": "Luke Chen",
+        "email": "luke.chen@mongodb.com"
+      },
+      "summary": "Import wiredtiger: 5cc20887634b37b29727ebb61852236650d8ef12 from branch mongodb-master (#61870)"
+    },
+    {
+      "sha": "fd11146cfe092e39f42faed21f25aab65c906952",
+      "short_sha": "fd11146cfe0",
+      "date": "2026-08-28T01:22:08+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-132778: add more multicore kafka cov and add kafka to sanitizer builds (#61121)\" (#61869)"
+    },
+    {
+      "sha": "4f084ad111365475e710842e054c62af4a9f6b25",
+      "short_sha": "4f084ad1113",
+      "date": "2026-08-28T00:36:23+00:00",
+      "author": {
+        "name": "auto-revert-app[bot]",
+        "email": "166078896+auto-revert-app[bot]@users.noreply.github.com"
+      },
+      "summary": "Revert \"SERVER-134151: Code coverage artifacts (#61838)\" (#61867)"
+    },
+    {
+      "sha": "dd287f2754e046653fcc828b8e04512f99621408",
+      "short_sha": "dd287f2754e",
+      "date": "2026-08-27T22:10:54+00:00",
+      "author": {
+        "name": "Nathan Frank",
+        "email": "nathantfrank@users.noreply.github.com"
+      },
+      "summary": "SERVER-132778: add more multicore kafka cov and add kafka to sanitizer builds (#61121)"
+    },
+    {
+      "sha": "c3ec758d9d97a22495ec6e43300cceb3e2c2420b",
+      "short_sha": "c3ec758d9d9",
+      "date": "2026-08-27T21:38:05+00:00",
+      "author": {
+        "name": "Steve McClure",
+        "email": "steve.mcclure@mongodb.com"
+      },
+      "summary": "SERVER-134151: Code coverage artifacts (#61838)"
+    },
+    {
+      "sha": "619ca98f1a7b1ecff0b1684e491343083106d88d",
+      "short_sha": "619ca98f1a7",
+      "date": "2026-08-27T20:40:49+00:00",
+      "author": {
+        "name": "Alex Ambrose",
+        "email": "alex.ambrose@mongodb.com"
+      },
+      "summary": "SERVER-133835 Support larger interim FTDC chunks (#61642)"
+    },
+    {
+      "sha": "cb1b7b82b9cb180a22b07c80fa685df488349dad",
+      "short_sha": "cb1b7b82b9c",
+      "date": "2026-08-27T20:37:29+00:00",
+      "author": {
+        "name": "Nick Jefferies",
+        "email": "nick.jefferies@mongodb.com"
+      },
+      "summary": "SERVER-131473 Support a last-patch peer in the Bazel multiversion setup (#61620)"
+    },
+    {
+      "sha": "aeb5d23b142a2674cf3622018889c584adc03647",
+      "short_sha": "aeb5d23b142",
+      "date": "2026-08-27T20:22:06+00:00",
+      "author": {
+        "name": "Stephanie",
+        "email": "53684987+seristof@users.noreply.github.com"
+      },
+      "summary": "SERVER-133331 Compute per-document validation hashes before entering the oplog hole in _logInsertOps (#61825)"
+    },
+    {
+      "sha": "064bb496e9c14bad67a0ccd01b6fd365ae5ffbc3",
+      "short_sha": "064bb496e9c",
+      "date": "2026-08-27T19:57:47+00:00",
+      "author": {
+        "name": "Steve Vannelli",
+        "email": "54291669+stevevannelli@users.noreply.github.com"
+      },
+      "summary": "SERVER-134105: Update block-on-red team structure following the recent org changes. (#61783)"
+    },
+    {
+      "sha": "6a90733033689e8e3d13e73b672f6a91f160c9f6",
+      "short_sha": "6a907330336",
+      "date": "2026-08-27T19:16:42+00:00",
+      "author": {
+        "name": "Thomas Goyne",
+        "email": "thomas.goyne@mongodb.com"
+      },
+      "summary": "SERVER-134084 Defer creating a WriteBatch until we're actually going to insert into a bucket (#61760)"
+    },
+    {
+      "sha": "55314737610843268ac26d370d44f52762e16910",
+      "short_sha": "55314737610",
+      "date": "2026-08-27T19:07:21+00:00",
+      "author": {
+        "name": "Sarah Kelley",
+        "email": "sarah.kelley@mongodb.com"
+      },
+      "summary": "Revert \"SERVER-133522 waitForKeys in DisaggReplSetTest (#61085)\" (#61787)"
+    },
+    {
+      "sha": "4121631f01de8f2f02875bd261c206ebddd2dce7",
+      "short_sha": "4121631f01d",
+      "date": "2026-08-27T19:04:58+00:00",
+      "author": {
+        "name": "Alex Li",
+        "email": "98560274+lia394126@users.noreply.github.com"
+      },
+      "summary": "SERVER-120275 Validate BSONObj ends with eoo (#57684)"
+    },
+    {
+      "sha": "392605ef079e5aeeb6617bbee8fbe270bd2c92cb",
+      "short_sha": "392605ef079",
+      "date": "2026-08-27T18:50:32+00:00",
+      "author": {
+        "name": "Cheahuychou Mao",
+        "email": "cheahuychou.mao@mongodb.com"
+      },
+      "summary": "SERVER-133470 Update MetricsPolicyManager to not check if commands support force filtering (#61770)"
+    },
+    {
+      "sha": "136fcb7cf6cc056fcf39c36718aea2f5173808ae",
+      "short_sha": "136fcb7cf6c",
+      "date": "2026-08-27T17:43:16+00:00",
+      "author": {
+        "name": "Chunbin-lin",
+        "email": "chunbin.lin@mongodb.com"
+      },
+      "summary": "SERVER-134017 Add e2e tests for object and mixed  search idLookup (#61768)"
+    },
+    {
+      "sha": "c009f08ca51124816b987bf72c7fa2acefb41044",
+      "short_sha": "c009f08ca51",
+      "date": "2026-08-27T17:07:54+00:00",
+      "author": {
+        "name": "Owen Chen",
+        "email": "owen.chen@mongodb.com"
+      },
+      "summary": "SERVER-134035 Renew expiring x509 test certificates on master (#61754)"
+    },
     {
       "sha": "a538fad7a9967136a1b32dbfa48653fdfff8e556",
       "short_sha": "a538fad7a99",
@@ -2856,10 +3156,56 @@
           "num_of_dirs": 16
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "c009f08ca51124816b987bf72c7fa2acefb41044",
+        "short_sha": "c009f08ca51",
+        "date": "2026-08-27T17:07:54+00:00",
+        "author": {
+          "name": "Owen Chen",
+          "email": "owen.chen@mongodb.com"
+        },
+        "summary": "SERVER-134035 Renew expiring x509 test certificates on master (#61754)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 280,
+          "num_of_lines": 7163,
+          "lines_added": 3584,
+          "lines_deleted": 3579,
+          "num_of_dirs": 4
+        }
+      }
+    },
+    {
+      "commit": {
+        "sha": "a49653fe567fcb605ebb51ada74f216bf537386c",
+        "short_sha": "a49653fe567",
+        "date": "2026-08-28T04:34:33+00:00",
+        "author": {
+          "name": "Luke Chen",
+          "email": "luke.chen@mongodb.com"
+        },
+        "summary": "Import wiredtiger: 5cc20887634b37b29727ebb61852236650d8ef12 from branch mongodb-master (#61870)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 26,
+          "num_of_lines": 1303,
+          "lines_added": 735,
+          "lines_deleted": 568,
+          "num_of_dirs": 14
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-08-27 17:32:30",
+  "generated_at": "2026-08-28 18:23:51",
   "branch_name": "master",
   "display_name": "master"
 }

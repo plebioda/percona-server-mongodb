@@ -156,7 +156,17 @@ jobs:
             --bazelrc=.bazelrc \
             --bazelrc=.bazelrc.compiledb \
             build \
-            //:compiledb \
+            //:compiledb
+
+          # Build the clang-tidy plugin in a separate invocation so the wrapper
+          # hook does not activate compiledb mode. When //:compiledb is present,
+          # the hook adds --build_tag_filters=mongo_compiledb which silently skips
+          # this target (it lacks that tag). The posthook suppresses the resulting
+          # build error, so the step exits 0 with no .so produced.
+          bazel \
+            --bazelrc=.bazelrc \
+            --bazelrc=.bazelrc.compiledb \
+            build \
             //src/mongo/tools/mongo_tidy_checks:mongo_tidy_checks
 
       - name: Verify clang-tidy config

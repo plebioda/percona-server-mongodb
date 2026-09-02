@@ -213,12 +213,12 @@ def clear_compiledb_posthook_state():
 def _compiledb_build_settings(enterprise, atlas, log_default=False):
     compiledb_bazelrc = []
     compiledb_config = [COMPILEDB_BUILD_TAG_FILTERS]
-    if (REPO_ROOT / ".bazelrc.compiledb").exists():
-        compiledb_bazelrc = ["--bazelrc=.bazelrc", "--bazelrc=.bazelrc.compiledb"]
+    if (REPO_ROOT / ".bazelrc.clang-tidy").exists():
+        compiledb_bazelrc = ["--bazelrc=.bazelrc", "--bazelrc=.bazelrc.clang-tidy"]
     else:
         if log_default:
             _log_progress(
-                "No '.bazelrc.compiledb' found; using the Bazel invocation config for compiledb."
+                "No '.bazelrc.clang-tidy' found; using the Bazel invocation config for compiledb."
             )
 
     if not enterprise:
@@ -434,9 +434,9 @@ def prepare_compiledb_posthook_args(
         startup_args.append(f"--output_base={output_base}")
 
     if (
-        REPO_ROOT / ".bazelrc.compiledb"
-    ).exists() and "--bazelrc=.bazelrc.compiledb" not in startup_args:
-        startup_args.append("--bazelrc=.bazelrc.compiledb")
+        REPO_ROOT / ".bazelrc.clang-tidy"
+    ).exists() and "--bazelrc=.bazelrc.clang-tidy" not in startup_args:
+        startup_args.append("--bazelrc=.bazelrc.clang-tidy")
 
     if persistent_compdb and not any(arg.startswith("--symlink_prefix=") for arg in build_flags):
         build_flags.append(f"--symlink_prefix={symlink_prefix}")

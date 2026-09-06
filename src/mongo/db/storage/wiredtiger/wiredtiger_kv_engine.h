@@ -510,7 +510,6 @@ public:
     Status dropIdent(RecoveryUnit& ru,
                      std::string_view ident,
                      bool identHasSizeInfo,
-                     const StorageEngine::DropIdentCallback& onDrop,
                      boost::optional<uint64_t> schemaEpoch,
                      bool waitForLocks) override;
 
@@ -848,11 +847,6 @@ public:
 
 private:
     class DataAtRestEncryption;
-
-    struct IdentToDrop {
-        std::string uri;
-        StorageEngine::DropIdentCallback callback;
-    };
 
     // srcPath, destPath, session, cursor
     typedef std::tuple<boost::filesystem::path,

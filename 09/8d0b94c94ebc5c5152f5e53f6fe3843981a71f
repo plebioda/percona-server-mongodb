@@ -1,0 +1,162 @@
+{
+  "merge_info": {
+    "target_branch": "master",
+    "target_branch_sha": "cb1ebed7a0ddb076e91a60d4504a260a424ef0c1",
+    "merge_commit": "7d030afab11255b85b1dc32fb47bdc9c886a8f6b"
+  },
+  "mergai_version": "0.1.dev1+g0a8015bb6",
+  "merge_context": {
+    "merge_commit": "7d030afab11255b85b1dc32fb47bdc9c886a8f6b",
+    "merged_commits": [
+      "7d030afab11255b85b1dc32fb47bdc9c886a8f6b",
+      "28ef381046a75be03615216fab2d0cfcdbec099a",
+      "41cc88c60b520498d78f25b045c753c0126400db",
+      "7effcd1980a6a3c600903ba9dd3e8eb5cd731ca9",
+      "46014702c278725b51753661622b2d59d1263df0",
+      "b7ecd92c2aa0c488a2c9c3dade88938296e8b272",
+      "3c488c6047539862a17ed5b7c7b0711ffd35d8ba"
+    ],
+    "important_files_modified": [],
+    "auto_merged": {
+      "strategy": "ort",
+      "files": [
+        "src/third_party/wiredtiger/src/include/wiredtiger.h.in"
+      ]
+    }
+  },
+  "merge_description": {
+    "status": "success",
+    "is_error": false,
+    "duration_ms": 44279,
+    "num_turns": 5,
+    "stop_reason": "end_turn",
+    "total_cost_usd": 0.37520975,
+    "modelUsage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 979,
+        "outputTokens": 15,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.001054,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "thinkingTokens": 0,
+        "canonicalModel": "claude-haiku-4-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      },
+      "claude-opus-4-8": {
+        "inputTokens": 10,
+        "outputTokens": 2961,
+        "cacheReadInputTokens": 101524,
+        "cacheCreationInputTokens": 39891,
+        "webSearchRequests": 0,
+        "costUSD": 0.37415575,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 377,
+        "canonicalModel": "claude-opus-4-8",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    },
+    "stats": {
+      "models": {
+        "claude-haiku-4-5-20251001": {
+          "tokens": {
+            "input": 979,
+            "output": 15,
+            "cache_read": 0,
+            "cache_creation": 0
+          },
+          "cost_usd": 0.001054
+        },
+        "claude-opus-4-8": {
+          "tokens": {
+            "input": 10,
+            "output": 2961,
+            "cache_read": 101524,
+            "cache_creation": 39891
+          },
+          "cost_usd": 0.37415575
+        }
+      }
+    },
+    "text_result": "I've analyzed the merge and written the JSON response.\n\nThe merge involves a single auto-merged file, `src/third_party/wiredtiger/src/include/wiredtiger.h.in` (a generated WiredTiger header). The incoming changes from the diff base (`81bb03c`) to the merge commit (`7d030af`) are:\n\n1. **Documentation reword** of the `ignore_cache_size` config option \u2014 it now states the setting can be reconfigured during a running transaction (taking precedence over the per-transaction setting), rather than returning `EINVAL`.\n\n2. **A new reconciliation statistic** \u2014 `WT_STAT_CONN_REC_PAGE_DELETE_FAST_SKIP_DELETED` (1864) and its data-source counterpart `WT_STAT_DSRC_REC_PAGE_DELETE_FAST_SKIP_DELETED` (2360), which forces the mechanical renumbering (+1) of all subsequent statistic ID constants \u2014 the reason the diff looks large.\n\nI verified the two new symbols with a `comm` diff of added-vs-removed `#define` names; everything else is pure renumbering. No Percona-specific lines appear in the diff, consistent with a clean `ort` auto-merge.",
+    "response": {
+      "summary": "This merge pulls an upstream WiredTiger update into the generated public header src/third_party/wiredtiger/src/include/wiredtiger.h.in. The substantive incoming changes are: (1) reworded documentation for the ignore_cache_size configuration option, and (2) the addition of a new reconciliation statistic, with the surrounding statistic ID constants renumbered as a consequence. The single listed file auto-merged cleanly with the ort strategy; no Percona-specific customizations are affected.",
+      "auto_merged": {
+        "src/third_party/wiredtiger/src/include/wiredtiger.h.in": "Two upstream changes are visible in the diff base -> merge commit diff. First, the @config documentation for the ignore_cache_size option is reworded in the WT_SESSION::reconfigure/open_session config docs (and the matching WT_CONNECTION entry) and in the WT_SESSION::begin_transaction config docs: instead of stating that WT_SESSION::reconfigure returns EINVAL when ignore_cache_size is set while a transaction is running, it now says the setting may be reconfigured during a running transaction and takes precedence over the per-transaction begin_transaction ignore_cache_size setting (making it session-wide). This is a documentation-only change to the generated comments. Second, a new reconciliation statistic is introduced: WT_STAT_CONN_REC_PAGE_DELETE_FAST_SKIP_DELETED (value 1864) and its data-source counterpart WT_STAT_DSRC_REC_PAGE_DELETE_FAST_SKIP_DELETED (value 2360), documented as 'reconciliation: fast-path page deletion skipped, all entries already deleted'. Because these are inserted into the ordered WT_STAT_CONN_* and WT_STAT_DSRC_* blocks, all subsequent statistic ID #define values in those blocks are shifted up by one (e.g. WT_STAT_CONN_REC_PAGE_DELETE_FAST goes from 1864 to 1865, and the tail through WT_STAT_CONN_TXN_ROLLBACK_STEPDOWN / WT_STAT_DSRC_* entries are renumbered accordingly). No statistic names other than the two new ones are added or removed; the rest of the churn is purely the numeric renumbering that follows from the two insertions."
+      },
+      "review_notes": "The only auto-merged file is a generated WiredTiger header, so its changes should be consistent with the corresponding regenerated sources (e.g. dist/stat_data.py and the stat implementation files) coming from the same WiredTiger import. The bulk of the diff is mechanical renumbering of WT_STAT_CONN_* / WT_STAT_DSRC_* constants driven by inserting the single new REC_PAGE_DELETE_FAST_SKIP_DELETED statistic; verify no hand-maintained code hard-codes any of the shifted numeric statistic IDs. The ignore_cache_size change is documentation-only in this file. No Percona-specific lines appear in the diff, consistent with a clean auto-merge."
+    },
+    "session": {
+      "messages": [
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Bash"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I have what I need. The diff for the single auto-merged file contains two substantive upstream changes plus mechanical renumbering."
+          ],
+          "tools_used": []
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [],
+          "tools_used": [
+            "Write"
+          ]
+        },
+        {
+          "role": "assistant",
+          "model": "claude-opus-4-8",
+          "thoughts": [
+            "I've analyzed the merge and written the JSON response.\n\nThe merge involves a single auto-merged file, `src/third_party/wiredtiger/src/include/wiredtiger.h.in` (a generated WiredTiger header). The incoming changes from the diff base (`81bb03c`) to the merge commit (`7d030af`) are:\n\n1. **Documentation reword** of the `ignore_cache_size` config option \u2014 it now states the setting can be reconfigured during a running transaction (taking precedence over the per-transaction setting), rather than returning `EINVAL`.\n\n2. **A new reconciliation statistic** \u2014 `WT_STAT_CONN_REC_PAGE_DELETE_FAST_SKIP_DELETED` (1864) and its data-source counterpart `WT_STAT_DSRC_REC_PAGE_DELETE_FAST_SKIP_DELETED` (2360), which forces the mechanical renumbering (+1) of all subsequent statistic ID constants \u2014 the reason the diff looks large.\n\nI verified the two new symbols with a `comm` diff of added-vs-removed `#define` names; everything else is pure renumbering. No Percona-specific lines appear in the diff, consistent with a clean `ort` auto-merge."
+          ],
+          "tools_used": []
+        }
+      ],
+      "metadata": {
+        "lastPrompt": "Read @/home/runner/work/percona-server-mongodb/percona-server-mongodb/.cache/mergai/prompt_20260909_073011_525273.md and write your JSON response to @/home/runner/work/percona-server-mongodb/percona-s\u2026"
+      }
+    },
+    "agent_info": {
+      "agent_type": "claude_cli",
+      "version": "2.1.266 (Claude Code)"
+    }
+  },
+  "merge_pick": {
+    "type": "manual",
+    "sha": "7d030afab11",
+    "short_sha": "7d030afab11",
+    "strategy": null,
+    "summary": "Manually specified by @plebioda via workflow_dispatch; gate bypassed.",
+    "run_url": "https://github.com/plebioda/percona-server-mongodb/actions/runs/34323930994"
+  }
+}

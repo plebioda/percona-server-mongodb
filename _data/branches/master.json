@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 38,
+    "commits_behind": 42,
     "days_behind": 2,
-    "unmerged_oldest_age_days": 2.2807642757060185,
-    "files_affected": 316,
-    "total_additions": 8840,
-    "total_deletions": 4769,
+    "unmerged_oldest_age_days": 2.437395025011574,
+    "files_affected": 324,
+    "total_additions": 9187,
+    "total_deletions": 4779,
     "date_range": {
       "first": "2026-09-07T00:30:56+00:00",
-      "last": "2026-09-09T04:58:13+00:00"
+      "last": "2026-09-09T09:21:05+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,46 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "509157a7fe861b7b499f7c363a11d3a9ecbcd53f",
+      "short_sha": "509157a7fe8",
+      "date": "2026-09-09T09:21:05+00:00",
+      "author": {
+        "name": "cian-mdb",
+        "email": "cian.nugentmcgealy@mongodb.com"
+      },
+      "summary": "SERVER-134081: Terminate express user-index plan on a missing record (#62092)"
+    },
+    {
+      "sha": "411b66fb8737e10b3db177d181808e11123f3b4f",
+      "short_sha": "411b66fb873",
+      "date": "2026-09-09T07:20:09+00:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#62443)"
+    },
+    {
+      "sha": "227024c8b06335697967e5b89bc92d230ae5afab",
+      "short_sha": "227024c8b06",
+      "date": "2026-09-09T07:18:24+00:00",
+      "author": {
+        "name": "Jordi Olivares Provencio",
+        "email": "jordi.olivares-provencio@mongodb.com"
+      },
+      "summary": "SERVER-134519 Fix CollectionUUIDMismatch population on mongos find (#62294)"
+    },
+    {
+      "sha": "1390464c0e05f5de7203663eac28a552687cc20c",
+      "short_sha": "1390464c0e0",
+      "date": "2026-09-09T07:04:53+00:00",
+      "author": {
+        "name": "karlbozdogan",
+        "email": "karl.bozdogan@mongodb.com"
+      },
+      "summary": "SERVER-134617: Transfer clustered collscan ownership to QO (#62382)"
+    },
     {
       "sha": "e68bd0da1f721bc39d691ee1f72b15df733360f6",
       "short_sha": "e68bd0da1f7",
@@ -512,7 +552,7 @@
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-09-09 07:15:07",
+  "generated_at": "2026-09-09 11:00:35",
   "branch_name": "master",
   "display_name": "master"
 }

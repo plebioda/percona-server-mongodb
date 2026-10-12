@@ -5,15 +5,15 @@
   "upstream_ref": "mongodb/master",
   "is_up_to_date": false,
   "divergence": {
-    "commits_behind": 577,
-    "days_behind": 32,
-    "unmerged_oldest_age_days": 32.51536996789352,
-    "files_affected": 2825,
-    "total_additions": 147055,
-    "total_deletions": 63694,
+    "commits_behind": 596,
+    "days_behind": 35,
+    "unmerged_oldest_age_days": 35.598636208622686,
+    "files_affected": 2914,
+    "total_additions": 151221,
+    "total_deletions": 64911,
     "date_range": {
       "first": "2026-09-07T00:30:56+00:00",
-      "last": "2026-10-02T10:09:39+00:00"
+      "last": "2026-10-05T08:20:35+00:00"
     }
   },
   "last_merged_commit": {
@@ -41,6 +41,196 @@
     "reason": "force:conflict"
   },
   "unmerged_commits": [
+    {
+      "sha": "dd09974a1f0116b5d89cd84768d3437c6be4ef5f",
+      "short_sha": "dd09974a1f0",
+      "date": "2026-10-05T08:20:35+00:00",
+      "author": {
+        "name": "fotiniAlvanaki",
+        "email": "78495594+fotiniAlvanaki@users.noreply.github.com"
+      },
+      "summary": "SERVER-135980 : Set chunkSize in OperationMemoryUsageTracker (#63682)"
+    },
+    {
+      "sha": "0171397e3a8c3ec6c679d80f93ccb8f159a6e796",
+      "short_sha": "0171397e3a8",
+      "date": "2026-10-05T07:39:15+00:00",
+      "author": {
+        "name": "Matt Kneiser",
+        "email": "matt.kneiser@mongodb.com"
+      },
+      "summary": "SERVER-134808 Allow Invalid UTF-8 Database names again (#62661)"
+    },
+    {
+      "sha": "b06c59bd5dd39483e8b8765099a33c8b16fe477d",
+      "short_sha": "b06c59bd5dd",
+      "date": "2026-10-04T10:10:13+00:00",
+      "author": {
+        "name": "mongo-pr-bot[bot]",
+        "email": "230616009+mongo-pr-bot[bot]@users.noreply.github.com"
+      },
+      "summary": "SERVER-110427 Update profiling data (#63823)"
+    },
+    {
+      "sha": "2f3d83b86d6a29a94984bd94ced132ce61514e25",
+      "short_sha": "2f3d83b86d6",
+      "date": "2026-10-02T19:15:58+00:00",
+      "author": {
+        "name": "Oscar Ortega",
+        "email": "114444896+oortegamtzdb@users.noreply.github.com"
+      },
+      "summary": "SERVER-134061 Add Evergreen wiring (#63581)"
+    },
+    {
+      "sha": "f6237042641f3269afa7be734ff00efe93853d7a",
+      "short_sha": "f6237042641",
+      "date": "2026-10-02T18:33:56+00:00",
+      "author": {
+        "name": "Asher Kornfeld",
+        "email": "asher.kornfeld@mongodb.com"
+      },
+      "summary": "SERVER-134393: Add ingress replication metrics (#63382)"
+    },
+    {
+      "sha": "8ba342f71ef250dc38b75b50cd33667819ef9426",
+      "short_sha": "8ba342f71ef",
+      "date": "2026-10-02T18:33:01+00:00",
+      "author": {
+        "name": "Ben Shteinfeld",
+        "email": "ben.shteinfeld@mongodb.com"
+      },
+      "summary": "SERVER-69257 Enumerate a COUNT_SCAN of the _id index for unfiltered counts (#63546)"
+    },
+    {
+      "sha": "dab3ed09d40b724b535f6d77e70ec2ca56ccb4d6",
+      "short_sha": "dab3ed09d40",
+      "date": "2026-10-02T17:54:57+00:00",
+      "author": {
+        "name": "Naafiyan Ahmed",
+        "email": "naafiyan.ahmed@mongodb.com"
+      },
+      "summary": "SERVER-136208: Update join plan subset logs component to use kQueryJoin (#63780)"
+    },
+    {
+      "sha": "9684594d7cc461660e918e8c98ad571df59c7533",
+      "short_sha": "9684594d7cc",
+      "date": "2026-10-02T17:52:23+00:00",
+      "author": {
+        "name": "Matthew Boros",
+        "email": "mattBoros@users.noreply.github.com"
+      },
+      "summary": "SERVER-114269 Remove 8.3 FCV checks in PBT models (#63709)"
+    },
+    {
+      "sha": "e40f71a6b037de4eaa4d16f085156ce31484b94b",
+      "short_sha": "e40f71a6b03",
+      "date": "2026-10-02T17:43:15+00:00",
+      "author": {
+        "name": "Charlie Swanson",
+        "email": "charlie.swanson@mongodb.com"
+      },
+      "summary": "SERVER-135705 Clean up error-prone waitForTimesEntered() call sites (#63359)"
+    },
+    {
+      "sha": "380a4480d63712f2b812d38607293076e2dff338",
+      "short_sha": "380a4480d63",
+      "date": "2026-10-02T17:33:39+00:00",
+      "author": {
+        "name": "joseph obaraye",
+        "email": "joseph.obaraye@mongodb.com"
+      },
+      "summary": "SERVER-136020 Join tracker on advancer destruction and create RAII BlockWorkers type for unit tests (#63578)"
+    },
+    {
+      "sha": "715875ed45e8372a6516c36234051a6397c433d0",
+      "short_sha": "715875ed45e",
+      "date": "2026-10-02T17:18:57+00:00",
+      "author": {
+        "name": "Vadim Piven",
+        "email": "vadim@piven.tech"
+      },
+      "summary": "SERVER-136073 Remove namespace argument from expression-context shape hash helper using getNamespaceString (#63634)"
+    },
+    {
+      "sha": "7125b853f383ac22cdf8ebc9c08c0a55bce98b13",
+      "short_sha": "7125b853f38",
+      "date": "2026-10-02T17:14:48+00:00",
+      "author": {
+        "name": "Erin Liang",
+        "email": "59406045+erl-ang@users.noreply.github.com"
+      },
+      "summary": "SERVER-130442 Enable query_stats_concurrent.js on aubsan and tsan (#63641)"
+    },
+    {
+      "sha": "ab9b3cd3c2b992c429d42eed60a5518eb8e43fc7",
+      "short_sha": "ab9b3cd3c2b",
+      "date": "2026-10-02T15:59:17+00:00",
+      "author": {
+        "name": "Evan Bergeron",
+        "email": "evanbergeron@users.noreply.github.com"
+      },
+      "summary": "SERVER-135739 Antimaterialize hash lookup-unwind without preserveNullAndEmptyArray and includeArrayIndex (#63482)"
+    },
+    {
+      "sha": "a3f4fab0bdf50dbdd58a85ce6f1631ae50c5d16c",
+      "short_sha": "a3f4fab0bdf",
+      "date": "2026-10-02T15:20:57+00:00",
+      "author": {
+        "name": "Kyle Burgess",
+        "email": "90669224+kyleburgess2025@users.noreply.github.com"
+      },
+      "summary": "SERVER-136142: Record interrupt delinquency stats in system.profile documents (#63727)"
+    },
+    {
+      "sha": "e70c64789b90507741907b1456d381198dd983a2",
+      "short_sha": "e70c64789b9",
+      "date": "2026-10-02T14:33:39+00:00",
+      "author": {
+        "name": "Moustafa Maher",
+        "email": "m.maher@mongodb.com"
+      },
+      "summary": "SERVER-130956 Omit transactions from collection latency stats (#63538)"
+    },
+    {
+      "sha": "58700ebcb6d4d326bd985440a13d88a742e8131d",
+      "short_sha": "58700ebcb6d",
+      "date": "2026-10-02T14:26:54+00:00",
+      "author": {
+        "name": "Nick Zolnierz",
+        "email": "nicholas.zolnierz@mongodb.com"
+      },
+      "summary": "SERVER-136060 Clean up lingering TODOs (#63651)"
+    },
+    {
+      "sha": "d53af8470e1ffb70a4c92266ad3c8e94197e7d27",
+      "short_sha": "d53af8470e1",
+      "date": "2026-10-02T14:01:58+00:00",
+      "author": {
+        "name": "Mike Nugent",
+        "email": "mike.nugent@mongodb.com"
+      },
+      "summary": "SERVER-136039: Use an options struct when creating NetworkInterfaces (#63553)"
+    },
+    {
+      "sha": "9f04d80a2539ea2ae3b3ae3809b638d82895e2bd",
+      "short_sha": "9f04d80a253",
+      "date": "2026-10-02T12:48:58+00:00",
+      "author": {
+        "name": "Ian Boros",
+        "email": "87138302+borosaurus@users.noreply.github.com"
+      },
+      "summary": "SERVER-135892: Incorporate blueprint tree into StageBuilderState (#63596)"
+    },
+    {
+      "sha": "29bf9bbd48b2a5ace84a82c19638732b209fb16b",
+      "short_sha": "29bf9bbd48b",
+      "date": "2026-10-02T12:03:52+00:00",
+      "author": {
+        "name": "Nick Zolnierz",
+        "email": "nicholas.zolnierz@mongodb.com"
+      },
+      "summary": "SERVER-135024 Fix explain test for deferred engine off and SBE Full (#63735)"
+    },
     {
       "sha": "e3974e633bb5acdec501155cdb08334502ef39f8",
       "short_sha": "e3974e633bb",
@@ -6696,10 +6886,33 @@
           "num_of_dirs": 13
         }
       }
+    },
+    {
+      "commit": {
+        "sha": "d53af8470e1ffb70a4c92266ad3c8e94197e7d27",
+        "short_sha": "d53af8470e1",
+        "date": "2026-10-02T14:01:58+00:00",
+        "author": {
+          "name": "Mike Nugent",
+          "email": "mike.nugent@mongodb.com"
+        },
+        "summary": "SERVER-136039: Use an options struct when creating NetworkInterfaces (#63553)"
+      },
+      "strategy_name": "huge_commit",
+      "result": {
+        "expression": "(num_of_files >= 100 or num_of_lines >= 5000 or num_of_dirs > 10)",
+        "evaluated_vars": {
+          "num_of_files": 26,
+          "num_of_lines": 189,
+          "lines_added": 93,
+          "lines_deleted": 96,
+          "num_of_dirs": 13
+        }
+      }
     }
   ],
   "repo_url": "https://github.com/plebioda/percona-server-mongodb",
-  "generated_at": "2026-10-09 12:52:51",
+  "generated_at": "2026-10-12 14:52:48",
   "branch_name": "master",
   "display_name": "master"
 }
